@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: jurisone-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jurisone
+      POSTGRES_PASSWORD: jurisone_dev_pw
+      POSTGRES_DB: jurisone
+      TZ: UTC
+    ports:
+      - "5436:5432"
+    volumes:
+      - jurisone_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jurisone -d jurisone"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  jurisone_pg:
