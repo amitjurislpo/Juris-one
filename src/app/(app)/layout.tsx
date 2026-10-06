@@ -4,15 +4,7 @@ import { landingPath, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { dateToIso } from "@/lib/format";
 import { shellData } from "@/lib/shell-data";
-
-const shiftLabel = (s: { code: string; name: string; startLocal: string; endLocal: string } | null) => {
-  if (!s) return null;
-  const t = (hm: string) => {
-    const [h, m] = hm.split(":").map(Number);
-    return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
-  };
-  return `${s.name} · ${t(s.startLocal)} – ${t(s.endLocal)}${s.code === "US_DAY" ? " local" : " IST"}`;
-};
+import { shiftLabel } from "@/lib/shifts";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const u = await requireUser();
@@ -34,7 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         department: emp.department?.name ?? "—",
         manager: emp.reportingManager?.fullName ?? "—",
         doj: dateToIso(emp.dateOfJoining),
-        shift: shiftLabel(emp.shift),
+        shift: emp.shift ? shiftLabel(emp.shift) : null,
         isAdminLike: !u.perms.has("self"),
       }}
       groups={data.groups}

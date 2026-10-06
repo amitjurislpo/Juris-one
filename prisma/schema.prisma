@@ -138,6 +138,8 @@ model Department {
   description    String?
   createdById    String?   @map("created_by") @db.Uuid
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  // Set when a department with only past employees is "deleted" — keeps their history intact.
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(6)
 
   head      Employee?  @relation("DepartmentHead", fields: [headEmployeeId], references: [id], onDelete: SetNull)
   createdBy Employee?  @relation("DepartmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)

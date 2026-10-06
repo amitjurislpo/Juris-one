@@ -130,4 +130,9 @@ To add the licensed font:
 ## Build status
 
 - **Phase 0 (done):** setup, schema, seed, app shell, and login / logout / invite / reset.
-- **Phases 1 to 6:** in progress. Pages that are not built yet show "Arrives in phase N".
+- **Phase 1 (done):** roles & permissions, policies matrix, departments, people (3-step add/edit, profile drawer, access toggle, mark exited, CSV export), directory and My team.
+- **Phases 2 to 6:** pages not built yet show "Arrives in phase N".
+
+### Table conventions
+
+List pages keep search, filters, sorting and paging in the URL (`?q=&sort=&dir=&page=`). The server runs the query, so lists stay fast as the company grows. The shared pieces are `src/lib/list.ts` and `src/components/table/`.
