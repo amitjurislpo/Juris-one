@@ -94,11 +94,13 @@ describe("day status", () => {
     expect(d.offDayWork).toBe(true);
   });
   it("leave: paid full day, unpaid LOP leave, and half-day leave", () => {
-    expect(computeDay(day({ leave: { code: "CL", name: "Casual leave", part: "FULL", paid: true } }))).toMatchObject({ status: "LEAVE", leaveDays: 1, lopDays: 0 });
-    expect(computeDay(day({ leave: { code: "LOP", name: "Leave without pay", part: "FULL", paid: false } }))).toMatchObject({ status: "LEAVE", leaveDays: 0, lopDays: 1 });
-    const half = { code: "CL", name: "Casual leave", part: "FIRST_HALF" as const, paid: true };
+    expect(computeDay(day({ leave: { code: "CL", name: "Casual leave", part: "FULL", paidFraction: 1 } }))).toMatchObject({ status: "LEAVE", leaveDays: 1, lopDays: 0 });
+    expect(computeDay(day({ leave: { code: "LOP", name: "Leave without pay", part: "FULL", paidFraction: 0 } }))).toMatchObject({ status: "LEAVE", leaveDays: 0, lopDays: 1 });
+    const half = { code: "CL", name: "Casual leave", part: "FIRST_HALF" as const, paidFraction: 1 };
     expect(computeDay(day({ leave: half, punches: [p("2026-09-16", "23:30", "IN"), p("2026-09-17", "04:00", "OUT")] }))).toMatchObject({ leaveDays: 0.5, lopDays: 0 });
     expect(computeDay(day({ leave: half }))).toMatchObject({ leaveDays: 0.5, lopDays: 0.5 });
+    // balance ran short: half of the day is paid, half is LOP
+    expect(computeDay(day({ leave: { code: "CL", name: "Casual leave", part: "FULL", paidFraction: 0.5 } }))).toMatchObject({ leaveDays: 0.5, lopDays: 0.5 });
   });
   it("before joining, after exit and before go-live", () => {
     expect(computeDay(day({ date: "2026-09-07", doj: "2026-09-08" })).status).toBe("BEFORE_JOINING");

@@ -129,6 +129,39 @@ src/components/shell/       sidebar, header, notifications, ⌘K palette, theme,
 
 **Go-live date.** Days before the go-live date (Policies → Attendance, default 1 Apr 2026) show as *Not tracked*.
 
+### Leave model
+
+**The ledger.** Every leave balance is the sum of `leave_ledger` rows. Each row is one of: accrual, used, cancelled, encashed, expired, adjustment or comp-off credit. The rules are pure functions in `src/lib/leave/rules.ts`.
+
+**Accrual.**
+- Credited at the start of each month of the leave year: CL 1, EL 1.5.
+- Pro-rata in the month someone joins.
+- Any months that were missed are backfilled.
+
+**Applying.**
+- `previewRequest` runs the same checks in the apply form and on the server: no past dates, max stretch (CL 3), overlaps, the joining and exit dates, and locked months.
+- Days not covered by the balance become **LOP**. Paid days are used from the start of the range, so any shortfall falls on the last days.
+- The attendance engine receives a *paid fraction* for each date.
+
+**Approving.**
+- HR approves; Admin can too. Approving posts a `USED` row to the ledger.
+- The LOP split is recalculated at approval time, because the balance may have changed since the request was made.
+- Nobody can decide their own request.
+- When two approvers act at once, the first decision wins. This is enforced with an atomic `UPDATE … WHERE status = 'PENDING'`.
+
+**Regularization.** HR, Finance and Admin all see each request, and the first decision wins.
+
+| Request | When approved |
+|---|---|
+| Absent | The day becomes paid. |
+| Late check-in | The late mark is removed. |
+| Missed check-out | A check-out punch is added. |
+| Holiday work | A comp-off is credited: 1 day for 8h+, ½ day for 4h+. It expires after 60 days. |
+
+Approval is blocked once the month is locked. After that, Finance adjusts LOP in payroll instead.
+
+**Year end.** Casual leave lapses. Earned leave carries forward up to 30 days.
+
 ### Scheduled jobs
 
 `src/lib/jobs.ts` contains three jobs:
@@ -138,6 +171,9 @@ src/components/shell/       sidebar, header, notifications, ⌘K palette, theme,
 | Absence marking | Once shift end + buffer has passed, a working day with no check-in and no leave is recorded as Absent (LOP). |
 | Monthly lock | Attendance freezes on the 1st of the next month at 10:00 IST (configurable). |
 | Status | Employees move from Onboarding to Probation to Active (probation months are configurable). |
+| Leave accrual | Credits each month's leave. It runs only once per employee, leave type and month. |
+| Comp-off expiry | Expires unused comp-off once its 60 days are up. The oldest credits are used first. |
+| Year end | Casual leave lapses and earned leave above the carry-forward cap is removed. Runs once a year. |
 
 **How they run:**
 - **In the app (default):** with `JOBS_ENABLED=true` they run every 10 minutes, started by `src/instrumentation.ts`.
@@ -164,7 +200,8 @@ To add the licensed font:
 - **Phase 0 (done):** setup, schema, seed, app shell, and login / logout / invite / reset.
 - **Phase 1 (done):** roles & permissions, policies matrix, departments, people (3-step add/edit, profile drawer, access toggle, mark exited, CSV export), directory and My team.
 - **Phase 2 (done):** check-in/out, attendance engine (shifts, night shifts, late marks, half days, absences), My attendance with regularization requests, holiday calendar, attendance register (time zones, daily log, monthly grid, CSV export), scheduled jobs, editable attendance policy.
-- **Phases 3 to 6:** pages not built yet show "Arrives in phase N".
+- **Phase 3 (done):** leave ledger and accrual, apply leave (range picker, holidays skipped, LOP when short), cancel, regularization decisions, Approvals page (first decision wins), in-app notifications and decision emails, comp-off expiry and year-end jobs.
+- **Phases 4 to 6:** pages not built yet show "Arrives in phase N".
 
 ### Table conventions
 

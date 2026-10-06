@@ -25,7 +25,7 @@ export async function shellData(u: CurrentUser) {
     can(u, "appr.leave") ? db.leaveRequest.count({ where: { status: "PENDING", employeeId: { not: u.id } } }) : 0,
     can(u, "appr.reg") ? db.regularizationRequest.count({ where: { status: "PENDING", employeeId: { not: u.id } } }) : 0,
     can(u, "proofs.verify") ? db.declarationItem.count({ where: { status: "PENDING", employeeId: { not: u.id } } }) : 0,
-    db.notification.findMany({ where: { employeeId: u.id, readAt: null }, orderBy: { createdAt: "desc" }, take: 8 }),
+    db.notification.findMany({ where: { employeeId: u.id, createdAt: { gte: new Date(Date.now() - 14 * 86400_000) } }, orderBy: { createdAt: "desc" }, take: 8 }),
     db.holiday.findFirst({
       where: { date: { gte: isoToDate(todayIn(u.timeZone)) }, region: { in: ["ALL", u.region] } },
       orderBy: { date: "asc" },
@@ -41,5 +41,5 @@ export async function shellData(u: CurrentUser) {
     notes.push({ t: `${nextHoliday.name} holiday on ${fmtDL(dateToIso(nextHoliday.date))}`, s: "Holiday calendar" });
   }
 
-  return { groups, badges: { approvals: pending, proofs }, notes, unread: unread.length };
+  return { groups, badges: { approvals: pending, proofs }, notes, unread: unread.filter((n) => !n.readAt).length };
 }

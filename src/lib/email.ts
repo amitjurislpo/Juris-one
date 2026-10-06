@@ -56,6 +56,15 @@ export function inviteEmail(name: string, code: string, link: string, hours: num
   };
 }
 
+export function decisionEmail(name: string, what: string, approved: boolean, by: string, note: string | null): Omit<Mail, "to"> {
+  const verb = approved ? "approved" : "declined";
+  return {
+    subject: `${what} ${verb}`,
+    text: `Hi ${name},\n\nYour ${what.toLowerCase()} was ${verb} by ${by}.${note ? `\n\nNote: ${note}` : ""}\n\nOpen JurisOne for details.`,
+    html: shell(`${esc(what)} ${verb}`, `<p>Hi ${esc(name)}, your ${esc(what.toLowerCase())} was <b>${verb}</b> by ${esc(by)}.</p>${note ? `<p style="color:#5D5F6D">Note: ${esc(note)}</p>` : ""}`),
+  };
+}
+
 export function resetEmail(name: string, link: string, minutes: number): Omit<Mail, "to"> {
   return {
     subject: "Reset your JurisOne password",

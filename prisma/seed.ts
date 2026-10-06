@@ -284,6 +284,49 @@ async function seedPunches(codeToId: Record<string, string>) {
   console.log("Demo punches: " + rows.length);
 }
 
+/** Prototype leave requests and regularizations (once). Balances come from the accrual job. */
+async function seedRequests(codeToId: Record<string, string>) {
+  if (await db.jobRun.findUnique({ where: { name_key: { name: "seed", key: "requests" } } })) return;
+  const id = (c: string) => codeToId[c];
+  const hr = id("JC-012");
+  const LEAVES: [string, string, string, string, string, "PENDING" | "APPROVED", string][] = [
+    ["JC-058", "EL", "2026-10-23", "2026-10-23", "Personal work", "PENDING", "2026-10-05"],
+    ["JC-074", "CL", "2026-11-02", "2026-11-02", "", "PENDING", "2026-10-04"],
+    ["JC-049", "CL", "2026-10-21", "2026-10-22", "Sister’s wedding", "PENDING", "2026-10-06"],
+    ["JC-058", "EL", "2026-10-06", "2026-10-06", "Family function", "APPROVED", "2026-09-30"],
+    ["JC-074", "LOP", "2026-09-22", "2026-09-22", "Unapplied absence", "APPROVED", "2026-10-01"],
+  ];
+  for (const [code, type, from, to, reason, status, applied] of LEAVES) {
+    const days = from === to ? 1 : 2;
+    const r = await db.leaveRequest.create({
+      data: {
+        employeeId: id(code), leaveType: type, fromDate: d(from), toDate: d(to), days, lopDays: type === "LOP" ? days : 0, reason: reason || null, status,
+        appliedAt: new Date(`${applied}T05:00:00Z`), decidedById: status === "APPROVED" ? hr : null, decidedAt: status === "APPROVED" ? new Date(`${applied}T09:00:00Z`) : null,
+      },
+    });
+    if (status === "APPROVED" && type !== "LOP") await db.leaveLedger.create({ data: { employeeId: id(code), leaveType: type, delta: -days, reason: "USED", refId: r.id } });
+  }
+
+  // JC-072 forgot to check out of the 1 Oct night shift (last activity 4:36 AM on 2 Oct)
+  const out = await db.punch.findFirst({ where: { employeeId: id("JC-072"), kind: "OUT", at: { gte: new Date("2026-10-01T20:00:00Z"), lt: new Date("2026-10-02T03:00:00Z") } } });
+  if (out) await db.punch.delete({ where: { id: out.id } });
+  await db.regularizationRequest.create({
+    data: { employeeId: id("JC-072"), workDate: d("2026-10-01"), kind: "MISSED_CHECKOUT", proposedOut: atLocal("2026-10-02", "04:36", "Asia/Kolkata"), reason: "Laptop shut down on battery", createdAt: new Date("2026-10-02T06:00:00Z") },
+  });
+  // JC-049 worked 8h40m on Gandhi Jayanti → asks for a comp-off
+  await db.punch.createMany({
+    data: [
+      { employeeId: id("JC-049"), at: atLocal("2026-10-02", "19:30", "Asia/Kolkata"), kind: "IN", source: "WEB" },
+      { employeeId: id("JC-049"), at: atLocal("2026-10-03", "04:10", "Asia/Kolkata"), kind: "OUT", source: "WEB" },
+    ],
+  });
+  await db.regularizationRequest.create({
+    data: { employeeId: id("JC-049"), workDate: d("2026-10-02"), kind: "HOLIDAY_WORK", reason: "Client filing deadline", createdAt: new Date("2026-10-03T06:00:00Z") },
+  });
+  await db.jobRun.create({ data: { name: "seed", key: "requests" } });
+  console.log("Demo leave requests and regularizations added");
+}
+
 async function main() {
   const roleIds = await seedRoles();
   const shiftIds = await seedShifts();
@@ -388,6 +431,7 @@ async function main() {
     }
 
     await seedPunches(codeToId);
+    await seedRequests(codeToId);
   }
 
   const counts = await Promise.all([db.employee.count(), db.role.count(), db.department.count(), db.holiday.count(), db.salaryStructure.count()]);

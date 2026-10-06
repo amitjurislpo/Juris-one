@@ -15,7 +15,8 @@ export async function login(page: Page, id: string, pw = DEMO_PW) {
 }
 
 export async function expectLanded(page: Page, path: string) {
-  await expect(page).toHaveURL(new RegExp(`${path}$`));
+  // generous: the dev server compiles routes and runs background jobs in-process
+  await expect(page).toHaveURL(new RegExp(`${path}$`), { timeout: 15_000 });
 }
 
 /** Direct DB access for test setup/teardown (unlock accounts, flip access). */

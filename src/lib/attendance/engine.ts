@@ -40,7 +40,7 @@ export interface DayInput {
   trackingStart: string;
   holiday: string | null;
   /** Approved leave covering this date. */
-  leave: { code: string; name: string; part: "FULL" | "FIRST_HALF" | "SECOND_HALF"; paid: boolean } | null;
+  leave: { code: string; name: string; part: "FULL" | "FIRST_HALF" | "SECOND_HALF"; /** 1 = paid from balance, 0 = loss of pay */ paidFraction: number } | null;
   punches: Punch[]; // attributed to this work date, any order
   /** Approved regularizations for this date. */
   reg: { absent: boolean; lateWaived: boolean };
@@ -136,6 +136,13 @@ export function workedMinutes(punches: Punch[], liveUntil?: Date): { minutes: nu
 
 // ───────────────────────── day status ─────────────────────────
 
+/** Leave days vs LOP days for one date of leave (half-day parts count 0.5). */
+function leaveSplit(l: NonNullable<DayInput["leave"]>) {
+  const unit = l.part === "FULL" ? 1 : 0.5;
+  const paid = Math.round(unit * Math.min(1, Math.max(0, l.paidFraction)) * 100) / 100;
+  return { leaveDays: paid, lopDays: Math.round((unit - paid) * 100) / 100 };
+}
+
 export function computeDay(i: DayInput): DayResult {
   const today = localParts(i.now, i.tz).date;
   const base: DayResult = {
@@ -167,7 +174,7 @@ export function computeDay(i: DayInput): DayResult {
     return { ...base, ...punchFacts, late: false, lateWaived: false, status: i.holiday ? "HOLIDAY" : "WEEKLY_OFF", label: off, offDayWork: w.minutes >= i.policy.halfDayHours * 60 };
   }
   if (base.future) {
-    if (i.leave) return { ...base, status: "LEAVE", label: i.leave.part === "FULL" ? i.leave.name : `${i.leave.name} · half day`, leaveDays: i.leave.paid ? (i.leave.part === "FULL" ? 1 : 0.5) : 0, lopDays: i.leave.paid ? 0 : i.leave.part === "FULL" ? 1 : 0.5 };
+    if (i.leave) return { ...base, status: "LEAVE", label: i.leave.part === "FULL" ? i.leave.name : `${i.leave.name} · half day`, ...leaveSplit(i.leave) };
     return { ...base, status: "PENDING", label: "" };
   }
 
@@ -175,8 +182,7 @@ export function computeDay(i: DayInput): DayResult {
   const half = i.policy.halfDayHours * 60;
 
   if (i.leave?.part === "FULL") {
-    const paid = i.leave.paid;
-    return { ...base, ...punchFacts, late: false, status: "LEAVE", label: i.leave.name, leaveDays: paid ? 1 : 0, lopDays: paid ? 0 : 1 };
+    return { ...base, ...punchFacts, late: false, status: "LEAVE", label: i.leave.name, ...leaveSplit(i.leave) };
   }
 
   // Half-day leave: the other half needs half-day hours.
@@ -185,8 +191,8 @@ export function computeDay(i: DayInput): DayResult {
     const regularized = short && i.reg.absent;
     return {
       ...base, ...punchFacts, status: "LEAVE", label: `${i.leave.name} · half day`, regularized,
-      leaveDays: i.leave.paid ? 0.5 : 0,
-      lopDays: (i.leave.paid ? 0 : 0.5) + (short && !regularized ? 0.5 : 0),
+      leaveDays: leaveSplit(i.leave).leaveDays,
+      lopDays: leaveSplit(i.leave).lopDays + (short && !regularized ? 0.5 : 0),
     };
   }
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logoutAction } from "@/app/(auth)/actions";
+import { markNotificationsRead } from "@/app/(app)/notification-actions";
 import { Icon } from "@/components/Icon";
 import { fmtDL, initials } from "@/lib/format";
 import { PAGE_TITLES, type NavId } from "@/lib/nav";
@@ -181,9 +182,9 @@ export function Shell(props: ShellProps) {
               <Icon n={theme === "dark" ? "sun" : "moon"} s={17} />
             </button>
             <div className="menu-anchor" style={{ position: "relative" }}>
-              <button className="icon-btn" onClick={() => { setNotif(!notif); setMenu(false); }} aria-label={`Notifications (${notes.length})`} aria-expanded={notif}>
+              <button className="icon-btn" onClick={() => { if (!notif && props.unread > 0) void markNotificationsRead(); setNotif(!notif); setMenu(false); }} aria-label={`Notifications (${notes.length})`} aria-expanded={notif}>
                 <Icon n="bell" s={17} />
-                {notes.length > 0 && <span style={{ position: "absolute", top: 8, right: 9, width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", boxShadow: "0 0 0 2px var(--surface)" }}></span>}
+                {(props.unread > 0 || badges.approvals + badges.proofs > 0) && <span style={{ position: "absolute", top: 8, right: 9, width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", boxShadow: "0 0 0 2px var(--surface)" }}></span>}
               </button>
               {notif && (
                 <div className="menu notif">

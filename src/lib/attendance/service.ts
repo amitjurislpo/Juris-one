@@ -4,6 +4,7 @@ import { db } from "../db";
 import { dateToIso, isoToDate } from "../format";
 import { getSetting } from "../settings";
 import { addDays, atLocal, computeDay, workDateOf, type DayResult, type Policy, type Punch, type ShiftDef, type Status } from "./engine";
+import { paidFractions, workingDays } from "../leave/rules";
 
 /** Employees whose attendance is tracked: their role has `self` (Admin has none). */
 export const TRACKED: Prisma.EmployeeWhereInput = { role: { permissions: { some: { permissionKey: "self" } } } };
@@ -65,13 +66,16 @@ export async function attendanceFor(emps: AttEmployee[], from: string, to: strin
   const ids = emps.map((e) => e.id);
   const policy = await attendancePolicy();
 
-  const [holidays, leaves, regs, punches, locked] = await Promise.all([
-    db.holiday.findMany({ where: { date: { gte: isoToDate(from), lte: isoToDate(to) } } }),
+  const [leaves, regs, punches, locked] = await Promise.all([
     db.leaveRequest.findMany({ where: { employeeId: { in: ids }, status: "APPROVED", fromDate: { lte: isoToDate(to) }, toDate: { gte: isoToDate(from) } }, include: { type: true } }),
     db.regularizationRequest.findMany({ where: { employeeId: { in: ids }, status: "APPROVED", workDate: { gte: isoToDate(from), lte: isoToDate(to) } } }),
     db.punch.findMany({ where: { employeeId: { in: ids }, at: { gte: new Date(Date.parse(`${from}T00:00:00Z`) - 36 * 3600_000), lt: new Date(Date.parse(`${to}T00:00:00Z`) + 60 * 3600_000) } }, orderBy: { at: "asc" } }),
     db.attendanceDay.findMany({ where: { employeeId: { in: ids }, locked: true, workDate: { gte: isoToDate(from), lte: isoToDate(to) } } }),
   ]);
+  // Holidays across every leave range too: a leave's paid days are allocated from its first working day.
+  const hFrom = [from, ...leaves.map((l) => dateToIso(l.fromDate))].sort()[0];
+  const hTo = [to, ...leaves.map((l) => dateToIso(l.toDate))].sort().at(-1)!;
+  const holidays = await db.holiday.findMany({ where: { date: { gte: isoToDate(hFrom), lte: isoToDate(hTo) } } });
 
   const holidayFor = (date: string, region: "IN" | "US") => holidays.find((h) => dateToIso(h.date) === date && (h.region === "ALL" || h.region === region))?.name ?? null;
   const byEmp = new Map<string, Map<string, DayView["punches"]>>();
@@ -83,6 +87,16 @@ export async function attendanceFor(emps: AttEmployee[], from: string, to: strin
     const m = byEmp.get(e.id)!;
     if (!m.has(wd)) m.set(wd, []);
     m.get(wd)!.push({ at: p.at, kind: p.kind, source: p.source });
+  }
+
+  const fractions = new Map<string, Map<string, number>>(); // leave id → date → paid fraction
+  for (const l of leaves) {
+    const e = empById.get(l.employeeId)!;
+    const hol = new Map<string, string>();
+    for (const h of holidays) if (h.region === "ALL" || h.region === e.region) hol.set(dateToIso(h.date), h.name);
+    const { dates } = workingDays(dateToIso(l.fromDate), dateToIso(l.toDate), policy.weeklyOffs, hol);
+    const paidDays = l.type.paid ? Number(l.days) - Number(l.lopDays) : 0;
+    fractions.set(l.id, paidFractions(dates, l.part, paidDays));
   }
 
   for (const e of emps) {
@@ -103,7 +117,7 @@ export async function attendanceFor(emps: AttEmployee[], from: string, to: strin
       const r = computeDay({
         date: d, now, tz: e.tz, shift: e.shift, policy, doj: e.doj, exitDate: e.exit, trackingStart: policy.trackingStart,
         holiday: holidayFor(d, e.region),
-        leave: lv ? { code: lv.leaveType, name: lv.type.name, part: lv.part, paid: lv.type.paid } : null,
+        leave: lv ? { code: lv.leaveType, name: lv.type.name, part: lv.part, paidFraction: fractions.get(lv.id)?.get(d) ?? (lv.type.paid ? 1 : 0) } : null,
         punches: ps,
         reg: { absent: rs.some((x) => x.kind === "ABSENT" || x.kind === "MISSED_CHECKOUT"), lateWaived: rs.some((x) => x.kind === "LATE_CHECKIN") },
       });

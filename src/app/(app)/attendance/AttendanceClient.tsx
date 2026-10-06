@@ -87,13 +87,13 @@ export function AttendanceCalendar({ days, regs, initialSel, locked, monthLabel 
             {["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].map((w) => <span className="dow" key={w}>{w}</span>)}
             {cells.map((c, i) =>
               c ? (
-                <button key={c.date} type="button" className={`d ${c.future ? "none" : CLS[c.status] ?? "none"}${sel === c.date ? " sel" : ""}${c.today ? " today" : ""}`} style={{ animationDelay: `${i * 12}ms` }}
+                <button key={c.date} type="button" className={`d ${c.future && c.status !== "LEAVE" ? "none" : CLS[c.status] ?? "none"}${sel === c.date ? " sel" : ""}${c.today ? " today" : ""}`} style={{ animationDelay: `${i * 12}ms` }}
                   onClick={() => setSel(c.date)} aria-pressed={sel === c.date} aria-label={`${fmtDL(c.date)}, ${c.label || "no record"}${c.late ? ", late" : ""}`}>
                   <span style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
                     <b>{Number(c.date.slice(8))}</b>
                     {c.late && <span className="chip warn" style={{ height: 20, fontSize: 10, padding: "0 7px" }}>LATE</span>}
                   </span>
-                  <small>{c.future ? "" : c.label}</small>
+                  <small>{c.future && c.status !== "LEAVE" ? "" : c.label}</small>
                   {c.hours > 0 && <small className="num" style={{ color: "var(--text)" }}>{fmtH(c.hours)}</small>}
                 </button>
               ) : (
@@ -106,7 +106,7 @@ export function AttendanceCalendar({ days, regs, initialSel, locked, monthLabel 
           <span className="spot" aria-hidden="true"></span>
           <span className="eyebrow">Day detail</span>
           <h2 className="serif" style={{ fontSize: 30, margin: "10px 0 10px", fontWeight: 600 }}>{fmtDL(d.date)}</h2>
-          <span className={`chip ${CHIP[d.status] ?? "neutral"}`}>{d.future ? "Upcoming" : d.label || "No record yet"}</span>
+          <span className={`chip ${CHIP[d.status] ?? "neutral"}`}>{d.future && d.status !== "LEAVE" ? "Upcoming" : d.label || "No record yet"}</span>
           <div style={{ marginTop: 16 }}>
             <div className="kv"><span className="muted">First check-in</span><b className="num">{d.firstIn ?? "—"}</b></div>
             <div className="kv"><span className="muted">Last check-out</span><b className="num">{d.lastOut ?? (d.live && d.firstIn ? "Working now" : "—")}</b></div>
