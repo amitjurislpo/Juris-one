@@ -52,6 +52,7 @@ You can sign in with either the employee ID or the official email.
 | `npm run db:deploy` | Apply pending migrations (CI / prod) |
 | `npm run db:seed` | Idempotent seed. `SEED_DEMO=false` seeds only the core data. |
 | `npm run db:reset` | Drop, re-migrate and re-seed (dev only) |
+| `npm run jobs` | Run the scheduled jobs once (absence marking, monthly lock, status changes) |
 
 ## How it is put together
 
@@ -113,6 +114,37 @@ src/components/shell/       sidebar, header, notifications, ⌘K palette, theme,
 - Calendar dates use the `date` type.
 - Each employee has an IANA time zone, and conversion happens only for display.
 
+### Attendance model
+
+**The engine.** `src/lib/attendance/engine.ts` contains pure, unit-tested functions. They decide each day's status from punches, the shift, holidays, leave, regularizations, the policy and the current time.
+
+**Work dates.**
+- A day is a *work date* in the employee's own time zone.
+- A night shift belongs to the date it started on.
+- Each punch belongs to the shift window that contains it. A window opens 4 hours before shift start and lasts 24 hours.
+
+**One source for every screen.** `src/lib/attendance/service.ts` loads the data and runs the engine. Home, My attendance, My team, the register and payroll all use it.
+
+**Locking.** When a month locks, its days are frozen into `attendance_days` with `locked = true`. From then on, every screen and payroll reads the frozen rows.
+
+**Go-live date.** Days before the go-live date (Policies → Attendance, default 1 Apr 2026) show as *Not tracked*.
+
+### Scheduled jobs
+
+`src/lib/jobs.ts` contains three jobs:
+
+| Job | What it does |
+|---|---|
+| Absence marking | Once shift end + buffer has passed, a working day with no check-in and no leave is recorded as Absent (LOP). |
+| Monthly lock | Attendance freezes on the 1st of the next month at 10:00 IST (configurable). |
+| Status | Employees move from Onboarding to Probation to Active (probation months are configurable). |
+
+**How they run:**
+- **In the app (default):** with `JOBS_ENABLED=true` they run every 10 minutes, started by `src/instrumentation.ts`.
+- **From cron:** set `JOBS_ENABLED=false` and run `npm run jobs`.
+
+**Safe to repeat.** A Postgres advisory lock stops two app instances from running the jobs at the same time. The `job_runs` table records each month that has been locked, so running a job again doesn't redo work.
+
 ### Email
 
 **Without SMTP (dev):** leave `SMTP_HOST` empty. Emails are written to the `email_outbox` table and printed in the dev-server log, so you can copy invite and reset links from there.
@@ -131,7 +163,8 @@ To add the licensed font:
 
 - **Phase 0 (done):** setup, schema, seed, app shell, and login / logout / invite / reset.
 - **Phase 1 (done):** roles & permissions, policies matrix, departments, people (3-step add/edit, profile drawer, access toggle, mark exited, CSV export), directory and My team.
-- **Phases 2 to 6:** pages not built yet show "Arrives in phase N".
+- **Phase 2 (done):** check-in/out, attendance engine (shifts, night shifts, late marks, half days, absences), My attendance with regularization requests, holiday calendar, attendance register (time zones, daily log, monthly grid, CSV export), scheduled jobs, editable attendance policy.
+- **Phases 3 to 6:** pages not built yet show "Arrives in phase N".
 
 ### Table conventions
 

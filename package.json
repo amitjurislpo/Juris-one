@@ -16,7 +16,8 @@
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
     "db:generate": "prisma generate",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "jobs": "tsx --conditions=react-server scripts/run-jobs.ts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

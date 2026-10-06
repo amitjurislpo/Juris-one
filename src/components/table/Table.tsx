@@ -65,14 +65,14 @@ export function SegFilter({ name, options, dflt, label }: { name: string; option
 }
 
 /** Click-to-sort column header (↑ / ↓ / ↕). */
-export function SortTh({ k, children, right, dflt, dfltDir = "asc" }: { k: string; children: React.ReactNode; right?: boolean; dflt: string; dfltDir?: "asc" | "desc" }) {
+export function SortTh({ k, children, right, dflt, dfltDir = "asc", className }: { k: string; children: React.ReactNode; right?: boolean; dflt: string; dfltDir?: "asc" | "desc"; className?: string }) {
   const { get, set } = useQuery();
   const sort = get("sort", dflt);
   const dir = get("dir", dfltDir);
   const on = sort === k;
   const next = on ? (dir === "asc" ? "desc" : "asc") : "asc";
   return (
-    <th className={right ? "r" : undefined} aria-sort={on ? (dir === "asc" ? "ascending" : "descending") : "none"}>
+    <th className={[right && "r", className].filter(Boolean).join(" ") || undefined} aria-sort={on ? (dir === "asc" ? "ascending" : "descending") : "none"}>
       <button className="sh" type="button" onClick={() => set({ sort: k, dir: next })}>
         {children}
         <i>{on ? (dir === "asc" ? "↑" : "↓") : "↕"}</i>

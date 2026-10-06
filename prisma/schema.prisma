@@ -52,6 +52,7 @@ enum DayStatus {
   BEFORE_JOINING
   AFTER_EXIT
   PENDING
+  NOT_TRACKED // before the attendance go-live date
 }
 
 enum RegularizationKind {
@@ -367,6 +368,10 @@ model AttendanceDay {
   late          Boolean   @default(false)
   lateWaived    Boolean   @default(false) @map("late_waived")
   regularized   Boolean   @default(false)
+  missedCheckout Boolean  @default(false) @map("missed_checkout")
+  lopDays       Decimal   @default(0) @map("lop_days") @db.Decimal(3, 1)
+  leaveDays     Decimal   @default(0) @map("leave_days") @db.Decimal(3, 1)
+  label         String?
   locked        Boolean   @default(false)
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -653,6 +658,19 @@ model AuditLog {
   @@index([entity, entityId])
   @@index([actorId])
   @@map("audit_log")
+}
+
+/// One row per job execution key (e.g. attendance.lock:2026-09) — makes scheduled jobs idempotent.
+model JobRun {
+  id     String   @id @default(uuid()) @db.Uuid
+  name   String
+  key    String
+  ranAt  DateTime @default(now()) @map("ran_at") @db.Timestamptz(6)
+  ok     Boolean  @default(true)
+  detail Json?
+
+  @@unique([name, key])
+  @@map("job_runs")
 }
 
 model Setting {

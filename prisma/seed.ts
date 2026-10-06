@@ -11,6 +11,7 @@ import { PrismaClient, type EmployeeStatus, type HolidayRegion, type Region, typ
 import { encryptPII, last4 } from "../src/lib/crypto";
 import { hashPassword } from "../src/lib/password";
 import { DEFAULT_SETTINGS } from "../src/lib/settings-defaults";
+import { addDays, atLocal, dowOf } from "../src/lib/attendance/engine";
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
 const d = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
@@ -238,6 +239,51 @@ async function setPassword(employeeId: string, password: string | undefined, sup
   });
 }
 
+// ───────────────────────── demo attendance ─────────────────────────
+/** Prototype absences (no punches that day) and late marks. */
+const ABSENT: Record<string, string[]> = {
+  "JC-074": ["2026-09-22"], "JC-049": ["2026-08-19", "2026-09-10", "2026-09-11"], "JC-012": ["2026-09-25"],
+  "JC-058": ["2026-09-03", "2026-09-04", "2026-09-08"], "JC-090": ["2026-09-16"],
+};
+const LATE: Record<string, string[]> = { "JC-074": ["2026-09-17"], "JC-072": ["2026-09-09", "2026-09-23"], "JC-049": ["2026-09-15"] };
+
+/** Deterministic check-ins/outs from the go-live date up to now, once (tracked in job_runs). */
+async function seedPunches(codeToId: Record<string, string>) {
+  if (await db.jobRun.findUnique({ where: { name_key: { name: "seed", key: "punches" } } })) return;
+  const start = "2026-04-01";
+  const now = new Date();
+  const emps = await db.employee.findMany({
+    where: { code: { in: Object.keys(codeToId) }, role: { permissions: { some: { permissionKey: "self" } } } },
+    include: { shift: true },
+  });
+  const holidays = await db.holiday.findMany();
+  const hol = (date: string, region: string) => holidays.some((h) => h.date.toISOString().startsWith(date) && (h.region === "ALL" || h.region === region));
+  const hash = (s: string) => { let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 100003; return h; };
+  const rows: { employeeId: string; at: Date; kind: "IN" | "OUT"; source: "WEB" }[] = [];
+  for (const e of emps) {
+    if (!e.shift) continue;
+    const doj = e.dateOfJoining.toISOString().slice(0, 10);
+    const exit = e.exitDate?.toISOString().slice(0, 10);
+    for (let day = doj > start ? doj : start; ; day = addDays(day, 1)) {
+      if (exit && day > exit) break;
+      const inAtBase = atLocal(day, e.shift.startLocal, e.timeZone);
+      if (inAtBase > now) break;
+      if ([0, 6].includes(dowOf(day)) || hol(day, e.region) || ABSENT[e.code]?.includes(day)) continue;
+      const h = hash(e.code + day);
+      const late = LATE[e.code]?.includes(day);
+      const offset = late ? 18 + (h % 15) : (h % 23) - 10; // minutes vs shift start
+      const inAt = new Date(inAtBase.getTime() + offset * 60_000);
+      const worked = (8 * 60 + 36) + (h % 49); // 8h36m – 9h24m
+      const outAt = new Date(inAt.getTime() + worked * 60_000);
+      if (outAt > now) break; // only completed shifts — today stays free to check in
+      rows.push({ employeeId: e.id, at: inAt, kind: "IN", source: "WEB" }, { employeeId: e.id, at: outAt, kind: "OUT", source: "WEB" });
+    }
+  }
+  await db.punch.createMany({ data: rows });
+  await db.jobRun.create({ data: { name: "seed", key: "punches", detail: { punches: rows.length } } });
+  console.log("Demo punches: " + rows.length);
+}
+
 async function main() {
   const roleIds = await seedRoles();
   const shiftIds = await seedShifts();
@@ -340,6 +386,8 @@ async function main() {
         });
       }
     }
+
+    await seedPunches(codeToId);
   }
 
   const counts = await Promise.all([db.employee.count(), db.role.count(), db.department.count(), db.holiday.count(), db.salaryStructure.count()]);

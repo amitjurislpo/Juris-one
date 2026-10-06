@@ -8,6 +8,7 @@ import { dateToIso, fmtDL, MON3 } from "@/lib/format";
 import { pick } from "@/lib/list";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getSetting } from "@/lib/settings";
+import { AttendancePolicyForm } from "./AttendancePolicyForm";
 
 export const metadata: Metadata = { title: "Policies" };
 
@@ -113,11 +114,14 @@ async function HolidayList() {
 }
 
 async function AttendancePolicy() {
-  const [p, shifts] = await Promise.all([getSetting("attendance.policy"), db.shift.findMany({ orderBy: { code: "asc" } })]);
+  const [p, shifts, lockedRuns] = await Promise.all([getSetting("attendance.policy"), db.shift.findMany({ orderBy: { code: "asc" } }), db.jobRun.count({ where: { name: "attendance.lock" } })]);
+  const grc = shifts[0]?.graceMinutes ?? p.graceMinutes;
   const t = (hm: string) => { const [h, m] = hm.split(":").map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
   const grace = (hm: string, g: number) => { const [h, m] = hm.split(":").map(Number); const x = h * 60 + m + g; return t(`${Math.floor(x / 60) % 24}:${x % 60}`); };
   const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   return (
+    <>
+    <AttendancePolicyForm locked={lockedRuns > 0} initial={{ fullDayHours: p.fullDayHours, halfDayHours: p.halfDayHours, graceMinutes: grc, lateMarksPerHalfDayLop: p.lateMarksPerHalfDayLop, weeklyOffs: p.weeklyOffs, absenceJobBufferMinutes: p.absenceJobBufferMinutes, lockDayOfNextMonth: p.lockDayOfNextMonth, lockTime: p.lockTime, trackingStartDate: p.trackingStartDate }} />
     <section className="card pad enter">
       {shifts.map((s) => (
         <div className="kv" key={s.id}><span className="muted">{s.name} shift</span><b>{t(s.startLocal)} – {t(s.endLocal)}{s.region === "US" ? " local" : " IST"} · grace till {grace(s.startLocal, s.graceMinutes)}</b></div>
@@ -131,5 +135,6 @@ async function AttendancePolicy() {
       <div className="kv"><span className="muted">Admin accounts</span><b>No attendance or leave tracking</b></div>
       <div className="kv"><span className="muted">Salary visibility</span><b>Finance &amp; Admin; employees see their own payslip</b></div>
     </section>
+    </>
   );
 }

@@ -21,7 +21,7 @@ export default async function TeamPage(props: PageProps<"/team">) {
     where: { reportingManagerId: u.id, status: { not: "EXITED" } },
     select: { id: true, code: true, fullName: true, designation: true, timeZone: true, region: true, shift: true },
   });
-  const status = await todayStatuses(team);
+  const status = await todayStatuses(team.map((m) => m.id));
 
   // Who's away · this week (Mon–Fri) in the manager's zone
   const today = todayIn(u.timeZone);

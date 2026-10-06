@@ -7,7 +7,8 @@ export const ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL || "admin@jurislpo.com"
 export const ADMIN_PW = process.env.SUPER_ADMIN_PASSWORD || "admin@jurislpo";
 
 export async function login(page: Page, id: string, pw = DEMO_PW) {
-  await page.goto("/login");
+  // wait for hydration — on a cold dev server a click can otherwise beat React to the form
+  await page.goto("/login", { waitUntil: "networkidle" });
   await page.getByLabel("Employee ID or email").fill(id);
   await page.getByLabel("Password", { exact: true }).fill(pw);
   await page.getByRole("button", { name: "Sign in" }).click();
