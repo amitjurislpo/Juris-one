@@ -284,6 +284,21 @@ async function seedPunches(codeToId: Record<string, string>) {
   console.log("Demo punches: " + rows.length);
 }
 
+/**
+ * Closed payroll for April–August 2026 (the prototype shows earlier months closed and September
+ * in review). Closing runs the real payroll + snapshot + PDF code; nobody is notified.
+ */
+async function seedPayroll(codeToId: Record<string, string>) {
+  const { closeRun } = await import("../src/lib/payroll/close");
+  for (const ym of ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08"]) {
+    const run = await db.payrollRun.findUnique({ where: { month: ym } });
+    if (run?.status === "CLOSED") continue;
+    const next = new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5)), 1)).toISOString().slice(0, 10);
+    const r = await closeRun(ym, codeToId["JC-004"], { notify: false, payDate: next });
+    console.log(`Payroll ${ym} closed — ${r.payslips} payslips`);
+  }
+}
+
 /** Prototype leave requests and regularizations (once). Balances come from the accrual job. */
 async function seedRequests(codeToId: Record<string, string>) {
   if (await db.jobRun.findUnique({ where: { name_key: { name: "seed", key: "requests" } } })) return;
@@ -432,7 +447,11 @@ async function main() {
 
     await seedPunches(codeToId);
     await seedRequests(codeToId);
+    await seedPayroll(codeToId);
   }
+  // leave balances: credit every month so far (idempotent)
+  const { jobLeaveAccrual } = await import("../src/lib/jobs");
+  await jobLeaveAccrual();
 
   const counts = await Promise.all([db.employee.count(), db.role.count(), db.department.count(), db.holiday.count(), db.salaryStructure.count()]);
   console.log(`Seed complete — employees ${counts[0]}, roles ${counts[1]}, departments ${counts[2]}, holidays ${counts[3]}, structures ${counts[4]}`);

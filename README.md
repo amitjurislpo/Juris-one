@@ -162,6 +162,34 @@ Approval is blocked once the month is locked. After that, Finance adjusts LOP in
 
 **Year end.** Casual leave lapses. Earned leave carries forward up to 30 days.
 
+### Payroll and tax model
+
+**Pure engines.** Payroll and tax maths are pure, unit-tested functions:
+- `src/lib/payroll/engine.ts` works in integer paise.
+- `src/lib/tax/engine.ts` works in rupees, because slabs, rebates and caps are stored per FY in `tax_years` / `tax_sections`.
+
+**Golden test.** JC-074 for September 2026 gets 22/30 paid days and ₹14,926 monthly TDS. It's covered by the unit tests and checked again through the live service in the e2e tests.
+
+**Salary structures.** They're effective-dated and history is only added to. Payroll uses the structure in force on the last day of the month. A new revision can't start inside an already-closed payroll month; differences go into the next month as arrears.
+
+**A payroll run.** Attendance supplies the LOP: absences, unpaid leave and ½ day per 3 late marks. While the run is open, Finance (`pay.view`) can override LOP and add bonus/arrears, other deductions and a note. Each edit is audited.
+
+**TDS.** The annual tax is projected from four parts:
+- closed payslips this FY
+- earlier months with no payslip, estimated from the structure then in force
+- this month
+- the current structure × the remaining months
+
+Previous-employer income is added, then the standard deduction and any approved old-regime deductions are subtracted. TDS already paid is taken off, and the rest is spread over the remaining months.
+
+**Closing.** *Approve & close* needs `pay.close`, and attendance must be locked. Closing snapshots every payslip as immutable JSON plus a PDF in `storage/payslips/<month>/`. Later changes never touch a closed payslip.
+
+**Exports.**
+- Payroll register, PT summary and PF ECR.
+- Bank transfer file: decrypts account numbers, so it needs `pay.view`.
+- TDS summary: decrypts PANs, so it needs `pay.view` and `tax.view`.
+- Every export is audited.
+
 ### Scheduled jobs
 
 `src/lib/jobs.ts` contains three jobs:
@@ -201,7 +229,8 @@ To add the licensed font:
 - **Phase 1 (done):** roles & permissions, policies matrix, departments, people (3-step add/edit, profile drawer, access toggle, mark exited, CSV export), directory and My team.
 - **Phase 2 (done):** check-in/out, attendance engine (shifts, night shifts, late marks, half days, absences), My attendance with regularization requests, holiday calendar, attendance register (time zones, daily log, monthly grid, CSV export), scheduled jobs, editable attendance policy.
 - **Phase 3 (done):** leave ledger and accrual, apply leave (range picker, holidays skipped, LOP when short), cancel, regularization decisions, Approvals page (first decision wins), in-app notifications and decision emails, comp-off expiry and year-end jobs.
-- **Phases 4 to 6:** pages not built yet show "Arrives in phase N".
+- **Phase 4 (done):** salary structures (effective-dated, Split helper, history), payroll run (attendance LOP, Finance edits, approve & close with immutable snapshots), payslips page + PDF with logo, payroll exports (bank, PF ECR, PT, TDS, register). Demo payroll closed for Apr–Aug 2026; September is open for review.
+- **Phases 5 to 6:** pages not built yet show "Arrives in phase N".
 
 ### Table conventions
 
