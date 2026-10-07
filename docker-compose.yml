@@ -1,22 +1,42 @@
+# Credentials come from .env (POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB) — never hard-code them here.
 services:
   db:
     image: postgres:16-alpine
     container_name: jurisone-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: jurisone
-      POSTGRES_PASSWORD: jurisone_dev_pw
-      POSTGRES_DB: jurisone
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       TZ: UTC
     ports:
       - "5436:5432"
     volumes:
       - jurisone_pg:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U jurisone -d jurisone"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Spring Boot API on :8080. The Next.js app (:3005) proxies /api/* to it (BACKEND_URL).
+  backend:
+    build: ./backend
+    container_name: jurisone-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      FRONTEND_ORIGIN: ${APP_URL:-http://localhost:3005}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./storage:/app/data/storage   # payslip PDFs and proofs, shared with the Next.js app during the migration
 
 volumes:
   jurisone_pg:
