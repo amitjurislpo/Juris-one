@@ -22,7 +22,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * Empty database: Flyway applies V1__baseline.sql, then Hibernate validates every entity
  * against it (ddl-auto=validate). Representative rows round-trip through JPA.
  */
-@SpringBootTest
+@SpringBootTest(properties = "JOBS_ENABLED=false")
 @Transactional
 class FreshDatabaseSchemaTest {
 

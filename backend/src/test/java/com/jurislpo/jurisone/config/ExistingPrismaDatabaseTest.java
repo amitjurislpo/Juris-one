@@ -40,7 +40,7 @@ class ExistingPrismaDatabaseTest {
     static ConfigurableApplicationContext start(PostgreSQLContainer<?> pg) {
         return new SpringApplicationBuilder(JurisOneApplication.class).run(
                 "--spring.datasource.url=" + pg.getJdbcUrl(), "--spring.datasource.username=" + pg.getUsername(),
-                "--spring.datasource.password=" + pg.getPassword(), "--server.port=0");
+                "--spring.datasource.password=" + pg.getPassword(), "--server.port=0", "--JOBS_ENABLED=false");
     }
 
     @Test

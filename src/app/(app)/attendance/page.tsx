@@ -2,13 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Icon } from "@/components/Icon";
 import { ComingInPhase, PageHeader } from "@/components/PageHeader";
-import { addDays, summarize } from "@/lib/attendance/engine";
-import { attendanceFor, attendancePolicy, currentWorkDate, fmtTime, isMonthLocked, loadAttEmployees } from "@/lib/attendance/service";
 import { requirePage } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { dateToIso, fmtDL, isoToDate, MON3, MONTHS } from "@/lib/format";
-import { upcomingHolidays } from "@/lib/holidays";
-import { str } from "@/lib/list";
+import { apiData, qs } from "@/lib/backend";
+import { fmtDL, MON3, MONTHS } from "@/lib/format";
 import { AttendanceCalendar, type CalDay, type RegView } from "./AttendanceClient";
 
 export const metadata: Metadata = { title: "My attendance" };
@@ -16,37 +12,15 @@ export const metadata: Metadata = { title: "My attendance" };
 const shiftYm = (ym: string, n: number) => new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1 + n, 1)).toISOString().slice(0, 7);
 
 export default async function AttendancePage(props: PageProps<"/attendance">) {
-  const u = await requirePage("attendance");
-  const sp = await props.searchParams;
-  const [emp] = await loadAttEmployees({ id: u.id });
-  if (!emp) return <div className="col"><PageHeader eyebrow="Attendance" title="My" em="attendance" /><ComingInPhase phase={2} what="Attendance isn't tracked for your account." /></div>;
+  await requirePage("attendance");
+  const d = await apiData<{
+    tracked: boolean; ym: string; minYm: string; wd: string; locked: boolean; initialSel: string;
+    summary: { present: number; absent: number; leave: number; holidays: number; weeklyOffs: number; workedMinutes: number; lateMarks: number; lateLopDays: number };
+    days: CalDay[]; regs: RegView[]; holidays: { id: string; date: string; name: string }[];
+  }>(`/api/attendance/me${qs(await props.searchParams)}`);
+  if (!d.tracked) return <div className="col"><PageHeader eyebrow="Attendance" title="My" em="attendance" /><ComingInPhase phase={2} what="Attendance isn't tracked for your account." /></div>;
 
-  const now = new Date();
-  const policy = await attendancePolicy();
-  const wd = currentWorkDate(emp, now);
-  const minYm = [policy.trackingStart, emp.doj].sort().at(-1)!.slice(0, 7);
-  let ym = str(sp, "m", wd.slice(0, 7));
-  if (!/^\d{4}-\d{2}$/.test(ym) || ym > wd.slice(0, 7)) ym = wd.slice(0, 7);
-  if (ym < minYm) ym = minYm;
-  const first = `${ym}-01`;
-  const last = addDays(`${shiftYm(ym, 1)}-01`, -1);
-
-  const [days, regs, hols] = await Promise.all([
-    attendanceFor([emp], first, last, now).then((m) => m.get(emp.id)!),
-    db.regularizationRequest.findMany({ where: { employeeId: u.id, workDate: { gte: isoToDate(first), lte: isoToDate(last) } }, include: { decidedBy: { select: { fullName: true } } }, orderBy: { createdAt: "desc" } }),
-    upcomingHolidays(emp.region, wd, 6),
-  ]);
-  const s = summarize(days.filter((d) => !d.future), policy);
-  const locked = isMonthLocked(ym, policy, now);
-
-  const cal: CalDay[] = days.map((d) => ({
-    date: d.date, status: d.status, label: d.label, late: d.late, lateWaived: d.lateWaived, hours: d.workedMinutes / 60, today: d.date === wd, future: d.future,
-    firstIn: d.firstIn ? fmtTime(d.firstIn, emp.tz) : null, lastOut: d.lastOut ? fmtTime(d.lastOut, emp.tz) : null, live: d.live,
-    missedCheckout: d.missedCheckout || (d.punches.length > 0 && !d.live && !d.lastOut), offDayWork: d.offDayWork, lopDays: d.lopDays, leaveDays: d.leaveDays, regularized: d.regularized,
-  }));
-  const regView: RegView[] = regs.map((r) => ({ id: r.id, date: dateToIso(r.workDate), kind: r.kind, status: r.status, by: r.decidedBy?.fullName ?? null, reason: r.reason }));
-  const sel = str(sp, "d");
-  const initialSel = sel.startsWith(ym) ? sel : wd.startsWith(ym) ? wd : (days.findLast((d) => !d.future)?.date ?? first);
+  const { ym, minYm, wd, locked, initialSel, summary: s, days: cal, regs: regView, holidays: hols } = d;
   const prev = shiftYm(ym, -1), next = shiftYm(ym, 1);
 
   return (

@@ -10,7 +10,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * Base for API tests: one Postgres 16 container shared by every subclass (the Spring context is cached too),
  * schema from Flyway V1. Tests create the rows they need.
  */
-@SpringBootTest(properties = {"PII_ENCRYPTION_KEY=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=", "SMTP_HOST=", "APP_URL=http://localhost:3005"})
+@SpringBootTest(properties = {"JOBS_ENABLED=false", "PII_ENCRYPTION_KEY=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=", "SMTP_HOST=", "APP_URL=http://localhost:3005"})
 @AutoConfigureMockMvc
 public abstract class IntegrationTest {
 

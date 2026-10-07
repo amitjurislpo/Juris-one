@@ -27,8 +27,9 @@ spring:
 
 jurisone:
   frontend-origin: ${FRONTEND_ORIGIN:${APP_URL:http://localhost:3005}}
-  # Scheduled jobs stay in the Next.js app until the attendance/leave modules move here.
-  jobs-enabled: ${BACKEND_JOBS_ENABLED:false}
+  # Absence marking, monthly lock, status changes, leave accrual/expiry/year end: every 10 minutes in this process.
+  # "false" = run them from cron instead.
+  jobs-enabled: ${JOBS_ENABLED:true}
 
 management:
   endpoints:
