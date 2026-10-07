@@ -18,17 +18,18 @@ export async function taxConfig(fy: string) {
   return { NEW: cfg("NEW"), OLD: cfg("OLD"), caps, labels };
 }
 
-/** Declared amounts (₹) — approved only, unless `includePending` (for "if everything is approved"). */
-export async function declarations(employeeId: string, fy: string, includePending = false): Promise<Declared & { pendingCount: number }> {
+export type DeclMode = "approved" | "submitted" | "all";
+
+/** Declared amounts (₹). TDS uses "approved" only; "submitted" adds pending (Finance preview); "all" adds drafts (employee comparison). */
+export async function declarations(employeeId: string, fy: string, mode: DeclMode = "approved"): Promise<Declared & { pendingCount: number }> {
   const [items, profile] = await Promise.all([
     db.declarationItem.findMany({ where: { employeeId, fy } }),
     db.taxProfile.findUnique({ where: { employeeId_fy: { employeeId, fy } } }),
   ]);
-  const d: Declared = { ...NO_DECLARATIONS, metro: profile?.metro ?? false };
+  const d: Declared = { ...NO_DECLARATIONS, metro: profile?.metro ?? false, parentsSenior: profile?.parentsSenior ?? false };
   for (const it of items) {
-    const ok = it.status === "APPROVED" || (includePending && it.status === "PENDING");
+    const ok = it.status === "APPROVED" || (mode !== "approved" && it.status === "PENDING") || (mode === "all" && it.status === "DRAFT");
     if (!ok) continue;
-    if (it.itemKey === "parentsSenior") { d.parentsSenior = Number(it.amount) > 0; continue; }
     if (it.itemKey in d && it.itemKey !== "metro") (d as unknown as Record<string, number>)[it.itemKey] = r(it.amount);
   }
   return { ...d, pendingCount: items.filter((i) => i.status === "PENDING").length };
@@ -51,6 +52,7 @@ export interface TaxProjection {
   newRegime: TaxResult;
   oldRegime: TaxResult;
   monthly: number; // ₹ TDS this month
+  pfAnnual: number; // ₹ employee PF projected for the FY (counts under 80C)
   regimeOverridden: boolean;
 }
 
@@ -59,14 +61,14 @@ export interface TaxProjection {
  * structure × remaining months + previous employer income − standard deduction − (old) deductions.
  * Monthly TDS = (annual tax − TDS already deducted this FY) ÷ remaining months incl. this one.
  */
-export async function projectTax(employeeId: string, ym: string, month: MonthFigures, structureGross: number, structureBasic: number, structureHra: number, opts: { includePending?: boolean; regime?: "NEW" | "OLD" } = {}): Promise<TaxProjection> {
+export async function projectTax(employeeId: string, ym: string, month: MonthFigures, structureGross: number, structureBasic: number, structureHra: number, opts: { decl?: DeclMode; regime?: "NEW" | "OLD" } = {}): Promise<TaxProjection> {
   const { fy, index, remainingInclCurrent } = fyOf(ym);
   const fyStartYm = `${fy.slice(0, 4)}-04`;
   const [cfg, profile, prior, dec, emp, structures] = await Promise.all([
     taxConfig(fy),
     db.taxProfile.findUnique({ where: { employeeId_fy: { employeeId, fy } } }),
     db.payslip.findMany({ where: { employeeId, run: { status: "CLOSED", month: { gte: fyStartYm, lt: ym } } }, select: { snapshot: true, run: { select: { month: true } } } }),
-    declarations(employeeId, fy, opts.includePending),
+    declarations(employeeId, fy, opts.decl),
     db.employee.findUniqueOrThrow({ where: { id: employeeId }, select: { dateOfJoining: true, exitDate: true } }),
     db.salaryStructure.findMany({ where: { employeeId }, orderBy: { effectiveFrom: "asc" } }),
   ]);
@@ -109,6 +111,6 @@ export async function projectTax(employeeId: string, ym: string, month: MonthFig
   return {
     fy, regime, monthsLeft: remainingInclCurrent, jurisIncome: r(grossAnnual),
     jurisLabel: `${snaps.length ? "closed payslips + " : ""}${est.gross ? "estimated earlier months + " : ""}this month + ${after} month${after === 1 ? "" : "s"} projected`,
-    prevIncome, prevTds, jurisTdsSoFar: r(jurisTdsSoFar), income, deductions, current, newRegime, oldRegime, monthly, regimeOverridden: !!profile?.regimeOverridden,
+    prevIncome, prevTds, jurisTdsSoFar: r(jurisTdsSoFar), income, deductions, current, newRegime, oldRegime, monthly, pfAnnual: Math.round(r(pfAnnual)), regimeOverridden: !!profile?.regimeOverridden,
   };
 }

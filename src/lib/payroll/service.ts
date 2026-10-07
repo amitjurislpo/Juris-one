@@ -4,7 +4,7 @@ import { attendanceFor, attendancePolicy, isMonthLocked, loadAttEmployees } from
 import { db } from "../db";
 import { dateToIso, isoToDate } from "../format";
 import { getSetting } from "../settings";
-import { projectTax } from "../tax/service";
+import { projectTax, type TaxProjection } from "../tax/service";
 import { computePay, daysInMonth, eligibleDays, grossOf, rupeesInWords, type PayResult, type Structure } from "./engine";
 
 
@@ -32,6 +32,7 @@ export interface PayRow {
   holidays: number;
   present: number;
   annualTax: number; // ₹
+  tax: TaxProjection;
 }
 
 export interface PayslipSnapshot {
@@ -57,21 +58,21 @@ export interface PayslipSnapshot {
 }
 
 /** India employees on payroll that month (structure on the last day, employed some day of it). */
-async function payrollEmployees(ym: string) {
+async function payrollEmployees(ym: string, ids?: string[]) {
   const last = lastDay(ym);
   return db.employee.findMany({
-    where: { region: "IN", dateOfJoining: { lte: isoToDate(last) }, OR: [{ exitDate: null }, { exitDate: { gte: isoToDate(`${ym}-01`) } }], salaryStructures: { some: { effectiveFrom: { lte: isoToDate(last) } } } },
+    where: { ...(ids ? { id: { in: ids } } : {}), region: "IN", dateOfJoining: { lte: isoToDate(last) }, OR: [{ exitDate: null }, { exitDate: { gte: isoToDate(`${ym}-01`) } }], salaryStructures: { some: { effectiveFrom: { lte: isoToDate(last) } } } },
     include: { department: { select: { name: true } } },
     orderBy: { fullName: "asc" },
   });
 }
 
-/** Live computation for an open run. */
-export async function computeRun(ym: string): Promise<PayRow[]> {
+/** Live computation for an open run (optionally for some employees only). */
+export async function computeRun(ym: string, ids?: string[]): Promise<PayRow[]> {
   const run = await db.payrollRun.findUnique({ where: { month: ym }, include: { adjustments: true } });
   const pay = await getSetting("payroll.policy");
   const policy = await attendancePolicy();
-  const emps = await payrollEmployees(ym);
+  const emps = await payrollEmployees(ym, ids);
   const att = await loadAttEmployees({ id: { in: emps.map((e) => e.id) } });
   const first = `${ym}-01`, last = lastDay(ym);
   const days = await attendanceFor(att, first, last, new Date(Math.max(Date.now(), Date.parse(`${last}T23:59:59Z`) + 2 * 86400_000)));
@@ -102,7 +103,7 @@ export async function computeRun(ym: string): Promise<PayRow[]> {
     rows.push({
       employeeId: e.id, code: e.code, name: e.fullName, designation: e.designation, department: e.department?.name ?? "—", doj, regime: tax.regime,
       structure, pay: result, attendanceLop, adjusted: !!adj && (adj.lopDays != null || adj.bonus > 0 || adj.otherDeduction > 0), note: adj?.note ?? null,
-      weeklyOffs: wo, holidays: hol, present: Math.max(0, elig - wo - hol - result.lopDays), annualTax: tax.current.total,
+      weeklyOffs: wo, holidays: hol, present: Math.max(0, elig - wo - hol - result.lopDays), annualTax: tax.current.total, tax,
     });
   }
   return rows;

@@ -591,6 +591,7 @@ model TaxProfile {
   regime             TaxRegime @default(NEW)
   regimeOverridden   Boolean   @default(false) @map("regime_overridden")
   metro              Boolean   @default(false)
+  parentsSenior      Boolean   @default(false) @map("parents_senior") // 80D parents cap ₹50k instead of ₹25k
   prevEmployerIncome BigInt    @default(0) @map("prev_employer_income") // paise
   prevEmployerTds    BigInt    @default(0) @map("prev_employer_tds") // paise
   landlordPan        String?   @map("landlord_pan")

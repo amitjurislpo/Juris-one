@@ -86,7 +86,8 @@ test.describe("payroll", () => {
     await page.goto("/payroll");
     await page.getByRole("button", { name: "Approve & close" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Approve & close" }).click();
-    await expect(toast(page)).toContainText("September 2026 payroll closed — 11 payslips published");
+    // closing renders a PDF per payslip — slow on a busy dev server
+    await expect(toast(page)).toContainText("September 2026 payroll closed — 11 payslips published", { timeout: 30_000 });
     await expect(page.getByRole("button", { name: "Closed ✓" })).toBeVisible();
     await expect(page.locator("tbody tr").first()).toContainText("Locked");
     const [{ n }] = await sql<{ n: string }>(`SELECT count(*)::text n FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE r.month = $1`, [SEP]);

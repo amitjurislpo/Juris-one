@@ -299,6 +299,22 @@ async function seedPayroll(codeToId: Record<string, string>) {
   }
 }
 
+/** Demo declarations name a proof file — write a small PDF for each so Finance can open it. */
+async function seedProofFiles() {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const items = await db.declarationItem.findMany({ where: { proofName: { not: null }, proofPath: null } });
+  for (const it of items) {
+    const dir = path.resolve(process.env.UPLOAD_DIR || "./storage", "proofs", it.employeeId);
+    await mkdir(dir, { recursive: true });
+    const abs = path.join(dir, `${it.itemKey}-demo.pdf`);
+    const body = `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\n% Demo proof: ${it.itemKey}, ${Number(it.amount) / 100} INR\ntrailer<</Root 1 0 R>>\n%%EOF\n`;
+    await writeFile(abs, body);
+    await db.declarationItem.update({ where: { id: it.id }, data: { proofPath: path.relative(process.cwd(), abs) } });
+  }
+  if (items.length) console.log(`Demo proof files: ${items.length}`);
+}
+
 /** Prototype leave requests and regularizations (once). Balances come from the accrual job. */
 async function seedRequests(codeToId: Record<string, string>) {
   if (await db.jobRun.findUnique({ where: { name_key: { name: "seed", key: "requests" } } })) return;
@@ -448,6 +464,7 @@ async function main() {
     await seedPunches(codeToId);
     await seedRequests(codeToId);
     await seedPayroll(codeToId);
+    await seedProofFiles();
   }
   // leave balances: credit every month so far (idempotent)
   const { jobLeaveAccrual } = await import("../src/lib/jobs");

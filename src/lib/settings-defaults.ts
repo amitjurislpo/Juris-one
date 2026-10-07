@@ -26,6 +26,13 @@ export const DEFAULT_SETTINGS = {
     pfWageCeiling: 15000, // rupees
     professionalTax: { state: "Default", monthly: 200 }, // §9.1 — open: state slab
   },
+  "tax.policy": {
+    fy: "2026-27",
+    regimeChangeUntil: "2027-01-31", // employees can switch regime until (then Finance only)
+    proofWindowFrom: "2026-04-01", // declarations & proof uploads open
+    proofWindowUntil: "2027-01-31", // declaration lock
+    maxProofMb: 5,
+  },
   company: {
     name: "Juris Consultants",
     address: "[Registered office address]",
