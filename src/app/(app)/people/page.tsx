@@ -1,49 +1,19 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
 import { Pager, Pending, SearchBox, SelectFilter } from "@/components/table/Table";
-import { loadActor } from "@/lib/actor";
 import { requirePage } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { dateToIso } from "@/lib/format";
-import { canAddEmployees, canToggleAccess, locationOfTz } from "@/lib/people-rules";
-import { peopleQuery } from "@/lib/people-query";
+import { apiData, qs } from "@/lib/backend";
 import { AddEmployeeButton, PeopleTable, type PersonRow } from "./PeopleClient";
 
 export const metadata: Metadata = { title: "People" };
 
 export default async function PeoplePage(props: PageProps<"/people">) {
-  const u = await requirePage("people");
+  await requirePage("people");
   const sp = await props.searchParams;
-  const { ls, where, orderBy } = peopleQuery(sp);
-  const actor = await loadActor(u);
-
-  const [rows, total, depts, counts] = await Promise.all([
-    db.employee.findMany({
-      where, orderBy, skip: ls.skip, take: ls.take,
-      select: {
-        id: true, code: true, fullName: true, designation: true, status: true, portalAccess: true, timeZone: true, region: true, roleId: true, dateOfJoining: true,
-        department: { select: { name: true } }, reportingManager: { select: { fullName: true } }, role: { select: { name: true, key: true } }, user: { select: { isSuperAdmin: true } },
-      },
-    }),
-    db.employee.count({ where }),
-    db.department.findMany({ where: { archivedAt: null }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    db.employee.groupBy({ by: ["status", "portalAccess", "region"], _count: true }),
-  ]);
-
-  const sum = (f: (c: (typeof counts)[number]) => boolean) => counts.filter(f).reduce((a, c) => a + c._count, 0);
-  const k = {
-    cur: sum((c) => c.status !== "EXITED"),
-    us: sum((c) => c.status !== "EXITED" && c.region === "US"),
-    off: sum((c) => c.status !== "EXITED" && !c.portalAccess),
-    past: sum((c) => c.status === "EXITED"),
-  };
-  const seePay = u.perms.has("struct.manage");
-
-  const view: PersonRow[] = rows.map((e) => ({
-    id: e.id, code: e.code, name: e.fullName, title: e.designation, dept: e.department?.name ?? "—", manager: e.reportingManager?.fullName ?? "—",
-    loc: locationOfTz(e.timeZone).l, india: e.region === "IN", role: e.role.name, status: e.status, access: e.portalAccess, doj: dateToIso(e.dateOfJoining),
-    canToggle: canToggleAccess(actor, { id: e.id, roleId: e.roleId, roleKey: e.role.key, status: e.status, isSuperAdmin: !!e.user?.isSuperAdmin }),
-  }));
+  const { rows: view, total, page, take, depts, counts: k, seePay, canAdd } = await apiData<{
+    rows: PersonRow[]; total: number; page: number; take: number; depts: { id: string; name: string }[];
+    counts: { cur: number; us: number; off: number; past: number }; seePay: boolean; canAdd: boolean;
+  }>(`/api/people${qs(sp)}`);
 
   const exportQs = new URLSearchParams(Object.entries(sp).flatMap(([key, v]) => (typeof v === "string" && key !== "page" ? [[key, v]] : []))).toString();
 
@@ -52,7 +22,7 @@ export default async function PeoplePage(props: PageProps<"/people">) {
       <PageHeader eyebrow="People operations" title="The" em="Juris team"
         sub={seePay ? "Employee records, portal access and reporting lines." : "Employee records, portal access and reporting lines. Compensation is visible to Finance only."}>
         <a className="btn" href={`/api/people/export${exportQs ? `?${exportQs}` : ""}`} download>Export CSV</a>
-        {canAddEmployees(actor) && <AddEmployeeButton />}
+        {canAdd && <AddEmployeeButton />}
       </PageHeader>
       <div className="kpis">
         <div className="card kpi enter" style={{ ["--i" as string]: 1 }}><span className="spot"></span><span className="l">Current employees</span><span className="v num">{k.cur}</span></div>
@@ -70,7 +40,7 @@ export default async function PeoplePage(props: PageProps<"/people">) {
       <section className="card enter" style={{ ["--i" as string]: 6 }}>
         <Pending>
           <PeopleTable rows={view} />
-          <Pager page={ls.page} take={ls.take} total={total} />
+          <Pager page={page} take={take} total={total} />
         </Pending>
       </section>
     </div>

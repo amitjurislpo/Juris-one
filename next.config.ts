@@ -9,13 +9,13 @@ const securityHeaders = [
 ];
 
 /** Spring Boot API (backend/). The browser and server actions reach it through /api/* on this origin. */
-const BACKEND_URL = (process.env.BACKEND_URL || "http://localhost:8080").replace(/\/$/, "");
+const BACKEND_URL = (process.env.BACKEND_URL || "http://127.0.0.1:8080").replace(/\/$/, "");
 
 /**
  * /api paths already served by Spring Boot even though a Next.js route handler still exists for them
  * (module-by-module migration; the handlers are deleted in the final cleanup).
  */
-const MIGRATED_API: string[] = [];
+const MIGRATED_API: string[] = ["/api/people/export"];
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,

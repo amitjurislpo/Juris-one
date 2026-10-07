@@ -6,7 +6,7 @@ import { cookies, headers } from "next/headers";
  * behalf: the session cookie, client IP and user agent are forwarded, and writes carry this origin so the
  * API's same-origin check passes.
  */
-export const BACKEND_URL = (process.env.BACKEND_URL || "http://localhost:8080").replace(/\/$/, "");
+export const BACKEND_URL = (process.env.BACKEND_URL || "http://127.0.0.1:8080").replace(/\/$/, "");
 
 export type ApiResult<T = undefined> = { ok: true; msg?: string; data?: T } | { ok: false; error: string };
 
@@ -80,4 +80,35 @@ export async function applySetCookies(list: string[]) {
       ...(maxAge !== undefined ? { maxAge } : {}),
     });
   }
+}
+
+/**
+ * A server action that runs in the API: returns its `ActionResult` unchanged and, on success, revalidates the
+ * same pages the action used to.
+ */
+export async function apiAction<T = undefined>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown, revalidate: string[] = []): Promise<ApiResult<T>> {
+  const r = await apiCall<T>(method, path, body);
+  if (r.body.ok) {
+    const { revalidatePath } = await import("next/cache");
+    for (const p of revalidate) revalidatePath(p);
+  }
+  return r.body;
+}
+
+/** GET returning `data`; throws when signed out or on any error (pages call requirePage first). */
+export async function apiData<T>(path: string): Promise<T> {
+  const r = await apiCall<T>("GET", path);
+  if (!r.body.ok) throw new Error(`${path}: ${r.status} ${r.body.error}`);
+  return r.body.data as T;
+}
+
+/** Search params → query string (first value of each). */
+export function qs(sp: Record<string, string | string[] | undefined>): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    const x = Array.isArray(v) ? v[0] : v;
+    if (x !== undefined) p.set(k, x);
+  }
+  const s = p.toString();
+  return s ? `?${s}` : "";
 }

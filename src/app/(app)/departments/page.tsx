@@ -3,41 +3,23 @@ import { PageHeader } from "@/components/PageHeader";
 import { Pending, SearchBox, SortTh } from "@/components/table/Table";
 import { Icon } from "@/components/Icon";
 import { requirePage } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { fmtDY, isoInZone } from "@/lib/format";
-import { listState } from "@/lib/list";
+import { apiData, qs } from "@/lib/backend";
+import { fmtDY } from "@/lib/format";
 import { DepartmentActions, NewDepartmentButton } from "./DepartmentsClient";
 
 export const metadata: Metadata = { title: "Departments" };
 
-const SORTS = ["name", "head", "n", "by", "on"] as const;
+/** Filtered and sorted by the API from ?q=&sort=&dir=. */
+interface Row { id: string; name: string; note: string; head: string; n: number; by: string; on: string }
 
 export default async function DepartmentsPage(props: PageProps<"/departments">) {
   const u = await requirePage("departments");
-  const ls = listState(await props.searchParams, SORTS, "name");
-
-  const [depts, people] = await Promise.all([
-    db.department.findMany({
-      where: { archivedAt: null },
-      include: { head: { select: { fullName: true } }, createdBy: { select: { fullName: true } }, _count: { select: { employees: { where: { status: { not: "EXITED" } } } } } },
-    }),
-    db.employee.findMany({ where: { status: { not: "EXITED" } }, select: { id: true, fullName: true, designation: true }, orderBy: { fullName: "asc" } }),
-  ]);
-
-  const q = ls.q.toLowerCase();
-  const rows = depts
-    .map((d) => ({ id: d.id, name: d.name, note: d.description ?? "", head: d.head?.fullName ?? "", n: d._count.employees, by: d.createdBy?.fullName ?? "—", on: isoInZone(d.createdAt, u.timeZone) }))
-    .filter((r) => !q || `${r.name} ${r.head} ${r.by} ${r.note}`.toLowerCase().includes(q));
-  const key = ls.sort;
-  rows.sort((a, b) => {
-    const x = a[key], y = b[key];
-    return (x > y ? 1 : x < y ? -1 : 0) * (ls.dir === "asc" ? 1 : -1);
-  });
+  const { rows, heads } = await apiData<{ rows: Row[]; heads: { id: string; name: string; title: string }[] }>(`/api/departments${qs(await props.searchParams)}`);
 
   return (
     <div className="col">
       <PageHeader eyebrow="People operations" title={<>Depart<em>ments</em></>} sub="Create departments first — new employees are added into one of these.">
-        <NewDepartmentButton by={u.name} heads={people.map((p) => ({ id: p.id, name: p.fullName, title: p.designation }))} />
+        <NewDepartmentButton by={u.name} heads={heads} />
       </PageHeader>
       <div className="toolbar enter" style={{ ["--i" as string]: 1 }}>
         <SearchBox placeholder="Search department, head or creator" label="Search departments" />

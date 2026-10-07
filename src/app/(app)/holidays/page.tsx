@@ -2,31 +2,20 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
 import { ClearFilters, Pending, SearchBox, SegFilter, SortTh } from "@/components/table/Table";
 import { requirePage } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { dateToIso, fmtDL, todayIn } from "@/lib/format";
-import { listState, pick } from "@/lib/list";
+import { apiData, qs } from "@/lib/backend";
+import { fmtDL } from "@/lib/format";
 import { DeleteHoliday, HolidayPlanner } from "./HolidaysClient";
 
 export const metadata: Metadata = { title: "Holiday calendar" };
 
-const SORTS = ["k", "n", "region", "by"] as const;
+/** Filtered (?q=&region=) and sorted by the API. */
+interface Item { id: string; k: string; n: string; region: "IN" | "US" | "ALL"; by: string }
 const RCHIP = { IN: "gold", US: "info", ALL: "ok" } as const;
 const RLABEL = { IN: "India team", US: "US team", ALL: "Everyone" } as const;
 
 export default async function HolidaysPage(props: PageProps<"/holidays">) {
-  const u = await requirePage("holidays");
-  const sp = await props.searchParams;
-  const ls = listState(sp, SORTS, "k");
-  const region = pick(sp, "region", ["All", "IN", "US"] as const, "All");
-  const today = todayIn(u.timeZone);
-
-  const all = await db.holiday.findMany({ include: { createdBy: { select: { fullName: true } } }, orderBy: { date: "asc" } });
-  const items = all.map((h) => ({ id: h.id, k: dateToIso(h.date), n: h.name, region: h.region, by: h.createdBy?.fullName ?? "—" }));
-
-  const q = ls.q.toLowerCase();
-  const rows = items
-    .filter((h) => (region === "All" || h.region === region || h.region === "ALL") && (!q || h.n.toLowerCase().includes(q)))
-    .sort((a, b) => (a[ls.sort] > b[ls.sort] ? 1 : a[ls.sort] < b[ls.sort] ? -1 : 0) * (ls.dir === "asc" ? 1 : -1));
+  await requirePage("holidays");
+  const { items, rows, today } = await apiData<{ items: Item[]; rows: Item[]; today: string }>(`/api/holidays${qs(await props.searchParams)}`);
 
   return (
     <div className="col">
