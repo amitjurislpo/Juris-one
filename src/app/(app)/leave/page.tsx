@@ -1,13 +1,9 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
 import { ClearFilters, Pending, SegFilter, SortTh } from "@/components/table/Table";
-import { summarize } from "@/lib/attendance/engine";
-import { attendanceFor, attendancePolicy, currentWorkDate, loadAttEmployees } from "@/lib/attendance/service";
 import { requirePage } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { dateToIso, fmtD, fmtDL, isoInZone, isoToDate, MON3 } from "@/lib/format";
-import { listState, pick } from "@/lib/list";
-import { balances } from "@/lib/leave/service";
+import { apiData, qs } from "@/lib/backend";
+import { fmtD, fmtDL, MON3 } from "@/lib/format";
 import { ApplyButton, CancelLeave } from "./LeaveClient";
 
 export const metadata: Metadata = { title: "Leave & holidays" };
@@ -16,7 +12,6 @@ const STATUS = ["All", "PENDING", "APPROVED", "DECLINED", "CANCELLED"] as const;
 const SLABEL: Record<string, string> = { PENDING: "Pending", APPROVED: "Approved", DECLINED: "Declined", CANCELLED: "Cancelled" };
 const SCHIP: Record<string, string> = { PENDING: "warn", APPROVED: "ok", DECLINED: "bad", CANCELLED: "neutral" };
 const PART: Record<string, string> = { FULL: "Full day", FIRST_HALF: "First half", SECOND_HALF: "Second half" };
-const SORTS = ["type", "from", "days", "applied", "status"] as const;
 
 function Ring({ value, max, color, i }: { value: number; max: number; color: string; i: number }) {
   const C = 207;
@@ -33,24 +28,16 @@ function Ring({ value, max, color, i }: { value: number; max: number; color: str
 }
 
 export default async function LeavePage(props: PageProps<"/leave">) {
-  const u = await requirePage("leave");
+  await requirePage("leave");
   const sp = await props.searchParams;
-  const tab = pick(sp, "tab", ["requests", "holidays"] as const, "requests");
-  const st = pick(sp, "st", STATUS, "All");
-  const ls = listState(sp, SORTS, "applied", 50, "desc");
-  const [emp] = await loadAttEmployees({ id: u.id });
-  const policy = await attendancePolicy();
-  const today = emp ? currentWorkDate(emp) : isoInZone(new Date(), u.timeZone);
-  const year = today.slice(0, 4);
-
-  const [bals, reqs, hols, lopYear] = await Promise.all([
-    balances(u.id),
-    db.leaveRequest.findMany({ where: { employeeId: u.id, ...(st !== "All" ? { status: st } : {}) }, include: { type: true, decidedBy: { select: { fullName: true } } } }),
-    db.holiday.findMany({ where: { region: { in: ["ALL", u.region] }, date: { gte: isoToDate(`${year}-01-01`), lte: isoToDate(`${year}-12-31`) } }, orderBy: { date: "asc" } }),
-    emp ? attendanceFor([emp], [`${year}-01-01`, policy.trackingStart, emp.doj].sort().at(-1)!, today).then((m) => summarize(m.get(emp.id)!.filter((x) => !x.future), policy).lopDays) : Promise.resolve(0),
-  ]);
-  const get = { type: (r: (typeof reqs)[number]) => r.type.name, from: (r: (typeof reqs)[number]) => r.fromDate.getTime(), days: (r: (typeof reqs)[number]) => Number(r.days), applied: (r: (typeof reqs)[number]) => r.appliedAt.getTime(), status: (r: (typeof reqs)[number]) => r.status }[ls.sort];
-  reqs.sort((a, b) => { const x = get(a), y = get(b); return (x > y ? 1 : x < y ? -1 : 0) * (ls.dir === "asc" ? 1 : -1); });
+  const d = await apiData<{
+    tab: "requests" | "holidays"; st: (typeof STATUS)[number]; today: string; year: string; canApply: boolean; lopYear: number;
+    balances: { code: string; name: string; balance: number; pending: number; paid: boolean; needsBalance: boolean; annual: number }[];
+    requests: { id: string; typeName: string; leaveType: string; from: string; to: string; part: string; days: number; lopDays: number; applied: string; reason: string | null; status: string; decidedBy: string | null }[];
+    holidays: { id: string; date: string; name: string }[]; holidayMap: Record<string, string>;
+    types: { code: string; name: string; paid: boolean; available: number | null }[]; weeklyOffs: number[];
+  }>(`/api/leave${qs(sp)}`);
+  const { tab, st, today, year, balances: bals, requests: reqs, holidays: hols, holidayMap, types, lopYear } = d;
 
   const bal = (c: string) => bals.find((b) => b.code === c);
   const avail = (c: string) => { const b = bal(c); return b ? Math.round((b.balance - b.pending) * 100) / 100 : 0; };
@@ -60,13 +47,11 @@ export default async function LeavePage(props: PageProps<"/leave">) {
     ["Comp-off", avail("CO"), 5, "#0A6BC2", "For holiday work · 60 days"],
     ["Loss of pay", lopYear, 5, "#CF3A40", `Taken in ${year}`],
   ];
-  const holidayMap = Object.fromEntries((await db.holiday.findMany({ where: { region: { in: ["ALL", u.region] }, date: { gte: isoToDate(today) } } })).map((h) => [dateToIso(h.date), h.name]));
-  const types = bals.map((b) => ({ code: b.code, name: b.name, paid: b.paid, available: b.needsBalance ? avail(b.code) : null }));
 
   return (
     <div className="col" style={{ gap: 24 }}>
       <PageHeader eyebrow={`Leave · ${year}`} title="Time away," em="well planned" sub="Apply in three steps — leave type, dates, and an optional reason.">
-        {emp && <ApplyButton types={types} today={today} holidays={holidayMap} weeklyOffs={policy.weeklyOffs} autoOpen={sp.apply === "1"} />}
+        {d.canApply && <ApplyButton types={types} today={today} holidays={holidayMap} weeklyOffs={d.weeklyOffs} autoOpen={sp.apply === "1"} />}
       </PageHeader>
       <div className="kpis">
         {rings.map(([name, v, max, color, note], i) => (
@@ -99,15 +84,15 @@ export default async function LeavePage(props: PageProps<"/leave">) {
                   </tr></thead>
                   <tbody>
                     {reqs.map((l, i) => {
-                      const f = dateToIso(l.fromDate), t = dateToIso(l.toDate);
+                      const f = l.from, t = l.to;
                       return (
                         <tr key={l.id} style={{ animationDelay: `${i * 50}ms` }}>
-                          <td><b>{l.type.name}</b></td>
-                          <td>{fmtD(f)}{t !== f ? ` – ${fmtD(t)}` : ""}<div className="faint" style={{ fontSize: 12 }}>{PART[l.part]}{Number(l.lopDays) > 0 && l.leaveType !== "LOP" ? ` · ${Number(l.lopDays)}d unpaid` : ""}</div></td>
-                          <td className="num">{Number(l.days)}</td>
-                          <td className="muted">{fmtD(isoInZone(l.appliedAt, u.timeZone))}</td>
+                          <td><b>{l.typeName}</b></td>
+                          <td>{fmtD(f)}{t !== f ? ` – ${fmtD(t)}` : ""}<div className="faint" style={{ fontSize: 12 }}>{PART[l.part]}{l.lopDays > 0 && l.leaveType !== "LOP" ? ` · ${l.lopDays}d unpaid` : ""}</div></td>
+                          <td className="num">{l.days}</td>
+                          <td className="muted">{fmtD(l.applied)}</td>
                           <td className="muted" style={{ maxWidth: 240 }}>{l.reason || "—"}</td>
-                          <td><span className={`chip ${SCHIP[l.status]}`}>{SLABEL[l.status]}</span>{l.decidedBy && <div className="faint" style={{ fontSize: 11.5, marginTop: 3 }}>by {l.decidedBy.fullName}</div>}</td>
+                          <td><span className={`chip ${SCHIP[l.status]}`}>{SLABEL[l.status]}</span>{l.decidedBy && <div className="faint" style={{ fontSize: 11.5, marginTop: 3 }}>by {l.decidedBy}</div>}</td>
                           <td className="r">{l.status === "PENDING" && <CancelLeave id={l.id} />}</td>
                         </tr>
                       );
@@ -122,12 +107,12 @@ export default async function LeavePage(props: PageProps<"/leave">) {
       ) : (
         <section className="kpis enter" style={{ ["--i" as string]: 6 }}>
           {hols.map((h, i) => {
-            const k = dateToIso(h.date);
+            const k = h.date;
             const past = k < today;
             return (
               <div className="card pad lift" key={h.id} style={{ opacity: past ? 0.5 : 1, animation: `enter .6s ${i * 50}ms both`, display: "flex", gap: 14, alignItems: "center" }}>
                 <span className="spot" aria-hidden="true"></span>
-                <span className="hol-date"><b>{h.date.getUTCDate()}</b><small>{MON3[h.date.getUTCMonth()].toUpperCase()}</small></span>
+                <span className="hol-date"><b>{Number(k.slice(8))}</b><small>{MON3[Number(k.slice(5, 7)) - 1].toUpperCase()}</small></span>
                 <div><b>{h.name}</b><div className="faint" style={{ fontSize: 12.5 }}>{fmtDL(k)}{past ? " · passed" : ""}</div></div>
               </div>
             );
