@@ -2,41 +2,21 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
 import { ClearFilters, Pending, SearchBox, SegFilter, SelectFilter, SortTh } from "@/components/table/Table";
 import { requirePage } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { avc, dateToIso, fmtDY, inr, initials, todayIn } from "@/lib/format";
-import { listState, pick, str } from "@/lib/list";
+import { apiData, qs } from "@/lib/backend";
+import { avc, fmtDY, inr, initials } from "@/lib/format";
 import { HistoryButton, StructureButton, type Rev } from "./StructuresClient";
 
 export const metadata: Metadata = { title: "Salary structures" };
 
-const SORTS = ["name", "basic", "g", "since"] as const;
 
 export default async function StructuresPage(props: PageProps<"/structures">) {
   await requirePage("structures");
-  const sp = await props.searchParams;
-  const ls = listState(sp, SORTS, "name", 100);
-  const set = pick(sp, "set", ["All", "Set", "Missing"] as const, "All");
-  const dept = str(sp, "dept", "All");
-  const today = todayIn("Asia/Kolkata");
-
-  const [emps, depts, lastClosed] = await Promise.all([
-    db.employee.findMany({
-      where: { region: "IN", status: { not: "EXITED" }, ...(dept !== "All" && /^[0-9a-f-]{36}$/.test(dept) ? { departmentId: dept } : {}) },
-      include: { salaryStructures: { orderBy: { effectiveFrom: "desc" } }, department: { select: { name: true } } },
-    }),
-    db.department.findMany({ where: { archivedAt: null }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    db.payrollRun.findFirst({ where: { status: "CLOSED" }, orderBy: { month: "desc" } }),
-  ]);
-  const q = ls.q.toLowerCase();
-  const all = emps.map((e) => {
-    const revs: Rev[] = e.salaryStructures.map((s) => ({ from: dateToIso(s.effectiveFrom), basic: s.basic, hra: s.hra, lta: s.lta, special: s.special, reason: s.reason }));
-    const cur = revs.find((r) => r.from <= today) ?? revs.at(-1) ?? null; // current, else the upcoming one
-    return { id: e.id, code: e.code, name: e.fullName, title: e.designation, doj: dateToIso(e.dateOfJoining), revs, cur, g: cur ? cur.basic + cur.hra + cur.lta + cur.special : 0 };
-  });
-  const rows = all.filter((r) => (!q || `${r.name} ${r.code} ${r.title}`.toLowerCase().includes(q)) && (set === "All" || (set === "Set") === !!r.cur));
-  const get = { name: (r: (typeof rows)[number]) => r.name, basic: (r: (typeof rows)[number]) => r.cur?.basic ?? -1, g: (r: (typeof rows)[number]) => r.g, since: (r: (typeof rows)[number]) => r.cur?.from ?? "" }[ls.sort];
-  rows.sort((a, b) => { const x = get(a), y = get(b); return (x > y ? 1 : x < y ? -1 : 0) * (ls.dir === "asc" ? 1 : -1); });
-  const minFrom = lastClosed ? new Date(Date.UTC(Number(lastClosed.month.slice(0, 4)), Number(lastClosed.month.slice(5)), 1)).toISOString().slice(0, 10) : "";
+  const d = await apiData<{
+    rows: { id: string; code: string; name: string; title: string; doj: string; revs: Rev[]; cur: Rev | null; g: number }[];
+    total: number; depts: { id: string; name: string }[]; today: string; minFrom: string;
+  }>(`/api/structures${qs(await props.searchParams)}`);
+  const { rows, depts, today, minFrom } = d;
+  const all = { length: d.total };
 
   return (
     <div className="col">

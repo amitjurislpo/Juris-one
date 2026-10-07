@@ -3,32 +3,23 @@ import Link from "next/link";
 import { Icon } from "@/components/Icon";
 import { PageHeader } from "@/components/PageHeader";
 import { Pending, SearchBox, SelectFilter } from "@/components/table/Table";
-import { can, requirePage } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { fmtDY, isoInZone, isoToDate, todayIn, ymLabel } from "@/lib/format";
-import { str } from "@/lib/list";
-import { filterPayroll, payrollMonths, payrollView } from "@/lib/payroll/view";
+import { requirePage } from "@/lib/auth";
+import { apiData, qs } from "@/lib/backend";
+import { fmtDY, ymLabel } from "@/lib/format";
+import type { PayView } from "@/lib/payroll/view";
 import { CloseButton, MonthSeg, PayrollKpis, PayrollTable } from "./PayrollClient";
 
 export const metadata: Metadata = { title: "Payroll" };
 
 export default async function PayrollPage(props: PageProps<"/payroll">) {
-  const u = await requirePage("payroll");
+  await requirePage("payroll");
   const sp = await props.searchParams;
-  const today = todayIn("Asia/Kolkata");
-  const { months, dflt } = await payrollMonths(today);
-  const m = str(sp, "m", dflt);
-  const month = months.includes(m) ? m : dflt;
-  const { run, closed, attendanceLocked, rows } = await payrollView(month);
-  const view = filterPayroll(rows, sp);
-  const lastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 0)).toISOString().slice(0, 10);
-
-  const missing = closed ? [] : await db.employee.findMany({
-    where: { region: "IN", status: { not: "EXITED" }, dateOfJoining: { lte: isoToDate(lastDay) }, salaryStructures: { none: { effectiveFrom: { lte: isoToDate(lastDay) } } } },
-    select: { fullName: true }, orderBy: { fullName: "asc" },
-  });
-
-  const approved = !!run?.approvedAt || closed;
+  const d = await apiData<{
+    month: string; months: string[]; closed: boolean; attendanceLocked: boolean; approved: boolean; closedOn: string | null; missing: string[];
+    rows: PayView[]; view: PayView[]; canClose: boolean; canStructures: boolean;
+  }>(`/api/payroll${qs(sp)}`);
+  const { month, months, closed, attendanceLocked, approved, rows, view } = d;
+  const missing = d.missing.map((fullName) => ({ fullName }));
   const stages = [
     { l: "Lock attendance", done: attendanceLocked },
     { l: "Compute", done: attendanceLocked },
@@ -43,7 +34,7 @@ export default async function PayrollPage(props: PageProps<"/payroll">) {
     <div className="col">
       <PageHeader eyebrow="Finance · Payroll" title={ymLabel(month).split(" ")[0]} em="payroll" sub="Salary comes from each employee's current salary structure. Edit LOP, bonus or deductions before closing.">
         <MonthSeg months={months} value={month} />
-        {can(u, "pay.close") || closed
+        {d.canClose || closed
           ? <CloseButton month={month} closed={closed} locked={attendanceLocked} count={rows.length} />
           : <span className="chip warn nodot" title="Only the Finance Manager can close payroll">Closing needs Finance Manager</span>}
       </PageHeader>
@@ -59,7 +50,7 @@ export default async function PayrollPage(props: PageProps<"/payroll">) {
           ))}
         </div>
         <p className="faint" style={{ margin: "14px 0 0", fontSize: 12.5 }}>
-          {closed ? `Closed on ${fmtDY(isoInZone(run!.closedAt!, u.timeZone))} · payslips are visible to employees.` : attendanceLocked ? "Closing publishes payslips to every employee for this month." : `Attendance for ${ymLabel(month)} locks on the 1st of next month at 10:00 AM — figures can still change until then.`}
+          {closed ? `Closed on ${fmtDY(d.closedOn!)} · payslips are visible to employees.` : attendanceLocked ? "Closing publishes payslips to every employee for this month." : `Attendance for ${ymLabel(month)} locks on the 1st of next month at 10:00 AM — figures can still change until then.`}
         </p>
       </section>
 
@@ -68,7 +59,7 @@ export default async function PayrollPage(props: PageProps<"/payroll">) {
           <span className="spot"></span>
           <span className="kpi-ico" style={{ background: "var(--warnbg)", color: "var(--warn)" }}><Icon n="info" s={18} /></span>
           <div style={{ flex: 1 }}><b>{missing.length} employee(s) without a salary structure</b><div className="muted" style={{ fontSize: 13 }}>{missing.map((e) => e.fullName).join(", ")} — set it up once and it applies every month.</div></div>
-          {can(u, "struct.manage") && <Link className="btn" href="/structures?set=Missing">Set up structure</Link>}
+          {d.canStructures && <Link className="btn" href="/structures?set=Missing">Set up structure</Link>}
         </section>
       )}
 
