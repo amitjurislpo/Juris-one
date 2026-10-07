@@ -53,6 +53,48 @@ You can sign in with either the employee ID or the official email.
 | `npm run db:seed` | Idempotent seed. `SEED_DEMO=false` seeds only the core data. |
 | `npm run db:reset` | Drop, re-migrate and re-seed (dev only) |
 | `npm run jobs` | Run the scheduled jobs once (absence marking, monthly lock, status changes) |
+| `scripts/backup.sh` / `scripts/restore.sh` | Postgres backup (keeps 14 days) / restore — see *Deploying* |
+
+## Deploying
+
+JurisOne is a single Next.js server plus Postgres 16. Any Linux VPS or VM works (REQUIREMENTS §9.4 leaves hosting open).
+
+1. **Postgres 16.** A managed instance, or `docker compose up -d` with a strong `POSTGRES_PASSWORD` and the port not exposed publicly.
+2. **Environment.** Copy `.env.example` to `.env` and set:
+   - `DATABASE_URL`, `APP_URL` (the public https URL)
+   - `PII_ENCRYPTION_KEY` — generate once, store it in your password manager. Losing it makes PII unreadable.
+   - `SUPER_ADMIN_PASSWORD` — then change it after the first sign-in.
+   - `SEED_DEMO=false` and empty `SEED_DEMO_PASSWORD` for a real company (no demo people).
+   - `SMTP_*` so invites, resets and decisions are emailed.
+3. **Build and migrate.**
+   ```bash
+   npm ci
+   npm run db:deploy       # apply migrations
+   npm run db:seed         # roles, policies, tax tables, super admin (idempotent)
+   npm run build
+   npm run start           # port 3005; keep it running with systemd or pm2
+   ```
+4. **HTTPS.** Put Caddy or nginx in front, terminate TLS there and proxy to `localhost:3005`. Session cookies are `Secure` in production, so the app must be served over https.
+5. **Jobs.** Leave `JOBS_ENABLED=true` for a single instance. With several instances either keep it on (an advisory lock lets only one run) or set it to `false` everywhere and run `npm run jobs` from cron every 10 minutes.
+6. **Files.** `UPLOAD_DIR` (default `./storage`) holds payslip PDFs and investment proofs. Put it on persistent disk and include it in backups.
+
+### Backups (daily)
+
+```bash
+# crontab -e   (02:15 every night; keeps 14 days in storage/backups)
+15 2 * * *  cd /srv/jurisone && ./scripts/backup.sh >> storage/backups/backup.log 2>&1
+```
+
+- Needs `pg_dump` 16+ on the server, or set `PG_DOCKER=jurisone-db` to run it inside the compose container.
+- Copy `storage/backups/` and `storage/` to off-site storage (S3, Azure Blob, another host).
+- Restore with `./scripts/restore.sh <file.dump>` (stop the app first; it asks for confirmation).
+- Test a restore into a scratch database every few months.
+
+### Upgrading and rolling back
+
+- Deploy: pull, `npm ci`, `npm run db:deploy`, `npm run build`, restart.
+- **Take a backup before `db:deploy`.**
+- Every migration in `prisma/migrations/` has a `down.sql`. To roll one back: run its `down.sql` with `psql`, delete its row from `_prisma_migrations`, then deploy the previous release.
 
 ## How it is put together
 
@@ -190,9 +232,54 @@ Previous-employer income is added, then the standard deduction and any approved 
 - TDS summary: decrypts PANs, so it needs `pay.view` and `tax.view`.
 - Every export is audited.
 
+### Tax declarations and proofs
+
+**Choosing a regime.**
+- The new regime is the default.
+- Employees choose their regime on *Tax declarations* until the date in `tax.policy.regimeChangeUntil`.
+- Finance can override it on the Tax page. An overridden regime is locked for the employee.
+
+**Declaring on the old regime.**
+- Employees declare amounts per item: HRA, 80C, 80CCD(1B), 80D, 24(b), 80E, 80G and 80TTA.
+- Each item needs a proof. Uploads must be PDF, JPG or PNG, checked by file signature rather than extension, and at most 5 MB.
+- Items move Draft → Pending → Approved / Rejected (with a reason). Changing an approved amount sends it back to Draft.
+
+**Verifying (Finance).**
+- Finance (`proofs.verify`) sees each employee's proofs with a preview of "TDS now vs if everything is approved".
+- Nobody can verify their own proofs.
+
+**What counts for TDS.**
+- Only approved amounts reduce TDS.
+- The employee's regime comparison counts drafts too, so they can see what they'd save.
+
+**Tax page (`tax.view`).**
+- One row per employee, plus a drawer with the full computation and slab working.
+- Finance enters previous-employer income and TDS (Form 12B) there.
+- Export to CSV.
+
+**Storage.** Proof files are stored under `storage/proofs/<employee>/`. Only the employee and Finance can open them.
+
+### Dashboards and audit log
+
+**Home (`self`).** Greeting with a live clock, the check-in card, KPIs, the 16-week heatmap, the last seven shifts and upcoming holidays. Cards are added by permission (`src/lib/dashboard.ts#homeCards`):
+
+| Card | Shown to |
+|---|---|
+| My leave requests | plain employees (no approvals, payroll or team) |
+| Your team right now | anyone with active direct reports |
+| Approvals | `appr.leave`, or `appr.reg` without `pay.view` |
+| Payroll status | `pay.view` (Finance) |
+| Payslip ready | India payroll |
+
+Salary is never shown on Home; an e2e test checks that no ₹ amount appears there for any role.
+
+**Overview (Admin, `roles.manage`).** Headcount (India / US / access off), checked in now, pending approvals, proofs to verify, the open payroll month's status and net payout, people by department, the HR and Finance queues and shortcuts.
+
+**Audit log (`roles.manage`).** Every entry in `audit_log`, newest first, with search (person, action, record ID), event-group / actor / period filters, sorting and server-side paging. Clicking an entry shows who, what, when, the IP and a before → after table. Salary, payroll and tax entries hide their amounts from viewers without a Finance permission.
+
 ### Scheduled jobs
 
-`src/lib/jobs.ts` contains three jobs:
+`src/lib/jobs.ts` contains these jobs:
 
 | Job | What it does |
 |---|---|
@@ -230,7 +317,8 @@ To add the licensed font:
 - **Phase 2 (done):** check-in/out, attendance engine (shifts, night shifts, late marks, half days, absences), My attendance with regularization requests, holiday calendar, attendance register (time zones, daily log, monthly grid, CSV export), scheduled jobs, editable attendance policy.
 - **Phase 3 (done):** leave ledger and accrual, apply leave (range picker, holidays skipped, LOP when short), cancel, regularization decisions, Approvals page (first decision wins), in-app notifications and decision emails, comp-off expiry and year-end jobs.
 - **Phase 4 (done):** salary structures (effective-dated, Split helper, history), payroll run (attendance LOP, Finance edits, approve & close with immutable snapshots), payslips page + PDF with logo, payroll exports (bank, PF ECR, PT, TDS, register). Demo payroll closed for Apr–Aug 2026; September is open for review.
-- **Phases 5 to 6:** pages not built yet show "Arrives in phase N".
+- **Phase 5 (done):** tax declarations (regime choice with live comparison, old-regime items, proof upload), Finance proof verification with TDS preview, Tax & TDS page (computation drawer, slab working, regime override, previous employer), tax export.
+- **Phase 6 (done):** Home cards by permission, company Overview, audit log viewer (filters, before → after), responsive + keyboard pass (skip link, focus rings, phone drawer), end-to-end tests for every demo role, deploy/backup docs.
 
 ### Table conventions
 

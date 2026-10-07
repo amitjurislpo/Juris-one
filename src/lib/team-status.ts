@@ -10,9 +10,14 @@ export type TodayStatus = { label: string; tone: "ok" | "info" | "warn" | "gold"
 export async function todayStatuses(ids: string[], now = new Date()): Promise<Map<string, TodayStatus>> {
   const out = new Map<string, TodayStatus>();
   const emps = await loadAttEmployees({ id: { in: ids } });
+  if (!emps.length) return out;
+  // one batched load across everyone's current work date (they differ by time zone / shift)
+  const wds = new Map(emps.map((e) => [e.id, currentWorkDate(e, now)]));
+  const all = [...wds.values()].sort();
+  const days = await attendanceFor(emps, all[0], all.at(-1)!, now);
   for (const e of emps) {
-    const wd = currentWorkDate(e, now);
-    const d = (await attendanceFor([e], wd, wd, now)).get(e.id)![0];
+    const wd = wds.get(e.id)!;
+    const d = days.get(e.id)!.find((x) => x.date === wd)!;
     let s: TodayStatus;
     if (d.openSince) s = { label: `In since ${fmtTime(d.openSince, e.tz)}`, tone: "ok" };
     else if (d.status === "LEAVE") s = { label: "On leave", tone: "info" };

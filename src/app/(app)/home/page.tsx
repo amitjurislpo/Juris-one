@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Greeting } from "@/components/home/Greeting";
+import { HomeCards } from "@/components/home/HomeCards";
 import { TimeCard } from "@/components/home/TimeCard";
 import { Icon } from "@/components/Icon";
 import { addDays, atLocal, dowOf, workedMinutes } from "@/lib/attendance/engine";
 import { attendanceFor, attendancePolicy, currentWorkDate, fmtTime, loadAttEmployees } from "@/lib/attendance/service";
 import { requirePage } from "@/lib/auth";
+import { homeCards } from "@/lib/dashboard";
 import { db } from "@/lib/db";
 import { daysBetween, DOW, fmtD, fmtDL, fmtH, MON3, MONTHS } from "@/lib/format";
 import { upcomingHolidays } from "@/lib/holidays";
@@ -59,7 +61,7 @@ export default async function HomePage() {
   })() : "";
   const balances = await db.leaveLedger.groupBy({ by: ["leaveType"], where: { employeeId: u.id, leaveType: { in: ["CL", "EL"] } }, _sum: { delta: true } });
   const leaveAvail = balances.reduce((a, b) => a + Number(b._sum.delta ?? 0), 0);
-  const hols = await upcomingHolidays(emp.region, wd, 4);
+  const [hols, cards] = await Promise.all([upcomingHolidays(emp.region, wd, 4), homeCards(u)]);
   const nextIn = hols[0] ? daysBetween(wd, hols[0].date) : null;
 
   // heatmap: 16 weeks, Monday-first columns
@@ -117,21 +119,11 @@ export default async function HomePage() {
           </div>
         </section>
 
-        <section className="card pad span-4 enter" style={{ ["--i" as string]: 7 }}>
-          <span className="spot"></span>
-          <div className="card-h"><h3>Upcoming holidays</h3><Link className="btn btn-sm btn-ghost" href="/attendance">All</Link></div>
-          <div className="list">
-            {hols.map((h) => (
-              <div className="it" key={h.id}>
-                <span className="hol-date"><b>{Number(h.date.slice(8))}</b><small>{MON3[Number(h.date.slice(5, 7)) - 1].toUpperCase()}</small></span>
-                <div><b style={{ fontSize: 13.5, fontWeight: 600 }}>{h.name}</b><div className="faint" style={{ fontSize: 12.5 }}>{fmtDL(h.date)}</div></div>
-              </div>
-            ))}
-            {!hols.length && <div className="faint" style={{ fontSize: 13 }}>No more holidays this year.</div>}
-          </div>
-        </section>
+        <div className="span-4" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <HomeCards c={cards} i0={7} />
+        </div>
 
-        <section className="card pad span-12 enter" style={{ ["--i" as string]: 8 }}>
+        <section className="card pad span-8 enter" style={{ ["--i" as string]: 8 }}>
           <span className="spot"></span>
           <div className="card-h"><h3>Last seven shifts</h3><span className="faint" style={{ fontSize: 12.5 }}>dashed line = {policy.shiftTargetHours}h target</span></div>
           <div className="bars">
@@ -148,6 +140,19 @@ export default async function HomePage() {
           </div>
           <div className="bars-x">
             {lastShifts.map((d) => <span key={d.date}><b style={{ color: "var(--text)", fontWeight: 500 }}>{d.date === wd ? "Today" : DOW[dowOf(d.date)]}</b><br />{fmtD(d.date)}</span>)}
+          </div>
+        </section>
+        <section className="card pad span-4 enter" style={{ ["--i" as string]: 9 }}>
+          <span className="spot"></span>
+          <div className="card-h"><h3>Upcoming holidays</h3><Link className="btn btn-sm btn-ghost" href="/leave">All</Link></div>
+          <div className="list">
+            {hols.map((h) => (
+              <div className="it" key={h.id}>
+                <span className="hol-date"><b>{Number(h.date.slice(8))}</b><small>{MON3[Number(h.date.slice(5, 7)) - 1].toUpperCase()}</small></span>
+                <div><b style={{ fontSize: 13.5, fontWeight: 600 }}>{h.name}</b><div className="faint" style={{ fontSize: 12.5 }}>{fmtDL(h.date)}</div></div>
+              </div>
+            ))}
+            {!hols.length && <div className="faint" style={{ fontSize: 13 }}>No more holidays this year.</div>}
           </div>
         </section>
       </div>

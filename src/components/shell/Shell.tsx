@@ -149,8 +149,9 @@ export function Shell(props: ShellProps) {
   return (
     <ToastProvider>
       <div className="shell">
+        <a className="skip" href="#main">Skip to content</a>
         <div className={`scrim${sideOpen ? " open" : ""}`} onClick={() => setSideOpen(false)}></div>
-        <aside className={`side${sideOpen ? " open" : ""}`} aria-label="Main menu">
+        <aside id="side" className={`side${sideOpen ? " open" : ""}`} aria-label="Main menu">
           <Link className="ws" href={landing}>
             <span className="monogram">J</span>
             <span style={{ flex: 1, minWidth: 0 }}><b>Juris Consultants</b><small>JurisOne workspace</small></span>
@@ -174,7 +175,7 @@ export function Shell(props: ShellProps) {
 
         <div className="main">
           <header className="top">
-            <button className="icon-btn burger" onClick={() => setSideOpen(true)} aria-label="Open menu"><Icon n="menu" /></button>
+            <button className="icon-btn burger" onClick={() => setSideOpen(true)} aria-label="Open menu" aria-controls="side" aria-expanded={sideOpen}><Icon n="menu" /></button>
             <div className="crumbs"><span>Juris</span><Icon n="chevR" s={14} /><b>{PAGE_TITLES[page] ?? "JurisOne"}</b></div>
             <div className="grow"></div>
             <button className="top-search" type="button" onClick={openPal}><Icon n="search" s={15} />Search or jump to…<kbd>⌘K</kbd></button>
@@ -219,7 +220,7 @@ export function Shell(props: ShellProps) {
               )}
             </div>
           </header>
-          <main className="content" key={pathname}>{props.children}</main>
+          <main id="main" tabIndex={-1} className="content" key={pathname}>{props.children}</main>
         </div>
 
         {profile && (

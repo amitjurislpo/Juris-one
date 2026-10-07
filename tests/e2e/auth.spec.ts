@@ -15,7 +15,7 @@ test.describe("authentication", () => {
     await login(page, ADMIN_EMAIL, ADMIN_PW);
     await expectLanded(page, "/overview");
     await expect(page.locator(".crumbs b")).toHaveText("Overview");
-    await expect(page.getByRole("link", { name: "Roles & permissions" })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Main menu" }).getByRole("link", { name: "Roles & permissions" })).toBeVisible();
     await expect(page.getByRole("link", { name: "My attendance" })).toHaveCount(0);
   });
 
