@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { AuthFrame } from "@/components/auth/AuthFrame";
 import { SetPasswordForm } from "@/components/auth/SetPasswordForm";
-import { findUsableToken } from "@/lib/auth-tokens";
+import { apiCall } from "@/lib/backend";
 import { PASSWORD_RULES } from "@/lib/password";
 
 /** Shared by /invite/[token] and /reset/[token]. */
 export async function TokenPage({ token, purpose }: { token: string; purpose: "INVITE" | "RESET" }) {
-  const t = await findUsableToken(token, purpose);
+  const r = await apiCall<{ name: string; code: string }>("GET", `/api/auth/tokens/${purpose}/${encodeURIComponent(token)}`);
+  const t = r.body.ok ? r.body.data! : null;
   return (
     <AuthFrame>
       {t ? (
-        <SetPasswordForm token={token} purpose={purpose} name={t.employee.fullName} code={t.employee.code} rules={PASSWORD_RULES} />
+        <SetPasswordForm token={token} purpose={purpose} name={t.name} code={t.code} rules={PASSWORD_RULES} />
       ) : (
         <div className="login-card">
           <h2 className="display">Link expired</h2>

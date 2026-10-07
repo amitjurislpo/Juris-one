@@ -2,7 +2,7 @@
 # No secret has a default here.
 server:
   port: ${BACKEND_PORT:8080}
-  forward-headers-strategy: native   # behind the Next.js proxy / a reverse proxy
+  forward-headers-strategy: none     # X-Forwarded-For is read as-is (RequestMeta), like the Next.js app
 
 spring:
   application:
@@ -21,7 +21,7 @@ spring:
     baseline-version: 1
     baseline-description: Prisma schema (4 migrations up to 20261006193828_tax_parents_senior)
   jackson:
-    default-property-inclusion: non_null
+    default-property-inclusion: always   # data keeps explicit nulls, like the TS responses (ApiResult omits its own empty fields)
     serialization:
       write-dates-as-timestamps: false
 

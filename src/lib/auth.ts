@@ -1,8 +1,8 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { db } from "./db";
-import { readSessionCookie, touchSession } from "./session";
+import { apiGet } from "./backend";
+import { readSessionCookie } from "./session";
 import { NAV, navAllowed, type NavId } from "./nav";
 import type { Permission } from "./permissions";
 
@@ -35,40 +35,11 @@ export class ForbiddenError extends Error {
  * request: a revoked/expired session, disabled access or an exited employee all yield null.
  */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
-  const sid = await readSessionCookie();
-  if (!sid) return null;
-  const s = await db.session.findUnique({
-    where: { id: sid },
-    include: {
-      employee: {
-        include: {
-          user: true,
-          role: { include: { permissions: true } },
-          _count: { select: { directReports: { where: { status: { not: "EXITED" } } } } },
-        },
-      },
-    },
-  });
-  if (!s || s.revokedAt || s.expiresAt <= new Date()) return null;
-  const e = s.employee;
-  if (!e.portalAccess || e.status === "EXITED" || !e.user) return null;
-  await touchSession(s.id, s.lastSeenAt);
-  return {
-    id: e.id,
-    code: e.code,
-    name: e.fullName,
-    email: e.email,
-    designation: e.designation,
-    roleId: e.roleId,
-    roleKey: e.role.key,
-    roleName: e.role.name,
-    perms: new Set(e.role.permissions.map((p) => p.permissionKey as Permission)),
-    isSuperAdmin: e.user.isSuperAdmin,
-    region: e.region,
-    timeZone: e.timeZone,
-    hasReports: e._count.directReports > 0,
-    sessionId: s.id,
-  };
+  if (!(await readSessionCookie())) return null;
+  // the Spring Boot API validates the session (revoked/expired, access off, exited) and loads permissions
+  const me = await apiGet<{ user: Omit<CurrentUser, "perms"> & { perms: Permission[] } }>("/api/me");
+  if (!me) return null;
+  return { ...me.user, perms: new Set(me.user.perms) };
 });
 
 export const can = (u: CurrentUser | null, ...perms: Permission[]) => !!u && perms.some((p) => u.perms.has(p));

@@ -1,9 +1,12 @@
 package com.jurislpo.jurisone.common;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 /**
  * The response body of every JSON endpoint — the same shape as the Next.js {@code ActionResult}:
- * {@code {ok:true, msg?, data?}} or {@code {ok:false, error}}. Nulls are omitted (application.yml).
+ * {@code {ok:true, msg?, data?}} or {@code {ok:false, error}}. Its own empty fields are omitted; nulls inside {@code data} are kept.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApiResult<T>(boolean ok, String msg, T data, String error) {
 
     public static <T> ApiResult<T> success() { return new ApiResult<>(true, null, null, null); }
