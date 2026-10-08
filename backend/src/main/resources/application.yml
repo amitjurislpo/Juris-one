@@ -20,6 +20,10 @@ spring:
     baseline-on-migrate: true       # existing (Prisma-created) databases are baselined at V1, not re-migrated
     baseline-version: 1
     baseline-description: Prisma schema (4 migrations up to 20261006193828_tax_parents_senior)
+  servlet:
+    multipart:                      # proof uploads: the size rule (tax.policy maxProofMb) is checked in code with its own message
+      max-file-size: 50MB
+      max-request-size: 50MB
   jackson:
     default-property-inclusion: always   # data keeps explicit nulls, like the TS responses (ApiResult omits its own empty fields)
     serialization:

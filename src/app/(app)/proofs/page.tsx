@@ -2,38 +2,16 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
 import { ClearFilters, Pending, SearchBox, SegFilter, SortTh } from "@/components/table/Table";
 import { requirePage } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { apiData, qs } from "@/lib/backend";
 import { avc, inr, initials } from "@/lib/format";
-import { listState, pick } from "@/lib/list";
-import { getSetting } from "@/lib/settings";
 import { ReviewButton } from "./ProofsClient";
 
 export const metadata: Metadata = { title: "Investment proofs" };
 
-const SORTS = ["name", "reg", "dec", "pend"] as const;
-
 export default async function ProofsPage(props: PageProps<"/proofs">) {
   await requirePage("proofs");
   const sp = await props.searchParams;
-  const ls = listState(sp, SORTS, "pend", 100, "desc");
-  const flt = pick(sp, "st", ["All", "Pending", "Verified"] as const, "All");
-  const { fy } = await getSetting("tax.policy");
-
-  const emps = await db.employee.findMany({
-    where: { declarationItems: { some: { fy, OR: [{ amount: { gt: 0 } }, { proofPath: { not: null } }] } } },
-    include: { declarationItems: { where: { fy } }, taxProfiles: { where: { fy } }, department: { select: { name: true } } },
-  });
-  const q = ls.q.toLowerCase();
-  const all = emps.map((e) => {
-    const items = e.declarationItems;
-    return {
-      id: e.id, name: e.fullName, code: e.code, dept: e.department?.name ?? "—", reg: e.taxProfiles[0]?.regime ?? "NEW",
-      dec: items.reduce((a, i) => a + Number(i.amount), 0), pend: items.filter((i) => i.status === "PENDING").length, appr: items.filter((i) => i.status === "APPROVED").length,
-    };
-  });
-  const rows = all.filter((r) => (!q || `${r.name} ${r.code} ${r.dept}`.toLowerCase().includes(q)) && (flt === "All" || (flt === "Pending" ? r.pend > 0 : r.pend === 0 && r.appr > 0)));
-  const get = { name: (r: (typeof rows)[number]) => r.name, reg: (r: (typeof rows)[number]) => r.reg, dec: (r: (typeof rows)[number]) => r.dec, pend: (r: (typeof rows)[number]) => r.pend }[ls.sort];
-  rows.sort((a, b) => { const x = get(a), y = get(b); return (x > y ? 1 : x < y ? -1 : 0) * (ls.dir === "asc" ? 1 : -1); });
+  const { rows, total } = await apiData<{ rows: { id: string; name: string; code: string; dept: string; reg: "NEW" | "OLD"; dec: number; pend: number; appr: number }[]; total: number }>(`/api/proofs${qs(sp)}`);
 
   return (
     <div className="col">
@@ -41,7 +19,7 @@ export default async function ProofsPage(props: PageProps<"/proofs">) {
       <div className="toolbar enter" style={{ ["--i" as string]: 1 }}>
         <SearchBox placeholder="Search name, ID or department" label="Search proofs" />
         <SegFilter name="st" dflt="All" label="Status" options={[{ v: "All", l: "All" }, { v: "Pending", l: "To verify" }, { v: "Verified", l: "Verified" }]} />
-        <span className="tcount">{rows.length} of {all.length}</span>
+        <span className="tcount">{rows.length} of {total}</span>
       </div>
       <section className="card enter" style={{ ["--i" as string]: 1 }}>
         <Pending>
@@ -69,8 +47,8 @@ export default async function ProofsPage(props: PageProps<"/proofs">) {
               </tbody>
             </table>
           </div>
-          {!all.length && <div className="empty"><b className="display">No declarations yet</b><span className="muted">Employees on the old regime will appear here.</span></div>}
-          {all.length > 0 && !rows.length && <div className="empty"><b>No one matches</b><ClearFilters /></div>}
+          {!total && <div className="empty"><b className="display">No declarations yet</b><span className="muted">Employees on the old regime will appear here.</span></div>}
+          {total > 0 && !rows.length && <div className="empty"><b>No one matches</b><ClearFilters /></div>}
         </Pending>
       </section>
     </div>

@@ -3,16 +3,18 @@ import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { ClearFilters, Pending, SearchBox, SegFilter, SortTh } from "@/components/table/Table";
 import { can, requirePage } from "@/lib/auth";
+import { apiData, qs as toQs } from "@/lib/backend";
 import { avc, inr, initials, ymLabel } from "@/lib/format";
-import { taxRows } from "@/lib/tax/rows";
 import { TaxRow } from "./TaxClient";
 
 export const metadata: Metadata = { title: "Tax & TDS" };
 
+type TaxRowView = { id: string; code: string; name: string; title: string; reg: "NEW" | "OLD"; inc: number; ded: number; taxable: number; tax: number; tds: number; pend: number; overridden: boolean };
+
 export default async function TaxPage(props: PageProps<"/tax">) {
   const u = await requirePage("tax");
   const sp = await props.searchParams;
-  const { month, fy, all, rows } = await taxRows(sp);
+  const { month, fy, all, rows } = await apiData<{ month: string; fy: string; all: TaxRowView[]; rows: TaxRowView[] }>(`/api/tax${toQs(sp)}`);
   const qs = new URLSearchParams(Object.entries(sp).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : []))).toString();
   const rp = (rupees: number) => inr(rupees * 100);
 
