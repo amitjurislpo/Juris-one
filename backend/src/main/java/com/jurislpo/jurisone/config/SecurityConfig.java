@@ -4,6 +4,7 @@ import com.jurislpo.jurisone.security.JsonAuthEntryPoint;
 import com.jurislpo.jurisone.security.OriginCheckFilter;
 import com.jurislpo.jurisone.security.SessionAuthFilter;
 import java.util.List;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,8 +23,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * Stateless: no JSESSIONID. Authentication comes from the existing {@code jo_session} cookie (SessionAuthFilter).
  * Spring's CSRF token is off because the app's defence is SameSite=Lax cookies + an Origin check on writes, as today.
  * Permissions are checked in the services with the same any-of rules and messages as the Next.js app.
+ * Not loaded for the one-shot CLI commands (migrate / seed / jobs), which run without a web server.
  */
 @Configuration
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableMethodSecurity
 public class SecurityConfig {
 

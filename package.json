@@ -11,16 +11,15 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "db:up": "docker compose up -d db",
-    "db:migrate": "prisma migrate dev",
-    "db:deploy": "prisma migrate deploy",
-    "db:seed": "prisma db seed",
+    "db:migrate": "node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=migrate",
+    "db:seed": "node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=seed",
     "db:reset": "prisma migrate reset --force",
     "db:generate": "prisma generate",
     "backend:dev": "node scripts/mvnw.mjs -q spring-boot:run",
     "backend:test": "node scripts/mvnw.mjs -B test",
     "backend:up": "docker compose up -d --build backend",
     "postinstall": "prisma generate",
-    "jobs": "tsx --conditions=react-server scripts/run-jobs.ts"
+    "jobs": "node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=jobs"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

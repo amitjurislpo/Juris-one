@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 public class SettingsService {
 
     /** Defaults, verbatim from src/lib/settings-defaults.ts. */
-    static final Map<String, String> DEFAULTS = Map.of(
+    public static final Map<String, String> DEFAULTS = Map.of(
             "attendance.policy", """
                 {"fullDayHours":8,"halfDayHours":4,"graceMinutes":15,"lateMarksPerHalfDayLop":3,"weeklyOffs":[0,6],
                  "absenceJobBufferMinutes":120,"lockDayOfNextMonth":1,"lockTime":"10:00","shiftTargetHours":9,"trackingStartDate":"2026-04-01"}""",
