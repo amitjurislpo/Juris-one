@@ -120,7 +120,7 @@ public final class PeopleRules {
     }
 
     public static boolean validAadhaar(String s) {
-        return digits(s).matches("^[2-9][0-9]{11}$");
+        return digits(s).length() == 12;
     }
 
     public static boolean validUan(String s) {
@@ -133,23 +133,43 @@ public final class PeopleRules {
     }
 
     /** The add / edit employee form (employee-schema.ts EmployeeInput); strings already trimmed by the caller where zod trims. */
-    public record EmployeeInput(String fullName, String fatherName, String email, String phone, String location, String pan, String aadhaar,
-                                String uan, String address, String designation, String departmentId, String managerId, String doj,
-                                String shift, String roleId) {}
+    /**
+     * Add / edit employee. {@code location} empty = India (IST); {@code phone} is the national number for
+     * {@code phoneCountry} (e.g. "+91"); PAN, Aadhaar and UAN are optional (checked when given).
+     */
+    public record EmployeeInput(String firstName, String middleName, String lastName, String fatherName, String email, String phoneCountry, String phone,
+                                String location, String joiningOffice, String pan, String aadhaar, String uan, String address, String designation,
+                                String departmentId, String managerId, String doj, String shift, String roleId) {
+
+        /** "First Middle Last". */
+        public String fullName() {
+            return java.util.stream.Stream.of(firstName, middleName, lastName).filter(x -> x != null && !x.isBlank()).map(String::trim)
+                    .collect(java.util.stream.Collectors.joining(" "));
+        }
+
+        /** The work location code; empty means India (IST). */
+        public String locationOrDefault() {
+            return location == null || location.isBlank() ? "IN_IST" : location;
+        }
+    }
 
     /** Step-by-step checks shown in the form (and re-run on the server). Field → message, in check order. */
     public static Map<String, String> stepErrors(int step, EmployeeInput f, boolean editing, boolean hadManager) {
         Map<String, String> x = new LinkedHashMap<>();
-        boolean india = "IN_IST".equals(f.location());
+        boolean india = "IN_IST".equals(f.locationOrDefault());
         if (step == 1) {
-            if (f.fullName().trim().length() < 2) x.put("fullName", "Full name is required");
+            if (f.firstName().trim().isEmpty()) x.put("firstName", "First name is required");
+            if (f.lastName().trim().isEmpty()) x.put("lastName", "Last name is required");
             if (f.fatherName().trim().length() < 2) x.put("fatherName", "Father’s name is required");
             if (!EMAIL_RE.matcher(f.email().trim()).matches()) x.put("email", "Enter a valid email");
-            if (!f.phone().isEmpty() || !editing) if (!validPhone(f.phone())) x.put("phone", "Enter a valid phone number");
+            if (!f.phone().isEmpty() || !editing) {
+                String p = Phones.problem(f.phoneCountry(), f.phone());
+                if (p != null) x.put("phone", p);
+            }
         }
         if (step == 2 && india) {
-            if (!f.pan().isEmpty() || !editing) if (!PAN_RE.matcher(f.pan().trim().toUpperCase()).matches()) x.put("pan", "PAN looks like ABCDE1234F");
-            if (!f.aadhaar().isEmpty() || !editing) if (!validAadhaar(f.aadhaar())) x.put("aadhaar", "Aadhaar has 12 digits");
+            if (!f.pan().isEmpty() && !PAN_RE.matcher(f.pan().trim().toUpperCase()).matches()) x.put("pan", "PAN looks like ABCDE1234F");
+            if (!f.aadhaar().isEmpty() && !validAadhaar(f.aadhaar())) x.put("aadhaar", "Aadhaar has 12 digits");
             if (!f.uan().isEmpty() && !validUan(f.uan())) x.put("uan", "UAN has 12 digits");
         }
         if (step == 3) {

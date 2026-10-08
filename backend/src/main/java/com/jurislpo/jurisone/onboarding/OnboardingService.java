@@ -88,12 +88,20 @@ public class OnboardingService {
             new Kind("png", "image/png", new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47}), new Kind("jpg", "image/jpeg", new byte[] {(byte) 0xff, (byte) 0xd8, (byte) 0xff}));
 
     /** What the candidate fills in. Stored as encrypted JSON. */
-    public record Form(String fullName, String fatherName, String dateOfBirth, String gender, String phone, String currentAddress, String permanentAddress,
-                       String pan, String aadhaar, String uan, String bankName, String bankAccount, String ifsc, String previousEmployer,
-                       String previousDesignation, String emergencyName, String emergencyRelation, String emergencyPhone) {
+    public record Form(String firstName, String middleName, String lastName, String fatherName, String dateOfBirth, String gender, String phoneCountry,
+                       String phone, String currentAddress, String permanentAddress, String pan, String aadhaar, String uan, String bankName, String bankAccount,
+                       String ifsc, String previousEmployer, String previousDesignation, String emergencyName, String emergencyRelation,
+                       String emergencyPhoneCountry, String emergencyPhone) {
 
+        /** A blank form with the name HR typed split into first / middle / last. */
         static Form empty(String name) {
-            return new Form(name, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "");
+            String[] w = name.trim().split("\\s+");
+            String first = w[0], last = w.length > 1 ? w[w.length - 1] : "", middle = w.length > 2 ? String.join(" ", Arrays.copyOfRange(w, 1, w.length - 1)) : "";
+            return new Form(first, middle, last, "", "", "", "+91", "", "", "", "", "", "", "", "", "", "", "", "", "", "+91", "");
+        }
+
+        public String fullName() {
+            return java.util.stream.Stream.of(firstName, middleName, lastName).filter(x -> x != null && !x.isBlank()).collect(java.util.stream.Collectors.joining(" "));
         }
     }
 
@@ -375,10 +383,13 @@ public class OnboardingService {
         out.put("employeeCode", r.get("employee_id") == null ? null : jdbc.queryForObject("SELECT code FROM employees WHERE id = ?", String.class, r.get("employee_id")));
         Map<String, Object> form = new LinkedHashMap<>();
         form.put("fullName", f.fullName());
+        form.put("firstName", f.firstName());
+        form.put("middleName", f.middleName());
+        form.put("lastName", f.lastName());
         form.put("fatherName", f.fatherName());
         form.put("dateOfBirth", f.dateOfBirth());
         form.put("gender", f.gender());
-        form.put("phone", f.phone());
+        form.put("phone", f.phone().isEmpty() ? "" : f.phoneCountry() + " " + f.phone());
         form.put("currentAddress", f.currentAddress());
         form.put("permanentAddress", f.permanentAddress());
         form.put("pan", f.pan().isEmpty() ? null : Masks.pan(PiiCrypto.last4(f.pan())));
@@ -391,7 +402,7 @@ public class OnboardingService {
         form.put("previousDesignation", f.previousDesignation());
         form.put("emergencyName", f.emergencyName());
         form.put("emergencyRelation", f.emergencyRelation());
-        form.put("emergencyPhone", f.emergencyPhone());
+        form.put("emergencyPhone", f.emergencyPhone().isEmpty() ? "" : f.emergencyPhoneCountry() + " " + f.emergencyPhone());
         out.put("form", form);
         out.put("documents", docs);
         out.put("checklist", checklist(requiredOf(r), docs));
@@ -463,7 +474,7 @@ public class OnboardingService {
 
     /** The job details HR confirms when adding the employee (pre-filled from the plan). */
     public record AddInput(String workEmail, String designation, String departmentId, String managerId, String roleId, String joiningDate, String location,
-                           String shift) {}
+                           String shift, String joiningOffice) {}
 
     /**
      * Creates the employee from a verified onboarding: identity, contact, bank details and documents come from the
@@ -477,8 +488,10 @@ public class OnboardingService {
         if (in == null) throw new UserException(HttpStatus.BAD_REQUEST, "Employee details are missing.");
         Form f = readForm(r);
         String location = in.location() == null || in.location().isBlank() ? (String) r.get("location") : in.location();
+        if (location == null || location.isBlank()) location = "IN_IST";
         boolean india = "IN_IST".equals(location);
-        EmployeeInput e = new EmployeeInput(f.fullName(), f.fatherName(), in.workEmail() == null ? "" : in.workEmail(), f.phone(), location,
+        EmployeeInput e = new EmployeeInput(f.firstName(), f.middleName(), f.lastName(), f.fatherName(), in.workEmail() == null ? "" : in.workEmail(),
+                f.phoneCountry(), f.phone(), location, in.joiningOffice() == null ? "" : in.joiningOffice(),
                 india ? f.pan() : "", india ? f.aadhaar() : "", india ? f.uan() : "", f.currentAddress(), in.designation() == null ? "" : in.designation(),
                 in.departmentId() == null ? "" : in.departmentId(), in.managerId() == null ? "" : in.managerId(), in.joiningDate() == null ? "" : in.joiningDate(),
                 in.shift() == null || in.shift().isBlank() ? (india ? "IN_NIGHT" : "US_DAY") : in.shift(), in.roleId() == null ? "" : in.roleId());
@@ -488,6 +501,11 @@ public class OnboardingService {
             jdbc.update("UPDATE employees SET bank_account_enc = ?, bank_account_last4 = ?, bank_ifsc = ?, bank_name = ? WHERE id = ?",
                     pii.encrypt(f.bankAccount()), PiiCrypto.last4(f.bankAccount()), f.ifsc().isEmpty() ? null : f.ifsc(), f.bankName().isEmpty() ? null : f.bankName(), emp);
         }
+        // personal details the employee record keeps from the candidate's form
+        jdbc.update("UPDATE employees SET date_of_birth = ?, permanent_address_enc = ?, emergency_name = ?, emergency_relation = ?, emergency_phone = ? WHERE id = ?",
+                f.dateOfBirth().isEmpty() ? null : Date.valueOf(f.dateOfBirth()), f.permanentAddress().isEmpty() ? null : pii.encrypt(f.permanentAddress()),
+                f.emergencyName().isEmpty() ? null : f.emergencyName(), f.emergencyRelation().isEmpty() ? null : f.emergencyRelation(),
+                f.emergencyPhone().isEmpty() ? null : f.emergencyPhoneCountry() + " " + f.emergencyPhone(), emp);
         jdbc.update("UPDATE onboarding_documents SET employee_id = ? WHERE onboarding_id = ? AND status = 'VERIFIED'", emp, id);
         jdbc.update("UPDATE onboardings SET status = 'ADDED', employee_id = ?, token_hash = NULL, token_expires_at = NULL, updated_at = now() WHERE id = ?", emp, id);
         audit.log(u.id(), "onboarding.employee_added", "onboarding", id.toString(), null, Map.of("employee", saved.id(), "code", saved.code()), ip);
@@ -598,20 +616,25 @@ public class OnboardingService {
 
     static Form clean(Form in, String fallbackName) {
         if (in == null) throw new UserException(HttpStatus.BAD_REQUEST, "Your details are missing.");
+        Form blank = Form.empty(fallbackName);
         String pan = trim(in.pan(), 10, "PAN").toUpperCase(Locale.ROOT);
         String ifsc = trim(in.ifsc(), 11, "IFSC").toUpperCase(Locale.ROOT);
-        String name = trim(in.fullName(), 120, "name");
-        return new Form(name.isEmpty() ? fallbackName : name, trim(in.fatherName(), 120, "father's name"), trim(in.dateOfBirth(), 10, "date of birth"),
-                trim(in.gender(), 20, "gender"), trim(in.phone(), 30, "phone"), trim(in.currentAddress(), 500, "address"), trim(in.permanentAddress(), 500, "address"),
-                pan, PeopleRules.digits(trim(in.aadhaar(), 20, "Aadhaar")), PeopleRules.digits(trim(in.uan(), 20, "UAN")), trim(in.bankName(), 80, "bank name"),
-                PeopleRules.digits(trim(in.bankAccount(), 24, "account number")), ifsc, trim(in.previousEmployer(), 120, "previous employer"),
-                trim(in.previousDesignation(), 120, "previous designation"), trim(in.emergencyName(), 120, "emergency contact"),
-                trim(in.emergencyRelation(), 40, "relationship"), trim(in.emergencyPhone(), 30, "emergency phone"));
+        String code = trim(in.phoneCountry(), 5, "country code");
+        String ecode = trim(in.emergencyPhoneCountry(), 5, "country code");
+        return new Form(trim(in.firstName(), 60, "first name"), trim(in.middleName(), 60, "middle name"), trim(in.lastName(), 60, "last name"),
+                trim(in.fatherName(), 120, "father's name"), trim(in.dateOfBirth(), 10, "date of birth"), trim(in.gender(), 20, "gender"),
+                code.isEmpty() ? blank.phoneCountry() : code, PeopleRules.digits(trim(in.phone(), 30, "phone")), trim(in.currentAddress(), 500, "address"),
+                trim(in.permanentAddress(), 500, "address"), pan, PeopleRules.digits(trim(in.aadhaar(), 20, "Aadhaar")), PeopleRules.digits(trim(in.uan(), 20, "UAN")),
+                trim(in.bankName(), 80, "bank name"), PeopleRules.digits(trim(in.bankAccount(), 24, "account number")), ifsc,
+                trim(in.previousEmployer(), 120, "previous employer"), trim(in.previousDesignation(), 120, "previous designation"),
+                trim(in.emergencyName(), 120, "emergency contact"), trim(in.emergencyRelation(), 40, "relationship"),
+                ecode.isEmpty() ? blank.emergencyPhoneCountry() : ecode, PeopleRules.digits(trim(in.emergencyPhone(), 30, "emergency phone")));
     }
 
     /** The first missing / invalid answer, or null when the form is complete. */
     static String problem(Form f, boolean india) {
-        if (f.fullName().length() < 2) return "Enter your full name.";
+        if (f.firstName().isEmpty()) return "Enter your first name.";
+        if (f.lastName().isEmpty()) return "Enter your last name.";
         if (f.fatherName().length() < 2) return "Enter your father's name.";
         if (!f.dateOfBirth().matches("^\\d{4}-\\d{2}-\\d{2}$")) return "Enter your date of birth.";
         try {
@@ -620,18 +643,20 @@ public class OnboardingService {
         } catch (java.time.DateTimeException e) {
             return "Check your date of birth.";
         }
-        if (!PeopleRules.validPhone(f.phone())) return "Enter a valid phone number.";
+        String phone = com.jurislpo.jurisone.engine.Phones.problem(f.phoneCountry(), f.phone());
+        if (phone != null) return phone + ".";
         if (f.currentAddress().length() < 10) return "Enter your current address.";
         if (india) {
-            if (!PeopleRules.PAN_RE.matcher(f.pan()).matches()) return "Enter a valid PAN, e.g. ABCDE1234F.";
-            if (!PeopleRules.validAadhaar(f.aadhaar())) return "Enter your 12-digit Aadhaar number.";
+            if (!f.pan().isEmpty() && !PeopleRules.PAN_RE.matcher(f.pan()).matches()) return "Enter a valid PAN, e.g. ABCDE1234F (or leave it empty).";
+            if (!f.aadhaar().isEmpty() && !PeopleRules.validAadhaar(f.aadhaar())) return "Your Aadhaar number has 12 digits (or leave it empty).";
             if (!f.uan().isEmpty() && !PeopleRules.validUan(f.uan())) return "Your UAN has 12 digits (leave it empty if you don't have one).";
             if (!IFSC.matcher(f.ifsc()).matches()) return "Enter your bank's IFSC, e.g. HDFC0001234.";
         }
         if (f.bankName().length() < 2) return "Enter your bank's name.";
         if (f.bankAccount().length() < 6 || f.bankAccount().length() > 18) return "Enter your bank account number.";
         if (f.emergencyName().length() < 2) return "Enter an emergency contact.";
-        if (!PeopleRules.validPhone(f.emergencyPhone())) return "Enter your emergency contact's phone number.";
+        String ephone = com.jurislpo.jurisone.engine.Phones.problem(f.emergencyPhoneCountry(), f.emergencyPhone());
+        if (ephone != null) return "Emergency contact: " + ephone.substring(0, 1).toLowerCase(Locale.ROOT) + ephone.substring(1) + ".";
         return null;
     }
 

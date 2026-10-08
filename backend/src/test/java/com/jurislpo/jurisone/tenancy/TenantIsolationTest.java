@@ -108,7 +108,7 @@ class TenantIsolationTest extends IntegrationTest {
         UUID deptA = UUID.randomUUID();
         jdbc.update("INSERT INTO departments (id, name, business_id) VALUES (?, ?, ?)", deptA, "Ops " + deptA.toString().substring(0, 6), a.business());
         String body = """
-            {"fullName":"Copy Cat","fatherName":"Someone","email":"%s","phone":"+91 98765 43210","location":"IN_IST","pan":"abcde1234f",
+            {"firstName":"Copy","lastName":"Cat","fatherName":"Someone","email":"%s","phoneCountry":"+91","phone":"98765 43210","location":"IN_IST","pan":"abcde1234f",
              "aadhaar":"2345 6789 0123","uan":"","address":"12 Lake Road, Pune","designation":"Associate","departmentId":"%s","managerId":"%s",
              "doj":"2031-10-12","shift":"IN_DAY","roleId":"%s"}""".formatted(betaEmp.email(), deptA, alphaHr.id(), empA);
         mvc.perform(write(post("/api/people")).cookie(alphaHr.cookie()).content(body))

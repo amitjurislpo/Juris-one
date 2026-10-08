@@ -155,48 +155,66 @@ class PeopleRulesTest {
     @DisplayName("form validation")
     class Form {
         static EmployeeInput base() {
-            return new EmployeeInput("Meera Joshi", "Prakash Joshi", "meera.joshi@jurislpo.com", "+91 98765 43210", "IN_IST", "ABCDE1234F",
+            return new EmployeeInput("Meera", "", "Joshi", "Prakash Joshi", "meera.joshi@jurislpo.com", "+91", "98765 43210", "IN_IST", "", "ABCDE1234F",
                     "2345 6789 0123", "", "", "Associate", "x", "y", "2026-10-12", "IN_NIGHT", "r");
         }
 
         static EmployeeInput with(String field, String value) {
             EmployeeInput b = base();
             Map<String, String> v = new HashMap<>(Map.ofEntries(
-                    Map.entry("fullName", b.fullName()), Map.entry("fatherName", b.fatherName()), Map.entry("email", b.email()), Map.entry("phone", b.phone()),
-                    Map.entry("location", b.location()), Map.entry("pan", b.pan()), Map.entry("aadhaar", b.aadhaar()), Map.entry("uan", b.uan()),
-                    Map.entry("address", b.address()), Map.entry("designation", b.designation()), Map.entry("departmentId", b.departmentId()),
+                    Map.entry("firstName", b.firstName()), Map.entry("middleName", b.middleName()), Map.entry("lastName", b.lastName()),
+                    Map.entry("fatherName", b.fatherName()), Map.entry("email", b.email()), Map.entry("phoneCountry", b.phoneCountry()), Map.entry("phone", b.phone()),
+                    Map.entry("location", b.location()), Map.entry("joiningOffice", b.joiningOffice()), Map.entry("pan", b.pan()), Map.entry("aadhaar", b.aadhaar()),
+                    Map.entry("uan", b.uan()), Map.entry("address", b.address()), Map.entry("designation", b.designation()), Map.entry("departmentId", b.departmentId()),
                     Map.entry("managerId", b.managerId()), Map.entry("doj", b.doj()), Map.entry("shift", b.shift()), Map.entry("roleId", b.roleId())));
             Stream.of(field.split(",")).forEach(f -> v.put(f, value));
-            return new EmployeeInput(v.get("fullName"), v.get("fatherName"), v.get("email"), v.get("phone"), v.get("location"), v.get("pan"),
-                    v.get("aadhaar"), v.get("uan"), v.get("address"), v.get("designation"), v.get("departmentId"), v.get("managerId"), v.get("doj"),
-                    v.get("shift"), v.get("roleId"));
+            return new EmployeeInput(v.get("firstName"), v.get("middleName"), v.get("lastName"), v.get("fatherName"), v.get("email"), v.get("phoneCountry"),
+                    v.get("phone"), v.get("location"), v.get("joiningOffice"), v.get("pan"), v.get("aadhaar"), v.get("uan"), v.get("address"), v.get("designation"),
+                    v.get("departmentId"), v.get("managerId"), v.get("doj"), v.get("shift"), v.get("roleId"));
         }
 
         @Test
-        @DisplayName("requires PAN and Aadhaar for India on create")
+        @DisplayName("PAN and Aadhaar are optional, but checked when given")
         void india() {
-            assertThat(stepErrors(2, with("pan", ""), false)).containsKey("pan");
+            assertThat(stepErrors(2, with("pan,aadhaar", ""), false)).isEmpty();
             assertThat(stepErrors(2, with("pan", "abcde1234f"), false)).doesNotContainKey("pan");
+            assertThat(stepErrors(2, with("pan", "ABC"), false)).containsKey("pan");
             assertThat(stepErrors(2, with("aadhaar", "1234"), false)).containsKey("aadhaar");
+            assertThat(stepErrors(2, with("aadhaar", "1234 1234 1234"), false)).doesNotContainKey("aadhaar");
             assertThat(stepErrors(2, with("uan", "123"), false)).containsKey("uan");
         }
 
         @Test
-        @DisplayName("skips Indian IDs for the US team and keeps blanks on edit")
+        @DisplayName("needs first and last name, a valid email and a phone that fits its country")
+        void personal() {
+            assertThat(stepErrors(1, base(), false)).isEmpty();
+            assertThat(stepErrors(1, with("lastName", ""), false)).containsKey("lastName");
+            assertThat(stepErrors(1, with("firstName", ""), false)).containsKey("firstName");
+            assertThat(stepErrors(1, with("middleName", ""), false)).isEmpty();
+            assertThat(stepErrors(1, with("email", "meera@"), false)).containsKey("email");
+            assertThat(stepErrors(1, with("phone", "98765 4321"), false)).containsEntry("phone", "India numbers have 10 digits");
+            assertThat(stepErrors(1, with("phone", "58765 43210"), false)).containsKey("phone");
+            assertThat(stepErrors(1, with("phoneCountry,phone", "+65"), false)).containsKey("phone");
+        }
+
+        @Test
+        @DisplayName("skips Indian IDs for the US team, keeps blanks on edit and treats no location as India")
         void usAndEdit() {
-            EmployeeInput us = with("pan,aadhaar", "");
-            us = new EmployeeInput(us.fullName(), us.fatherName(), us.email(), us.phone(), "US_ET", us.pan(), us.aadhaar(), us.uan(), us.address(),
-                    us.designation(), us.departmentId(), us.managerId(), us.doj(), us.shift(), us.roleId());
+            EmployeeInput us = with("location", "US_ET");
+            us = new EmployeeInput(us.firstName(), us.middleName(), us.lastName(), us.fatherName(), us.email(), us.phoneCountry(), us.phone(), "US_ET",
+                    us.joiningOffice(), "bad", "bad", us.uan(), us.address(), us.designation(), us.departmentId(), us.managerId(), us.doj(), us.shift(), us.roleId());
             assertThat(stepErrors(2, us, false)).isEmpty();
-            assertThat(stepErrors(2, with("pan,aadhaar", ""), true)).isEmpty();
             assertThat(stepErrors(1, with("phone", ""), true)).isEmpty();
+            assertThat(with("location", "").locationOrDefault()).isEqualTo("IN_IST");
+            assertThat(with("middleName", "Rani").fullName()).isEqualTo("Meera Rani Joshi");
         }
 
         @Test
         @DisplayName("validates Aadhaar shape")
         void aadhaar() {
             assertThat(validAadhaar("2345 6789 0123")).isTrue();
-            assertThat(validAadhaar("0345 6789 0123")).isFalse();
+            assertThat(validAadhaar("1234 1234 1234")).isTrue();
+            assertThat(validAadhaar("1234 1234 123")).isFalse();
         }
     }
 

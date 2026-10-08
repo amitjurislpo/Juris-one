@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { Icon } from "@/components/Icon";
 import { useToast } from "@/components/shell/Toasts";
 import { Modal } from "@/components/ui/Modal";
+import { PhoneInput } from "@/components/ui/PhoneInput";
 import { stepErrors, type EmployeeInput, type StepErrors } from "@/lib/employee-schema";
 import { LOCATIONS } from "@/lib/people-rules";
 import { SHIFT_OPTIONS } from "@/lib/shifts";
@@ -34,13 +35,13 @@ export function EmployeeForm({ editId, onClose }: { editId?: string; onClose: ()
 
   const editing = !!opt?.editing;
   const errs: StepErrors = f ? stepErrors(step, f, editing, opt?.editing?.hadManager) : {};
-  const india = f?.location === "IN_IST";
+  const india = !f?.location || f.location === "IN_IST";
   const set = <K extends keyof EmployeeInput>(k: K, v: EmployeeInput[K]) => {
     setServerErr("");
     setF((cur) => {
       if (!cur) return cur;
       const next = { ...cur, [k]: v };
-      if (k === "location") next.shift = v === "IN_IST" ? (cur.shift === "US_DAY" ? "IN_NIGHT" : cur.shift) : "US_DAY";
+      if (k === "location") next.shift = !v || v === "IN_IST" ? (cur.shift === "US_DAY" ? "IN_NIGHT" : cur.shift) : "US_DAY";
       if (k === "departmentId" && !editing && !opt?.lockedDepartmentId) {
         const head = opt?.departments.find((d) => d.id === v)?.headId;
         if (head && (!cur.managerId || opt?.departments.some((d) => d.headId === cur.managerId))) next.managerId = head;
@@ -87,17 +88,31 @@ export function EmployeeForm({ editId, onClose }: { editId?: string; onClose: ()
           </div>
 
           {step === 1 && (
-            <div className="grid2" style={{ animation: "enter .4s both" }}>
-              <label className="field">Full name *<input value={f.fullName} onChange={(e) => set("fullName", e.target.value)} placeholder="e.g. Meera Joshi" maxLength={120} autoFocus />{err("fullName")}</label>
-              <label className="field">Father’s name *<input value={f.fatherName} onChange={(e) => set("fatherName", e.target.value)} placeholder="e.g. Prakash Joshi" maxLength={120} />{err("fatherName")}</label>
-              <label className="field">Email *<input type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="meera.joshi@jurislpo.com" maxLength={200} />{err("email")}</label>
-              <label className="field">Phone {editing ? "" : "*"}
-                <input type="tel" value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder={onFile(opt.editing?.last4.phone) ?? (india ? "+91 98xxx xxxxx" : "+1 (555) 000-0000")} maxLength={30} />{err("phone")}
-              </label>
-              <label className="field">Work location
-                <select value={f.location} onChange={(e) => set("location", e.target.value)}>{LOCATIONS.map((l) => <option key={l.v} value={l.v}>{l.l}</option>)}</select>
-                <span className="hint">Sets the time zone used for attendance.</span>
-              </label>
+            <div className="col" style={{ gap: 14, animation: "enter .4s both" }}>
+              <div className="grid3">
+                <label className="field">First name *<input value={f.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="e.g. Meera" maxLength={60} autoFocus />{err("firstName")}</label>
+                <label className="field">Middle name<input value={f.middleName} onChange={(e) => set("middleName", e.target.value)} maxLength={60} />{err("middleName")}</label>
+                <label className="field">Last name *<input value={f.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="e.g. Joshi" maxLength={60} />{err("lastName")}</label>
+              </div>
+              <div className="grid2">
+                <label className="field">Father’s name *<input value={f.fatherName} onChange={(e) => set("fatherName", e.target.value)} placeholder="e.g. Prakash Joshi" maxLength={120} />{err("fatherName")}</label>
+                <label className="field">Work email *<input type="email" value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="meera.joshi@company.com" maxLength={200} />{err("email")}</label>
+                <div className="field">Phone {editing ? "" : "*"}
+                  <PhoneInput code={f.phoneCountry || "+91"} number={f.phone} placeholder={onFile(opt.editing?.last4.phone)}
+                    onChange={(c, n) => { set("phoneCountry", c); set("phone", n); }} />
+                  {err("phone")}
+                </div>
+                <label className="field">Joining office <span className="hint">optional</span>
+                  <input value={f.joiningOffice} onChange={(e) => set("joiningOffice", e.target.value)} placeholder="e.g. Noida office" maxLength={120} />
+                </label>
+                <label className="field">Work location <span className="hint">optional · India if not set</span>
+                  <select value={f.location} onChange={(e) => set("location", e.target.value)}>
+                    <option value="">Not set (India)</option>
+                    {LOCATIONS.map((l) => <option key={l.v} value={l.v}>{l.l}</option>)}
+                  </select>
+                  <span className="hint">Decides payroll, holidays and the attendance time zone.</span>
+                </label>
+              </div>
             </div>
           )}
 
@@ -105,8 +120,8 @@ export function EmployeeForm({ editId, onClose }: { editId?: string; onClose: ()
             <div className="col" style={{ gap: 14, animation: "enter .4s both" }}>
               {india ? (
                 <div className="grid3">
-                  <label className="field">PAN {editing ? "" : "*"}<input value={f.pan} onChange={(e) => set("pan", e.target.value.toUpperCase())} placeholder={onFile(opt.editing?.last4.pan) ?? "ABCDE1234F"} maxLength={10} style={{ textTransform: "uppercase" }} autoComplete="off" />{err("pan")}</label>
-                  <label className="field">Aadhaar {editing ? "" : "*"}<input value={f.aadhaar} onChange={(e) => set("aadhaar", e.target.value)} placeholder={onFile(opt.editing?.last4.aadhaar) ?? "1234 5678 9012"} maxLength={14} inputMode="numeric" autoComplete="off" />{err("aadhaar")}</label>
+                  <label className="field">PAN <span className="hint">optional</span><input value={f.pan} onChange={(e) => set("pan", e.target.value.toUpperCase())} placeholder={onFile(opt.editing?.last4.pan) ?? "ABCDE1234F"} maxLength={10} style={{ textTransform: "uppercase" }} autoComplete="off" />{err("pan")}</label>
+                  <label className="field">Aadhaar <span className="hint">optional</span><input value={f.aadhaar} onChange={(e) => set("aadhaar", e.target.value)} placeholder={onFile(opt.editing?.last4.aadhaar) ?? "1234 5678 9012"} maxLength={14} inputMode="numeric" autoComplete="off" />{err("aadhaar")}</label>
                   <label className="field">UAN <span className="hint">if they have PF already</span><input value={f.uan} onChange={(e) => set("uan", e.target.value)} placeholder={onFile(opt.editing?.last4.uan) ?? "12-digit UAN"} maxLength={14} inputMode="numeric" autoComplete="off" />{err("uan")}</label>
                 </div>
               ) : (

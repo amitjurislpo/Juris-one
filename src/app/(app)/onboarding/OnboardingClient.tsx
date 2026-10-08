@@ -188,11 +188,11 @@ export function AddEmployeeButton({ id, name, plan }: { id: string; name: string
   const { opt, err: optErr, load } = useOptions();
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ workEmail: "", designation: plan.designation ?? "", departmentId: plan.departmentId ?? "", managerId: plan.managerId ?? "",
-    roleId: plan.roleId ?? "", joiningDate: plan.joiningDate ?? "", location: plan.location ?? "IN_IST", shift: plan.location && plan.location !== "IN_IST" ? "US_DAY" : "IN_NIGHT" });
+    roleId: plan.roleId ?? "", joiningDate: plan.joiningDate ?? "", location: plan.location ?? "", joiningOffice: "", shift: plan.location && plan.location !== "IN_IST" ? "US_DAY" : "IN_NIGHT" });
   const [err, setErr] = useState("");
   const [busy, start] = useTransition();
   const on = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => { setF({ ...f, [k]: e.target.value }); setErr(""); };
-  const india = f.location === "IN_IST";
+  const india = !f.location || f.location === "IN_IST";
   const save = () => start(async () => {
     const r = await addOnboardedEmployee(id, { ...f, shift: india ? f.shift : "US_DAY" });
     if (r.ok) { toast(r.msg!); setOpen(false); router.refresh(); } else setErr(r.error);
@@ -222,8 +222,8 @@ export function AddEmployeeButton({ id, name, plan }: { id: string; name: string
             </div>
             <div className="grid3">
               <label className="field">Joining date *<input type="date" value={f.joiningDate} onChange={on("joiningDate")} /></label>
-              <label className="field">Location
-                <select value={f.location} onChange={on("location")}>{LOCATIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+              <label className="field">Work location <span className="hint">India if not set</span>
+                <select value={f.location} onChange={on("location")}><option value="">Not set (India)</option>{LOCATIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
               </label>
               {india ? (
                 <label className="field">Shift
@@ -231,6 +231,7 @@ export function AddEmployeeButton({ id, name, plan }: { id: string; name: string
                 </label>
               ) : <span />}
             </div>
+            <label className="field">Joining office <span className="hint">optional</span><input value={f.joiningOffice} onChange={on("joiningOffice")} maxLength={120} placeholder="e.g. Noida office" /></label>
             {(err || optErr) && <div className="err" role="alert">{err || optErr}</div>}
           </div>
         </Modal>

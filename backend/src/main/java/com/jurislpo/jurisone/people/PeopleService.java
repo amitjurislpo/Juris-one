@@ -331,9 +331,11 @@ public class PeopleService {
         if (current != null) {
             Object sid = current.get("shift_id");
             String shift = sid != null && shiftCodes.containsKey(sid.toString()) ? shiftCodes.get(sid.toString()) : ("US".equals(current.get("region_s")) ? "US_DAY" : "IN_NIGHT");
-            defaults = new EmployeeInput((String) current.get("full_name"), current.get("father_name") == null ? "" : (String) current.get("father_name"),
-                    (String) current.get("email"), "", PeopleRules.locationOfTz((String) current.get("time_zone")).v(), "", "", "", "",
-                    (String) current.get("designation"), current.get("department_id") == null ? "" : current.get("department_id").toString(),
+            String[] names = names(current);
+            defaults = new EmployeeInput(names[0], names[1], names[2], current.get("father_name") == null ? "" : (String) current.get("father_name"),
+                    (String) current.get("email"), current.get("phone_country") == null ? "+91" : (String) current.get("phone_country"), "",
+                    PeopleRules.locationOfTz((String) current.get("time_zone")).v(), current.get("joining_office") == null ? "" : (String) current.get("joining_office"),
+                    "", "", "", "", (String) current.get("designation"), current.get("department_id") == null ? "" : current.get("department_id").toString(),
                     current.get("reporting_manager_id") == null ? "" : current.get("reporting_manager_id").toString(),
                     ((Date) current.get("date_of_joining")).toLocalDate().toString(), shift, currentRole);
         } else {
@@ -341,7 +343,7 @@ public class PeopleService {
                     : departments.stream().filter(d -> !List.of("Human Resources", "Finance").contains(d.name())).findFirst().orElse(departments.isEmpty() ? null : departments.get(0));
             RoleRow role = allowed.stream().filter(r -> employeeRole != null && r.id().equals(employeeRole.id())).findFirst().orElse(allowed.isEmpty() ? null : allowed.get(0));
             String manager = locked != null ? u.id().toString() : dept == null ? null : dept.headId();
-            defaults = new EmployeeInput("", "", "", "", "IN_IST", "", "", "", "", "", dept == null ? "" : dept.id(), manager == null ? "" : manager,
+            defaults = new EmployeeInput("", "", "", "", "", "+91", "", "", "", "", "", "", "", "", dept == null ? "" : dept.id(), manager == null ? "" : manager,
                     Format.todayIn(IST).toString(), "IN_NIGHT", role == null ? "" : role.id());
         }
         Editing editing = current == null ? null : new Editing((String) current.get("code"), (String) current.get("full_name"),
@@ -351,24 +353,42 @@ public class PeopleService {
                 allowed.stream().map(r -> new RoleOption(r.id(), r.name(), r.perms())).toList(), defaults, editing);
     }
 
+    /** First / middle / last name of an employee row (split from full_name for people saved before the name fields). */
+    static String[] names(Map<String, Object> row) {
+        if (row.get("first_name") != null) {
+            return new String[] {(String) row.get("first_name"), row.get("middle_name") == null ? "" : (String) row.get("middle_name"),
+                    row.get("last_name") == null ? "" : (String) row.get("last_name")};
+        }
+        String[] w = ((String) row.get("full_name")).trim().split("\\s+");
+        if (w.length == 1) return new String[] {w[0], "", ""};
+        return new String[] {w[0], String.join(" ", java.util.Arrays.copyOfRange(w, 1, w.length - 1)), w[w.length - 1]};
+    }
+
     /** employeeInput (zod): trims, lower-cases email, upper-cases PAN; first failing field wins, in schema order. */
     static EmployeeInput parse(EmployeeInput in) {
-        java.util.function.BiFunction<String, String, String> s = (v, f) -> {
-            if (v == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected string, received undefined");
-            return v.trim();
-        };
-        String fullName = s.apply(in.fullName(), "fullName");
-        if (fullName.length() < 2) throw bad("Full name is required");
-        if (fullName.length() > 120) throw bad("Too big: expected string to have <=120 characters");
+        java.util.function.BiFunction<String, String, String> s = (v, f) -> v == null ? "" : v.trim();
+        String first = s.apply(in.firstName(), "firstName");
+        if (first.isEmpty()) throw bad("First name is required");
+        String middle = s.apply(in.middleName(), "middleName");
+        String last = s.apply(in.lastName(), "lastName");
+        if (last.isEmpty()) throw bad("Last name is required");
+        for (String n : List.of(first, middle, last)) if (n.length() > 60) throw bad("Keep each name under 60 characters");
         String father = s.apply(in.fatherName(), "fatherName");
         if (father.length() < 2) throw bad("Father’s name is required");
         if (father.length() > 120) throw bad("Too big: expected string to have <=120 characters");
         String email = s.apply(in.email(), "email").toLowerCase();
         if (email.length() > 200) throw bad("Too big: expected string to have <=200 characters");
         if (!PeopleRules.EMAIL_RE.matcher(email).matches()) throw bad("Enter a valid email");
-        String phone = s.apply(in.phone(), "phone");
-        if (phone.length() > 30) throw bad("Too big: expected string to have <=30 characters");
-        String location = Check.oneOf(in.location(), PeopleRules.LOCATIONS.stream().map(Location::v).toList());
+        String phoneCountry = s.apply(in.phoneCountry(), "phoneCountry");
+        if (phoneCountry.isEmpty()) phoneCountry = "+91";
+        if (com.jurislpo.jurisone.engine.Phones.country(phoneCountry).isEmpty()) throw bad("Choose the country code");
+        String phone = PeopleRules.digits(s.apply(in.phone(), "phone"));
+        if (phone.length() > 15) throw bad("Too big: expected string to have <=15 digits");
+        String location = s.apply(in.location(), "location");
+        if (location.isEmpty()) location = "IN_IST"; // not chosen: India
+        location = Check.oneOf(location, PeopleRules.LOCATIONS.stream().map(Location::v).toList());
+        String office = s.apply(in.joiningOffice(), "joiningOffice");
+        if (office.length() > 120) throw bad("Keep the joining office under 120 characters");
         String pan = s.apply(in.pan(), "pan").toUpperCase();
         if (pan.length() > 10) throw bad("Too big: expected string to have <=10 characters");
         String aadhaar = s.apply(in.aadhaar(), "aadhaar");
@@ -381,12 +401,13 @@ public class PeopleService {
         if (designation.length() < 2) throw bad("Designation is required");
         if (designation.length() > 120) throw bad("Too big: expected string to have <=120 characters");
         String departmentId = Check.uuid(in.departmentId(), "Pick a department").toString();
-        String managerId = in.managerId() == null ? null : in.managerId();
-        if (managerId == null || (!managerId.isEmpty() && !PeopleRules.UUID_RE.matcher(managerId).matches())) throw bad("Invalid input");
+        String managerId = in.managerId() == null ? "" : in.managerId();
+        if (!managerId.isEmpty() && !PeopleRules.UUID_RE.matcher(managerId).matches()) throw bad("Invalid input");
         String doj = Check.isoDate(in.doj(), "Pick the date of joining");
-        String shift = Check.oneOf(in.shift(), List.of("IN_NIGHT", "IN_DAY", "US_DAY"));
+        String shift = in.shift() == null || in.shift().isBlank() ? ("IN_IST".equals(location) ? "IN_NIGHT" : "US_DAY") : Check.oneOf(in.shift(), List.of("IN_NIGHT", "IN_DAY", "US_DAY"));
         String roleId = Check.uuid(in.roleId(), "Pick a role").toString();
-        return new EmployeeInput(fullName, father, email, phone, location, pan, aadhaar, uan, address, designation, departmentId, managerId, doj, shift, roleId);
+        return new EmployeeInput(first, middle, last, father, email, phoneCountry, phone, location, office, pan, aadhaar, uan, address, designation, departmentId,
+                managerId, doj, shift, roleId);
     }
 
     private static UserException bad(String m) {
@@ -460,7 +481,7 @@ public class PeopleService {
             throw new UserException("That email is already in use.");
         }
 
-        Location loc = PeopleRules.location(f.location());
+        Location loc = PeopleRules.location(f.locationOrDefault());
         boolean india = "IN".equals(loc.region());
         String shiftCode = india ? ("US_DAY".equals(f.shift()) ? "IN_NIGHT" : f.shift()) : "US_DAY";
         UUID shiftId = jdbc.queryForObject("SELECT id FROM shifts WHERE code = ?", UUID.class, shiftCode);
@@ -471,7 +492,10 @@ public class PeopleService {
             piiCols.put(field + "Enc", pii.encrypt(value));
             piiCols.put(field + "Last4", PiiCrypto.last4(value));
         };
-        if (!f.phone().isEmpty()) setPII.accept("phone", f.phone());
+        if (!f.phone().isEmpty()) {
+            setPII.accept("phone", f.phone());
+            piiCols.put("phoneCountry", f.phoneCountry());
+        }
         if (!f.address().isEmpty()) piiCols.put("addressEnc", pii.encrypt(f.address()));
         if (india) {
             if (!f.pan().isEmpty()) setPII.accept("pan", f.pan().toUpperCase());
@@ -484,6 +508,7 @@ public class PeopleService {
             }
         }
         List<String> changedPII = piiCols.keySet().stream().filter(k -> k.endsWith("Enc")).map(k -> k.replace("Enc", "")).toList();
+        String fullName = f.fullName();
         String managerId = f.managerId().isEmpty() ? null : f.managerId();
         LocalDate today = Format.todayIn(IST);
 
@@ -502,7 +527,7 @@ public class PeopleService {
             before.put("timeZone", cur.get("time_zone"));
             before.put("shiftId", str(cur.get("shift_id")));
             Map<String, Object> after = new LinkedHashMap<>();
-            after.put("fullName", f.fullName());
+            after.put("fullName", fullName);
             after.put("fatherName", f.fatherName());
             after.put("email", email);
             after.put("designation", f.designation());
@@ -518,14 +543,16 @@ public class PeopleService {
                     ? PeopleRules.initialStatus(LocalDate.parse(f.doj()), today).name() : status;
             tx.executeWithoutResult(s -> {
                 jdbc.update("""
-                    UPDATE employees SET full_name = ?, father_name = ?, email = ?, designation = ?, department_id = ?::uuid, reporting_manager_id = ?::uuid,
+                    UPDATE employees SET full_name = ?, first_name = ?, middle_name = ?, last_name = ?, joining_office = ?, father_name = ?, email = ?, designation = ?,
+                      department_id = ?::uuid, reporting_manager_id = ?::uuid,
                       role_id = ?::uuid, date_of_joining = ?, time_zone = ?, region = ?::"Region", shift_id = ?, status = ?::"EmployeeStatus", updated_at = now()
-                    WHERE id = ?""", f.fullName(), f.fatherName(), email, f.designation(), f.departmentId(), managerId, f.roleId(), Date.valueOf(f.doj()),
+                    WHERE id = ?""", fullName, f.firstName(), f.middleName().isEmpty() ? null : f.middleName(), f.lastName(),
+                        f.joiningOffice().isEmpty() ? null : f.joiningOffice(), f.fatherName(), email, f.designation(), f.departmentId(), managerId, f.roleId(), Date.valueOf(f.doj()),
                         loc.tz(), loc.region(), shiftId, newStatus, id);
                 updatePii(id, piiCols);
                 audit.log(u.id(), "employee.edit", "employee", id.toString(), before, after, ip);
             });
-            return new Saved(id.toString(), (String) cur.get("code"), "Saved changes for " + f.fullName());
+            return new Saved(id.toString(), (String) cur.get("code"), "Saved changes for " + fullName);
         }
 
         String[] codeOut = new String[1];
@@ -537,17 +564,18 @@ public class PeopleService {
             String code = nextCode();
             codeOut[0] = code;
             jdbc.update("""
-                INSERT INTO employees (id, code, full_name, father_name, email, designation, department_id, reporting_manager_id, role_id, date_of_joining,
-                  time_zone, region, shift_id, status, portal_access, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?::"Region", ?, ?::"EmployeeStatus", ?, ?, now(), now())""",
-                    id, code, f.fullName(), f.fatherName(), email, f.designation(), f.departmentId(), managerId, f.roleId(), Date.valueOf(f.doj()),
+                INSERT INTO employees (id, code, full_name, first_name, middle_name, last_name, joining_office, father_name, email, designation, department_id,
+                  reporting_manager_id, role_id, date_of_joining, time_zone, region, shift_id, status, portal_access, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?::"Region", ?, ?::"EmployeeStatus", ?, ?, now(), now())""",
+                    id, code, fullName, f.firstName(), f.middleName().isEmpty() ? null : f.middleName(), f.lastName(), f.joiningOffice().isEmpty() ? null : f.joiningOffice(),
+                    f.fatherName(), email, f.designation(), f.departmentId(), managerId, f.roleId(), Date.valueOf(f.doj()),
                     loc.tz(), loc.region(), shiftId, PeopleRules.initialStatus(LocalDate.parse(f.doj()), today).name(), access, u.id());
             updatePii(id, piiCols);
             jdbc.update("INSERT INTO users (employee_id, failed_attempts, is_super_admin) VALUES (?, 0, false)", id);
             // the TS audit: { code, ...data without *Enc, piiProvided }
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("code", code);
-            after.put("fullName", f.fullName());
+            after.put("fullName", fullName);
             after.put("fatherName", f.fatherName());
             after.put("email", email);
             after.put("designation", f.designation());
@@ -568,12 +596,12 @@ public class PeopleService {
                       AND EXISTS (SELECT 1 FROM role_permissions p WHERE p.role_id = e.role_id AND p.permission_key = 'struct.manage')""", UUID.class);
                 for (UUID x : finance) {
                     jdbc.update("INSERT INTO notifications (id, employee_id, text, link, created_at) VALUES (?, ?, ?, '/structures', now())",
-                            UUID.randomUUID(), x, f.fullName() + " (" + code + ") joined — salary structure pending");
+                            UUID.randomUUID(), x, fullName + " (" + code + ") joined — salary structure pending");
                 }
             }
         });
         if (access) tokens.sendInvite(id);
-        return new Saved(id.toString(), codeOut[0], f.fullName() + " added as " + codeOut[0] + " · " + role.get("name")
+        return new Saved(id.toString(), codeOut[0], fullName + " added as " + codeOut[0] + " · " + role.get("name")
                 + (india ? " · salary structure pending with Finance" : "") + (access ? " · invite sent" : " · portal access is off until you turn it on"));
     }
 

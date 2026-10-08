@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Icon } from "@/components/Icon";
+import { PhoneInput } from "@/components/ui/PhoneInput";
 import { fmtDY } from "@/lib/format";
 import { removeCandidateDocument, saveCandidateForm, submitOnboarding, type CandidateForm } from "../actions";
 
@@ -63,7 +64,7 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
     <div className="col" style={{ gap: 18 }}>
       <header>
         <span className="eyebrow">{v.businessName}</span>
-        <h1 className="display" style={{ fontSize: 34, margin: "4px 0 6px" }}>Welcome, {v.candidateName.split(" ")[0]}</h1>
+        <h1 className="display" style={{ fontSize: 34, margin: "4px 0 6px" }}>Welcome, {f.firstName || v.candidateName.split(" ")[0]}</h1>
         <p className="muted" style={{ margin: 0 }}>
           {v.designation ? `You're joining as ${v.designation}` : "You're joining the team"}{v.joiningDate ? ` on ${fmtDY(v.joiningDate)}` : ""}.
           {" "}Fill in your details and upload your documents; HR will review them. Your link works until {fmtDY(v.linkExpiresAt.slice(0, 10))}.
@@ -76,13 +77,16 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
       <section className="card" style={{ padding: 20 }}>
         <div className="card-h"><h3>1 · About you</h3></div>
         <div className="col" style={{ gap: 12 }}>
-          <div className="grid2">{field("fullName", "Full name (as on your ID)", { req: true })}{field("fatherName", "Father's name", { req: true })}</div>
+          <div className="grid3">{field("firstName", "First name", { req: true, max: 60 })}{field("middleName", "Middle name", { max: 60 })}{field("lastName", "Last name", { req: true, max: 60 })}</div>
           <div className="grid3">
+            {field("fatherName", "Father's name", { req: true })}
             {field("dateOfBirth", "Date of birth", { type: "date", req: true })}
             <label className="field">Gender
               <select value={f.gender} onChange={set("gender")} disabled={ro}><option value="">Prefer not to say</option><option>Female</option><option>Male</option><option>Other</option></select>
             </label>
-            {field("phone", "Mobile number", { type: "tel", req: true, ph: "+91 98765 43210", max: 30 })}
+          </div>
+          <div className="field">Mobile number *
+            <PhoneInput code={f.phoneCountry || "+91"} number={f.phone} disabled={ro} onChange={(c, n) => { setF({ ...f, phoneCountry: c, phone: n }); setMsg(null); }} />
           </div>
           <label className="field">Current address *<textarea value={f.currentAddress} onChange={set("currentAddress")} rows={2} maxLength={500} disabled={ro} /></label>
           <label className="field">Permanent address <span className="hint">if different</span><textarea value={f.permanentAddress} onChange={set("permanentAddress")} rows={2} maxLength={500} disabled={ro} /></label>
@@ -92,7 +96,7 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
       <section className="card" style={{ padding: 20 }}>
         <div className="card-h"><h3>2 · Identity &amp; bank</h3><small className="muted">Stored encrypted</small></div>
         <div className="col" style={{ gap: 12 }}>
-          {v.india && <div className="grid3">{field("pan", "PAN", { req: true, ph: "ABCDE1234F", max: 10 })}{field("aadhaar", "Aadhaar", { req: true, ph: "12 digits", max: 14 })}{field("uan", "UAN", { ph: "if you have PF already", max: 12 })}</div>}
+          {v.india && <div className="grid3">{field("pan", "PAN (optional)", { ph: "ABCDE1234F", max: 10 })}{field("aadhaar", "Aadhaar (optional)", { ph: "12 digits", max: 14 })}{field("uan", "UAN", { ph: "if you have PF already", max: 12 })}</div>}
           <div className="grid3">{field("bankName", "Bank", { req: true, max: 80 })}{field("bankAccount", "Account number", { req: true, max: 18 })}{v.india ? field("ifsc", "IFSC", { req: true, ph: "HDFC0001234", max: 11 }) : <span />}</div>
         </div>
       </section>
@@ -101,7 +105,11 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
         <div className="card-h"><h3>3 · Previous job &amp; emergency contact</h3></div>
         <div className="col" style={{ gap: 12 }}>
           <div className="grid2">{field("previousEmployer", "Previous employer")}{field("previousDesignation", "Your designation there")}</div>
-          <div className="grid3">{field("emergencyName", "Emergency contact", { req: true })}{field("emergencyRelation", "Relationship", { max: 40 })}{field("emergencyPhone", "Their phone", { type: "tel", req: true, max: 30 })}</div>
+          <div className="grid2">{field("emergencyName", "Emergency contact", { req: true })}{field("emergencyRelation", "Relationship", { max: 40 })}</div>
+          <div className="field">Their phone *
+            <PhoneInput code={f.emergencyPhoneCountry || "+91"} number={f.emergencyPhone} disabled={ro}
+              onChange={(c, n) => { setF({ ...f, emergencyPhoneCountry: c, emergencyPhone: n }); setMsg(null); }} />
+          </div>
         </div>
       </section>
 

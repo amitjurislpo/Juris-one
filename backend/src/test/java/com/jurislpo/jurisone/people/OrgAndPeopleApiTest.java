@@ -138,7 +138,7 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         Cookie hr = as(hrmRole);
         String email = "new." + UUID.randomUUID().toString().substring(0, 6) + "@example.com";
         String body = """
-            {"fullName":"Meera Joshi","fatherName":"Prakash Joshi","email":"%s","phone":"+91 98765 43210","location":"IN_IST","pan":"abcde1234f",
+            {"firstName":"Meera","middleName":"","lastName":"Joshi","fatherName":"Prakash Joshi","email":"%s","phoneCountry":"+91","phone":"98765 43210","location":"IN_IST","pan":"abcde1234f",
              "aadhaar":"2345 6789 0123","uan":"","address":"12 Lake Road, Pune","designation":"Associate","departmentId":"%s","managerId":"%s",
              "doj":"2031-10-12","shift":"IN_DAY","roleId":"%s"}""".formatted(email.toUpperCase(), dept, finance, empRole);
         JsonNode r = json.readTree(mvc.perform(write(post("/api/people")).cookie(hr).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
@@ -188,7 +188,7 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         UUID manager = data.employee(mc, mc.toLowerCase() + "@example.com", empRole, PW);
         Cookie hr = as(hrmRole);
         String body = """
-            {"fullName":"Raj Verma","fatherName":"K Verma","email":"raj.%s@example.com","phone":"+1 555 000 1111","location":"US_ET","pan":"",
+            {"firstName":"Raj","lastName":"Verma","fatherName":"K Verma","email":"raj.%s@example.com","phoneCountry":"+1","phone":"555 000 1111","location":"US_ET","pan":"",
              "aadhaar":"","uan":"","address":"","designation":"Analyst","departmentId":"%s","managerId":"%s","doj":"2031-01-01","shift":"US_DAY","roleId":"%s"}"""
                 .formatted(UUID.randomUUID().toString().substring(0, 6), dept, manager, finRole);
         mvc.perform(write(post("/api/people")).cookie(hr).content(body)).andExpect(status().isUnprocessableEntity())

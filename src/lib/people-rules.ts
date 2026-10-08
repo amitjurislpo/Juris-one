@@ -92,6 +92,6 @@ export const locationOfTz = (tz: string) => LOCATIONS.find((l) => l.tz === tz) ?
 // ─── identity validation ───
 export const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 export const digits = (s: string) => s.replace(/\D/g, "");
-export const validAadhaar = (s: string) => /^[2-9][0-9]{11}$/.test(digits(s));
+export const validAadhaar = (s: string) => digits(s).length === 12;
 export const validUan = (s: string) => digits(s).length === 12;
 export const validPhone = (s: string) => digits(s).length >= 10 && digits(s).length <= 15;

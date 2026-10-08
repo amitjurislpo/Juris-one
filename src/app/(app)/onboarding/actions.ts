@@ -10,7 +10,7 @@ export interface PlanInput {
   candidateName: string; personalEmail: string; designation?: string; departmentId?: string; roleId?: string; managerId?: string; joiningDate?: string;
   location?: string; requiredDocs?: string[];
 }
-export interface AddInput { workEmail: string; designation: string; departmentId: string; managerId: string; roleId: string; joiningDate: string; location: string; shift: string }
+export interface AddInput { workEmail: string; designation: string; departmentId: string; managerId: string; roleId: string; joiningDate: string; location: string; shift: string; joiningOffice: string }
 
 const pages = (id?: string) => ["/onboarding", ...(id ? [`/onboarding/${id}`] : [])];
 

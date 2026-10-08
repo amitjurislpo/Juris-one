@@ -84,10 +84,10 @@ class OnboardingApiTest extends IntegrationTest {
     }
 
     static final String FORM = """
-        {"fullName":"Riya Sen","fatherName":"Amit Sen","dateOfBirth":"1996-04-02","gender":"Female","phone":"+91 98100 11223",
+        {"firstName":"Riya","middleName":"","lastName":"Sen","fatherName":"Amit Sen","dateOfBirth":"1996-04-02","gender":"Female","phoneCountry":"+91","phone":"98100 11223",
          "currentAddress":"14 Park Street, Kolkata 700016","permanentAddress":"","pan":"abcpe1234f","aadhaar":"2345 6789 0123","uan":"",
          "bankName":"HDFC Bank","bankAccount":"50100123456789","ifsc":"hdfc0001234","previousEmployer":"Lex & Co","previousDesignation":"Associate",
-         "emergencyName":"Amit Sen","emergencyRelation":"Father","emergencyPhone":"+91 98100 44556"}""";
+         "emergencyName":"Amit Sen","emergencyRelation":"Father","emergencyPhoneCountry":"+91","emergencyPhone":"98100 44556"}""";
 
     @Test
     void fromLinkToEmployee() throws Exception {
@@ -151,6 +151,12 @@ class OnboardingApiTest extends IntegrationTest {
         assertThat(e.get("pan_last4")).isEqualTo("234F");
         assertThat(e.get("bank_account_last4")).isEqualTo("6789");
         assertThat(e.get("bank_ifsc")).isEqualTo("HDFC0001234");
+        var names = jdbc.queryForMap("SELECT first_name, last_name, full_name, phone_country, emergency_name, emergency_phone, date_of_birth FROM employees WHERE id = ?::uuid", emp);
+        assertThat(names.get("full_name")).isEqualTo("Riya Sen");
+        assertThat(names.get("last_name")).isEqualTo("Sen");
+        assertThat(names.get("phone_country")).isEqualTo("+91");
+        assertThat(names.get("emergency_phone")).isEqualTo("+91 9810044556");
+        assertThat(names.get("date_of_birth").toString()).isEqualTo("1996-04-02");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ?", Integer.class, work)).isZero();
         mvc.perform(get("/api/people/" + emp + "/documents").cookie(hr)).andExpect(jsonPath("$.data.length()").value(7)); // the rejected one stays behind
         mvc.perform(get("/api/onboarding/" + token2)).andExpect(status().isNotFound());

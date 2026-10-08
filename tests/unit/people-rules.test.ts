@@ -78,20 +78,31 @@ describe("status and reporting lines", () => {
 });
 
 describe("form validation", () => {
-  const base: EmployeeInput = { fullName: "Meera Joshi", fatherName: "Prakash Joshi", email: "meera.joshi@jurislpo.com", phone: "+91 98765 43210", location: "IN_IST", pan: "ABCDE1234F", aadhaar: "2345 6789 0123", uan: "", address: "", designation: "Associate", departmentId: "x", managerId: "y", doj: "2026-10-12", shift: "IN_NIGHT", roleId: "r" };
-  it("requires PAN and Aadhaar for India on create", () => {
-    expect(stepErrors(2, { ...base, pan: "" }, false).pan).toBeDefined();
+  const base: EmployeeInput = { firstName: "Meera", middleName: "", lastName: "Joshi", fatherName: "Prakash Joshi", email: "meera.joshi@jurislpo.com", phoneCountry: "+91", phone: "9876543210", location: "IN_IST", joiningOffice: "", pan: "ABCDE1234F", aadhaar: "2345 6789 0123", uan: "", address: "", designation: "Associate", departmentId: "x", managerId: "y", doj: "2026-10-12", shift: "IN_NIGHT", roleId: "r" };
+  it("PAN and Aadhaar are optional, but checked when given", () => {
+    expect(stepErrors(2, { ...base, pan: "", aadhaar: "" }, false)).toEqual({});
     expect(stepErrors(2, { ...base, pan: "abcde1234f" }, false).pan).toBeUndefined();
+    expect(stepErrors(2, { ...base, pan: "ABC" }, false).pan).toBeDefined();
     expect(stepErrors(2, { ...base, aadhaar: "1234" }, false).aadhaar).toBeDefined();
+    expect(stepErrors(2, { ...base, aadhaar: "1234 1234 1234" }, false).aadhaar).toBeUndefined();
     expect(stepErrors(2, { ...base, uan: "123" }, false).uan).toBeDefined();
   });
-  it("skips Indian IDs for the US team and keeps blanks on edit", () => {
-    expect(stepErrors(2, { ...base, location: "US_ET", pan: "", aadhaar: "" }, false)).toEqual({});
-    expect(stepErrors(2, { ...base, pan: "", aadhaar: "" }, true)).toEqual({});
+  it("needs first and last name, a valid email and a phone that fits its country", () => {
+    expect(stepErrors(1, base, false)).toEqual({});
+    expect(stepErrors(1, { ...base, lastName: "" }, false).lastName).toBeDefined();
+    expect(stepErrors(1, { ...base, firstName: "" }, false).firstName).toBeDefined();
+    expect(stepErrors(1, { ...base, email: "meera@" }, false).email).toBeDefined();
+    expect(stepErrors(1, { ...base, phone: "987654321" }, false).phone).toBe("India numbers have 10 digits");
+    expect(stepErrors(1, { ...base, phoneCountry: "+65", phone: "91234567" }, false)).toEqual({});
+  });
+  it("skips Indian IDs for the US team, keeps blanks on edit, no location = India", () => {
+    expect(stepErrors(2, { ...base, location: "US_ET", pan: "bad", aadhaar: "bad" }, false)).toEqual({});
+    expect(stepErrors(2, { ...base, location: "", aadhaar: "1" }, false).aadhaar).toBeDefined();
     expect(stepErrors(1, { ...base, phone: "" }, true)).toEqual({});
   });
   it("validates Aadhaar shape", () => {
     expect(validAadhaar("2345 6789 0123")).toBe(true);
-    expect(validAadhaar("0345 6789 0123")).toBe(false);
+    expect(validAadhaar("1234 1234 1234")).toBe(true);
+    expect(validAadhaar("1234 1234 123")).toBe(false);
   });
 });

@@ -7,9 +7,9 @@ import { apiAction } from "@/lib/backend";
 const enc = encodeURIComponent;
 
 export interface CandidateForm {
-  fullName: string; fatherName: string; dateOfBirth: string; gender: string; phone: string; currentAddress: string; permanentAddress: string;
-  pan: string; aadhaar: string; uan: string; bankName: string; bankAccount: string; ifsc: string; previousEmployer: string; previousDesignation: string;
-  emergencyName: string; emergencyRelation: string; emergencyPhone: string;
+  firstName: string; middleName: string; lastName: string; fatherName: string; dateOfBirth: string; gender: string; phoneCountry: string; phone: string;
+  currentAddress: string; permanentAddress: string; pan: string; aadhaar: string; uan: string; bankName: string; bankAccount: string; ifsc: string;
+  previousEmployer: string; previousDesignation: string; emergencyName: string; emergencyRelation: string; emergencyPhoneCountry: string; emergencyPhone: string;
 }
 
 export async function saveCandidateForm(token: string, form: CandidateForm): Promise<ActionResult> {
