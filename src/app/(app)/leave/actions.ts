@@ -2,7 +2,7 @@
 
 import type { ActionResult } from "@/lib/action";
 import { apiAction, apiCall } from "@/lib/backend";
-import type { Preview } from "@/lib/leave/service";
+import type { Preview } from "@/lib/api-types";
 
 // Leave requests run in the Spring Boot API (/api/leave).
 const PAGES = ["/leave", "/approvals", "/home"];

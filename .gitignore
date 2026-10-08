@@ -42,7 +42,6 @@ next-env.d.ts
 !.env.example
 
 # app
-/src/generated/
 /storage/
 /test-results/
 /playwright-report/

@@ -4,7 +4,7 @@ import { Icon } from "@/components/Icon";
 import { requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
 import { fmtDY, ymLabel } from "@/lib/format";
-import type { PayslipSnapshot } from "@/lib/payroll/service";
+import type { PayslipSnapshot } from "@/lib/api-types";
 import { SlipActions } from "./SlipViewer";
 
 export const metadata: Metadata = { title: "Payslips" };

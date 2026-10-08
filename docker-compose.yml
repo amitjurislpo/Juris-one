@@ -36,7 +36,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./storage:/app/data/storage   # payslip PDFs and proofs, shared with the Next.js app during the migration
+      - ./storage:/app/data/storage   # payslip PDFs and investment proofs
 
 volumes:
   jurisone_pg:

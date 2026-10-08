@@ -6,7 +6,7 @@ import { useToast } from "@/components/shell/Toasts";
 import { Modal } from "@/components/ui/Modal";
 import { addDays, dowOf } from "@/lib/attendance/engine";
 import { fmtD, fmtDL, MONTHS } from "@/lib/format";
-import type { Preview } from "@/lib/leave/service";
+import type { Preview } from "@/lib/api-types";
 import { applyLeave, preview } from "./actions";
 
 export interface TypeOpt { code: string; name: string; available: number | null; paid: boolean }

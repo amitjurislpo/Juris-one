@@ -6,7 +6,7 @@ import { Pending, SearchBox, SelectFilter } from "@/components/table/Table";
 import { requirePage } from "@/lib/auth";
 import { apiData, qs } from "@/lib/backend";
 import { fmtDY, ymLabel } from "@/lib/format";
-import type { PayView } from "@/lib/payroll/view";
+import type { PayView } from "@/lib/api-types";
 import { CloseButton, MonthSeg, PayrollKpis, PayrollTable } from "./PayrollClient";
 
 export const metadata: Metadata = { title: "Payroll" };

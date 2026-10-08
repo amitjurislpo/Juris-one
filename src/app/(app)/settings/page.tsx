@@ -7,7 +7,7 @@ import { apiData } from "@/lib/backend";
 import { fmtDL, MON3 } from "@/lib/format";
 import { pick } from "@/lib/list";
 import { PERMISSIONS } from "@/lib/permissions";
-import type { SettingValue } from "@/lib/settings";
+import type { SettingValue } from "@/lib/api-types";
 import { AttendancePolicyForm } from "./AttendancePolicyForm";
 
 export const metadata: Metadata = { title: "Policies" };

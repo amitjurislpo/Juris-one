@@ -2,7 +2,7 @@
 
 import type { ActionResult } from "@/lib/action";
 import { apiAction, apiCall } from "@/lib/backend";
-import type { TaxProjection } from "@/lib/tax/service";
+import type { TaxProjection } from "@/lib/api-types";
 
 // Tax & TDS runs in the Spring Boot API (/api/tax).
 const PAGES = ["/tax", "/payroll", "/declare", "/proofs"];

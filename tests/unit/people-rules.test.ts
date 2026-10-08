@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stepErrors, type EmployeeInput } from "@/lib/employee-schema";
 import { canAddEmployees, canAssignRole, canEditEmployee, canToggleAccess, createsCycle, derivedStatus, initialStatus, lockedDepartment, validAadhaar, type Actor, type Target } from "@/lib/people-rules";
-import { csvCell } from "@/lib/csv";
 
 const R = { admin: "r-admin", hrm: "r-hrm", hre: "r-hre", fm: "r-fm", fe: "r-fe", emp: "r-emp" };
 const actor = (key: keyof typeof R, perms: string[], assign: (keyof typeof R)[], dept: string | null = null, id = "me"): Actor => ({
@@ -94,12 +93,5 @@ describe("form validation", () => {
   it("validates Aadhaar shape", () => {
     expect(validAadhaar("2345 6789 0123")).toBe(true);
     expect(validAadhaar("0345 6789 0123")).toBe(false);
-  });
-});
-
-describe("csv export", () => {
-  it("neutralises formulas and quotes commas", () => {
-    expect(csvCell("=HYPERLINK(1)")).toBe("'=HYPERLINK(1)");
-    expect(csvCell("Doe, Jane")).toBe('"Doe, Jane"');
   });
 });

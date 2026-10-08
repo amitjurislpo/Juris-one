@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { apiGet } from "./backend";
-import { readSessionCookie } from "./session";
+import { readSessionCookie } from "./session-cookie";
 import { NAV, navAllowed, type NavId } from "./nav";
 import type { Permission } from "./permissions";
 

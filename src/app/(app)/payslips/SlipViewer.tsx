@@ -4,7 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/components/Icon";
 import { fmtDY, inr, ymLabel } from "@/lib/format";
-import type { PayslipSnapshot } from "@/lib/payroll/service";
+import type { PayslipSnapshot } from "@/lib/api-types";
 
 export function SlipActions({ snap, code }: { snap: PayslipSnapshot; code: string }) {
   const [open, setOpen] = useState(false);

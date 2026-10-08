@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Shell } from "@/components/shell/Shell";
 import { requireUser } from "@/lib/auth";
 import { apiGet } from "@/lib/backend";
-import type { ShellNote } from "@/lib/shell-data";
+import type { ShellNote } from "@/lib/api-types";
 import type { NavGroup } from "@/lib/nav";
 
 interface ShellData {

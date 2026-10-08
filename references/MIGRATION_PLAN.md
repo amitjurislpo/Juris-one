@@ -1689,20 +1689,21 @@ Each module is one or more commits on `feature/spring-boot-migration`. **Per mod
 
 ---
 
-## 13. Parity checklist (filled in during Step 3)
+## 13. Parity checklist
 
-Each row is ticked only when the Spring module is live, its JUnit tests pass and the listed Playwright specs pass **unchanged** against it.
+Each row is ticked only when the Spring module is live, its JUnit tests pass and the listed Playwright specs pass **unchanged** against it. Final state: every page, action and file route is served by Spring Boot; the Next.js API routes, Prisma client and server modules are deleted.
 
 | Area | Behaviour | JUnit | Playwright | Status |
 |---|---|---|---|---|
-| Auth | login by ID or email, wrong password, lockout after 5, disabled / exited blocked, sign out, invite + reset links once, session ends when access is disabled | `AuthServiceTest`, `PasswordTest`, `SessionAuthFilterTest` | `auth.spec.ts` | ☐ |
-| Access | page + API permissions, HR never gets finance pages, My team only with reports, ⌘K + theme | `NavAccessTest` | `access.spec.ts` | ☐ |
-| People | list/search/filter/sort/page, add (3 steps) + edit, PII encrypted + masked + reveal audited, access toggle, mark exited, CSV export | `PeopleRulesTest`, `CryptoTest`, `CsvTest` | `people.spec.ts` | ☐ |
-| Roles / departments / holidays / policies | permission toggles, custom roles, assignable roles, departments, holidays by region, attendance policy | `RolesServiceTest` | `people.spec.ts`, `attendance.spec.ts` | ☐ |
-| Attendance | check-in/out, night shifts, late marks, half days, absences, month lock, register (tz, export), regularization request/withdraw | `AttendanceEngineTest` + fixtures | `attendance.spec.ts` | ☐ |
-| Leave & approvals | apply (holidays skipped, max stretch, LOP when short), cancel, approvals first decision wins, comp-off, accrual, year end, notifications + emails | `LeaveRulesTest` | `leave.spec.ts` | ☐ |
-| Payroll | structures (effective-dated, closed months protected), run edits, approve & close, frozen snapshots, payslips + PDF, exports, golden case JC-074 (22/30 days, ₹14,926 TDS, ₹93,074 net) | `PayrollEngineTest` + fixtures | `payroll.spec.ts` | ☐ |
-| Tax | regime choice + comparison, declarations, proof upload (type/size), verification + TDS preview, Tax & TDS drawer, override, Form 12B, export | `TaxEngineTest` + fixtures | `tax.spec.ts` | ☐ |
-| Dashboards & audit | Home cards per role (no salary), Overview, My team, audit log filters + before → after + redaction | `DashboardServiceTest` | `dashboards.spec.ts` | ☐ |
-| Jobs | status changes, month lock, absence marking, accrual, comp-off expiry, year end; idempotent; single runner | `JobsTest` | (covered by attendance/leave specs) | ☐ |
-| Data | existing passwords verify, existing PII decrypts, existing sessions stay valid, existing payslip PDFs open, Flyway baseline leaves the schema untouched | cross-compat tests | full suite | ☐ |
+| Auth | login by ID or email, wrong password, lockout after 5, disabled / exited blocked, sign out, invite + reset links once, session ends when access is disabled | `AuthFlowTest`, `PasswordsTest` | `auth.spec.ts` | ☑ M2 |
+| Access | page + API permissions, HR never gets finance pages, My team only with reports, ⌘K + theme | `NavTest`, `AuthFlowTest` | `access.spec.ts` | ☑ M2 |
+| People | list/search/filter/sort/page, add (3 steps) + edit, PII encrypted + masked + reveal audited, access toggle, mark exited, CSV export | `PeopleRulesTest`, `CryptoTest`, `OrgAndPeopleApiTest` | `people.spec.ts` | ☑ M3 |
+| Roles / departments / holidays / policies | permission toggles, custom roles, assignable roles, departments, holidays by region, attendance policy | `OrgAndPeopleApiTest` | `people.spec.ts`, `attendance.spec.ts` | ☑ M3 |
+| Attendance | check-in/out, night shifts, late marks, half days, absences, month lock, register (tz, export), regularization request/withdraw | `AttendanceEngineTest`, `AttendanceApiTest` | `attendance.spec.ts` | ☑ M4 |
+| Leave & approvals | apply (holidays skipped, max stretch, LOP when short), cancel, approvals first decision wins, comp-off, accrual, year end, notifications + emails | `LeaveRulesTest`, `LeaveApiTest` | `leave.spec.ts` | ☑ M5 |
+| Payroll | structures (effective-dated, closed months protected), run edits, approve & close, frozen snapshots, payslips + PDF, exports, golden case JC-074 (22/30 days, ₹14,926 TDS, ₹93,074 net) | `PayrollTaxTest`, `PayslipPdfTest` | `payroll.spec.ts` | ☑ M6 |
+| Tax | regime choice + comparison, declarations, proof upload (type/size), verification + TDS preview, Tax & TDS drawer, override, Form 12B, export | `PayrollTaxTest`, `TaxApiTest` | `tax.spec.ts` | ☑ M7 |
+| Dashboards & audit | Home cards per role (no salary), Overview, My team, audit log filters + before → after + redaction | `DashboardApiTest` | `dashboards.spec.ts` | ☑ M8 |
+| Jobs | status changes, month lock, absence marking, accrual, comp-off expiry, year end; idempotent; single runner (advisory lock); `npm run jobs` for cron | `AttendanceApiTest#jobsAreIdempotentAndLockMonths` | (covered by attendance/leave specs) | ☑ M4 / M9 |
+| Seed | `npm run db:seed` (Java) produces the same data as `prisma/seed.ts` did — all 30 tables identical after normalising ids and run-time timestamps, incl. the 55 payslip snapshots and 3,193 punches; no default admin password | `SeedServiceTest` + one-off table diff | full suite | ☑ M9 |
+| Data | existing passwords verify, existing PII decrypts, existing sessions stay valid, existing payslip PDFs open, Flyway baseline leaves the schema untouched | `CryptoTest`, `PasswordsTest`, `ExistingPrismaDatabaseTest`, `FreshDatabaseSchemaTest` | full suite | ☑ M1 / M2 |

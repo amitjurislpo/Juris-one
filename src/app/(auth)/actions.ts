@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { apiCall, applySetCookies } from "@/lib/backend";
-import { SESSION_COOKIE } from "@/lib/session";
+import { SESSION_COOKIE } from "@/lib/session-cookie";
 
 import type { FormState } from "./form-state";
 

@@ -4,27 +4,30 @@ HRMS and payroll portal for Juris Consultants. It covers attendance, leave, peop
 
 - **Rules:** [references/REQUIREMENTS.md](references/REQUIREMENTS.md) is the source of truth.
 - **Design:** [references/Juris-People-Design-8.html](references/Juris-People-Design-8.html) is the clickable prototype. Its CSS is ported verbatim into `src/app/globals.css`.
+- **Backend migration:** [references/MIGRATION_PLAN.md](references/MIGRATION_PLAN.md) records how the API moved from Next.js to Spring Boot, the decisions taken and the parity checklist.
 
 ## Stack
 
-- Next.js 16 (App Router) with TypeScript
-- PostgreSQL 16 in docker-compose
-- Prisma 7, using the `pg` driver adapter
-- argon2id password hashing
-- HTTP-only cookie sessions
-- zod validation
-- Vitest and Playwright for tests
+| Part | Technology | Port |
+|---|---|---|
+| Frontend | Next.js 16 (App Router) with TypeScript — pages, layout and server actions that call the API | 3005 |
+| Backend | Java 17, Spring Boot 3.5 (Web, Security, Validation, Data JPA, JDBC), Flyway, Maven Wrapper — in `backend/` | 8080 |
+| Database | PostgreSQL 16 in docker-compose | 5436 on the host |
+| Tests | JUnit 5 + Testcontainers (backend), Vitest (frontend helpers), Playwright (end to end) | |
+
+The browser only talks to Next.js. Next.js calls the API server-side (`src/lib/backend.ts`) and forwards `/api/*` to it (`next.config.ts`), so the API is never exposed on its own. Sessions are the same HTTP-only `jo_session` cookie as before; passwords are argon2id.
 
 ## Quick start (development)
 
-Prerequisites: Node 20.9+ (tested on 24) and Docker Desktop.
+Prerequisites: Node 20.9+ (tested on 24), JDK 17+ and Docker Desktop. Maven comes with the wrapper.
 
 ```bash
-npm install                 # also runs `prisma generate`
-cp .env.example .env        # then set PII_ENCRYPTION_KEY (command is in the file)
+npm install
+cp .env.example .env        # then fill in every <placeholder> (commands to generate keys are in the file)
 npm run db:up               # Postgres 16 on localhost:5436
-npm run db:deploy           # apply migrations
+npm run db:migrate          # create / update the schema (Flyway)
 npm run db:seed             # roles, policies, tax tables, super admin and demo data
+npm run backend:dev         # API on http://localhost:8080 (leave it running)
 npm run dev                 # http://localhost:3005
 ```
 
@@ -32,13 +35,13 @@ npm run dev                 # http://localhost:3005
 
 | Who | Login | Password |
 |---|---|---|
-| Super admin | `admin@jurislpo.com` | `admin@jurislpo` |
-| Demo employees (REQUIREMENTS §8) | `JC-002`, `JC-004`, `JC-012`, `JC-015`, `JC-018`, `JC-035`, `JC-049`, `JC-058`, `JC-072`, `JC-074`, `JC-090`, `JC-091` | value of `SEED_DEMO_PASSWORD` (default `Juris@2026`) |
+| Super admin | `SUPER_ADMIN_EMAIL` | `SUPER_ADMIN_PASSWORD` (both from your `.env`) |
+| Demo employees (REQUIREMENTS §8) | `JC-002`, `JC-004`, `JC-012`, `JC-015`, `JC-018`, `JC-035`, `JC-049`, `JC-058`, `JC-072`, `JC-074`, `JC-090`, `JC-091` | `SEED_DEMO_PASSWORD` from your `.env` (empty = invite links only) |
 | Blocked on purpose | `JC-081` (access disabled), `JC-030` (past employee) | same |
 
-You can sign in with either the employee ID or the official email.
+You can sign in with either the employee ID or the official email. The seed never overwrites a password that is already set.
 
-**Change the super admin password after first login in any shared environment.**
+**Change the super admin password after the first sign-in in any shared environment.**
 
 ## Scripts
 
@@ -47,36 +50,48 @@ You can sign in with either the employee ID or the official email.
 | `npm run dev` / `build` / `start` | Next.js on port 3005 |
 | `npm run lint` / `typecheck` | ESLint / route typegen + `tsc --noEmit` |
 | `npm test` | Vitest unit tests (`tests/unit`) |
-| `npm run test:e2e` | Playwright end-to-end tests (`tests/e2e`). Needs the seeded DB; reuses a running dev server. |
-| `npm run db:migrate` | Create and apply a new migration in dev |
-| `npm run db:deploy` | Apply pending migrations (CI / prod) |
+| `npm run test:e2e` | Playwright end-to-end tests (`tests/e2e`). Needs the seeded DB; starts (or reuses) the API and the dev server. |
+| `npm run backend:dev` | Spring Boot API on port 8080 |
+| `npm run backend:test` | Backend unit + API tests (JUnit 5; Testcontainers starts its own Postgres, so Docker must be running) |
+| `npm run backend:up` | Build and start the API in docker-compose |
+| `npm run db:up` | Start Postgres in docker-compose |
+| `npm run db:migrate` | Apply pending Flyway migrations and exit |
 | `npm run db:seed` | Idempotent seed. `SEED_DEMO=false` seeds only the core data. |
-| `npm run db:reset` | Drop, re-migrate and re-seed (dev only) |
-| `npm run jobs` | Run the scheduled jobs once (absence marking, monthly lock, status changes) |
+| `npm run jobs` | Run the scheduled jobs once (for cron) |
 | `scripts/backup.sh` / `scripts/restore.sh` | Postgres backup (keeps 14 days) / restore — see *Deploying* |
 
 ## Deploying
 
-JurisOne is a single Next.js server plus Postgres 16. Any Linux VPS or VM works (REQUIREMENTS §9.4 leaves hosting open).
+JurisOne is a Next.js server, a Spring Boot API and Postgres 16. Any Linux VPS or VM works (REQUIREMENTS §9.4 leaves hosting open).
 
-1. **Postgres 16.** A managed instance, or `docker compose up -d` with a strong `POSTGRES_PASSWORD` and the port not exposed publicly.
-2. **Environment.** Copy `.env.example` to `.env` and set:
-   - `DATABASE_URL`, `APP_URL` (the public https URL)
-   - `PII_ENCRYPTION_KEY` — generate once, store it in your password manager. Losing it makes PII unreadable.
-   - `SUPER_ADMIN_PASSWORD` — then change it after the first sign-in.
-   - `SEED_DEMO=false` and empty `SEED_DEMO_PASSWORD` for a real company (no demo people).
+1. **Postgres 16.** A managed instance, or `docker compose up -d db` with a strong `POSTGRES_PASSWORD` and the port not exposed publicly.
+2. **Environment.** Copy `.env.example` to `.env` (both apps read it) and set:
+   - `DATABASE_URL`, `APP_URL` (the public https URL — the API only accepts requests from this origin)
+   - `PII_ENCRYPTION_KEY` — generate once and keep it in your password manager. Losing it makes PII unreadable.
+   - `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` — change the password after the first sign-in.
+   - `SEED_DEMO=false` and an empty `SEED_DEMO_PASSWORD` for a real company (no demo people).
    - `SMTP_*` so invites, resets and decisions are emailed.
-3. **Build and migrate.**
+   - `BACKEND_URL` — where Next.js reaches the API (default `http://127.0.0.1:8080`).
+3. **API.** Either in Docker:
+   ```bash
+   docker compose up -d --build backend      # migrates the schema on start
+   docker compose run --rm backend seed      # roles, policies, tax tables, super admin (idempotent)
+   ```
+   or on the host (JDK 17+):
+   ```bash
+   cd backend && ./mvnw -B -DskipTests package && cd ..
+   java -jar backend/target/jurisone-backend-*.jar seed    # once; migrates, seeds and exits
+   java -jar backend/target/jurisone-backend-*.jar         # port 8080; keep it running with systemd
+   ```
+4. **Frontend.**
    ```bash
    npm ci
-   npm run db:deploy       # apply migrations
-   npm run db:seed         # roles, policies, tax tables, super admin (idempotent)
    npm run build
    npm run start           # port 3005; keep it running with systemd or pm2
    ```
-4. **HTTPS.** Put Caddy or nginx in front, terminate TLS there and proxy to `localhost:3005`. Session cookies are `Secure` in production, so the app must be served over https.
-5. **Jobs.** Leave `JOBS_ENABLED=true` for a single instance. With several instances either keep it on (an advisory lock lets only one run) or set it to `false` everywhere and run `npm run jobs` from cron every 10 minutes.
-6. **Files.** `UPLOAD_DIR` (default `./storage`) holds payslip PDFs and investment proofs. Put it on persistent disk and include it in backups.
+5. **HTTPS.** Put Caddy or nginx in front, terminate TLS there and proxy to `localhost:3005` only. Keep port 8080 private. Session cookies are `Secure` in production, so the app must be served over https.
+6. **Jobs.** Leave `JOBS_ENABLED=true` for a single API instance. With several instances either keep it on (an advisory lock lets only one run) or set it to `false` everywhere and run `npm run jobs` (or `java -jar … jobs`) from cron every 10 minutes.
+7. **Files.** `UPLOAD_DIR` (default `./storage`) holds payslip PDFs and investment proofs. Put it on persistent disk and include it in backups. In Docker it is the `./storage` volume.
 
 ### Backups (daily)
 
@@ -92,32 +107,41 @@ JurisOne is a single Next.js server plus Postgres 16. Any Linux VPS or VM works 
 
 ### Upgrading and rolling back
 
-- Deploy: pull, `npm ci`, `npm run db:deploy`, `npm run build`, restart.
-- **Take a backup before `db:deploy`.**
-- Every migration in `prisma/migrations/` has a `down.sql`. To roll one back: run its `down.sql` with `psql`, delete its row from `_prisma_migrations`, then deploy the previous release.
+- Deploy: pull, rebuild the API and run it (Flyway applies new migrations on start), then `npm ci`, `npm run build`, restart Next.js.
+- **Take a backup before deploying a release with new migrations.**
+- Migrations live in `backend/src/main/resources/db/migration/`. Each has a reverse script in `db/rollback/` (`V<n>__x.sql` ↔ `U<n>__x.sql`). To roll one back: run its `U` script with `psql`, delete its row from `flyway_schema_history`, then deploy the previous release.
+- Databases created by the earlier Prisma version are baselined automatically: Flyway checks that all four Prisma migrations are applied, records them as version 1 and leaves the schema untouched.
 
 ## How it is put together
 
 ```
-prisma/schema.prisma        every table in REQUIREMENTS §6, plus auth support tables
-prisma/migrations/*/        migration.sql, plus a down.sql to reverse it
-prisma/seed.ts              core and demo seed
-src/proxy.ts                fast redirect for signed-out visitors (not the security boundary)
-src/lib/auth.ts             getCurrentUser / requirePage / assertPerm: the server-side permission checks
-src/lib/session.ts          session create, revoke, cookie
-src/lib/crypto.ts           AES-256-GCM encryption for PII
-src/lib/nav.ts              sidebar and route permission table
-src/lib/permissions.ts      permission catalogue
-src/app/(auth)/             login, forgot, invite/[token], reset/[token], plus server actions
-src/app/(app)/              signed-in pages; layout.tsx renders the shell
-src/components/shell/       sidebar, header, notifications, ⌘K palette, theme, toasts
+backend/                           Spring Boot API (Maven)
+  src/main/java/com/jurislpo/jurisone/
+    config/                        .env loading, security chain, Flyway guard, Jackson
+    security/                      session cookie filter, origin check, Auth.requirePage / assertPerm
+    common/                        ApiResult envelope, error handling, list paging/sorting, validation helpers
+    engine/                        pure rules: attendance, leave, payroll, tax, permissions, nav, formatting
+    crypto/                        AES-256-GCM PII encryption, argon2id passwords, masking
+    entity/                        JPA entities for every table (schema validated, never generated)
+    auth/ platform/ roles/ org/ people/ attendance/ leave/ payroll/ tax/ dashboard/ jobs/
+                                   one package per area: service (business logic) + controller (REST)
+    cli/                           migrate / seed / jobs commands
+  src/main/resources/db/migration/ Flyway migrations (V1 = the original schema)
+  src/test/java/                   JUnit 5: engine tests + API tests against Testcontainers Postgres
+src/lib/backend.ts                 server-side API client used by pages and server actions
+src/lib/auth.ts                    getCurrentUser / requirePage on the Next side (asks the API)
+src/app/(auth)/                    login, forgot, invite/[token], reset/[token]
+src/app/(app)/                     signed-in pages; layout.tsx renders the shell
+src/components/                    shell (sidebar, header, notifications, ⌘K, theme, toasts), tables, forms
+prisma/schema.prisma               the original data model, kept as a readable reference (not used at run time)
 ```
 
 ### Security model
 
-**Permissions are checked on the server.**
-- Every page calls `requirePage(<nav id>)`.
-- Every server action or route handler calls `assertPerm(...)`.
+**Permissions are checked by the API.**
+- Every page calls `requirePage(<nav id>)` in Next.js, and the API checks the same permission again for the data it returns.
+- Every write goes through an API endpoint that calls `assertPerm(...)`.
+- HR roles never receive salary or tax fields from the API.
 - Hiding UI is cosmetic only.
 
 **Sessions are re-validated on every request.**
@@ -126,7 +150,7 @@ src/components/shell/       sidebar, header, notifications, ⌘K palette, theme,
 - Disabling access or marking someone exited revokes their sessions immediately.
 
 **Passwords and sessions:**
-- Passwords are hashed with argon2id.
+- Passwords are hashed with argon2id (m=19456, t=2, p=1).
 - Session tokens are 256-bit random values. Only their SHA-256 is stored.
 
 **Login protection:**
@@ -139,9 +163,9 @@ src/components/shell/       sidebar, header, notifications, ⌘K palette, theme,
 - Only the last 4 characters are stored in clear, for masked display.
 - **Back the key up. Losing it makes that data unrecoverable.**
 
-**CSRF:**
-- Server actions use Next's built-in Origin check.
-- Route handlers use `src/lib/api.ts#handler`.
+**CSRF and CORS:** every API write must come from `APP_URL` (Origin check), and CORS allows only that origin.
+
+**Secrets:** no password, key or secret is stored in the code, README or `.env.example`; everything comes from the environment.
 
 **Audit:** sensitive changes are written to `audit_log` (who, what, when, before → after).
 
@@ -149,7 +173,7 @@ src/components/shell/       sidebar, header, notifications, ⌘K palette, theme,
 
 **Money:**
 - Stored as integer paise.
-- Monthly amounts are `Int`; annual amounts are `BigInt`.
+- Monthly amounts are `INTEGER`; annual amounts are `BIGINT`.
 
 **Timestamps and dates:**
 - Timestamps are `timestamptz` in UTC.
@@ -158,14 +182,14 @@ src/components/shell/       sidebar, header, notifications, ⌘K palette, theme,
 
 ### Attendance model
 
-**The engine.** `src/lib/attendance/engine.ts` contains pure, unit-tested functions. They decide each day's status from punches, the shift, holidays, leave, regularizations, the policy and the current time.
+**The engine.** `engine/AttendanceEngine.java` contains pure, unit-tested functions. They decide each day's status from punches, the shift, holidays, leave, regularizations, the policy and the current time.
 
 **Work dates.**
 - A day is a *work date* in the employee's own time zone.
 - A night shift belongs to the date it started on.
 - Each punch belongs to the shift window that contains it. A window opens 4 hours before shift start and lasts 24 hours.
 
-**One source for every screen.** `src/lib/attendance/service.ts` loads the data and runs the engine. Home, My attendance, My team, the register and payroll all use it.
+**One source for every screen.** `attendance/AttendanceService.java` loads the data and runs the engine. Home, My attendance, My team, the register and payroll all use it.
 
 **Locking.** When a month locks, its days are frozen into `attendance_days` with `locked = true`. From then on, every screen and payroll reads the frozen rows.
 
@@ -173,7 +197,7 @@ src/components/shell/       sidebar, header, notifications, ⌘K palette, theme,
 
 ### Leave model
 
-**The ledger.** Every leave balance is the sum of `leave_ledger` rows. Each row is one of: accrual, used, cancelled, encashed, expired, adjustment or comp-off credit. The rules are pure functions in `src/lib/leave/rules.ts`.
+**The ledger.** Every leave balance is the sum of `leave_ledger` rows. Each row is one of: accrual, used, cancelled, encashed, expired, adjustment or comp-off credit. The rules are pure functions in `engine/LeaveRules.java`.
 
 **Accrual.**
 - Credited at the start of each month of the leave year: CL 1, EL 1.5.
@@ -181,7 +205,7 @@ src/components/shell/       sidebar, header, notifications, ⌘K palette, theme,
 - Any months that were missed are backfilled.
 
 **Applying.**
-- `previewRequest` runs the same checks in the apply form and on the server: no past dates, max stretch (CL 3), overlaps, the joining and exit dates, and locked months.
+- The same preview runs in the apply form and on the server: no past dates, max stretch (CL 3), overlaps, the joining and exit dates, and locked months.
 - Days not covered by the balance become **LOP**. Paid days are used from the start of the range, so any shortfall falls on the last days.
 - The attendance engine receives a *paid fraction* for each date.
 
@@ -207,10 +231,10 @@ Approval is blocked once the month is locked. After that, Finance adjusts LOP in
 ### Payroll and tax model
 
 **Pure engines.** Payroll and tax maths are pure, unit-tested functions:
-- `src/lib/payroll/engine.ts` works in integer paise.
-- `src/lib/tax/engine.ts` works in rupees, because slabs, rebates and caps are stored per FY in `tax_years` / `tax_sections`.
+- `engine/PayrollEngine.java` works in integer paise.
+- `engine/TaxEngine.java` works in rupees, because slabs, rebates and caps are stored per FY in `tax_years` / `tax_sections`.
 
-**Golden test.** JC-074 for September 2026 gets 22/30 paid days and ₹14,926 monthly TDS. It's covered by the unit tests and checked again through the live service in the e2e tests.
+**Golden test.** JC-074 for September 2026 gets 22/30 paid days and ₹14,926 monthly TDS. It's covered by the unit tests and checked again through the live API in the e2e tests.
 
 **Salary structures.** They're effective-dated and history is only added to. Payroll uses the structure in force on the last day of the month. A new revision can't start inside an already-closed payroll month; differences go into the next month as arrears.
 
@@ -261,7 +285,7 @@ Previous-employer income is added, then the standard deduction and any approved 
 
 ### Dashboards and audit log
 
-**Home (`self`).** Greeting with a live clock, the check-in card, KPIs, the 16-week heatmap, the last seven shifts and upcoming holidays. Cards are added by permission (`src/lib/dashboard.ts#homeCards`):
+**Home (`self`).** Greeting with a live clock, the check-in card, KPIs, the 16-week heatmap, the last seven shifts and upcoming holidays. Cards are added by permission (`dashboard/DashboardService.java#homeCards`):
 
 | Card | Shown to |
 |---|---|
@@ -279,7 +303,7 @@ Salary is never shown on Home; an e2e test checks that no ₹ amount appears the
 
 ### Scheduled jobs
 
-`src/lib/jobs.ts` contains these jobs:
+`jobs/JobsService.java` contains these jobs:
 
 | Job | What it does |
 |---|---|
@@ -291,14 +315,14 @@ Salary is never shown on Home; an e2e test checks that no ₹ amount appears the
 | Year end | Casual leave lapses and earned leave above the carry-forward cap is removed. Runs once a year. |
 
 **How they run:**
-- **In the app (default):** with `JOBS_ENABLED=true` they run every 10 minutes, started by `src/instrumentation.ts`.
+- **In the API (default):** with `JOBS_ENABLED=true` they run every 10 minutes.
 - **From cron:** set `JOBS_ENABLED=false` and run `npm run jobs`.
 
-**Safe to repeat.** A Postgres advisory lock stops two app instances from running the jobs at the same time. The `job_runs` table records each month that has been locked, so running a job again doesn't redo work.
+**Safe to repeat.** A Postgres advisory lock stops two API instances from running the jobs at the same time. The `job_runs` table records each month that has been locked, so running a job again doesn't redo work.
 
 ### Email
 
-**Without SMTP (dev):** leave `SMTP_HOST` empty. Emails are written to the `email_outbox` table and printed in the dev-server log, so you can copy invite and reset links from there.
+**Without SMTP (dev):** leave `SMTP_HOST` empty. Emails are written to the `email_outbox` table and printed in the API log, so you can copy invite and reset links from there.
 
 **With SMTP:** set the `SMTP_*` variables.
 
@@ -310,16 +334,6 @@ To add the licensed font:
 1. Put the file in `public/fonts/`.
 2. Add a `url()` for it to the `@font-face` rule in `globals.css`.
 
-## Build status
-
-- **Phase 0 (done):** setup, schema, seed, app shell, and login / logout / invite / reset.
-- **Phase 1 (done):** roles & permissions, policies matrix, departments, people (3-step add/edit, profile drawer, access toggle, mark exited, CSV export), directory and My team.
-- **Phase 2 (done):** check-in/out, attendance engine (shifts, night shifts, late marks, half days, absences), My attendance with regularization requests, holiday calendar, attendance register (time zones, daily log, monthly grid, CSV export), scheduled jobs, editable attendance policy.
-- **Phase 3 (done):** leave ledger and accrual, apply leave (range picker, holidays skipped, LOP when short), cancel, regularization decisions, Approvals page (first decision wins), in-app notifications and decision emails, comp-off expiry and year-end jobs.
-- **Phase 4 (done):** salary structures (effective-dated, Split helper, history), payroll run (attendance LOP, Finance edits, approve & close with immutable snapshots), payslips page + PDF with logo, payroll exports (bank, PF ECR, PT, TDS, register). Demo payroll closed for Apr–Aug 2026; September is open for review.
-- **Phase 5 (done):** tax declarations (regime choice with live comparison, old-regime items, proof upload), Finance proof verification with TDS preview, Tax & TDS page (computation drawer, slab working, regime override, previous employer), tax export.
-- **Phase 6 (done):** Home cards by permission, company Overview, audit log viewer (filters, before → after), responsive + keyboard pass (skip link, focus rings, phone drawer), end-to-end tests for every demo role, deploy/backup docs.
-
 ### Table conventions
 
-List pages keep search, filters, sorting and paging in the URL (`?q=&sort=&dir=&page=`). The server runs the query, so lists stay fast as the company grows. The shared pieces are `src/lib/list.ts` and `src/components/table/`.
+List pages keep search, filters, sorting and paging in the URL (`?q=&sort=&dir=&page=`). The API runs the query, so lists stay fast as the company grows. The shared pieces are `common/ListParams.java` and `src/components/table/`.

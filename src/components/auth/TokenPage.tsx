@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AuthFrame } from "@/components/auth/AuthFrame";
 import { SetPasswordForm } from "@/components/auth/SetPasswordForm";
 import { apiCall } from "@/lib/backend";
-import { PASSWORD_RULES } from "@/lib/password";
+import { PASSWORD_RULES } from "@/lib/password-rules";
 
 /** Shared by /invite/[token] and /reset/[token]. */
 export async function TokenPage({ token, purpose }: { token: string; purpose: "INVITE" | "RESET" }) {

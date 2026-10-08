@@ -6,7 +6,7 @@ import { Icon } from "@/components/Icon";
 import { useToast } from "@/components/shell/Toasts";
 import { Drawer } from "@/components/ui/Modal";
 import { inr, ymLabel } from "@/lib/format";
-import type { TaxProjection } from "@/lib/tax/service";
+import type { TaxProjection } from "@/lib/api-types";
 import { overrideRegime, setPreviousEmployer, taxDetail } from "./actions";
 
 const rp = (rupees: number) => inr(rupees * 100);

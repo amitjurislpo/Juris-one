@@ -1,3 +1,27 @@
+-- Reverses V1__baseline.sql: the four original Prisma migrations, undone newest first.
+-- Flyway Community has no undo: run with psql, then delete the version 1 row from flyway_schema_history.
+-- THIS DROPS EVERY TABLE AND ALL DATA. Take a backup first.
+
+-- ===== 20261006193828_tax_parents_senior =====
+-- Reverse of tax_parents_senior
+ALTER TABLE "tax_profiles" DROP COLUMN "parents_senior";
+
+-- ===== 20261006143825_attendance_engine =====
+-- Reverse of attendance_engine
+DROP TABLE "job_runs";
+ALTER TABLE "attendance_days" DROP COLUMN "label", DROP COLUMN "leave_days", DROP COLUMN "lop_days", DROP COLUMN "missed_checkout";
+-- Postgres can't drop an enum value: rebuild the type without NOT_TRACKED.
+DELETE FROM "attendance_days" WHERE "status" = 'NOT_TRACKED';
+ALTER TYPE "DayStatus" RENAME TO "DayStatus_old";
+CREATE TYPE "DayStatus" AS ENUM ('PRESENT', 'HALF_DAY', 'ABSENT', 'LEAVE', 'HOLIDAY', 'WEEKLY_OFF', 'BEFORE_JOINING', 'AFTER_EXIT', 'PENDING');
+ALTER TABLE "attendance_days" ALTER COLUMN "status" TYPE "DayStatus" USING ("status"::text::"DayStatus");
+DROP TYPE "DayStatus_old";
+
+-- ===== 20261006134356_department_archive =====
+-- Reverse of 20261006134356_department_archive
+ALTER TABLE "departments" DROP COLUMN "archived_at";
+
+-- ===== 20261005220955_init =====
 -- DropForeignKey
 ALTER TABLE "public"."departments" DROP CONSTRAINT "departments_head_employee_id_fkey";
 

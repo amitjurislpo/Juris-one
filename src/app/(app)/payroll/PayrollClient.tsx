@@ -7,7 +7,7 @@ import { SortTh } from "@/components/table/Table";
 import { useQuery } from "@/components/table/useQuery";
 import { ConfirmDialog, Modal } from "@/components/ui/Modal";
 import { avc, inr, initials, ymLabel } from "@/lib/format";
-import type { PayView } from "@/lib/payroll/view";
+import type { PayView } from "@/lib/api-types";
 import { approveAndClose, resetAdjustment, saveAdjustment } from "./actions";
 
 // "Hide amounts" is a per-viewer preference kept in localStorage (shared across payroll pages).
