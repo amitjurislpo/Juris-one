@@ -3,17 +3,24 @@ import Link from "next/link";
 import { Icon } from "@/components/Icon";
 import { PageHeader } from "@/components/PageHeader";
 import { allowedNav, can, requirePage } from "@/lib/auth";
-import { overviewData } from "@/lib/dashboard";
+import { apiData } from "@/lib/backend";
 import { fmtDL, inr, todayIn, ymLabel } from "@/lib/format";
 import { PAGE_TITLES } from "@/lib/nav";
 
 export const metadata: Metadata = { title: PAGE_TITLES.overview };
 
+type Overview = {
+  head: number; india: number; us: number; accessOff: number; deptCount: number; inNow: number;
+  pending: { leave: number; reg: number; proofs: number };
+  payroll: { month: string; status: "Closed" | "Approved" | "In review"; lastClosed: string | null; net: number; people: number; noStructure: number };
+  byDept: { name: string; n: number }[];
+};
+
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export default async function OverviewPage() {
   const u = await requirePage("overview");
-  const d = await overviewData();
+  const d = await apiData<Overview>("/api/overview");
   const pending = d.pending.leave + d.pending.reg;
   const maxDept = Math.max(1, ...d.byDept.map((x) => x.n));
   const pay = d.payroll;

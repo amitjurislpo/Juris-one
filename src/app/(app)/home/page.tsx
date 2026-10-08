@@ -1,56 +1,44 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Greeting } from "@/components/home/Greeting";
-import { HomeCards } from "@/components/home/HomeCards";
+import { HomeCards, type HomeCardsData } from "@/components/home/HomeCards";
 import { TimeCard } from "@/components/home/TimeCard";
 import { Icon } from "@/components/Icon";
-import { addDays, atLocal, dowOf, workedMinutes } from "@/lib/attendance/engine";
-import { attendanceFor, attendancePolicy, currentWorkDate, fmtTime, loadAttEmployees } from "@/lib/attendance/service";
+import { addDays, dowOf, type Status } from "@/lib/attendance/engine";
 import { requirePage } from "@/lib/auth";
-import { homeCards } from "@/lib/dashboard";
-import { db } from "@/lib/db";
+import { apiData } from "@/lib/backend";
 import { daysBetween, DOW, fmtD, fmtDL, fmtH, MON3, MONTHS } from "@/lib/format";
-import { upcomingHolidays } from "@/lib/holidays";
 
 export const metadata: Metadata = { title: "Home" };
 
-const tzAbbr = (tz: string) => new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" }).formatToParts(new Date()).find((p) => p.type === "timeZoneName")?.value.replace("GMT+5:30", "IST") ?? "";
-const t12 = (date: string, hm: string, tz: string) => fmtTime(atLocal(date, hm, tz), tz);
+type HomeDay = { date: string; status: Status; label: string; workedMinutes: number; future: boolean; punches: number };
+type Home =
+  | { tracked: false }
+  | {
+      tracked: true; wd: string; on: boolean; openSince: string | null; closedMinutes: number; shiftText: string; ticks: string[]; targetHours: number;
+      log: { t: string; l: string; d: string }[]; days: HomeDay[]; leaveAvail: number; hols: { id: string; date: string; name: string; region: string }[]; cards: HomeCardsData;
+    };
 
 export default async function HomePage() {
   const u = await requirePage("home");
-  const [emp] = await loadAttEmployees({ id: u.id });
+  const home = await apiData<Home>("/api/home");
   const now = new Date();
-  const policy = await attendancePolicy();
 
   // Untracked (e.g. a custom role with `self` but no shift row) still gets the greeting.
-  if (!emp) return <div className="col"><div className="page-h enter"><Greeting first={u.name.split(" ")[0]} timeZone={u.timeZone} initialIso={now.toISOString()} /></div></div>;
+  if (!home.tracked) return <div className="col"><div className="page-h enter"><Greeting first={u.name.split(" ")[0]} timeZone={u.timeZone} initialIso={now.toISOString()} /></div></div>;
 
-  const wd = currentWorkDate(emp, now);
+  const { wd, on, shiftText, ticks, log, days, leaveAvail, hols, cards } = home;
+  const policy = { shiftTargetHours: home.targetHours };
+  const closed = home.closedMinutes;
   const monday = addDays(wd, -((dowOf(wd) + 6) % 7));
   const heatStart = addDays(monday, -15 * 7);
   const monthStart = `${wd.slice(0, 7)}-01`;
-  const from = heatStart < monthStart ? heatStart : monthStart;
-  const days = (await attendanceFor([emp], from, addDays(monday, 6), now)).get(emp.id)!;
   const byDate = new Map(days.map((d) => [d.date, d]));
-  const today = byDate.get(wd)!;
-
-  // check-in card
-  const closed = workedMinutes(today.punches).minutes;
-  const on = today.punches.length > 0 && [...today.punches].sort((a, b) => a.at.getTime() - b.at.getTime()).at(-1)!.kind === "IN";
-  const start = emp.shift.startLocal, end = emp.shift.endLocal;
-  const ticks = [0, 1, 2, 3].map((i) => {
-    const s = atLocal(wd, start, emp.tz).getTime();
-    const e = atLocal(end <= start ? addDays(wd, 1) : wd, end, emp.tz).getTime();
-    return fmtTime(new Date(s + ((e - s) * i) / 3), emp.tz);
-  });
-  const shiftText = `${emp.shift.code === "IN_NIGHT" ? "Night" : "Day"} shift · ${t12(wd, start, emp.tz)} – ${t12(wd, end, emp.tz)} ${tzAbbr(emp.tz)}`;
-  const log = [...today.punches].sort((a, b) => a.at.getTime() - b.at.getTime()).map((p) => ({ t: fmtTime(p.at, emp.tz), l: p.kind === "IN" ? "Checked in" : "Checked out", d: p.source === "WEB" ? "Web" : p.source === "MOBILE" ? "Mobile" : "Regularization" }));
 
   // KPIs
   const month = days.filter((d) => d.date >= monthStart && d.date <= wd);
   const working = month.filter((d) => !["HOLIDAY", "WEEKLY_OFF", "BEFORE_JOINING", "AFTER_EXIT", "NOT_TRACKED"].includes(d.status));
-  const present = month.filter((d) => d.status === "PRESENT" || d.status === "HALF_DAY" || (d.date === wd && d.punches.length > 0)).length;
+  const present = month.filter((d) => d.status === "PRESENT" || d.status === "HALF_DAY" || (d.date === wd && d.punches > 0)).length;
   const lastShifts = days.filter((d) => d.date <= wd && (d.workedMinutes > 0 || d.date === wd) && !["HOLIDAY", "WEEKLY_OFF"].includes(d.status)).slice(-7);
   const finished = lastShifts.filter((d) => d.date !== wd && d.workedMinutes > 0);
   const avgH = finished.length ? finished.reduce((a, d) => a + d.workedMinutes, 0) / finished.length / 60 : 0;
@@ -59,9 +47,6 @@ export default async function HomePage() {
     const mn = Math.min(...sparkVals) - 0.1, mx = Math.max(...sparkVals) + 0.1;
     return sparkVals.map((h, i) => `${i ? "L" : "M"}${((i / (sparkVals.length - 1)) * 120).toFixed(1)} ${(28 - ((h - mn) / (mx - mn)) * 24).toFixed(1)}`).join(" ");
   })() : "";
-  const balances = await db.leaveLedger.groupBy({ by: ["leaveType"], where: { employeeId: u.id, leaveType: { in: ["CL", "EL"] } }, _sum: { delta: true } });
-  const leaveAvail = balances.reduce((a, b) => a + Number(b._sum.delta ?? 0), 0);
-  const [hols, cards] = await Promise.all([upcomingHolidays(emp.region, wd, 4), homeCards(u)]);
   const nextIn = hols[0] ? daysBetween(wd, hols[0].date) : null;
 
   // heatmap: 16 weeks, Monday-first columns
@@ -70,7 +55,7 @@ export default async function HomePage() {
     const d = byDate.get(date);
     if (!d || d.future || date > wd) return { date, cls: "na", title: fmtDL(date) };
     let cls = "";
-    if (d.status === "PRESENT" || d.status === "HALF_DAY" || (d.status === "PENDING" && d.punches.length)) {
+    if (d.status === "PRESENT" || d.status === "HALF_DAY" || (d.status === "PENDING" && d.punches)) {
       const h = d.workedMinutes / 60;
       cls = h < 8.8 ? "l1" : h < 9.0 ? "l2" : h < 9.2 ? "l3" : "l4";
       if (date === wd) cls += " now";
@@ -90,7 +75,7 @@ export default async function HomePage() {
       </div>
 
       <div className="bento">
-        <TimeCard on={on} openSince={today.openSince?.toISOString() ?? null} closedMinutes={closed} shiftText={shiftText} ticks={ticks} targetHours={policy.shiftTargetHours} log={log} />
+        <TimeCard on={on} openSince={home.openSince} closedMinutes={closed} shiftText={shiftText} ticks={ticks} targetHours={policy.shiftTargetHours} log={log} />
 
         <div className="span-5" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16 }}>
           <div className="card kpi lift enter" style={{ ["--i" as string]: 2 }}><span className="spot"></span><span className="ico" style={{ background: "var(--okbg)", color: "var(--ok)" }}><Icon n="check" s={16} /></span><span className="l">Present in {MONTHS[Number(wd.slice(5, 7)) - 1]}</span><span className="v"><span className="num">{present}</span><span className="faint" style={{ fontSize: 16, fontWeight: 500 }}> / {working.length}</span></span><span className="s">working days so far</span></div>

@@ -26,6 +26,11 @@ public final class Format {
         return at.atZone(ZoneId.of(timeZone)).toLocalDate();
     }
 
+    /** {@code Date.prototype.toISOString()}: millisecond precision, Z. */
+    public static String jsIso(Instant i) {
+        return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(java.time.ZoneOffset.UTC).format(i);
+    }
+
     public static LocalDate todayIn(String timeZone) {
         return isoInZone(Instant.now(), timeZone);
     }

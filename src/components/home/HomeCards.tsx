@@ -1,13 +1,21 @@
 import Link from "next/link";
 import { Icon } from "@/components/Icon";
-import type { homeCards } from "@/lib/dashboard";
 import { avc, fmtD, initials, ymLabel } from "@/lib/format";
 
 const LCHIP: Record<string, string> = { PENDING: "warn", APPROVED: "ok", DECLINED: "bad", CANCELLED: "neutral" };
 const LLABEL: Record<string, string> = { PENDING: "Pending", APPROVED: "Approved", DECLINED: "Declined", CANCELLED: "Cancelled" };
 
 /** Home side column: cards that appear by permission (REQUIREMENTS §5.12). No salary figures. */
-export function HomeCards({ c, i0 }: { c: Awaited<ReturnType<typeof homeCards>>; i0: number }) {
+/** Permission-driven Home cards, from /api/home (salary is never included). */
+export interface HomeCardsData {
+  myLeaves: { id: string; type: string; from: string; to: string; days: number; status: string }[] | null;
+  team: { id: string; name: string; title: string; st: { label: string; tone: "ok" | "info" | "warn" | "gold" | "neutral" } }[] | null;
+  approvals: { leaveToo: boolean; count: number } | null;
+  payroll: { month: string; status: "Closed" | "Approved" | "In review"; proofs: number | null; regs: number } | null;
+  payslip: { month: string; ready: boolean } | null;
+}
+
+export function HomeCards({ c, i0 }: { c: HomeCardsData; i0: number }) {
   let i = i0;
   return (
     <>

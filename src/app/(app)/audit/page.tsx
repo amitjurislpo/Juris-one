@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
 import { ClearFilters, Pager, Pending, SearchBox, SelectFilter, SortTh } from "@/components/table/Table";
-import { actionLabel, AUDIT_GROUPS, auditRows, type AuditGroup } from "@/lib/audit-view";
+import { actionLabel, AUDIT_GROUPS, type AuditGroup, type AuditRow as Row } from "@/lib/audit-labels";
 import { requirePage } from "@/lib/auth";
+import { apiData, qs } from "@/lib/backend";
 import { fmtDateTime } from "@/lib/format";
 import { PAGE_TITLES } from "@/lib/nav";
 import { AuditRow } from "./AuditClient";
@@ -14,7 +15,7 @@ const TONE: Record<string, string> = { auth: "neutral", employee: "info", role: 
 export default async function AuditPage(props: PageProps<"/audit">) {
   const u = await requirePage("audit");
   const sp = await props.searchParams;
-  const { ls, total, rows, actors } = await auditRows(u, sp);
+  const { page, take, total, rows, actors } = await apiData<{ page: number; take: number; total: number; rows: Row[]; actors: { v: string; l: string }[] }>(`/api/audit${qs(sp)}`);
   const filtered = Object.keys(sp).some((k) => !["page", "sort", "dir"].includes(k));
 
   return (
@@ -60,7 +61,7 @@ export default async function AuditPage(props: PageProps<"/audit">) {
           {!rows.length && (
             <div className="empty"><b>No entries</b><span className="muted">{filtered ? "Try a different search, event or period." : "Sensitive changes will be recorded here."}</span>{filtered && <ClearFilters />}</div>
           )}
-          <Pager page={ls.page} take={ls.take} total={total} />
+          <Pager page={page} take={take} total={total} />
         </Pending>
       </section>
     </div>

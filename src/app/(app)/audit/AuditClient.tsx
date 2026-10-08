@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Icon } from "@/components/Icon";
 import { Drawer } from "@/components/ui/Modal";
-import type { AuditRow as Row } from "@/lib/audit-view";
+import type { AuditRow as Row } from "@/lib/audit-labels";
 
 const show = (v: unknown) => (v === undefined || v === null ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v));
 
