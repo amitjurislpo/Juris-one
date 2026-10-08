@@ -54,9 +54,9 @@ class TaxApiTest extends IntegrationTest {
         String c = "JC-" + (++seq) + (int) (Math.random() * 1000);
         UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
         String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
-        Matcher m = Pattern.compile("jo_session=([^;]+)").matcher(set);
+        Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
-        return new Person(id, new Cookie("jo_session", m.group(1)));
+        return new Person(id, new Cookie("jo_at", m.group(1)));
     }
 
     MockHttpServletRequestBuilder upload(Person p, String item, byte[] bytes, String name) {
@@ -69,19 +69,19 @@ class TaxApiTest extends IntegrationTest {
         Person emp = person(empRole), fin = person(finRole);
 
         mvc.perform(write(put("/api/declarations/items/bogus")).cookie(emp.cookie()).content("{\"amount\":10}"))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("Unknown item"));
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Unknown item"));
         mvc.perform(write(put("/api/declarations/items/ppf")).cookie(emp.cookie()).content("{\"amount\":10.5}"))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("Whole rupees only"));
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Whole rupees only"));
         mvc.perform(write(put("/api/declarations/items/ppf")).cookie(emp.cookie()).content("{\"amount\":50000}")).andExpect(status().isOk());
         assertThat(jdbc.queryForObject("SELECT amount FROM declaration_items WHERE employee_id = ? AND item_key = 'ppf'", Long.class, emp.id())).isEqualTo(5_000_000L);
 
         // only the old regime submits; every draft needs a proof
         mvc.perform(write(post("/api/declarations/submissions")).cookie(emp.cookie()))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("Declarations only matter on the old regime."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("Declarations only matter on the old regime."));
         mvc.perform(write(put("/api/declarations/regime")).cookie(emp.cookie()).content("{\"regime\":\"OLD\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.msg").value("You're on the old regime — TDS updates from the next payroll"));
         mvc.perform(write(post("/api/declarations/submissions")).cookie(emp.cookie()))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("Attach a proof for: Public provident fund (PPF)."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("Attach a proof for: Public provident fund (PPF)."));
 
         // content, not the extension, decides the type
         mvc.perform(upload(emp, "ppf", "hello".getBytes(), "x.pdf")).andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("Upload a PDF, JPG or PNG."));
@@ -90,7 +90,7 @@ class TaxApiTest extends IntegrationTest {
         mvc.perform(write(post("/api/declarations/submissions")).cookie(emp.cookie()))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.msg").value("1 item sent to Finance for verification"));
         mvc.perform(write(put("/api/declarations/items/ppf")).cookie(emp.cookie()).content("{\"amount\":60000}"))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("This item is waiting for Finance — you can change it after they decide."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("This item is waiting for Finance — you can change it after they decide."));
 
         String itemId = jdbc.queryForObject("SELECT id::text FROM declaration_items WHERE employee_id = ? AND item_key = 'ppf'", String.class, emp.id());
 
@@ -103,9 +103,9 @@ class TaxApiTest extends IntegrationTest {
 
         // Finance: a rejection needs a reason; you can't verify your own
         mvc.perform(write(put("/api/proofs/items/" + itemId + "/decision")).cookie(fin.cookie()).content("{\"approve\":false}"))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("Give a reason so the employee can fix it."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("Give a reason so the employee can fix it."));
         mvc.perform(write(put("/api/proofs/" + fin.id() + "/decision")).cookie(fin.cookie()).content("{\"approve\":true}"))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("You can't verify your own proofs."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't verify your own proofs."));
         mvc.perform(get("/api/proofs").cookie(fin.cookie())).andExpect(status().isOk()).andExpect(jsonPath("$.data.rows[?(@.id == '" + emp.id() + "')].pend").value(1));
         mvc.perform(get("/api/proofs/" + emp.id()).cookie(fin.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].label").value("Public provident fund (PPF)")).andExpect(jsonPath("$.data.items[0].sec").value("80C"))
@@ -113,7 +113,7 @@ class TaxApiTest extends IntegrationTest {
         mvc.perform(write(put("/api/proofs/" + emp.id() + "/decision")).cookie(fin.cookie()).content("{\"approve\":true}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.msg").value("1 proof approved"));
         mvc.perform(write(put("/api/proofs/items/" + itemId + "/decision")).cookie(fin.cookie()).content("{\"approve\":true}"))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("This item was already decided."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("This item was already decided."));
         assertThat(jdbc.queryForObject("SELECT text FROM notifications WHERE employee_id = ?", String.class, emp.id()))
                 .isEqualTo("1 investment proof approved — your TDS goes down from the next payroll");
 
@@ -127,15 +127,15 @@ class TaxApiTest extends IntegrationTest {
         mvc.perform(write(put("/api/tax/" + emp.id() + "/regime")).cookie(fin.cookie()).content("{\"regime\":\"OLD\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.msg").value("Regime set to old — TDS updates from this payroll"));
         mvc.perform(write(put("/api/declarations/regime")).cookie(emp.cookie()).content("{\"regime\":\"NEW\"}"))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("Finance has set your regime. Contact Finance to change it."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("Finance has set your regime. Contact Finance to change it."));
         mvc.perform(write(put("/api/tax/" + emp.id() + "/previous-employer")).cookie(fin.cookie()).content("{\"income\":100,\"tds\":200}"))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("TDS can't be more than the income."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("TDS can't be more than the income."));
         mvc.perform(write(put("/api/tax/" + emp.id() + "/previous-employer")).cookie(fin.cookie()).content("{\"income\":300000,\"tds\":20000}"))
                 .andExpect(status().isOk());
         assertThat(jdbc.queryForList("SELECT prev_employer_income, prev_employer_tds FROM tax_profiles WHERE employee_id = ?", emp.id()).get(0))
                 .containsEntry("prev_employer_income", 30_000_000L).containsEntry("prev_employer_tds", 2_000_000L);
         mvc.perform(get("/api/tax/" + emp.id()).cookie(fin.cookie()))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("No salary structure — nothing to compute yet."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("No salary structure — nothing to compute yet."));
         mvc.perform(get("/api/tax/export").cookie(fin.cookie())).andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Employee ID,Name,Regime,Projected income")));
         mvc.perform(get("/api/tax/export").cookie(emp.cookie())).andExpect(status().isForbidden());

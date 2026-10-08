@@ -1,9 +1,7 @@
 "use server";
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { apiCall, applySetCookies } from "@/lib/backend";
-import { SESSION_COOKIE } from "@/lib/session-cookie";
 
 import type { FormState } from "./form-state";
 
@@ -24,8 +22,8 @@ export async function loginAction(_prev: FormState, form: FormData): Promise<For
 }
 
 export async function logoutAction() {
-  await apiCall("DELETE", "/api/auth/session");
-  (await cookies()).delete(SESSION_COOKIE);
+  const r = await apiCall("DELETE", "/api/auth/session");
+  await applySetCookies(r.setCookies); // clears the access and refresh cookies
   redirect("/login?signedout=1");
 }
 

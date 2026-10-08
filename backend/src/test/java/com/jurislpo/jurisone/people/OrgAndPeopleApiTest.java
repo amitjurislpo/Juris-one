@@ -73,9 +73,9 @@ class OrgAndPeopleApiTest extends IntegrationTest {
     Cookie login(String code) throws Exception {
         String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
-        Matcher m = Pattern.compile("jo_session=([^;]+)").matcher(set);
+        Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
-        return new Cookie("jo_session", m.group(1));
+        return new Cookie("jo_at", m.group(1));
     }
 
     Cookie as(UUID role) throws Exception {
@@ -99,9 +99,9 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         mvc.perform(write(delete("/api/roles/" + empRole + "/permissions/att.all")).cookie(admin)).andExpect(status().isOk());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'role.permission_change' AND entity_id = ?", Integer.class, empRole.toString())).isEqualTo(2);
         mvc.perform(write(put("/api/roles/" + adminRole + "/permissions/self")).cookie(admin))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("Admin has full access and can't be changed."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("Admin has full access and can't be changed."));
         mvc.perform(write(put("/api/roles/" + empRole + "/permissions/bogus")).cookie(admin))
-                .andExpect(jsonPath("$.error").value("Unknown permission."));
+                .andExpect(jsonPath("$.detail").value("Unknown permission."));
 
         String created = mvc.perform(write(post("/api/roles")).cookie(admin).content("{\"name\":\"Auditor " + UUID.randomUUID().toString().substring(0, 6) + "\",\"fromRoleId\":\"" + adminRole + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
@@ -110,7 +110,7 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         mvc.perform(write(delete("/api/roles/" + id)).cookie(admin)).andExpect(status().isOk());
 
         Cookie hr = as(hrmRole);
-        mvc.perform(get("/api/roles").cookie(hr)).andExpect(status().isForbidden()).andExpect(jsonPath("$.error").value("You don't have permission to do that."));
+        mvc.perform(get("/api/roles").cookie(hr)).andExpect(status().isForbidden()).andExpect(jsonPath("$.detail").value("You don't have permission to do that."));
     }
 
     @Test
@@ -118,15 +118,15 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         Cookie hr = as(hrmRole);
         String name = "Dept " + UUID.randomUUID().toString().substring(0, 6);
         mvc.perform(write(post("/api/departments")).cookie(hr).content("{\"name\":\"" + name + "\"}")).andExpect(status().isCreated()).andExpect(jsonPath("$.msg").value("Department “" + name + "” created"));
-        mvc.perform(write(post("/api/departments")).cookie(hr).content("{\"name\":\"" + name.toUpperCase() + "\"}")).andExpect(jsonPath("$.error").value("This department already exists."));
+        mvc.perform(write(post("/api/departments")).cookie(hr).content("{\"name\":\"" + name.toUpperCase() + "\"}")).andExpect(jsonPath("$.detail").value("This department already exists."));
         mvc.perform(get("/api/departments?q=" + name.substring(5)).cookie(hr)).andExpect(jsonPath("$.data.rows[0].name").value(name)).andExpect(jsonPath("$.data.rows[0].n").value(0));
 
         mvc.perform(write(post("/api/holidays")).cookie(hr).content("{\"date\":\"2031-12-25\",\"name\":\"Christmas\",\"region\":\"ALL\"}"))
                 .andExpect(jsonPath("$.msg").value("Christmas added for everyone · Thu, 25 Dec 2031"));
         mvc.perform(write(post("/api/holidays")).cookie(hr).content("{\"date\":\"2031-12-25\",\"name\":\"Other\",\"region\":\"IN\"}"))
-                .andExpect(jsonPath("$.error").value("There's already a holiday on this date for this team (Christmas)."));
+                .andExpect(jsonPath("$.detail").value("There's already a holiday on this date for this team (Christmas)."));
         mvc.perform(write(post("/api/holidays")).cookie(hr).content("{\"date\":\"2020-01-10\",\"name\":\"Old\",\"region\":\"IN\"}"))
-                .andExpect(jsonPath("$.error").value("That month's attendance is already locked."));
+                .andExpect(jsonPath("$.detail").value("That month's attendance is already locked."));
     }
 
     @Test
@@ -164,7 +164,7 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         mvc.perform(get("/api/people/" + id).cookie(login(financeCode))).andExpect(jsonPath("$.data.gross").value(0));
 
         // duplicate email, edit, access toggle
-        mvc.perform(write(post("/api/people")).cookie(hr).content(body)).andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.endsWith("already uses that email.")));
+        mvc.perform(write(post("/api/people")).cookie(hr).content(body)).andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.endsWith("already uses that email.")));
         mvc.perform(write(put("/api/people/" + id)).cookie(hr).content(body.replace("Associate", "Senior Associate").replace("+91 98765 43210", "")))
                 .andExpect(jsonPath("$.msg").value("Saved changes for Meera Joshi"));
         assertThat(jdbc.queryForObject("SELECT phone_last4 FROM employees WHERE id = ?::uuid", String.class, id)).isEqualTo("3210"); // blank keeps
@@ -191,6 +191,6 @@ class OrgAndPeopleApiTest extends IntegrationTest {
              "aadhaar":"","uan":"","address":"","designation":"Analyst","departmentId":"%s","managerId":"%s","doj":"2031-01-01","shift":"US_DAY","roleId":"%s"}"""
                 .formatted(UUID.randomUUID().toString().substring(0, 6), dept, manager, finRole);
         mvc.perform(write(post("/api/people")).cookie(hr).content(body)).andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.error").value("You can't give people the Fm role."));
+                .andExpect(jsonPath("$.detail").value("You can't give people the Fm role."));
     }
 }

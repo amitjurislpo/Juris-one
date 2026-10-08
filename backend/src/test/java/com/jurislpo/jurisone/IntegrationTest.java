@@ -11,7 +11,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * schema from Flyway V1. Tests create the rows they need.
  */
 @SpringBootTest(properties = {"JOBS_ENABLED=false", "PII_ENCRYPTION_KEY=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=", "SMTP_HOST=", "APP_URL=http://localhost:3005",
-        "UPLOAD_DIR=backend/target/test-storage"})
+        "UPLOAD_DIR=backend/target/test-storage",
+        "JWT_SECRET=test-only-jwt-secret-0123456789abcdef0123456789", "jurisone.refresh-reuse-grace-seconds=0"})
 @AutoConfigureMockMvc
 public abstract class IntegrationTest {
 

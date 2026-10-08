@@ -43,7 +43,7 @@ class FreshDatabaseSchemaTest {
 
     @Test
     void flywayAppliedTheBaseline() {
-        assertThat(jdbc.queryForObject("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1", String.class)).isEqualTo("1");
+        assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class)).containsExactly("1", "2");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_type WHERE typname = 'EmployeeStatus'", Integer.class)).isEqualTo(1);
     }
 

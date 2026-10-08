@@ -56,9 +56,9 @@ class RestEndpointsTest extends IntegrationTest {
         UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
         String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
-        Matcher m = Pattern.compile("jo_session=([^;]+)").matcher(set);
+        Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
-        return new Person(id, new Cookie("jo_session", m.group(1)));
+        return new Person(id, new Cookie("jo_at", m.group(1)));
     }
 
     @Test
@@ -78,7 +78,7 @@ class RestEndpointsTest extends IntegrationTest {
         // reads are GETs now; the old POST answers 405 with Allow
         mvc.perform(write(post("/api/leave/preview")).cookie(p.cookie()).content("{}"))
                 .andExpect(status().isMethodNotAllowed()).andExpect(header().string("Allow", org.hamcrest.Matchers.containsString("GET")))
-                .andExpect(jsonPath("$.error").value("Method not allowed."));
+                .andExpect(jsonPath("$.detail").value("Method not allowed."));
         mvc.perform(write(post("/api/notifications/read")).cookie(p.cookie())).andExpect(status().isNotFound());
         mvc.perform(write(post("/api/approvals/leave")).cookie(p.cookie()).content("{}")).andExpect(status().isNotFound());
     }
@@ -88,7 +88,7 @@ class RestEndpointsTest extends IntegrationTest {
         Person fin = person(finRole), emp = person(empRole);
         // closing needs {"status":"CLOSED"} and pay.close
         mvc.perform(write(put("/api/payroll/2026-09/status")).cookie(fin.cookie()).content("{\"status\":\"OPEN\"}"))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("Invalid option: expected \"CLOSED\""));
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Invalid option: expected \"CLOSED\""));
         mvc.perform(write(put("/api/payroll/2026-09/status")).cookie(emp.cookie()).content("{\"status\":\"CLOSED\"}")).andExpect(status().isForbidden());
         // the employee id comes from the path
         mvc.perform(write(put("/api/payroll/2026-09/adjustments/not-a-uuid")).cookie(fin.cookie()).content("{\"lopDays\":null,\"bonus\":0,\"otherDeduction\":0,\"note\":\"\"}"))
@@ -106,11 +106,11 @@ class RestEndpointsTest extends IntegrationTest {
         Person hr = person(hrRole);
         String nobody = UUID.randomUUID().toString();
         mvc.perform(get("/api/people/" + nobody + "/contact").cookie(hr.cookie()))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("You can't view this person's contact details."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't view this person's contact details."));
         mvc.perform(write(post("/api/people/" + nobody + "/invitations")).cookie(hr.cookie()))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("You can't send an invite for this person."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't send an invite for this person."));
         mvc.perform(write(put("/api/people/" + nobody + "/exit")).cookie(hr.cookie()).content("{\"exitDate\":\"2031-01-01\"}"))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("You can't change this person's record."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't change this person's record."));
         mvc.perform(get("/api/people/form-options").cookie(hr.cookie())).andExpect(status().isUnprocessableEntity()); // this role may assign no roles
         mvc.perform(write(post("/api/people/" + nobody + "/reveal-contact")).cookie(hr.cookie())).andExpect(status().isNotFound());
     }

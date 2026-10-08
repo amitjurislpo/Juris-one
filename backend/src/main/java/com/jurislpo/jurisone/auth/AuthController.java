@@ -1,13 +1,18 @@
 package com.jurislpo.jurisone.auth;
 
 import com.jurislpo.jurisone.common.ApiResult;
+import com.jurislpo.jurisone.common.Problems;
 import com.jurislpo.jurisone.common.RequestMeta;
+import com.jurislpo.jurisone.common.UnauthenticatedException;
 import com.jurislpo.jurisone.security.Auth;
-import com.jurislpo.jurisone.security.SessionAuthFilter;
+import com.jurislpo.jurisone.security.JwtAuthFilter;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,18 +45,40 @@ public class AuthController {
         this.current = current;
     }
 
-    /** Sign in: 201 {data:{redirect}} + Set-Cookie; 400 invalid input, 401 wrong credentials / blocked, 429 throttled. */
+    private static String[] setCookies(List<ResponseCookie> cookies) {
+        return cookies.stream().map(ResponseCookie::toString).toArray(String[]::new);
+    }
+
+    /**
+     * Sign in: 201 {data:{redirect}} + Set-Cookie {@code jo_at} (5-minute JWT) and {@code jo_rt} (refresh token);
+     * 400 invalid input, 401 wrong credentials / blocked, 429 throttled.
+     */
     @PostMapping("/session")
     public ResponseEntity<ApiResult<Map<String, String>>> login(@RequestBody LoginRequest body, HttpServletRequest req) {
         AuthService.LoginResult r = auth.login(body.identifier(), body.password(), Boolean.TRUE.equals(body.remember()), body.next(), RequestMeta.of(req));
-        return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.SET_COOKIE, r.cookie().toString()).body(ApiResult.success(Map.of("redirect", r.redirect())));
+        return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.SET_COOKIE, setCookies(r.cookies())).body(ApiResult.success(Map.of("redirect", r.redirect())));
     }
 
-    /** Sign out: always 200; ends the session and clears the cookie. */
+    /**
+     * Renew the access token with the refresh cookie (rotates the refresh token). 200 + new cookies, or 401 and the
+     * cookies cleared when the session has ended, was revoked or the refresh token was replayed.
+     */
+    @PostMapping("/session/refresh")
+    public ResponseEntity<?> refresh(HttpServletRequest req) {
+        try {
+            SessionService.Issued issued = sessions.refresh(JwtAuthFilter.cookie(req, SessionService.REFRESH_COOKIE), RequestMeta.of(req));
+            return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, setCookies(issued.cookies())).body(ApiResult.success());
+        } catch (SessionService.RefreshRefused e) {
+            ProblemDetail p = Problems.of(HttpStatus.UNAUTHORIZED, Problems.UNAUTHENTICATED, UnauthenticatedException.MESSAGE, req.getRequestURI());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).header(HttpHeaders.SET_COOKIE, setCookies(sessions.clearCookies())).body(p);
+        }
+    }
+
+    /** Sign out: always 200; ends this session and clears the cookies. */
     @DeleteMapping("/session")
     public ResponseEntity<ApiResult<Map<String, String>>> logout(HttpServletRequest req) {
-        auth.logout(SessionAuthFilter.cookieValue(req), current.current(), RequestMeta.of(req));
-        return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, sessions.clearCookie().toString())
+        auth.logout(current.current(), JwtAuthFilter.cookie(req, SessionService.REFRESH_COOKIE), RequestMeta.of(req));
+        return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, setCookies(sessions.clearCookies()))
                 .body(ApiResult.success(Map.of("redirect", "/login?signedout=1")));
     }
 
@@ -66,8 +93,8 @@ public class AuthController {
     @GetMapping("/tokens/{purpose}/{token}")
     public ResponseEntity<ApiResult<Map<String, String>>> token(@PathVariable String purpose, @PathVariable String token) {
         Map<String, String> info = auth.tokenInfo(token, purpose);
-        return info == null ? ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResult.fail("This link has expired or was already used."))
-                : ResponseEntity.ok(ApiResult.success(info));
+        if (info == null) throw new com.jurislpo.jurisone.common.ApiException(HttpStatus.NOT_FOUND, "LINK_INVALID", "This link has expired or was already used.");
+        return ResponseEntity.ok(ApiResult.success(info));
     }
 
     /** Set the password from an invite or reset link: 200 {data:{redirect}}; 400 bad link, 422 password rules, 410 expired/used. */

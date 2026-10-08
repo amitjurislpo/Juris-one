@@ -50,9 +50,9 @@ class DashboardApiTest extends IntegrationTest {
         jdbc.update("UPDATE employees SET shift_id = (SELECT id FROM shifts WHERE code = 'IN_DAY') WHERE id = ?", id);
         String set = mvc.perform(post("/api/auth/session").header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
-        Matcher m = Pattern.compile("jo_session=([^;]+)").matcher(set);
+        Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
-        return new Person(id, new Cookie("jo_session", m.group(1)));
+        return new Person(id, new Cookie("jo_at", m.group(1)));
     }
 
     @Test

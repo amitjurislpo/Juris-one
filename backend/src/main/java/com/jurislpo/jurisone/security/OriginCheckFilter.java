@@ -1,7 +1,7 @@
 package com.jurislpo.jurisone.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jurislpo.jurisone.common.ApiResult;
+import com.jurislpo.jurisone.common.Problems;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URI;
 import java.util.Set;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -40,8 +41,8 @@ public class OriginCheckFilter extends OncePerRequestFilter {
         String host = req.getHeader("x-forwarded-host") != null ? req.getHeader("x-forwarded-host") : req.getHeader("host");
         if (origin == null || host == null || !host.equalsIgnoreCase(hostOf(origin))) {
             res.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            res.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            json.writeValue(res.getOutputStream(), ApiResult.fail(MESSAGE));
+            res.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+            json.writeValue(res.getOutputStream(), Problems.of(HttpStatus.FORBIDDEN, "CROSS_SITE_BLOCKED", MESSAGE, req.getRequestURI()));
             return;
         }
         chain.doFilter(req, res);

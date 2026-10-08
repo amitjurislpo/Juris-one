@@ -51,7 +51,7 @@ class ExistingPrismaDatabaseTest {
             try (ConfigurableApplicationContext ctx = start(pg)) {
                 JdbcTemplate jdbc = ctx.getBean(JdbcTemplate.class);
                 assertThat(jdbc.queryForObject("SELECT type FROM flyway_schema_history WHERE version = '1'", String.class)).isEqualTo("BASELINE");
-                assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history", Integer.class)).isEqualTo(1);
+                assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class)).containsExactly("1", "2"); // baseline, then later migrations
                 assertThat(jdbc.queryForObject("SELECT name FROM roles", String.class)).isEqualTo("Admin");
             }
         } finally {
@@ -64,7 +64,7 @@ class ExistingPrismaDatabaseTest {
         PostgreSQLContainer<?> pg = PostgresContainer.start();
         try {
             prismaDatabase(pg, 3);
-            assertThatThrownBy(() -> start(pg).close()).hasStackTraceContaining("Run `npm run db:deploy` first");
+            assertThatThrownBy(() -> start(pg).close()).hasStackTraceContaining("Apply the remaining Prisma migrations");
         } finally {
             pg.stop();
         }

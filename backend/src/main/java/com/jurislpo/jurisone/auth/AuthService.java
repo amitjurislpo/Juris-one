@@ -63,8 +63,8 @@ public class AuthService {
         return Math.max(1, (long) Math.ceil(ms / 60_000.0));
     }
 
-    /** Signed in: where to go, and the session cookie. */
-    public record LoginResult(String redirect, ResponseCookie cookie) {}
+    /** Signed in: where to go, and the cookies (JWT access token + refresh token). */
+    public record LoginResult(String redirect, java.util.List<ResponseCookie> cookies) {}
 
     private static UserException fail(String msg) {
         return new UserException(HttpStatus.UNAUTHORIZED, msg);
@@ -153,7 +153,7 @@ public class AuthService {
             throw fail(MSG_DISABLED);
         }
 
-        ResponseCookie cookie = tx.execute(s -> {
+        SessionService.Issued issued = tx.execute(s -> {
             User u = em.find(User.class, emp.getId());
             u.setFailedAttempts(0);
             u.setLockedUntil(null);
@@ -168,11 +168,13 @@ public class AuthService {
         Set<String> perms = new HashSet<>(em.createQuery("SELECT p.permissionKey FROM RolePermission p WHERE p.roleId = :r", String.class)
                 .setParameter("r", emp.getRoleId()).getResultList());
         String target = next != null && next.startsWith("/") && !next.startsWith("//") ? next : Nav.landingFor(perms);
-        return new LoginResult(target, cookie);
+        return new LoginResult(target, issued.cookies());
     }
 
-    public void logout(String token, CurrentUser u, RequestMeta meta) {
-        sessions.destroy(token);
+    /** Ends this device's session: the one in the access token, else the refresh cookie's. */
+    public void logout(CurrentUser u, String refreshToken, RequestMeta meta) {
+        if (u != null) sessions.revoke(u.sessionId(), "logout");
+        else sessions.revokeByRefreshToken(refreshToken, "logout");
         if (u != null) audit.log(u.id(), "auth.logout", "session", u.id().toString(), meta.ip());
     }
 

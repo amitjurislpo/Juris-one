@@ -15,7 +15,7 @@ HRMS and payroll portal for Juris Consultants. It covers attendance, leave, peop
 | Database | PostgreSQL 16 in docker-compose | 5436 on the host |
 | Tests | JUnit 5 + Testcontainers (backend), Vitest (frontend helpers), Playwright (end to end) | |
 
-The browser only talks to Next.js. Next.js calls the API server-side (`src/lib/backend.ts`) and forwards `/api/*` to it (`next.config.ts`), so the API is never exposed on its own. Sessions are the same HTTP-only `jo_session` cookie as before; passwords are argon2id. Every endpoint, with its method and status codes, is listed in [MIGRATION_PLAN.md §14](references/MIGRATION_PLAN.md#14-rest-api-after-the-migration).
+The browser only talks to Next.js. Next.js calls the API server-side (`src/lib/backend.ts`) and forwards `/api/*` to it (`next.config.ts`), so the API is never exposed on its own. Signing in sets two HTTP-only cookies: a 5-minute JWT access token (`jo_at`) and a rotating refresh token (`jo_rt`) that `src/proxy.ts` uses to renew it silently; passwords are argon2id. Every endpoint, with its method and status codes, is listed in [MIGRATION_PLAN.md §14](references/MIGRATION_PLAN.md#14-rest-api-after-the-migration).
 
 ## Quick start (development)
 
@@ -149,9 +149,10 @@ prisma/schema.prisma               the original data model, kept as a readable r
 - So is the session of an employee whose access is disabled or who has exited.
 - Disabling access or marking someone exited revokes their sessions immediately.
 
-**Passwords and sessions:**
+**Passwords, tokens and sessions:**
 - Passwords are hashed with argon2id (m=19456, t=2, p=1).
-- Session tokens are 256-bit random values. Only their SHA-256 is stored.
+- Access tokens are JWTs (HS256, `JWT_SECRET`) that expire after 5 minutes; every request also re-checks the session and the employee, so revocation is immediate.
+- Refresh tokens are 256-bit random values that rotate on every use; only their SHA-256 is stored, and replaying an old one revokes the session.
 
 **Login protection:**
 - Failed attempts are limited per IP.
@@ -164,6 +165,8 @@ prisma/schema.prisma               the original data model, kept as a readable r
 - **Back the key up. Losing it makes that data unrecoverable.**
 
 **CSRF and CORS:** every API write must come from `APP_URL` (Origin check), and CORS allows only that origin.
+
+**Errors:** every API error is `application/problem+json` (RFC 7807): `status`, `title`, `detail` (the message shown to the user), `instance` and a stable `code` (`VALIDATION_FAILED`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `BUSINESS_RULE`, …), plus `errors` with field messages for validation.
 
 **Secrets:** no password, key or secret is stored in the code, README or `.env.example`; everything comes from the environment.
 

@@ -44,7 +44,9 @@ export async function apiCall<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DEL
   });
   let parsed: ApiResult<T>;
   try {
-    parsed = (await res.json()) as ApiResult<T>;
+    const json = await res.json();
+    // errors arrive as RFC 7807 problem details: { status, code, detail, ... }
+    parsed = typeof json?.ok === "boolean" ? (json as ApiResult<T>) : { ok: false, error: String(json?.detail ?? "Something went wrong. Please try again.") };
   } catch {
     parsed = { ok: false, error: "Something went wrong. Please try again." };
   }

@@ -73,19 +73,19 @@ class AttendanceApiTest extends IntegrationTest {
         jdbc.update("UPDATE employees SET shift_id = ? WHERE id = ?", nightShift, id);
         String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}"))
                 .andReturn().getResponse().getHeader("Set-Cookie");
-        Matcher m = Pattern.compile("jo_session=([^;]+)").matcher(set);
+        Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
-        return new Person(id, c, new Cookie("jo_session", m.group(1)));
+        return new Person(id, c, new Cookie("jo_at", m.group(1)));
     }
 
     @Test
     void checkInAndOutFollowTheButtonTheUserSaw() throws Exception {
         Person p = person(empRole);
-        mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.error").value("You're not checked in."));
+        mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.detail").value("You're not checked in."));
         mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"IN\"}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.msg").value("Checked in. Have a productive shift.")).andExpect(jsonPath("$.data.kind").value("IN"));
-        mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"IN\"}")).andExpect(jsonPath("$.error").value("You're already checked in."));
-        mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.error").value("Just recorded — give it a few seconds."));
+        mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"IN\"}")).andExpect(jsonPath("$.detail").value("You're already checked in."));
+        mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.detail").value("Just recorded — give it a few seconds."));
         jdbc.update("UPDATE punches SET at = at - interval '2 hours' WHERE employee_id = ?", p.id());
         mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"OUT\"}"))
                 .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.matchesPattern("Checked out — 2h 0[01]m recorded today")));
@@ -113,7 +113,7 @@ class AttendanceApiTest extends IntegrationTest {
         // September 2026 locks on 1 Oct 10:00 IST
         mvc.perform(write(post("/api/attendance/regularizations")).cookie(p.cookie())
                 .content("{\"date\":\"2026-09-14\",\"kind\":\"LATE_CHECKIN\",\"proposedIn\":\"\",\"proposedOut\":\"\",\"reason\":\"traffic\"}"))
-                .andExpect(jsonPath("$.error").value("Attendance for this month is locked. Ask Finance to adjust LOP in payroll."));
+                .andExpect(jsonPath("$.detail").value("Attendance for this month is locked. Ask Finance to adjust LOP in payroll."));
     }
 
     @Test
@@ -127,13 +127,13 @@ class AttendanceApiTest extends IntegrationTest {
         String body = "{\"date\":\"" + day + "\",\"kind\":\"ABSENT\",\"proposedIn\":\"\",\"proposedOut\":\"\",\"reason\":\"was at client\"}";
         mvc.perform(write(post("/api/attendance/regularizations")).cookie(p.cookie()).content(body))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.msg").value("Regularization sent — HR, Finance or Admin can approve it"));
-        mvc.perform(write(post("/api/attendance/regularizations")).cookie(p.cookie()).content(body)).andExpect(jsonPath("$.error").value("You already have a pending request for this day."));
+        mvc.perform(write(post("/api/attendance/regularizations")).cookie(p.cookie()).content(body)).andExpect(jsonPath("$.detail").value("You already have a pending request for this day."));
         mvc.perform(write(post("/api/attendance/regularizations")).cookie(p.cookie())
                 .content("{\"date\":\"" + day + "\",\"kind\":\"LATE_CHECKIN\",\"proposedIn\":\"\",\"proposedOut\":\"\",\"reason\":\"\"}"))
-                .andExpect(jsonPath("$.error").value("There's no late mark on this day."));
+                .andExpect(jsonPath("$.detail").value("There's no late mark on this day."));
         String id = jdbc.queryForObject("SELECT id::text FROM regularization_requests WHERE employee_id = ?", String.class, p.id());
         mvc.perform(write(delete("/api/attendance/regularizations/" + id)).cookie(p.cookie())).andExpect(jsonPath("$.msg").value("Request withdrawn"));
-        mvc.perform(write(delete("/api/attendance/regularizations/" + id)).cookie(p.cookie())).andExpect(jsonPath("$.error").value("Only pending requests can be withdrawn."));
+        mvc.perform(write(delete("/api/attendance/regularizations/" + id)).cookie(p.cookie())).andExpect(jsonPath("$.detail").value("Only pending requests can be withdrawn."));
     }
 
     @Test

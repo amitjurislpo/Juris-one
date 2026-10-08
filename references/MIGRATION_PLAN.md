@@ -1724,7 +1724,7 @@ Every endpoint lives under `/api` on the Spring Boot API. The browser reaches it
 | `PATCH` changes part of a resource | `PATCH /api/notifications {"read": true}` |
 | `DELETE` removes or withdraws | session (sign out), leave request, regularization, department, holiday, role, revoked permission, payroll adjustment |
 | Status codes | 200 · 201 · 400 invalid input · 401 signed out · 403 not allowed · 404 not found · 405 wrong method (with `Allow`) · 409 duplicate · 410 used/expired link · 415 · 422 business rule · 429 throttled · 500 |
-| Body | `{ "ok": true, "msg"?, "data"? }` or `{ "ok": false, "error" }`, with the exact texts the app showed before the migration |
+| Body | success: `{ "ok": true, "msg"?, "data"? }`; errors: `application/problem+json` (`status`, `title`, `detail`, `instance`, `code`, `errors`?) — `detail` keeps the exact texts the app showed before the migration |
 
 The 7 file routes the browser opens directly keep their original paths, methods and status codes. They are linked from pages, may be bookmarked and are covered by the unchanged Playwright tests: `GET /api/people/export`, `GET /api/attendance/register` (CSV), `GET /api/payroll/export`, `GET /api/payslips/{month}/{code}` (PDF), `POST /api/declarations/proof` (multipart upload), `GET /api/declarations/proof/{id}`, `GET /api/tax/export`.
 
@@ -1732,7 +1732,7 @@ The 7 file routes the browser opens directly keep their original paths, methods 
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /api/auth/session` (sign in, 201 + cookie) · `DELETE /api/auth/session` (sign out) · `POST /api/auth/password-resets` · `GET /api/auth/tokens/{purpose}/{token}` · `PUT /api/auth/password` |
+| Auth | `POST /api/auth/session` (sign in, 201 + cookies) · `POST /api/auth/session/refresh` · `DELETE /api/auth/session` (sign out) · `POST /api/auth/password-resets` · `GET /api/auth/tokens/{purpose}/{token}` · `PUT /api/auth/password` |
 | Me & shell | `GET /api/me` · `GET /api/shell` · `PATCH /api/notifications` |
 | Roles | `GET /api/roles` · `POST /api/roles` · `DELETE /api/roles/{id}` · `PUT`/`DELETE /api/roles/{id}/permissions/{perm}` · `PUT`/`DELETE /api/roles/{id}/assignable-roles/{roleId}` |
 | Policies | `GET /api/settings/access` · `GET /api/settings/leave` · `GET /api/settings/holidays?year=` · `GET`/`PUT /api/settings/attendance` |

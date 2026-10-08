@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { apiGet } from "./backend";
-import { readSessionCookie } from "./session-cookie";
+import { hasSessionCookie } from "./session-cookie";
 import { NAV, navAllowed, type NavId } from "./nav";
 import type { Permission } from "./permissions";
 
@@ -35,7 +35,7 @@ export class ForbiddenError extends Error {
  * request: a revoked/expired session, disabled access or an exited employee all yield null.
  */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
-  if (!(await readSessionCookie())) return null;
+  if (!(await hasSessionCookie())) return null;
   // the Spring Boot API validates the session (revoked/expired, access off, exited) and loads permissions
   const me = await apiGet<{ user: Omit<CurrentUser, "perms"> & { perms: Permission[] } }>("/api/me");
   if (!me) return null;

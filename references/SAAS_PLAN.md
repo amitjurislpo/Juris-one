@@ -76,11 +76,12 @@ Statuses: `INVITED → IN_PROGRESS → SUBMITTED → CHANGES_REQUESTED → VERIF
 
 ## 2. Security (Spring Security + JWT)
 
-- **Sign in** `POST /api/auth/session` (email + password) → sets two HTTP-only, Secure (in prod), SameSite=Lax cookies:
-  - `jo_at` — JWT access token, HS256 signed with `JWT_SECRET` (env, ≥ 32 bytes, no default), **5 min**, renewed silently while the user is active. Claims: `sub` (user id), `bid` (business id or none for super admin), `role` scope (`PLATFORM` / `BUSINESS`), `tv` (token version), `iat`, `exp`, `jti`.
-  - `jo_rt` — opaque refresh token (path `/api/auth`), 12 h, or 30 days with "remember me"; stored as SHA-256 in `refresh_tokens`, **rotated** on each use; reuse of an old one revokes the whole family.
-- `POST /api/auth/session/refresh` rotates; `DELETE /api/auth/session` revokes the refresh token and clears both cookies.
-- **Immediate revocation:** each request validates the JWT signature and expiry, then does one indexed lookup of the user (`status`, `portal_access`, `token_version`, business `status`). Disabling access, marking exited, changing role or password, or suspending a business bumps `token_version` → the next request is rejected (401) and refresh fails.
+- **Sign in** `POST /api/auth/session` (email + password) → sets two HTTP-only, Secure (in prod), SameSite=Lax cookies, both `Path=/`:
+  - `jo_at` — JWT access token, HS256 signed with `JWT_SECRET` (env, ≥ 32 bytes, no default), **5 min**. Claims: `iss` (`jurisone`), `sub` (employee id), `sid` (session id), `iat`, `exp`, `jti` (S2 adds `bid`, the business).
+  - `jo_rt` — opaque refresh token, valid until the session ends (12 h, or `SESSION_TTL_DAYS` with "keep me signed in"); stored as SHA-256 in `refresh_tokens`, **rotated** on every use. Presenting a used one again revokes the whole session (after a 30-second grace window that absorbs the browser's parallel requests).
+- **Silent renewal:** Next.js `proxy.ts` runs before every page, server action and browser `/api` request; when `jo_at` is missing or has < 30 s left it calls `POST /api/auth/session/refresh` and passes the new cookies both to this request and to the browser. An idle user's access token simply expires; the next click renews it while the session is valid.
+- `DELETE /api/auth/session` revokes the session (from the access token, or the refresh cookie when the access token has expired) and clears the cookies.
+- **Immediate revocation:** each request verifies the JWT signature and expiry, then one indexed lookup checks the `sid` session (not revoked / expired) and the employee (portal access, not exited, has a user row). Disabling access, marking exited, a password reset and sign-out revoke sessions → the next request is rejected (401) and refresh fails.
 - **Authorization:** a `JwtAuthenticationFilter` builds the principal with authorities = permission keys (`PERM_pay.view`, …) + `ROLE_SUPER_ADMIN` / `ROLE_OWNER`; controllers use `@PreAuthorize` plus the existing row-level rules in services. Tenant isolation is enforced in the data layer (§3.2), not only in controllers.
 - **CSRF:** cookies are SameSite=Lax and every write still needs the Origin check; CORS allows only `APP_URL`.
 - **Errors:** one `@RestControllerAdvice` returning RFC 7807 `application/problem+json` with our fields:

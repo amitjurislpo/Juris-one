@@ -74,9 +74,9 @@ class LeaveApiTest extends IntegrationTest {
         UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
         jdbc.update("UPDATE employees SET shift_id = (SELECT id FROM shifts WHERE code = 'IN_DAY') WHERE id = ?", id);
         String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
-        Matcher m = Pattern.compile("jo_session=([^;]+)").matcher(set);
+        Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
-        return new Person(id, c, new Cookie("jo_session", m.group(1)));
+        return new Person(id, c, new Cookie("jo_at", m.group(1)));
     }
 
     void credit(UUID emp, String type, double days) {
@@ -102,7 +102,7 @@ class LeaveApiTest extends IntegrationTest {
                 .andExpect(jsonPath("$.data.balanceAfter").value(0.0));
         mvc.perform(write(post("/api/leave/requests")).cookie(e.cookie()).content(body)).andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.endsWith("sent to HR · 1.5 day(s) unpaid")));
         mvc.perform(write(post("/api/leave/requests")).cookie(e.cookie()).content(body))
-                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.startsWith("You already have a pending request from " + mon)));
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.startsWith("You already have a pending request from " + mon)));
         mvc.perform(preview(e, "CL", mon, mon.plusDays(3)))
                 .andExpect(jsonPath("$.data.error").value("Casual leave can be taken for at most 3 days at a stretch."));
 
@@ -113,7 +113,7 @@ class LeaveApiTest extends IntegrationTest {
         mvc.perform(write(put("/api/leave/requests/" + id + "/decision")).cookie(hr.cookie()).content("{\"approve\":true,\"note\":\"ok\"}"))
                 .andExpect(jsonPath("$.msg").value("Approved Person " + e.code() + "’s earned leave"));
         mvc.perform(write(put("/api/leave/requests/" + id + "/decision")).cookie(hr.cookie()).content("{\"approve\":false}"))
-                .andExpect(jsonPath("$.error").value("This request was already decided."));
+                .andExpect(jsonPath("$.detail").value("This request was already decided."));
         assertThat(jdbc.queryForObject("SELECT delta FROM leave_ledger WHERE ref_id = ? AND reason = 'USED'", BigDecimal.class, id)).isEqualByComparingTo("-1.5");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE employee_id = ? AND link = '/leave'", Integer.class, e.id())).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT subject FROM email_outbox WHERE \"to\" = ? ORDER BY created_at DESC LIMIT 1", String.class, e.code().toLowerCase() + "@example.com"))
@@ -129,7 +129,7 @@ class LeaveApiTest extends IntegrationTest {
         mvc.perform(write(post("/api/leave/requests")).cookie(e.cookie()).content("{\"type\":\"CL\",\"from\":\"" + mon + "\",\"to\":\"" + mon + "\",\"part\":\"FIRST_HALF\",\"reason\":\"\"}"))
                 .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.startsWith("Casual leave for 0.5 days")));
         String id = jdbc.queryForObject("SELECT id::text FROM leave_requests WHERE employee_id = ?", String.class, e.id());
-        mvc.perform(write(delete("/api/leave/requests/" + id)).cookie(other.cookie())).andExpect(jsonPath("$.error").value("Only your pending requests can be cancelled."));
+        mvc.perform(write(delete("/api/leave/requests/" + id)).cookie(other.cookie())).andExpect(jsonPath("$.detail").value("Only your pending requests can be cancelled."));
         mvc.perform(write(delete("/api/leave/requests/" + id)).cookie(e.cookie())).andExpect(jsonPath("$.msg").value("Leave request cancelled"));
         mvc.perform(get("/api/leave?st=CANCELLED").cookie(e.cookie())).andExpect(jsonPath("$.data.requests[0].status").value("CANCELLED"));
     }

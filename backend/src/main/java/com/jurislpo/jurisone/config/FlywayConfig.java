@@ -33,7 +33,7 @@ public class FlywayConfig {
                         "SELECT count(*) FROM _prisma_migrations WHERE migration_name = ? AND finished_at IS NOT NULL", Integer.class, LAST_PRISMA_MIGRATION);
                 if (applied == null || applied != PRISMA_MIGRATIONS || last == null || last != 1) {
                     throw new IllegalStateException("Database has " + applied + " Prisma migrations applied; expected all "
-                            + PRISMA_MIGRATIONS + " up to " + LAST_PRISMA_MIGRATION + ". Run `npm run db:deploy` first.");
+                            + PRISMA_MIGRATIONS + " up to " + LAST_PRISMA_MIGRATION + ". Apply the remaining Prisma migrations with the previous release first.");
                 }
             }
             if (flyway.getConfiguration().getBaselineVersion().compareTo(MigrationVersion.fromVersion("1")) != 0) {
