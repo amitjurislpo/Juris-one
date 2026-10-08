@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC = ["/login", "/forgot", "/invite/", "/reset/"];
+const PUBLIC = ["/login", "/forgot", "/invite/", "/reset/", "/onboard/"];
 const ACCESS_COOKIE = "jo_at";
 const REFRESH_COOKIE = "jo_rt";
 /** Refresh a little before the 5-minute access token runs out, so a request never reaches the API with a dying token. */

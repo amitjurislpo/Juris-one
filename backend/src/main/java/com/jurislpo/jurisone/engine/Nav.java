@@ -41,6 +41,7 @@ public final class Nav {
             item("register", "Attendance register", "grid", List.of(ATT_ALL), "People ops"),
             item("approvals", "Approvals", "check", List.of(APPR_LEAVE, APPR_REG), "People ops"),
             item("people", "People", "users", List.of(PEOPLE_VIEW), "People ops"),
+            item("onboarding", "Onboarding", "inbox", List.of(PEOPLE_ADD), "People ops"),
             item("departments", "Departments", "building", List.of(DEPT_MANAGE), "People ops"),
             item("holidays", "Holiday calendar", "sun", List.of(HOLIDAYS_MANAGE), "People ops"),
             item("payroll", "Payroll", "wallet", List.of(PAY_VIEW), "Finance"),

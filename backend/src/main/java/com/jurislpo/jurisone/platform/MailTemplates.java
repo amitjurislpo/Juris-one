@@ -43,6 +43,22 @@ public final class MailTemplates {
                         + hours + " hours.</p>" + button(link, "Set my password")));
     }
 
+    /** The candidate's onboarding link (to their personal email); {@code note}: what HR asked to change, if sent back. */
+    public static Content onboarding(String name, String business, String designation, String link, String expires, String note) {
+        boolean back = note != null && !note.isEmpty();
+        String role = designation == null || designation.isEmpty() ? "" : " as " + designation;
+        String subject = back ? business + " needs a few changes to your onboarding details" : "Welcome to " + business + " — complete your onboarding";
+        String intro = back ? "HR at " + business + " reviewed your details and asked for a few changes."
+                : business + " is looking forward to you joining" + role + ". Please fill in your details and upload your documents.";
+        return new Content(subject,
+                "Hi " + name + ",\n\n" + intro + (back ? "\n\nWhat to change: " + note : "") + "\n\nOpen your personal link (valid until " + expires + "):\n" + link
+                        + "\n\nKeep this link to yourself — anyone with it can see what you entered.",
+                shell(esc(subject), "<p>Hi " + esc(name) + ", " + esc(intro) + "</p>"
+                        + (back ? "<p style=\"color:#5D5F6D\">What to change: " + esc(note) + "</p>" : "")
+                        + button(link, back ? "Update my details" : "Start onboarding")
+                        + "<p style=\"color:#5D5F6D;font-size:12px\">The link works until " + esc(expires) + ". Keep it to yourself — anyone with it can see what you entered.</p>"));
+    }
+
     public static Content decision(String name, String what, boolean approved, String by, String note) {
         String verb = approved ? "approved" : "declined";
         boolean hasNote = note != null && !note.isEmpty();

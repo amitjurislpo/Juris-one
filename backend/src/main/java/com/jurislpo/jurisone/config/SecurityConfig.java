@@ -34,7 +34,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     /** Reachable without a session. */
-    static final String[] PUBLIC = {"/api/auth/session", "/api/auth/session/refresh", "/api/auth/password-resets", "/api/auth/password", "/api/auth/tokens/**"};
+    static final String[] PUBLIC = {"/api/auth/session", "/api/auth/session/refresh", "/api/auth/password-resets", "/api/auth/password", "/api/auth/tokens/**",
+            "/api/onboarding/**"}; // the candidate's one-time link is the credential
 
     @Bean
     SecurityFilterChain api(HttpSecurity http, JwtAuthFilter sessions, OriginCheckFilter origin, SubscriptionGateFilter subscription,

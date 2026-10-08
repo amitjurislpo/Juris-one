@@ -211,7 +211,10 @@ public class PeopleService {
             audit.log(u.id(), "employee.access_toggle", "employee", id.toString(), Map.of("portalAccess", e.get("portal_access")), Map.of("portalAccess", on), ip);
         });
         String name = (String) e.get("full_name");
-        return on ? "Portal access enabled for " + name : name + " can no longer sign in";
+        // someone who has never set a password (e.g. added from onboarding) gets the invite on their work email now
+        boolean invite = on && jdbc.queryForList("SELECT 1 FROM users WHERE employee_id = ? AND password_hash IS NULL", id).size() > 0;
+        if (invite) tokens.sendInvite(id);
+        return on ? "Portal access enabled for " + name + (invite ? " · invite sent to their work email" : "") : name + " can no longer sign in";
     }
 
     public String markExited(CurrentUser u, String idRaw, String exitDate, String ip) {
@@ -393,6 +396,15 @@ public class PeopleService {
     public record Saved(String id, String code, String msg) {}
 
     public Saved save(CurrentUser u, EmployeeInput input, String editIdRaw, String ip) {
+        return save(u, input, editIdRaw, ip, true);
+    }
+
+    /** Adds an employee from a verified onboarding: portal access off and no invite yet (HR turns access on later). */
+    public Saved addWithoutAccess(CurrentUser u, EmployeeInput input, String ip) {
+        return save(u, input, null, ip, false);
+    }
+
+    private Saved save(CurrentUser u, EmployeeInput input, String editIdRaw, String ip, boolean access) {
         EmployeeInput f = parse(input);
         Actor actor = actors.actor(u);
         boolean editing = editIdRaw != null && !editIdRaw.isEmpty();
@@ -527,9 +539,9 @@ public class PeopleService {
             jdbc.update("""
                 INSERT INTO employees (id, code, full_name, father_name, email, designation, department_id, reporting_manager_id, role_id, date_of_joining,
                   time_zone, region, shift_id, status, portal_access, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?::"Region", ?, ?::"EmployeeStatus", true, ?, now(), now())""",
+                VALUES (?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?::"Region", ?, ?::"EmployeeStatus", ?, ?, now(), now())""",
                     id, code, f.fullName(), f.fatherName(), email, f.designation(), f.departmentId(), managerId, f.roleId(), Date.valueOf(f.doj()),
-                    loc.tz(), loc.region(), shiftId, PeopleRules.initialStatus(LocalDate.parse(f.doj()), today).name(), u.id());
+                    loc.tz(), loc.region(), shiftId, PeopleRules.initialStatus(LocalDate.parse(f.doj()), today).name(), access, u.id());
             updatePii(id, piiCols);
             jdbc.update("INSERT INTO users (employee_id, failed_attempts, is_super_admin) VALUES (?, 0, false)", id);
             // the TS audit: { code, ...data without *Enc, piiProvided }
@@ -560,9 +572,9 @@ public class PeopleService {
                 }
             }
         });
-        tokens.sendInvite(id);
+        if (access) tokens.sendInvite(id);
         return new Saved(id.toString(), codeOut[0], f.fullName() + " added as " + codeOut[0] + " · " + role.get("name")
-                + (india ? " · salary structure pending with Finance" : "") + " · invite sent");
+                + (india ? " · salary structure pending with Finance" : "") + (access ? " · invite sent" : " · portal access is off until you turn it on"));
     }
 
     private static String str(Object o) {

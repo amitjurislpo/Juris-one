@@ -1,0 +1,165 @@
+package com.jurislpo.jurisone.onboarding;
+
+import com.jurislpo.jurisone.common.ApiResult;
+import com.jurislpo.jurisone.common.RequestMeta;
+import com.jurislpo.jurisone.common.UserException;
+import com.jurislpo.jurisone.people.PeopleService;
+import com.jurislpo.jurisone.security.Auth;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+/**
+ * Onboarding: HR ({@code people.add}) under {@code /api/onboardings}; the candidate, signed out, under
+ * {@code /api/onboarding/{token}} (the one-time link is the only credential); verified documents on an employee's record
+ * under {@code /api/people/{id}/documents} ({@code people.view}).
+ */
+@RestController
+public class OnboardingController {
+
+    private final Auth auth;
+    private final OnboardingService onboarding;
+
+    public OnboardingController(Auth auth, OnboardingService onboarding) {
+        this.auth = auth;
+        this.onboarding = onboarding;
+    }
+
+    static ResponseEntity<byte[]> file(OnboardingService.FileOut f) {
+        if (f == null) throw new UserException(HttpStatus.NOT_FOUND, "File not found.");
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(f.mime()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().filename(f.name(), StandardCharsets.UTF_8).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store").header("X-Content-Type-Options", "nosniff").body(f.bytes());
+    }
+
+    // ───────────── HR ─────────────
+
+    @GetMapping("/api/onboardings")
+    public ApiResult<List<Map<String, Object>>> list() {
+        auth.requirePage("onboarding");
+        return ApiResult.success(onboarding.list());
+    }
+
+    /** {@code {candidateName, personalEmail, designation?, departmentId?, roleId?, managerId?, joiningDate?, location?, requiredDocs?}} — emails the link. */
+    @PostMapping("/api/onboardings")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Map<String, String>> start(@RequestBody OnboardingService.Plan body, HttpServletRequest req) {
+        String id = onboarding.start(auth.requirePage("onboarding"), body, RequestMeta.of(req).ip());
+        return ApiResult.success("Onboarding link sent to " + body.personalEmail().trim().toLowerCase(), Map.of("id", id));
+    }
+
+    @GetMapping("/api/onboardings/{id}")
+    public ApiResult<Map<String, Object>> detail(@PathVariable String id) {
+        auth.requirePage("onboarding");
+        return ApiResult.success(onboarding.detail(id));
+    }
+
+    @PutMapping("/api/onboardings/{id}")
+    public ApiResult<Void> update(@PathVariable String id, @RequestBody OnboardingService.Plan body, HttpServletRequest req) {
+        onboarding.update(auth.requirePage("onboarding"), id, body, RequestMeta.of(req).ip());
+        return ApiResult.message("Saved");
+    }
+
+    /** A new link (the old one stops working). */
+    @PostMapping("/api/onboardings/{id}/invitations")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Void> resend(@PathVariable String id, HttpServletRequest req) {
+        return ApiResult.message(onboarding.resend(auth.requirePage("onboarding"), id, RequestMeta.of(req).ip()));
+    }
+
+    /** {@code {"status": "VERIFIED" | "REJECTED", "comment"?}} */
+    @PutMapping("/api/onboardings/{id}/documents/{docId}/status")
+    public ApiResult<Void> decide(@PathVariable String id, @PathVariable String docId, @RequestBody OnboardingService.DocDecision body, HttpServletRequest req) {
+        return ApiResult.message(onboarding.decideDocument(auth.requirePage("onboarding"), id, docId, body, RequestMeta.of(req).ip()));
+    }
+
+    @GetMapping("/api/onboardings/{id}/documents/{docId}/file")
+    public ResponseEntity<byte[]> document(@PathVariable String id, @PathVariable String docId) {
+        auth.requirePage("onboarding");
+        return file(onboarding.file(id, docId));
+    }
+
+    /** {@code {"status": "CHANGES_REQUESTED" | "VERIFIED" | "CANCELLED", "comment"?}} */
+    @PutMapping("/api/onboardings/{id}/status")
+    public ApiResult<Void> status(@PathVariable String id, @RequestBody OnboardingService.StatusInput body, HttpServletRequest req) {
+        return ApiResult.message(onboarding.setStatus(auth.requirePage("onboarding"), id, body, RequestMeta.of(req).ip()));
+    }
+
+    /** Creates the employee (portal access off, no invite yet). */
+    @PostMapping("/api/onboardings/{id}/employee")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Map<String, String>> addEmployee(@PathVariable String id, @RequestBody OnboardingService.AddInput body, HttpServletRequest req) {
+        PeopleService.Saved s = onboarding.addEmployee(auth.requirePage("onboarding"), id, body, RequestMeta.of(req).ip());
+        return ApiResult.success(s.msg(), Map.of("id", s.id(), "code", s.code()));
+    }
+
+    // ───────────── employee record ─────────────
+
+    @GetMapping("/api/people/{id}/documents")
+    public ApiResult<List<Map<String, Object>>> employeeDocuments(@PathVariable String id) {
+        auth.assertPerm("people.view");
+        return ApiResult.success(onboarding.employeeDocuments(id));
+    }
+
+    @GetMapping("/api/people/{id}/documents/{docId}/file")
+    public ResponseEntity<byte[]> employeeDocument(@PathVariable String id, @PathVariable String docId) {
+        auth.assertPerm("people.view");
+        return file(onboarding.employeeDocument(id, docId));
+    }
+
+    // ───────────── candidate (signed out; the link is the credential) ─────────────
+
+    @GetMapping("/api/onboarding/{token}")
+    public ApiResult<Map<String, Object>> candidate(@PathVariable String token) {
+        return ApiResult.success(onboarding.candidateView(token));
+    }
+
+    @PutMapping("/api/onboarding/{token}")
+    public ApiResult<Void> candidateSave(@PathVariable String token, @RequestBody OnboardingService.Form body) {
+        return ApiResult.message(onboarding.candidateSave(token, body));
+    }
+
+    /** Multipart {@code kind} + {@code file} (PDF, JPG or PNG up to 10 MB). */
+    @PostMapping(value = "/api/onboarding/{token}/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Map<String, String>> candidateUpload(@PathVariable String token, @RequestParam(name = "kind", required = false) String kind,
+                                                         @RequestPart(name = "file", required = false) MultipartFile file) throws IOException {
+        Map<String, String> r = onboarding.candidateUpload(token, kind, file == null ? null : file.getOriginalFilename(), file == null ? null : file.getBytes());
+        return ApiResult.success("Uploaded " + r.get("name"), r);
+    }
+
+    @DeleteMapping("/api/onboarding/{token}/documents/{docId}")
+    public ApiResult<Void> candidateDelete(@PathVariable String token, @PathVariable String docId) {
+        onboarding.candidateDelete(token, docId);
+        return ApiResult.message("Removed");
+    }
+
+    @GetMapping("/api/onboarding/{token}/documents/{docId}/file")
+    public ResponseEntity<byte[]> candidateFile(@PathVariable String token, @PathVariable String docId) {
+        return file(onboarding.candidateFile(token, docId));
+    }
+
+    @PostMapping("/api/onboarding/{token}/submission")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Void> candidateSubmit(@PathVariable String token, HttpServletRequest req) {
+        return ApiResult.message(onboarding.candidateSubmit(token, RequestMeta.of(req).ip()));
+    }
+}

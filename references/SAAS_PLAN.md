@@ -150,7 +150,7 @@ Statuses: `INVITED → IN_PROGRESS → SUBMITTED → CHANGES_REQUESTED → VERIF
 | S4 ✅ | Juris Track: plan module or complimentary / paid grant; menu + page + API gate; Coming soon page. |
 | S5 ✅ | Policies (immutable versions) + acknowledgement gate (428) + legal acknowledgement record + My policies + HR report and evidence export. |
 | S6 ✅ | Notification box (Home card, page, per-item read). |
-| S7 | Onboarding by link: candidate form, documents, HR review, add employee, enable access. |
+| S7 ✅ | Onboarding by link: candidate form, documents, HR review, add employee, enable access. |
 | S8 | Rewrite the Playwright suite for the multi-business model (super admin → business → roles → onboarding → policies → payroll), README and parity notes. |
 
 ## 7. Defaults confirmed

@@ -28,7 +28,7 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
 
     /** Still reachable without an active subscription. */
     static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell", "/api/notifications", "/api/business/subscription",
-            "/api/business/employees/export");
+            "/api/business/employees/export", "/api/onboarding/"); // a candidate link: the service checks that business itself
 
     private final SubscriptionService subscriptions;
     private final ObjectMapper json;
