@@ -57,3 +57,13 @@ export async function createPlan(i: PlanInput): Promise<ActionResult<{ id: strin
 export async function updatePlan(id: string, i: PlanInput): Promise<ActionResult> {
   return apiAction("PUT", `/api/platform/plans/${enc(id)}`, i, PAGES);
 }
+
+export interface GrantInput { source: "COMPLIMENTARY" | "PAID"; price?: number | null; startsOn?: string; endsOn?: string; notes?: string }
+
+export async function grantModule(businessId: string, i: GrantInput): Promise<ActionResult<{ id: string }>> {
+  return apiAction("POST", `/api/platform/businesses/${enc(businessId)}/modules`, { module: "JURIS_TRACK", ...i }, [...PAGES, `/platform/${businessId}`]);
+}
+
+export async function revokeModule(businessId: string, grantId: string): Promise<ActionResult> {
+  return apiAction("DELETE", `/api/platform/modules/${enc(grantId)}`, undefined, [...PAGES, `/platform/${businessId}`]);
+}

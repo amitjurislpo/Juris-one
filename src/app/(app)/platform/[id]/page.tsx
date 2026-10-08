@@ -2,13 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Icon } from "@/components/Icon";
 import { PageHeader } from "@/components/PageHeader";
-import type { BusinessProfile, PlanRow, SubscriptionCurrent, SubscriptionRow } from "@/lib/api-types";
+import type { BusinessProfile, ModuleGrant, PlanRow, SubscriptionCurrent, SubscriptionRow } from "@/lib/api-types";
 import { requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
 import { fmtDY, inr } from "@/lib/format";
 import { MODULE_LABELS, subscriptionChip } from "@/lib/subscription";
 import {
-  AddOwnerButton, AddSubscriptionButton, BusinessStatusButton, CancelSubscriptionButton, EditBusinessButton, OwnerAccessSwitch,
+  AddOwnerButton, AddSubscriptionButton, BusinessStatusButton, CancelSubscriptionButton, EditBusinessButton, GrantJurisTrackButton, OwnerAccessSwitch,
+  RevokeGrantButton,
 } from "../PlatformClient";
 
 export const metadata: Metadata = { title: "Business" };
@@ -18,7 +19,12 @@ interface Detail {
   owners: { id: string; code: string; name: string; email: string; access: boolean; activated: boolean; status: string }[];
   subscription: SubscriptionCurrent;
   subscriptions: SubscriptionRow[];
+  modules: ModuleGrant[];
 }
+
+const GRANT_STATE: Record<ModuleGrant["state"], { cls: string; text: string }> = {
+  ACTIVE: { cls: "ok", text: "Active" }, UPCOMING: { cls: "info", text: "Upcoming" }, ENDED: { cls: "neutral", text: "Ended" }, REVOKED: { cls: "neutral", text: "Revoked" },
+};
 
 /** One business: its details, sub admins and subscription periods. */
 export default async function BusinessPage(props: PageProps<"/platform/[id]">) {
@@ -28,6 +34,7 @@ export default async function BusinessPage(props: PageProps<"/platform/[id]">) {
   const b = d.business;
   const s = d.subscription;
   const chip = subscriptionChip(s);
+  const planHasTrack = !!s.planName && (plans.find((p) => p.name === s.planName)?.modules.includes("JURIS_TRACK") ?? false);
   const today = new Date().toISOString().slice(0, 10);
   const profile: BusinessProfile = {
     name: b.name, legalName: b.legalName, code: b.code, employeePrefix: b.employeePrefix, gstin: b.gstin, address: b.address,
@@ -71,6 +78,36 @@ export default async function BusinessPage(props: PageProps<"/platform/[id]">) {
       </div>
 
       <section className="card enter" style={{ ["--i" as string]: 3 }}>
+        <div className="card-h" style={{ padding: "16px 18px 0" }}>
+          <div>
+            <h3>Juris Track</h3>
+            <small className="muted">{planHasTrack ? `Included in the ${s.planName} plan. You can also grant it on its own.` : "Not in the plan. Grant it on its own: complimentary or paid."}</small>
+          </div>
+          <GrantJurisTrackButton id={b.id} />
+        </div>
+        {d.modules.length > 0 ? (
+          <div className="table-wrap">
+            <table className="t">
+              <thead><tr><th>Type</th><th>From</th><th>To</th><th className="r">Price</th><th>Status</th><th className="hide-sm">Notes</th><th></th></tr></thead>
+              <tbody>
+                {d.modules.map((g) => (
+                  <tr key={g.id}>
+                    <td><b>{g.source === "PAID" ? "Paid" : "Complimentary"}</b></td>
+                    <td>{fmtDY(g.startsOn)}</td>
+                    <td>{g.endsOn ? fmtDY(g.endsOn) : <span className="muted">No end</span>}</td>
+                    <td className="r num">{g.source === "PAID" ? inr(g.pricePaise) : "Free"}</td>
+                    <td><span className={`chip ${GRANT_STATE[g.state].cls}`}>{GRANT_STATE[g.state].text}</span></td>
+                    <td className="muted hide-sm">{g.notes ?? ""}</td>
+                    <td className="r">{(g.state === "ACTIVE" || g.state === "UPCOMING") && <RevokeGrantButton businessId={b.id} grantId={g.id} label={`${g.source === "PAID" ? "paid" : "complimentary"} Juris Track from ${fmtDY(g.startsOn)}`} />}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="muted" style={{ padding: "0 18px 16px", margin: 0 }}>No separate grants.</p>}
+      </section>
+
+      <section className="card enter" style={{ ["--i" as string]: 4 }}>
         <div className="card-h" style={{ padding: "16px 18px 0" }}>
           <h3>Subscriptions</h3>
           <AddSubscriptionButton id={b.id} plans={plans} label={s.state === "NONE" ? "Add subscription" : "Renew / add period"} />

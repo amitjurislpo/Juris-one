@@ -1,6 +1,7 @@
 package com.jurislpo.jurisone.business;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -31,7 +32,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-/** The super admin runs businesses and subscriptions; an ended subscription blocks everything but sign-in and the export. */
+/**
+ * The super admin runs businesses and subscriptions; an ended subscription blocks everything but sign-in and the export.
+ * Juris Track comes with the plan or a separate grant; without it the menu item and the API don't exist.
+ */
 class SubscriptionApiTest extends IntegrationTest {
 
     static final String PW = "correct-horse-battery-7";
@@ -208,5 +212,70 @@ class SubscriptionApiTest extends IntegrationTest {
         String id = plan(null, "JURIS_TRACK");
         mvc.perform(get("/api/platform/plans").cookie(superAdmin)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.id == '" + id + "')].modules[0]").value("JURIS_TRACK"));
+    }
+
+    // ───────────────────────── Juris Track ─────────────────────────
+
+    boolean menuHasJurisTrack(Cookie c) throws Exception {
+        return mvc.perform(get("/api/shell").cookie(c)).andReturn().getResponse().getContentAsString().contains("\"juris-track\"");
+    }
+
+    @Test
+    void jurisTrackExistsOnlyWithThePlanModuleOrAGrant() throws Exception {
+        LocalDate today = LocalDate.now();
+        Created c = createBusiness(plan(null), today.toString(), today.plusMonths(12).toString());
+        Cookie owner = signIn(c.ownerEmail(), OWNER_PW);
+
+        // not on the plan: no menu item, the API doesn't exist
+        assertThat(menuHasJurisTrack(owner)).isFalse();
+        mvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/me").cookie(owner)).andExpect(jsonPath("$.data.modules.length()").value(0));
+
+        // a paid grant needs a price and an end date
+        String base = "/api/platform/businesses/" + c.business() + "/modules";
+        mvc.perform(write(post(base)).cookie(superAdmin).content("{\"source\":\"PAID\",\"price\":999}")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("A paid grant needs an end date."));
+        mvc.perform(write(post(base)).cookie(superAdmin).content("{\"source\":\"PAID\",\"endsOn\":\"" + today.plusMonths(6) + "\"}")).andExpect(status().isBadRequest());
+
+        // complimentary, open-ended: the menu item and the page appear
+        String grant = json.readTree(mvc.perform(write(post(base)).cookie(superAdmin).content("{\"source\":\"COMPLIMENTARY\",\"notes\":\"Launch partner\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).at("/data/id").asText();
+        assertThat(menuHasJurisTrack(owner)).isTrue();
+        mvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("COMING_SOON"));
+        mvc.perform(get("/api/me").cookie(owner)).andExpect(jsonPath("$.data.modules[0]").value("JURIS_TRACK"));
+        mvc.perform(get("/api/business/subscription").cookie(owner)).andExpect(jsonPath("$.data.subscription.modules[0]").value("JURIS_TRACK"));
+        // an overlapping second grant is refused
+        mvc.perform(write(post(base)).cookie(superAdmin).content("{\"source\":\"PAID\",\"price\":999,\"endsOn\":\"" + today.plusMonths(6) + "\"}"))
+                .andExpect(status().isUnprocessableEntity());
+        mvc.perform(get(base).cookie(superAdmin)).andExpect(jsonPath("$.data[0].state").value("ACTIVE")).andExpect(jsonPath("$.data[0].source").value("COMPLIMENTARY"));
+
+        // revoked: gone again, the grant stays on record
+        mvc.perform(write(delete("/api/platform/modules/" + grant)).cookie(superAdmin)).andExpect(status().isOk());
+        mvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isNotFound());
+        assertThat(menuHasJurisTrack(owner)).isFalse();
+        mvc.perform(get("/api/platform/businesses/" + c.business()).cookie(superAdmin)).andExpect(jsonPath("$.data.modules[0].state").value("REVOKED"));
+
+        // a paid grant that starts later doesn't count yet
+        mvc.perform(write(post(base)).cookie(superAdmin).content("{\"source\":\"PAID\",\"price\":1499.5,\"startsOn\":\"" + today.plusDays(10)
+                + "\",\"endsOn\":\"" + today.plusMonths(6) + "\"}")).andExpect(status().isCreated());
+        mvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isNotFound());
+
+        // employees can't manage grants
+        mvc.perform(get(base).cookie(owner)).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void jurisTrackOnThePlanNeedsAnActiveSubscription() throws Exception {
+        LocalDate today = LocalDate.now();
+        String plan = plan(null, "JURIS_TRACK");
+        Created c = createBusiness(plan, today.toString(), today.plusMonths(1).toString());
+        Cookie owner = signIn(c.ownerEmail(), OWNER_PW);
+        assertThat(menuHasJurisTrack(owner)).isTrue();
+        mvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isOk());
+
+        Created ended = createBusiness(plan, today.minusMonths(2).toString(), today.minusDays(1).toString());
+        Cookie endedOwner = signIn(ended.ownerEmail(), OWNER_PW);
+        assertThat(menuHasJurisTrack(endedOwner)).isFalse();
+        mvc.perform(get("/api/juris-track").cookie(endedOwner)).andExpect(status().isPaymentRequired());
     }
 }

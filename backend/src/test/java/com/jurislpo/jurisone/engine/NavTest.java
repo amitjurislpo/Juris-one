@@ -65,4 +65,13 @@ class NavTest {
         assertThat(v).contains("approvals", "payroll");
         assertThat(v).doesNotContain("register");
     }
+
+    @Test
+    @DisplayName("shows Juris Track only when the business has the module")
+    void jurisTrack() {
+        assertThat(visible(EMPLOYEE, false)).doesNotContain("juris-track");
+        assertThat(Nav.visible(EMPLOYEE, false, set("JURIS_TRACK")).stream().map(Nav.Item::id)).contains("juris-track");
+        assertThat(Nav.visible(ADMIN, false, set("JURIS_TRACK")).stream().map(Nav.Item::id)).contains("juris-track");
+        assertThat(Nav.landingFor(set("dir"))).isEqualTo("/directory");
+    }
 }

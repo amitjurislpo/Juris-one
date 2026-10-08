@@ -35,10 +35,11 @@ public class MeController {
     public ApiResult<MeResponse> me() {
         CurrentUser u = auth.assertPerm();
         Boolean active = u.businessId() == null ? null : subscriptions.isActive(u.businessId());
-        return ApiResult.success(new MeResponse(u, u.landingPath(), active));
+        return ApiResult.success(new MeResponse(u, u.landingPath(), active, java.util.List.copyOf(new java.util.TreeSet<>(subscriptions.activeModules(u.businessId())))));
     }
 
-    public record MeResponse(CurrentUser user, String landing, Boolean subscriptionActive) {}
+    /** {@code modules}: modules the business can use today (empty for the super admin or without an active subscription). */
+    public record MeResponse(CurrentUser user, String landing, Boolean subscriptionActive, java.util.List<String> modules) {}
 
     @GetMapping("/shell")
     public ApiResult<ShellService.Shell> shell() {

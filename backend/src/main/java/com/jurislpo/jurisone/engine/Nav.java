@@ -15,11 +15,14 @@ public final class Nav {
      * @param needsReports extra condition: the user has active direct reports
      * @param group        sidebar group; null = "My workspace" / "Workspace"
      */
-    public record Item(String id, String label, String icon, List<String> perm, boolean needsReports, String group) {}
+    public record Item(String id, String label, String icon, List<String> perm, boolean needsReports, String group, String module) {}
 
     private static Item item(String id, String label, String icon, List<String> perm, String group) {
-        return new Item(id, label, icon, perm, false, group);
+        return new Item(id, label, icon, perm, false, group, null);
     }
+
+    /** Juris Track (and later modules): only for businesses whose plan or grant includes the module. */
+    public static final String JURIS_TRACK = "JURIS_TRACK";
 
     public static final List<Item> NAV = List.of(
             item("platform", "Businesses", "building", List.of(PLATFORM_MANAGE), "Platform"),
@@ -31,7 +34,8 @@ public final class Nav {
             item("payslips", "Payslips", "doc", List.of(SELF), null),
             item("declare", "Tax declarations", "shield", List.of(SELF), null),
             item("directory", "Directory", "book", List.of(DIR), null),
-            new Item("team", "My team", "team", List.of(SELF), true, "Team"),
+            new Item("juris-track", "Juris Track", "sparkle", List.of(SELF, ROLES_MANAGE, DIR), false, null, JURIS_TRACK),
+            new Item("team", "My team", "team", List.of(SELF), true, "Team", null),
             item("register", "Attendance register", "grid", List.of(ATT_ALL), "People ops"),
             item("approvals", "Approvals", "check", List.of(APPR_LEAVE, APPR_REG), "People ops"),
             item("people", "People", "users", List.of(PEOPLE_VIEW), "People ops"),
@@ -58,8 +62,14 @@ public final class Nav {
         return find(navId).map(i -> allowed(i, perms, hasReports)).orElse(false);
     }
 
+    /** Sidebar items without module pages (used for the landing page). */
     public static List<Item> visible(Set<String> perms, boolean hasReports) {
-        return NAV.stream().filter(n -> allowed(n, perms, hasReports)).toList();
+        return visible(perms, hasReports, Set.of());
+    }
+
+    /** Sidebar items, including module pages for the business's {@code modules}. */
+    public static List<Item> visible(Set<String> perms, boolean hasReports, Set<String> modules) {
+        return NAV.stream().filter(n -> allowed(n, perms, hasReports) && (n.module() == null || modules.contains(n.module()))).toList();
     }
 
     /** Landing page after login: the platform console for the super admin, Home for anyone with `self`, Overview for the business admin. */

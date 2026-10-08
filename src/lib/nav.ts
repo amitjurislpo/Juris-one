@@ -1,7 +1,7 @@
 import type { Permission } from "./permissions";
 
 export type NavId =
-  | "platform" | "plans" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
+  | "platform" | "plans" | "juris-track" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
   | "register" | "approvals" | "people" | "departments" | "holidays"
   | "payroll" | "structures" | "tax" | "proofs" | "roles" | "settings" | "audit" | "subscription";
 
@@ -21,7 +21,12 @@ export interface NavItem {
   /** Extra condition evaluated on the server (e.g. has direct reports). */
   needsReports?: boolean;
   group?: NavGroup;
+  /** Only for businesses whose plan or grant includes this module (else the page doesn't exist). */
+  module?: string;
 }
+
+/** Juris Track: a module of the plan, or granted on its own by the super admin. */
+export const JURIS_TRACK = "JURIS_TRACK";
 
 /** Sidebar + route access table (prototype NAV). Every page checks this on the server. */
 export const NAV: NavItem[] = [
@@ -34,6 +39,7 @@ export const NAV: NavItem[] = [
   { id: "payslips", label: "Payslips", icon: "doc", perm: ["self"] },
   { id: "declare", label: "Tax declarations", icon: "shield", perm: ["self"] },
   { id: "directory", label: "Directory", icon: "book", perm: ["dir"] },
+  { id: "juris-track", label: "Juris Track", icon: "sparkle", perm: ["self", "roles.manage", "dir"], module: JURIS_TRACK },
   { id: "team", label: "My team", icon: "team", perm: ["self"], needsReports: true, group: "Team" },
   { id: "register", label: "Attendance register", icon: "grid", perm: ["att.all"], group: "People ops" },
   { id: "approvals", label: "Approvals", icon: "check", perm: ["appr.leave", "appr.reg"], group: "People ops" },

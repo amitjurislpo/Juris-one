@@ -131,3 +131,17 @@ export interface BusinessProfile {
   contactPhone: string | null;
   timeZone: string;
 }
+
+/** A module granted to a business on its own (price in paise; endsOn null = no end). */
+export interface ModuleGrant {
+  id: string;
+  module: string;
+  source: "COMPLIMENTARY" | "PAID";
+  pricePaise: number;
+  startsOn: string;
+  endsOn: string | null;
+  notes: string | null;
+  createdAt: string;
+  revokedAt: string | null;
+  state: "ACTIVE" | "UPCOMING" | "ENDED" | "REVOKED";
+}

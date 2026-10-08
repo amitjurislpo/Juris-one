@@ -50,7 +50,7 @@ public class ShellService {
     public Shell shell(CurrentUser u) {
         boolean adminLike = !u.perms().contains("self");
         Map<String, Group> groups = new LinkedHashMap<>();
-        for (Nav.Item n : Nav.visible(u.perms(), u.hasReports())) {
+        for (Nav.Item n : Nav.visible(u.perms(), u.hasReports(), subscriptions.activeModules(u.businessId()))) {
             String g = n.group() != null ? n.group() : adminLike ? "Workspace" : "My workspace";
             groups.computeIfAbsent(g, k -> new Group(k, new ArrayList<>())).items().add(new NavLink(n.id(), n.label(), n.icon()));
         }

@@ -70,7 +70,13 @@ public class SubscriptionService {
                     return new Current("ACTIVE", true, rs.getString(1), rs.getDate(2).toLocalDate().toString(), ends.toString(),
                             (int) ChronoUnit.DAYS.between(today, ends), (Integer) rs.getObject(4), modules(rs.getArray(5)), employees);
                 }, b, Date.valueOf(today), Date.valueOf(today));
-        if (!now.isEmpty()) return now.get(0);
+        if (!now.isEmpty()) {
+            // the plan's modules plus modules granted on their own (complimentary or paid) that cover today
+            Current c = now.get(0);
+            java.util.TreeSet<String> all = new java.util.TreeSet<>(c.modules());
+            all.addAll(grantedModules(b, today));
+            return new Current(c.state(), c.active(), c.planName(), c.startsOn(), c.endsOn(), c.daysLeft(), c.maxEmployees(), List.copyOf(all), c.employees());
+        }
         List<Current> later = jdbc.query("""
             SELECT p.name, s.starts_on, s.ends_on, p.max_employees, p.modules FROM business_subscriptions s JOIN subscription_plans p ON p.id = s.plan_id
             WHERE s.business_id = ? AND s.status = 'ACTIVE' AND s.starts_on > ? ORDER BY s.starts_on LIMIT 1""",
@@ -83,6 +89,21 @@ public class SubscriptionService {
                 (rs, i) -> new Current("EXPIRED", false, rs.getString(1), rs.getDate(2).toLocalDate().toString(), rs.getDate(3).toLocalDate().toString(), 0,
                         (Integer) rs.getObject(4), modules(rs.getArray(5)), employees), b, Date.valueOf(today));
         return past.isEmpty() ? new Current("NONE", false, null, null, null, null, null, List.of(), employees) : past.get(0);
+    }
+
+    /** Modules granted to the business on their own that cover {@code day} (not revoked). */
+    List<String> grantedModules(UUID businessId, LocalDate day) {
+        return jdbc.queryForList("""
+            SELECT DISTINCT module FROM business_modules
+            WHERE business_id = ? AND revoked_at IS NULL AND starts_on <= ? AND (ends_on IS NULL OR ends_on >= ?)""",
+                String.class, businessId, Date.valueOf(day), Date.valueOf(day));
+    }
+
+    /** Modules the business can use today: none while its subscription isn't active. */
+    public java.util.Set<String> activeModules(UUID businessId) {
+        if (businessId == null) return java.util.Set.of();
+        Current c = current(businessId);
+        return c.active() ? java.util.Set.copyOf(c.modules()) : java.util.Set.of();
     }
 
     public boolean isActive(UUID businessId) {

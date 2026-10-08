@@ -30,12 +30,14 @@ public class BusinessAdminService {
     private final JdbcTemplate jdbc;
     private final BusinessSetupService setup;
     private final SubscriptionService subscriptions;
+    private final ModuleGrantService grants;
     private final AuthTokenService tokens;
     private final SessionService sessions;
     private final AuditService audit;
 
-    public BusinessAdminService(JdbcTemplate jdbc, BusinessSetupService setup, SubscriptionService subscriptions, AuthTokenService tokens, SessionService sessions,
-                                AuditService audit) {
+    public BusinessAdminService(JdbcTemplate jdbc, BusinessSetupService setup, SubscriptionService subscriptions, ModuleGrantService grants,
+                                AuthTokenService tokens, SessionService sessions, AuditService audit) {
+        this.grants = grants;
         this.jdbc = jdbc;
         this.setup = setup;
         this.subscriptions = subscriptions;
@@ -91,6 +93,7 @@ public class BusinessAdminService {
                 (rs, i) -> new Owner(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getBoolean(5), rs.getBoolean(6), rs.getString(7)), id));
         out.put("subscription", subscriptions.current(id));
         out.put("subscriptions", subscriptions.history(id));
+        out.put("modules", grants.list(id));
         return out;
     }
 

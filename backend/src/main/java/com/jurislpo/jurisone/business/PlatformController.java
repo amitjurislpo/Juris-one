@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,12 +32,14 @@ public class PlatformController {
     private final Auth auth;
     private final BusinessAdminService businesses;
     private final SubscriptionService subscriptions;
+    private final ModuleGrantService grants;
     private final AuditService audit;
 
-    public PlatformController(Auth auth, BusinessAdminService businesses, SubscriptionService subscriptions, AuditService audit) {
+    public PlatformController(Auth auth, BusinessAdminService businesses, SubscriptionService subscriptions, ModuleGrantService grants, AuditService audit) {
         this.auth = auth;
         this.businesses = businesses;
         this.subscriptions = subscriptions;
+        this.grants = grants;
         this.audit = audit;
     }
 
@@ -109,6 +112,40 @@ public class PlatformController {
         subscriptions.updateSubscription(id, body);
         audit.log(u.id(), "subscription.update", "business_subscription", id, null, Map.of("status", String.valueOf(body.status())), RequestMeta.of(req).ip());
         return ApiResult.message("CANCELLED".equals(body.status()) ? "Subscription cancelled" : "Subscription updated");
+    }
+
+    // modules granted on their own (Juris Track: complimentary or paid)
+    @GetMapping("/businesses/{id}/modules")
+    public ApiResult<List<ModuleGrantService.Grant>> modules(@PathVariable String id) {
+        admin();
+        return ApiResult.success(grants.list(com.jurislpo.jurisone.common.Check.uuid(id)));
+    }
+
+    /** {@code {module?: "JURIS_TRACK", source: "COMPLIMENTARY" | "PAID", price? (₹, paid), startsOn?, endsOn? (required when paid), notes?}} */
+    @PostMapping("/businesses/{id}/modules")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Map<String, String>> grantModule(@PathVariable String id, @RequestBody ModuleGrantService.GrantInput body, HttpServletRequest req) {
+        CurrentUser u = admin();
+        String gid = grants.grant(com.jurislpo.jurisone.common.Check.uuid(id), body, u.id());
+        audit.log(u.id(), "module.grant", "business_module", gid, null, Map.of("business", id, "source", String.valueOf(body.source())), RequestMeta.of(req).ip());
+        return ApiResult.success("Juris Track granted", Map.of("id", gid));
+    }
+
+    @PutMapping("/modules/{id}")
+    public ApiResult<Void> updateModule(@PathVariable String id, @RequestBody ModuleGrantService.GrantInput body, HttpServletRequest req) {
+        CurrentUser u = admin();
+        grants.update(id, body);
+        audit.log(u.id(), "module.update", "business_module", id, null, Map.of("source", String.valueOf(body.source())), RequestMeta.of(req).ip());
+        return ApiResult.message("Grant saved");
+    }
+
+    /** Revokes the grant at once (the record is kept). */
+    @DeleteMapping("/modules/{id}")
+    public ApiResult<Void> revokeModule(@PathVariable String id, HttpServletRequest req) {
+        CurrentUser u = admin();
+        grants.revoke(id);
+        audit.log(u.id(), "module.revoke", "business_module", id, null, Map.of(), RequestMeta.of(req).ip());
+        return ApiResult.message("Grant revoked");
     }
 
     // plans

@@ -8,8 +8,8 @@ import { ConfirmDialog, Modal } from "@/components/ui/Modal";
 import type { BusinessProfile, PlanRow } from "@/lib/api-types";
 import { inr } from "@/lib/format";
 import {
-  addOwner, addSubscription, cancelSubscription, createBusiness, setBusinessStatus, setOwnerAccess, updateBusiness,
-  type BusinessInput, type OwnerInput, type SubscriptionInput,
+  addOwner, addSubscription, cancelSubscription, createBusiness, grantModule, revokeModule, setBusinessStatus, setOwnerAccess, updateBusiness,
+  type BusinessInput, type GrantInput, type OwnerInput, type SubscriptionInput,
 } from "./actions";
 
 const TIME_ZONES = ["Asia/Kolkata", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles"];
@@ -235,6 +235,67 @@ export function CancelSubscriptionButton({ businessId, subscriptionId, label }: 
         <ConfirmDialog title="Cancel subscription" danger confirm="Cancel subscription" busy={busy} onClose={() => setAsk(false)}
           body={<>Cancel <b>{label}</b>? If it covers today, the business loses access straight away (the owner can still sign in and export employees).</>}
           onConfirm={() => start(async () => { const r = await cancelSubscription(businessId, subscriptionId); toast(r.ok ? r.msg! : r.error, r.ok ? undefined : "bad"); setAsk(false); })} />
+      )}
+    </>
+  );
+}
+
+export function GrantJurisTrackButton({ id }: { id: string }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [g, setG] = useState<GrantInput>({ source: "COMPLIMENTARY" });
+  const [err, setErr] = useState("");
+  const [busy, start] = useTransition();
+  const set = (x: Partial<GrantInput>) => { setG({ ...g, ...x }); setErr(""); };
+  const close = () => { setOpen(false); setErr(""); setG({ source: "COMPLIMENTARY" }); };
+  const paid = g.source === "PAID";
+  const save = () => start(async () => {
+    const r = await grantModule(id, clean(paid ? g : { ...g, price: undefined }));
+    if (r.ok) { toast(r.msg!); close(); } else setErr(r.error);
+  });
+  return (
+    <>
+      <button className="btn btn-sm" onClick={() => setOpen(true)}><Icon n="sparkle" s={14} />Grant Juris Track</button>
+      {open && (
+        <Modal title="Grant Juris Track" eyebrow="On its own, whatever the plan" size="sm" onClose={close}
+          footer={<><button className="btn btn-ghost" onClick={close}>Cancel</button><button className="btn btn-gold" disabled={busy} onClick={save}>{busy ? "Granting…" : "Grant"}</button></>}>
+          <div className="col" style={{ gap: 14 }}>
+            <div className="field">Type
+              <div style={{ display: "flex", gap: 16 }}>
+                {(["COMPLIMENTARY", "PAID"] as const).map((x) => (
+                  <label key={x} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400 }}>
+                    <input type="radio" name="source" checked={g.source === x} onChange={() => set({ source: x })} />{x === "PAID" ? "Paid" : "Complimentary (free)"}
+                  </label>
+                ))}
+              </div>
+            </div>
+            {paid && (
+              <label className="field">Price paid (₹) *<input type="number" min={1} step="0.01" value={g.price ?? ""} onChange={(e) => set({ price: e.target.value === "" ? null : Number(e.target.value) })} /></label>
+            )}
+            <div className="grid2">
+              <label className="field">Starts on <span className="hint">default today</span><input type="date" value={g.startsOn ?? ""} onChange={(e) => set({ startsOn: e.target.value })} /></label>
+              <label className="field">Ends on {paid ? "*" : <span className="hint">empty = no end</span>}<input type="date" value={g.endsOn ?? ""} onChange={(e) => set({ endsOn: e.target.value })} /></label>
+            </div>
+            <label className="field">Notes<input value={g.notes ?? ""} onChange={(e) => set({ notes: e.target.value })} maxLength={300} placeholder="Invoice no., reason" /></label>
+            {err && <div className="err" role="alert">{err}</div>}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+export function RevokeGrantButton({ businessId, grantId, label }: { businessId: string; grantId: string; label: string }) {
+  const toast = useToast();
+  const [ask, setAsk] = useState(false);
+  const [busy, start] = useTransition();
+  return (
+    <>
+      <button className="btn btn-sm btn-ghost" onClick={() => setAsk(true)} aria-label={`Revoke ${label}`}><Icon n="x" s={14} /></button>
+      {ask && (
+        <ConfirmDialog title="Revoke Juris Track" danger confirm="Revoke" busy={busy} onClose={() => setAsk(false)}
+          body={<>Revoke <b>{label}</b>? Unless the business&apos;s plan includes Juris Track, it disappears from their menu straight away. The grant stays on record.</>}
+          onConfirm={() => start(async () => { const r = await revokeModule(businessId, grantId); toast(r.ok ? r.msg! : r.error, r.ok ? undefined : "bad"); setAsk(false); })} />
       )}
     </>
   );

@@ -148,6 +148,7 @@ prisma/schema.prisma               the original data model, kept as a readable r
 - **Last 7 days:** the owner sees a banner on every page and gets a bell notification and an email 7 days and 1 day before the end, and on the day after it ends.
 - **Not active** (ended, not started yet, or cancelled; no grace period): everyone can still sign in, but every page shows "JurisOne is paused" and the API answers `402 SUBSCRIPTION_INACTIVE`. Only these stay open: sign-in, `/api/me`, the shell, notifications, and for the owner the Subscription page and the employee export.
 - **Suspended business:** nobody in it can sign in, and existing sign-ins end at once.
+- **Juris Track:** a business has it when its plan includes the module or the super admin grants it on its own (complimentary, optionally with no end date, or paid with a price and an end date; revoking keeps the record). With it, everyone in the business sees *Juris Track* in the menu, which for now shows "Coming soon". Without it, there is no menu item and both `/juris-track` and `GET /api/juris-track` answer 404.
 - **Employee export:** the owner can download every employee as Excel, before and after expiry. Identity numbers are masked unless the owner confirms the full export. Both downloads are audited.
 
 **Permissions are checked by the API.**
