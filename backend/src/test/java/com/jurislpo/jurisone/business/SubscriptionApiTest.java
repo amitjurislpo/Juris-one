@@ -156,7 +156,7 @@ class SubscriptionApiTest extends IntegrationTest {
                 .andReturn().getResponse().getContentAsByteArray();
         try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(xlsx))) {
             assertThat(wb.getSheet("Employees").getRow(0).getCell(0).getStringCellValue()).isEqualTo("Employee ID");
-            assertThat(wb.getSheet("Employees").getRow(1).getCell(1).getStringCellValue()).isEqualTo("Neha Owner");
+            assertThat(wb.getSheet("Employees").getLastRowNum()).isZero(); // only the header: the owner (business admin) is never exported
         }
 
         // renewing unblocks at once

@@ -47,6 +47,9 @@ export function Shell(props: ShellProps) {
   const [menu, setMenu] = useState(false);
   const [notif, setNotif] = useState(false);
   const [profile, setProfile] = useState(false);
+  // "My profile" is a page for everyone in a business (the super admin keeps the small card)
+  const hasProfilePage = groups.some((g) => g.items.some((i) => i.id === "profile"));
+  const openProfile = useCallback(() => (hasProfilePage ? router.push("/profile") : setProfile(true)), [hasProfilePage, router]);
   const [pal, setPal] = useState(false);
   const [pq, setPq] = useState("");
   const [pi, setPi] = useState(0);
@@ -92,10 +95,10 @@ export function Shell(props: ShellProps) {
     }
     add("Actions", theme === "dark" ? "Switch to light theme" : "Switch to dark theme", theme === "dark" ? "sun" : "moon", toggleTheme);
     groups.forEach((G) => G.items.forEach((n) => add("Go to", n.label, n.icon, () => go(n.id))));
-    add("Account", "My profile", "user", () => setProfile(true));
+    add("Account", "My profile", "user", openProfile);
     add("Account", "Sign out", "logout", logout);
     return out;
-  }, [pq, canSelf, theme, groups, go, router, toggleTheme, logout]);
+  }, [pq, canSelf, theme, groups, go, router, toggleTheme, logout, openProfile]);
 
   const groupedActs = useMemo(() => {
     const g: { g: string; items: Act[] }[] = [];
@@ -222,7 +225,7 @@ export function Shell(props: ShellProps) {
                     <span className="avatar lg">{initials(me.name)}</span>
                     <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}><b>{me.name}</b><span className="faint" style={{ fontSize: 12.5 }}>{me.code} · {me.roleName}</span></div>
                   </div>
-                  <button role="menuitem" onClick={() => { setMenu(false); setProfile(true); }}><Icon n="user" s={16} />My profile</button>
+                  <button role="menuitem" onClick={() => { setMenu(false); openProfile(); }}><Icon n="user" s={16} />My profile</button>
                   {canSelf && <button role="menuitem" onClick={() => { setMenu(false); go("payslips"); }}><Icon n="doc" s={16} />My payslips</button>}
                   <button role="menuitem" onClick={toggleTheme}><Icon n={theme === "dark" ? "sun" : "moon"} s={16} />{theme === "dark" ? "Light theme" : "Dark theme"}</button>
                   <button role="menuitem" onClick={() => { setMenu(false); openPal(); }}><Icon n="search" s={16} />Command menu<kbd style={{ marginLeft: "auto" }}>⌘K</kbd></button>

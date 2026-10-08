@@ -57,7 +57,7 @@ class PolicyApiTest extends IntegrationTest {
     /** A business of its own: published policies would otherwise stop the other tests' users. */
     @BeforeEach
     void business() throws Exception {
-        String s = UUID.randomUUID().toString().substring(0, 6).replaceAll("[0-9]", "x");
+        String s = TestData.letters(8);
         TestData t = new TestData(jdbc).inBusiness("policy-" + s);
         UUID hrRole = t.role("hrm", "self", "dir", "people.view", "policies.manage");
         UUID empRole = t.role("employee", "self", "dir");

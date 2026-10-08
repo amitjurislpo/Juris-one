@@ -1,7 +1,7 @@
 import type { Permission } from "./permissions";
 
 export type NavId =
-  | "platform" | "plans" | "juris-track" | "notifications" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
+  | "platform" | "plans" | "juris-track" | "notifications" | "profile" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
   | "register" | "approvals" | "people" | "onboarding" | "departments" | "holidays"
   | "payroll" | "structures" | "tax" | "proofs" | "roles" | "policies" | "settings" | "audit" | "subscription" | "my-policies";
 
@@ -35,6 +35,7 @@ export const NAV: NavItem[] = [
   { id: "home", label: "Home", icon: "home", perm: ["self"] },
   { id: "overview", label: "Overview", icon: "home", perm: ["roles.manage"] },
   { id: "notifications", label: "Notifications", icon: "bell", perm: ["self", "dir", "roles.manage"] },
+  { id: "profile", label: "My profile", icon: "user", perm: ["self", "dir", "roles.manage"] },
   { id: "attendance", label: "My attendance", icon: "clock", perm: ["self"] },
   { id: "leave", label: "Leave & holidays", icon: "cal", perm: ["self"] },
   { id: "payslips", label: "Payslips", icon: "doc", perm: ["self"] },
@@ -45,7 +46,7 @@ export const NAV: NavItem[] = [
   { id: "team", label: "My team", icon: "team", perm: ["self"], needsReports: true, group: "Team" },
   { id: "register", label: "Attendance register", icon: "grid", perm: ["att.all"], group: "People ops" },
   { id: "approvals", label: "Approvals", icon: "check", perm: ["appr.leave", "appr.reg"], group: "People ops" },
-  { id: "people", label: "People", icon: "users", perm: ["people.view"], group: "People ops" },
+  { id: "people", label: "Employees", icon: "users", perm: ["people.view"], group: "People ops" },
   { id: "onboarding", label: "Onboarding", icon: "inbox", perm: ["people.add"], group: "People ops" },
   { id: "departments", label: "Departments", icon: "building", perm: ["dept.manage"], group: "People ops" },
   { id: "holidays", label: "Holiday calendar", icon: "sun", perm: ["holidays.manage"], group: "People ops" },

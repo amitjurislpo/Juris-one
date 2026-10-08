@@ -55,7 +55,7 @@ class OnboardingApiTest extends IntegrationTest {
 
     @BeforeEach
     void business() throws Exception {
-        s = UUID.randomUUID().toString().substring(0, 6).replaceAll("[0-9]", "z");
+        s = TestData.letters(8);
         TestData t = new TestData(jdbc).inBusiness("onboard-" + s);
         UUID hrRole = t.role("hrm", "self", "dir", "people.view", "people.add", "access.toggle");
         empRole = t.role("employee", "self", "dir");

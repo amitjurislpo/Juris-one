@@ -78,6 +78,7 @@ public class BusinessService {
                    e.uan_enc, e.uan_last4, e.bank_name, e.bank_account_enc, e.bank_account_last4, e.bank_ifsc, e.address_enc
             FROM employees e JOIN roles r ON r.id = e.role_id
             LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees m ON m.id = e.reporting_manager_id LEFT JOIN shifts s ON s.id = e.shift_id
+            WHERE r.key <> 'owner' -- the business admin's own details are never exported
             ORDER BY e.code""");
         String business = jdbc.queryForObject("SELECT code FROM businesses WHERE id = ?", String.class, TenantContext.current());
         try (SXSSFWorkbook wb = new SXSSFWorkbook(100); ByteArrayOutputStream out = new ByteArrayOutputStream()) {

@@ -33,6 +33,14 @@ public final class TestData {
         return new TestData(jdbc, businessCode);
     }
 
+    /** {@code n} random lowercase letters (for business codes, emails and employee codes that must not collide). */
+    public static String letters(int n) {
+        StringBuilder b = new StringBuilder();
+        java.util.concurrent.ThreadLocalRandom r = java.util.concurrent.ThreadLocalRandom.current();
+        for (int i = 0; i < n; i++) b.append((char) ('a' + r.nextInt(26)));
+        return b.toString();
+    }
+
     public UUID business() {
         return business;
     }

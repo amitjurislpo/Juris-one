@@ -68,11 +68,13 @@ class TenantIsolationTest extends IntegrationTest {
     @Test
     void peopleListsAndRecordsStayInsideTheirBusiness() throws Exception {
         String code = "XX-" + (int) (Math.random() * 100_000);
-        Person alphaHr = person(a, hrA, code);
+        Person alphaHr = person(a, hrA, "HR" + code);
+        Person alphaColleague = person(a, hrA, code);
         Person betaHr = person(b, hrB, code); // same code, other business: allowed
 
+        // (nobody sees themselves in the list, so alpha's HR looks for a colleague)
         JsonNode list = json.readTree(mvc.perform(get("/api/people?q=" + code).cookie(alphaHr.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
-        assertThat(list.at("/data/rows").findValuesAsText("id")).contains(alphaHr.id().toString()).doesNotContain(betaHr.id().toString());
+        assertThat(list.at("/data/rows").findValuesAsText("id")).contains(alphaColleague.id().toString()).doesNotContain(betaHr.id().toString(), alphaHr.id().toString());
 
         // a record of the other business is simply not there
         mvc.perform(get("/api/people/" + betaHr.id()).cookie(alphaHr.cookie())).andExpect(status().is4xxClientError());

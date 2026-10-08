@@ -32,11 +32,24 @@ public final class PeopleQuery {
     }
 
     public PeopleQuery(Map<String, String> sp) {
+        this(sp, null);
+    }
+
+    /**
+     * Owners (the business admin) are never listed or exported; {@code viewer} (the signed-in person) is left out of
+     * their own list.
+     */
+    public PeopleQuery(Map<String, String> sp, java.util.UUID viewer) {
         ls = ListParams.of(sp, SORTS, "name");
         String status = ListParams.pick(sp, "status", STATUS, "Current");
         String access = ListParams.pick(sp, "access", ACCESS, "All");
         String dept = ListParams.str(sp, "dept", "All");
         List<String> and = new ArrayList<>();
+        and.add("r.key <> 'owner'");
+        if (viewer != null) {
+            and.add("e.id <> ?");
+            args.add(viewer);
+        }
         if ("Current".equals(status)) and.add("e.status <> 'EXITED'");
         else if (!"All".equals(status)) {
             and.add("e.status = ?::\"EmployeeStatus\"");

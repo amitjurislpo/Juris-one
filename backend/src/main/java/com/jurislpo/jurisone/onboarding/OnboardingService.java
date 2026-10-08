@@ -656,7 +656,7 @@ public class OnboardingService {
         if (f.bankAccount().length() < 6 || f.bankAccount().length() > 18) return "Enter your bank account number.";
         if (f.emergencyName().length() < 2) return "Enter an emergency contact.";
         String ephone = com.jurislpo.jurisone.engine.Phones.problem(f.emergencyPhoneCountry(), f.emergencyPhone());
-        if (ephone != null) return "Emergency contact: " + ephone.substring(0, 1).toLowerCase(Locale.ROOT) + ephone.substring(1) + ".";
+        if (ephone != null) return "Emergency contact: " + ephone + ".";
         return null;
     }
 

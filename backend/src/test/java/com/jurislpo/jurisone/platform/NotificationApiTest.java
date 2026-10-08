@@ -52,7 +52,7 @@ class NotificationApiTest extends IntegrationTest {
 
     @BeforeEach
     void business() throws Exception {
-        String s = UUID.randomUUID().toString().substring(0, 6).replaceAll("[0-9]", "y");
+        String s = TestData.letters(8);
         TestData t = new TestData(jdbc).inBusiness("inbox-" + s);
         UUID ownerRole = t.role("owner", "dir", "roles.manage", "policies.manage", "business.manage");
         employeeId = t.employee("NE-" + s, "emp." + s + "@example.com", t.role("employee", "self", "dir"), PW);

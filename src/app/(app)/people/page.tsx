@@ -5,7 +5,7 @@ import { requirePage } from "@/lib/auth";
 import { apiData, qs } from "@/lib/backend";
 import { AddEmployeeButton, PeopleTable, type PersonRow } from "./PeopleClient";
 
-export const metadata: Metadata = { title: "People" };
+export const metadata: Metadata = { title: "Employees" };
 
 export default async function PeoplePage(props: PageProps<"/people">) {
   await requirePage("people");
@@ -19,7 +19,7 @@ export default async function PeoplePage(props: PageProps<"/people">) {
 
   return (
     <div className="col">
-      <PageHeader eyebrow="People operations" title="The" em="Juris team"
+      <PageHeader eyebrow="People operations" title="All" em="employees"
         sub={seePay ? "Employee records, portal access and reporting lines." : "Employee records, portal access and reporting lines. Compensation is visible to Finance only."}>
         <a className="btn" href={`/api/people/export${exportQs ? `?${exportQs}` : ""}`} download>Export CSV</a>
         {canAdd && <AddEmployeeButton />}

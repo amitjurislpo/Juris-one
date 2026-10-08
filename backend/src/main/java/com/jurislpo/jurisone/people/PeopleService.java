@@ -68,7 +68,7 @@ public class PeopleService {
     public record Page(List<PersonRow> rows, int total, int page, int take, List<Dept> depts, Map<String, Integer> counts, boolean seePay, boolean canAdd) {}
 
     public Page page(CurrentUser u, Map<String, String> sp) {
-        PeopleQuery pq = new PeopleQuery(sp);
+        PeopleQuery pq = new PeopleQuery(sp, u.id());
         Actor actor = actors.actor(u);
         List<Object> args = new ArrayList<>(pq.args);
         args.add(pq.ls.take());
@@ -91,12 +91,13 @@ public class PeopleService {
         List<Dept> depts = jdbc.query("SELECT id::text, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (rs, i) -> new Dept(rs.getString(1), rs.getString(2)));
         Map<String, Integer> k = jdbc.queryForObject("""
             SELECT count(*) FILTER (WHERE status <> 'EXITED') AS cur, count(*) FILTER (WHERE status <> 'EXITED' AND region = 'US') AS us,
-                   count(*) FILTER (WHERE status <> 'EXITED' AND NOT portal_access) AS off, count(*) FILTER (WHERE status = 'EXITED') AS past FROM employees""",
+                   count(*) FILTER (WHERE status <> 'EXITED' AND NOT portal_access) AS off, count(*) FILTER (WHERE status = 'EXITED') AS past
+            FROM employees e JOIN roles r ON r.id = e.role_id WHERE r.key <> 'owner' AND e.id <> ?""",
                 (rs, i) -> {
                     Map<String, Integer> m = new LinkedHashMap<>();
                     for (String c : List.of("cur", "us", "off", "past")) m.put(c, rs.getInt(c));
                     return m;
-                });
+                }, u.id());
         return new Page(rows, total == null ? 0 : total, pq.ls.page(), pq.ls.take(), depts, k, u.perms().contains("struct.manage"), PeopleRules.canAddEmployees(actor));
     }
 
