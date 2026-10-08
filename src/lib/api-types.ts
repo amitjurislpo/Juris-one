@@ -145,3 +145,24 @@ export interface ModuleGrant {
   revokedAt: string | null;
   state: "ACTIVE" | "UPCOMING" | "ENDED" | "REVOKED";
 }
+
+/** A published policy as an employee reads it (current version). */
+export interface PolicyToRead {
+  id: string;
+  version: number;
+  title: string;
+  body: string;
+  fileName: string | null;
+  publishedAt: string;
+  requiresAck?: boolean;
+  acknowledgedAt?: string | null;
+}
+
+/** A policy as HR / the owner manage it: the draft, its published versions and who accepted the current one. */
+export interface PolicyDetail {
+  id: string; title: string; body: string; fileName: string | null; requiresAck: boolean; status: "DRAFT" | "PUBLISHED" | "ARCHIVED"; version: number;
+  updatedAt: string; hasChanges: boolean;
+  versions: { versionId: string; version: number; title: string; publishedAt: string; publishedBy: string | null; fileName: string | null; requiresAck: boolean;
+    bodySha256: string; fileSha256: string | null; acknowledgements: number }[];
+  people: { code: string; name: string; department: string | null; acknowledgedAt: string | null; lastVersion: number | null }[];
+}

@@ -151,6 +151,12 @@ prisma/schema.prisma               the original data model, kept as a readable r
 - **Juris Track:** a business has it when its plan includes the module or the super admin grants it on its own (complimentary, optionally with no end date, or paid with a price and an end date; revoking keeps the record). With it, everyone in the business sees *Juris Track* in the menu, which for now shows "Coming soon". Without it, there is no menu item and both `/juris-track` and `GET /api/juris-track` answer 404.
 - **Employee export:** the owner can download every employee as Excel, before and after expiry. Identity numbers are masked unless the owner confirms the full export. Both downloads are audited.
 
+**Company policies must be accepted, and every acceptance is a legal record.** HR managers and owners (`policies.manage`) write a policy (text and/or a PDF) as a draft and publish it. Each publish is a new, numbered version that can never be changed.
+- While the current version of a published policy that needs acceptance hasn't been accepted, the user sees only the acceptance screen, and the API answers `428 POLICY_ACK_REQUIRED` to everything except sign-in, `/api/me`, the shell, notifications and reading and accepting the policies. Owners aren't asked. A new version asks everyone again.
+- Each acceptance stores a snapshot: policy title and version, SHA-256 of the text and of the PDF, the employee's ID, name and email, the time (UTC), IP address and browser. Database triggers reject any UPDATE, DELETE or TRUNCATE on `policy_versions` and `policy_acknowledgements`.
+- HR sees who has and hasn't accepted the current version, can send reminders, and can download the evidence (every acceptance of every version) as CSV. The download is audited.
+- Everyone can read the current policies under *My policies*. Published policies are archived, not deleted.
+
 **Permissions are checked by the API.**
 - Every page calls `requirePage(<nav id>)` in Next.js, and the API checks the same permission again for the data it returns.
 - Every write goes through an API endpoint that calls `assertPerm(...)`.

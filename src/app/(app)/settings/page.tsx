@@ -10,7 +10,7 @@ import { PERMISSIONS } from "@/lib/permissions";
 import type { SettingValue } from "@/lib/api-types";
 import { AttendancePolicyForm } from "./AttendancePolicyForm";
 
-export const metadata: Metadata = { title: "Policies" };
+export const metadata: Metadata = { title: "Settings" };
 
 const TABS = ["access", "leave", "hol", "att"] as const;
 const num = (d: number | null) => (d == null ? 0 : d);
@@ -24,7 +24,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
 
   return (
     <div className="col">
-      <PageHeader eyebrow="Administration" title="Policies &" em="access" sub="Who can see what, and the rules the portal runs on.">
+      <PageHeader eyebrow="Administration" title="Rules &" em="settings" sub="Who can see what, and the rules the portal runs on.">
         <SegFilter name="tab" dflt="access" label="Policy section" options={[{ v: "access", l: "Access" }, { v: "leave", l: "Leave policy" }, { v: "hol", l: "Holidays" }, { v: "att", l: "Attendance" }]} />
       </PageHeader>
       {tab === "access" && <AccessMatrix />}

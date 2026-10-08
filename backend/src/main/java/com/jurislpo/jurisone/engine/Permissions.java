@@ -12,7 +12,7 @@ public final class Permissions {
     public static final String SELF = "self", DIR = "dir", ATT_ALL = "att.all", APPR_LEAVE = "appr.leave", APPR_REG = "appr.reg",
             PEOPLE_VIEW = "people.view", PEOPLE_ADD = "people.add", ACCESS_TOGGLE = "access.toggle", DEPT_MANAGE = "dept.manage",
             HOLIDAYS_MANAGE = "holidays.manage", PAY_VIEW = "pay.view", PAY_CLOSE = "pay.close", STRUCT_MANAGE = "struct.manage",
-            TAX_VIEW = "tax.view", PROOFS_VERIFY = "proofs.verify", ROLES_MANAGE = "roles.manage";
+            TAX_VIEW = "tax.view", PROOFS_VERIFY = "proofs.verify", POLICIES_MANAGE = "policies.manage", ROLES_MANAGE = "roles.manage";
 
     /**
      * The platform super admin's permission (businesses, plans, subscriptions). It is not part of the business catalogue
@@ -43,6 +43,7 @@ public final class Permissions {
         m.put(STRUCT_MANAGE, "Salary structures");
         m.put(TAX_VIEW, "Tax & TDS");
         m.put(PROOFS_VERIFY, "Verify investment proofs");
+        m.put(POLICIES_MANAGE, "Publish company policies & see acknowledgements");
         m.put(ROLES_MANAGE, "Roles, permissions & policies");
         LABELS = java.util.Collections.unmodifiableMap(m);
     }
@@ -55,7 +56,7 @@ public final class Permissions {
             new Group("Self-service", List.of(SELF, DIR)),
             new Group("People operations", List.of(ATT_ALL, APPR_LEAVE, APPR_REG, PEOPLE_VIEW, PEOPLE_ADD, ACCESS_TOGGLE, DEPT_MANAGE, HOLIDAYS_MANAGE)),
             new Group("Finance", List.of(PAY_VIEW, PAY_CLOSE, STRUCT_MANAGE, TAX_VIEW, PROOFS_VERIFY)),
-            new Group("Administration", List.of(ROLES_MANAGE)));
+            new Group("Administration", List.of(POLICIES_MANAGE, ROLES_MANAGE)));
 
     /** Permissions that expose salary / tax figures. HR roles must never hold these. */
     public static final Set<String> SALARY = Set.of(PAY_VIEW, PAY_CLOSE, STRUCT_MANAGE, TAX_VIEW, PROOFS_VERIFY);

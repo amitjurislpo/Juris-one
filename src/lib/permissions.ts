@@ -15,6 +15,7 @@ export const PERMISSIONS = [
   ["struct.manage", "Salary structures"],
   ["tax.view", "Tax & TDS"],
   ["proofs.verify", "Verify investment proofs"],
+  ["policies.manage", "Publish company policies & see acknowledgements"],
   ["roles.manage", "Roles, permissions & policies"],
 ] as const;
 
@@ -27,7 +28,7 @@ export const PERMISSION_GROUPS: [string, Permission[]][] = [
   ["Self-service", ["self", "dir"]],
   ["People operations", ["att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "holidays.manage"]],
   ["Finance", ["pay.view", "pay.close", "struct.manage", "tax.view", "proofs.verify"]],
-  ["Administration", ["roles.manage"]],
+  ["Administration", ["policies.manage", "roles.manage"]],
 ];
 
 /** Permissions that expose salary / tax figures. HR roles must never hold these. */

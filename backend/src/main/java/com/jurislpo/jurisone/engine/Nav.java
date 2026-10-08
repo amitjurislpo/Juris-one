@@ -34,6 +34,7 @@ public final class Nav {
             item("payslips", "Payslips", "doc", List.of(SELF), null),
             item("declare", "Tax declarations", "shield", List.of(SELF), null),
             item("directory", "Directory", "book", List.of(DIR), null),
+            item("my-policies", "My policies", "shield", List.of(SELF, DIR, ROLES_MANAGE), null),
             new Item("juris-track", "Juris Track", "sparkle", List.of(SELF, ROLES_MANAGE, DIR), false, null, JURIS_TRACK),
             new Item("team", "My team", "team", List.of(SELF), true, "Team", null),
             item("register", "Attendance register", "grid", List.of(ATT_ALL), "People ops"),
@@ -46,7 +47,8 @@ public final class Nav {
             item("tax", "Tax & TDS", "receipt", List.of(TAX_VIEW), "Finance"),
             item("proofs", "Investment proofs", "inbox", List.of(PROOFS_VERIFY), "Finance"),
             item("roles", "Roles & permissions", "key", List.of(ROLES_MANAGE), "Administration"),
-            item("settings", "Policies", "sliders", List.of(ROLES_MANAGE), "Administration"),
+            item("policies", "Company policies", "book", List.of(POLICIES_MANAGE), "Administration"),
+            item("settings", "Settings", "sliders", List.of(ROLES_MANAGE), "Administration"),
             item("audit", "Audit log", "doc", List.of(ROLES_MANAGE), "Administration"),
             item("subscription", "Subscription", "receipt", List.of(BUSINESS_MANAGE), "Administration"));
 

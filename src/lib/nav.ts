@@ -3,7 +3,7 @@ import type { Permission } from "./permissions";
 export type NavId =
   | "platform" | "plans" | "juris-track" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
   | "register" | "approvals" | "people" | "departments" | "holidays"
-  | "payroll" | "structures" | "tax" | "proofs" | "roles" | "settings" | "audit" | "subscription";
+  | "payroll" | "structures" | "tax" | "proofs" | "roles" | "policies" | "settings" | "audit" | "subscription" | "my-policies";
 
 export type NavGroup = "Platform" | "My workspace" | "Workspace" | "Team" | "People ops" | "Finance" | "Administration";
 
@@ -39,6 +39,7 @@ export const NAV: NavItem[] = [
   { id: "payslips", label: "Payslips", icon: "doc", perm: ["self"] },
   { id: "declare", label: "Tax declarations", icon: "shield", perm: ["self"] },
   { id: "directory", label: "Directory", icon: "book", perm: ["dir"] },
+  { id: "my-policies", label: "My policies", icon: "shield", perm: ["self", "dir", "roles.manage"] },
   { id: "juris-track", label: "Juris Track", icon: "sparkle", perm: ["self", "roles.manage", "dir"], module: JURIS_TRACK },
   { id: "team", label: "My team", icon: "team", perm: ["self"], needsReports: true, group: "Team" },
   { id: "register", label: "Attendance register", icon: "grid", perm: ["att.all"], group: "People ops" },
@@ -51,7 +52,8 @@ export const NAV: NavItem[] = [
   { id: "tax", label: "Tax & TDS", icon: "receipt", perm: ["tax.view"], group: "Finance" },
   { id: "proofs", label: "Investment proofs", icon: "inbox", perm: ["proofs.verify"], group: "Finance" },
   { id: "roles", label: "Roles & permissions", icon: "key", perm: ["roles.manage"], group: "Administration" },
-  { id: "settings", label: "Policies", icon: "sliders", perm: ["roles.manage"], group: "Administration" },
+  { id: "policies", label: "Company policies", icon: "book", perm: ["policies.manage"], group: "Administration" },
+  { id: "settings", label: "Settings", icon: "sliders", perm: ["roles.manage"], group: "Administration" },
   { id: "audit", label: "Audit log", icon: "doc", perm: ["roles.manage"], group: "Administration" },
   { id: "subscription", label: "Subscription", icon: "receipt", perm: [BUSINESS_MANAGE], group: "Administration" },
 ];

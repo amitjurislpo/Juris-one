@@ -20,11 +20,13 @@ public class MeController {
     private final Auth auth;
     private final ShellService shell;
     private final SubscriptionService subscriptions;
+    private final com.jurislpo.jurisone.policy.PolicyService policies;
 
-    public MeController(Auth auth, ShellService shell, SubscriptionService subscriptions) {
+    public MeController(Auth auth, ShellService shell, SubscriptionService subscriptions, com.jurislpo.jurisone.policy.PolicyService policies) {
         this.auth = auth;
         this.shell = shell;
         this.subscriptions = subscriptions;
+        this.policies = policies;
     }
 
     /**
@@ -35,11 +37,15 @@ public class MeController {
     public ApiResult<MeResponse> me() {
         CurrentUser u = auth.assertPerm();
         Boolean active = u.businessId() == null ? null : subscriptions.isActive(u.businessId());
-        return ApiResult.success(new MeResponse(u, u.landingPath(), active, java.util.List.copyOf(new java.util.TreeSet<>(subscriptions.activeModules(u.businessId())))));
+        return ApiResult.success(new MeResponse(u, u.landingPath(), active, java.util.List.copyOf(new java.util.TreeSet<>(subscriptions.activeModules(u.businessId()))),
+                policies.pendingCount(u)));
     }
 
-    /** {@code modules}: modules the business can use today (empty for the super admin or without an active subscription). */
-    public record MeResponse(CurrentUser user, String landing, Boolean subscriptionActive, java.util.List<String> modules) {}
+    /**
+     * {@code modules}: modules the business can use today (empty for the super admin or without an active subscription).
+     * {@code pendingPolicies}: published policies the user still has to accept before using JurisOne.
+     */
+    public record MeResponse(CurrentUser user, String landing, Boolean subscriptionActive, java.util.List<String> modules, int pendingPolicies) {}
 
     @GetMapping("/shell")
     public ApiResult<ShellService.Shell> shell() {

@@ -2,6 +2,7 @@ package com.jurislpo.jurisone.config;
 
 import com.jurislpo.jurisone.security.JsonAuthEntryPoint;
 import com.jurislpo.jurisone.security.OriginCheckFilter;
+import com.jurislpo.jurisone.security.PolicyGateFilter;
 import com.jurislpo.jurisone.security.SubscriptionGateFilter;
 import com.jurislpo.jurisone.security.JwtAuthFilter;
 import java.util.List;
@@ -36,7 +37,8 @@ public class SecurityConfig {
     static final String[] PUBLIC = {"/api/auth/session", "/api/auth/session/refresh", "/api/auth/password-resets", "/api/auth/password", "/api/auth/tokens/**"};
 
     @Bean
-    SecurityFilterChain api(HttpSecurity http, JwtAuthFilter sessions, OriginCheckFilter origin, SubscriptionGateFilter subscription, JsonAuthEntryPoint entryPoint)
+    SecurityFilterChain api(HttpSecurity http, JwtAuthFilter sessions, OriginCheckFilter origin, SubscriptionGateFilter subscription,
+                               PolicyGateFilter policyGate, JsonAuthEntryPoint entryPoint)
             throws Exception {
         http
             .csrf(c -> c.disable())
@@ -49,6 +51,7 @@ public class SecurityConfig {
             .addFilterAfter(origin, SecurityContextHolderFilter.class)
             .addFilterBefore(sessions, AnonymousAuthenticationFilter.class)
             .addFilterAfter(subscription, JwtAuthFilter.class) // needs the business the JWT filter set
+            .addFilterAfter(policyGate, SubscriptionGateFilter.class) // 402 before 428: a paused business can't accept anything
             .exceptionHandling(e -> e.authenticationEntryPoint(entryPoint))
             .authorizeHttpRequests(a -> a
                 .requestMatchers(HttpMethod.GET, "/actuator/health/**", "/actuator/health").permitAll()
@@ -69,6 +72,13 @@ public class SecurityConfig {
     @Bean
     FilterRegistrationBean<SubscriptionGateFilter> subscriptionFilterRegistration(SubscriptionGateFilter f) {
         FilterRegistrationBean<SubscriptionGateFilter> r = new FilterRegistrationBean<>(f);
+        r.setEnabled(false);
+        return r;
+    }
+
+    @Bean
+    FilterRegistrationBean<PolicyGateFilter> policyGateFilterRegistration(PolicyGateFilter f) {
+        FilterRegistrationBean<PolicyGateFilter> r = new FilterRegistrationBean<>(f);
         r.setEnabled(false);
         return r;
     }

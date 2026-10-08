@@ -25,6 +25,8 @@ export interface CurrentUser {
   subscriptionActive: boolean | null;
   /** Modules the business can use today (e.g. JURIS_TRACK). */
   modules: string[];
+  /** Published policies this user still has to accept (they see only the acknowledgement screen until then). */
+  pendingPolicies: number;
 }
 
 export class ForbiddenError extends Error {
@@ -41,9 +43,12 @@ export class ForbiddenError extends Error {
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   if (!(await hasSessionCookie())) return null;
   // the Spring Boot API validates the session (revoked/expired, access off, exited) and loads permissions
-  const me = await apiGet<{ user: Omit<CurrentUser, "perms" | "subscriptionActive" | "modules"> & { perms: Permission[] }; subscriptionActive: boolean | null; modules: string[] }>("/api/me");
+  const me = await apiGet<{
+    user: Omit<CurrentUser, "perms" | "subscriptionActive" | "modules" | "pendingPolicies"> & { perms: Permission[] };
+    subscriptionActive: boolean | null; modules: string[]; pendingPolicies: number;
+  }>("/api/me");
   if (!me) return null;
-  return { ...me.user, perms: new Set(me.user.perms), subscriptionActive: me.subscriptionActive, modules: me.modules };
+  return { ...me.user, perms: new Set(me.user.perms), subscriptionActive: me.subscriptionActive, modules: me.modules, pendingPolicies: me.pendingPolicies };
 });
 
 export const can = (u: CurrentUser | null, ...perms: Permission[]) => !!u && perms.some((p) => u.perms.has(p));
@@ -71,7 +76,8 @@ const OPEN_WITHOUT_SUBSCRIPTION: NavId[] = ["subscription"];
 
 /**
  * Pages: the nav entry for this route must be allowed, else bounce to the user's landing page. When the business's
- * subscription isn't active, every page except the owner's Subscription page shows the "paused" screen instead.
+ * subscription isn't active, every page except the owner's Subscription page shows the "paused" screen instead; while
+ * a published policy waits for the user's acceptance, every page shows the acknowledgement screen.
  */
 export async function requirePage(id: NavId): Promise<CurrentUser> {
   const u = await requireUser();
@@ -80,6 +86,7 @@ export async function requirePage(id: NavId): Promise<CurrentUser> {
   if (item.module && !u.modules.includes(item.module)) notFound();
   if (!navAllowed(item, u.perms, u.hasReports)) redirect(landingPath(u));
   if (u.subscriptionActive === false && !OPEN_WITHOUT_SUBSCRIPTION.includes(id)) redirect("/paused");
+  if (u.pendingPolicies > 0) redirect("/acknowledge");
   return u;
 }
 
