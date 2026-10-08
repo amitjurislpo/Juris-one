@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ADMIN_EMAIL, ADMIN_PW, expectLanded, login, sql } from "./helpers";
+import { OWNER, expectLanded, login, sql } from "./helpers";
 
 const toast = (page: Page) => page.locator(".toast").last();
 const T0 = new Date().toISOString();
@@ -47,7 +47,7 @@ test.describe("attendance", () => {
   });
 
   test("Admin has no check-in or attendance pages", async ({ page }) => {
-    await login(page, ADMIN_EMAIL, ADMIN_PW);
+    await login(page, OWNER);
     await expectLanded(page, "/overview");
     await page.goto("/attendance");
     await expectLanded(page, "/overview");
@@ -62,10 +62,11 @@ test.describe("attendance", () => {
     await expect(kpi("Absent · loss of pay")).toHaveText("1");
     await expect(kpi("Present")).toHaveText("15");
     await page.getByRole("button", { name: /Tue, 22 Sep 2026/ }).click();
-    await expect(page.getByText("Loss of pay", { exact: true })).toBeVisible();
+    await expect(page.getByText("Unpaid leave", { exact: true })).toBeVisible(); // the unapplied absence was booked as leave without pay
+    // a late day could be regularized in an open month; September is locked
+    await page.getByRole("button", { name: /Thu, 17 Sep 2026.*late/ }).click();
     await expect(page.getByText(/this month is locked/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Request regularization" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /Thu, 17 Sep 2026.*late/ })).toBeVisible();
     await page.getByRole("button", { name: /Mon, 7 Sep 2026/ }).click();
     await expect(page.locator(".chip", { hasText: "Before joining" })).toBeVisible();
   });
@@ -125,7 +126,7 @@ test.describe("attendance", () => {
     await login(page, "JC-012");
     await expectLanded(page, "/home");
     await page.goto("/register?day=2026-09-22&q=Amit");
-    await expect(page.locator("tbody tr").first()).toContainText("Absent");
+    await expect(page.locator("tbody tr").first()).toContainText("On leave"); // leave without pay
     await page.goto("/register?day=2026-09-16&q=Kavya");
     const row = page.locator("tbody tr").first();
     await expect(row).toContainText("Present");
@@ -135,7 +136,7 @@ test.describe("attendance", () => {
     await expect(row.locator("td").nth(3)).toContainText("local");
     await page.goto("/register?view=month&ym=2026-09&q=Amit");
     const grid = page.locator("table.reg tbody tr").first();
-    await expect(grid.locator("td").nth(22)).toHaveText("A"); // 22 Sep
+    await expect(grid.locator("td").nth(22)).toHaveText("L"); // 22 Sep: leave without pay
     const exp = await page.request.get("/api/attendance/register?view=month&ym=2026-09");
     expect(exp.status()).toBe(200);
     expect(await exp.text()).toContain("Amit Jaspal");
@@ -149,7 +150,7 @@ test.describe("attendance", () => {
   });
 
   test("policies: Admin edits the attendance policy", async ({ page }) => {
-    await login(page, ADMIN_EMAIL, ADMIN_PW);
+    await login(page, OWNER);
     await expectLanded(page, "/overview");
     await page.goto("/settings?tab=att");
     await expect(page.getByLabel("Attendance go-live")).toBeDisabled();

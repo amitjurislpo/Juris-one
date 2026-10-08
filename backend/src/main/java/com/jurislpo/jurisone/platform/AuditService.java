@@ -35,6 +35,13 @@ public class AuditService {
         a.setAfter(toJson(after));
         a.setIp(ip);
         em.persist(a);
+        if (com.jurislpo.jurisone.tenancy.TenantContext.current() == null && actorId != null) {
+            // outside a business request (sign-in, password set): the event belongs to the actor's business, so its
+            // admin sees it; platform users (no business) keep NULL
+            em.flush();
+            em.createNativeQuery("UPDATE audit_log SET business_id = (SELECT business_id FROM employees WHERE id = ?1) WHERE id = ?2 AND business_id IS NULL")
+                    .setParameter(1, actorId).setParameter(2, a.getId()).executeUpdate();
+        }
     }
 
     public void log(UUID actorId, String action, String entity, String entityId, String ip) {

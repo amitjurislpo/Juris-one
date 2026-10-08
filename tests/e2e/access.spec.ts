@@ -14,7 +14,7 @@ test.describe("server-side page permissions", () => {
   test("HR manager never gets finance pages", async ({ page }) => {
     await login(page, "JC-012");
     await expectLanded(page, "/home");
-    await expect(page.getByRole("link", { name: "People", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Employees", exact: true })).toBeVisible();
     for (const name of ["Payroll", "Salary structures", "Tax & TDS", "Investment proofs"]) await expect(page.getByRole("link", { name })).toHaveCount(0);
     await page.goto("/structures");
     await expectLanded(page, "/home");

@@ -13,6 +13,8 @@ const BACKEND_URL = (process.env.BACKEND_URL || "http://127.0.0.1:8080").replace
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // the end-to-end environment builds into its own folder (scripts/e2e-env.mjs)
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   async rewrites() {
     // downloads and uploads the browser makes itself (CSV exports, payslip PDFs, investment proofs)
     return [{ source: "/api/:path*", destination: `${BACKEND_URL}/api/:path*` }];

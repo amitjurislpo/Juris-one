@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ADMIN_EMAIL, ADMIN_PW, expectLanded, login, sql } from "./helpers";
+import { expectLanded, login, OWNER, sql } from "./helpers";
 
 const NEW_EMAIL = "e2e.meera.joshi@jurislpo.com";
 const DEPT = "E2E Intellectual Property";
@@ -31,11 +31,15 @@ test.describe("people operations", () => {
 
     // step 1 — validation then fill
     await dialog.getByRole("button", { name: "Continue" }).click();
-    await expect(dialog.getByText("Full name is required")).toBeVisible();
-    await dialog.getByLabel("Full name *").fill("Meera Joshi");
+    await expect(dialog.getByText("First name is required")).toBeVisible();
+    await expect(dialog.getByText("Last name is required")).toBeVisible();
+    await dialog.getByLabel("First name *").fill("Meera");
+    await dialog.getByLabel("Last name *").fill("Joshi");
     await dialog.getByLabel("Father’s name *").fill("Prakash Joshi");
-    await dialog.getByLabel("Email *").fill(NEW_EMAIL);
-    await dialog.getByLabel(/Phone/).fill("+91 98765 43210");
+    await dialog.getByLabel("Work email *").fill(NEW_EMAIL);
+    // the number box takes digits only, up to the country's length
+    await dialog.getByLabel("Phone number", { exact: true }).fill("98765 43210 99");
+    await expect(dialog.getByLabel("Phone number", { exact: true })).toHaveValue("9876543210");
     await dialog.getByRole("button", { name: "Continue" }).click();
 
     // step 2 — PAN format enforced
@@ -97,7 +101,7 @@ test.describe("people operations", () => {
     await expect(toast(page)).toContainText("Assign them a new manager first");
   });
 
-  test("access toggle: HR disables an employee but can't touch Admin", async ({ page }) => {
+  test("access toggle: HR disables an employee; the owner (admin) isn't in the list at all", async ({ page }) => {
     await login(page, "JC-012");
     await expectLanded(page, "/home");
     await page.goto("/people?q=Naman");
@@ -109,7 +113,10 @@ test.describe("people operations", () => {
     expect(logged.length).toBeGreaterThan(0);
 
     await page.goto("/people?q=Sana");
-    await expect(page.getByRole("switch", { name: /portal access for Sana Kapoor/ })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Sana Kapoor" })).toHaveCount(0); // (she may still show as someone's manager)
+    // nor is the signed-in person
+    await page.goto("/people?q=JC-012");
+    await expect(page.locator("tbody tr")).toHaveCount(0);
   });
 
   test("filters, sorting and past employees", async ({ page }) => {
@@ -135,10 +142,11 @@ test.describe("people operations", () => {
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Add employee" }).click();
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Full name *").fill("E2E Finance Hire");
+    await dialog.getByLabel("First name *").fill("E2E Finance");
+    await dialog.getByLabel("Last name *").fill("Hire");
     await dialog.getByLabel("Father’s name *").fill("Some Father");
-    await dialog.getByLabel("Email *").fill("e2e.fin.hire@jurislpo.com");
-    await dialog.getByLabel(/Phone/).fill("+91 98765 00000");
+    await dialog.getByLabel("Work email *").fill("e2e.fin.hire@jurislpo.com");
+    await dialog.getByLabel("Phone number", { exact: true }).fill("9876500000");
     await dialog.getByRole("button", { name: "Continue" }).click();
     await dialog.getByLabel(/PAN/).fill("ABCPF1234K");
     await dialog.getByLabel(/Aadhaar/).fill("2345 6789 0000");
@@ -167,6 +175,7 @@ test.describe("people operations", () => {
     expect(csv).toContain("Employee ID,Name,Email");
     expect(csv).toContain("Vikas Rao");
     expect(csv).not.toMatch(/Aadhaar|PAN|gross/i);
+    expect(csv).not.toMatch(/^JC-002,/m); // the owner is never exported (only named as a manager)
     expect((await request.get("/api/people/export")).status()).toBe(403); // no session
     await page.context().clearCookies();
     await login(page, "JC-074");
@@ -212,8 +221,8 @@ test.describe("directory, departments, roles, team", () => {
     await expect(page.getByRole("button", { name: "Delete Technology" })).toHaveCount(0);
   });
 
-  test("roles: Admin toggles a permission (effective immediately) and manages custom roles", async ({ page, browser }) => {
-    await login(page, ADMIN_EMAIL, ADMIN_PW);
+  test("roles: the owner toggles a permission (effective immediately) and manages custom roles", async ({ page, browser }) => {
+    await login(page, OWNER);
     await expectLanded(page, "/overview");
     await page.goto("/roles");
     await page.getByRole("button", { name: /^Employee \d/ }).click();
@@ -234,8 +243,8 @@ test.describe("directory, departments, roles, team", () => {
     await expect(emp.getByRole("link", { name: "Attendance register" })).toHaveCount(0);
     await emp.close();
 
-    // Admin role is locked
-    await page.getByRole("button", { name: /^Admin \d/ }).click();
+    // the Owner role is locked
+    await page.getByRole("button", { name: /^Owner \d/ }).click();
     await expect(page.getByRole("switch").first()).toBeDisabled();
 
     // custom role: create from a copy, then delete

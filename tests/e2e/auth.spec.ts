@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { hashPassword } from "../../src/lib/password";
-import { ADMIN_EMAIL, ADMIN_PW, DEMO_PW, expectLanded, login, sql } from "./helpers";
+import { ADMIN_EMAIL, ADMIN_PW, DEMO_PW, emailOf, expectLanded, login, OWNER, sql } from "./helpers";
 
 test.describe("authentication", () => {
   test.afterAll(async () => {
@@ -11,15 +11,26 @@ test.describe("authentication", () => {
     await sql(`UPDATE users SET password_hash = $1 FROM employees e WHERE e.id = users.employee_id AND e.code = 'JC-090'`, [await hashPassword(DEMO_PW)]);
   });
 
-  test("super admin signs in by email and lands on Overview", async ({ page }) => {
+  test("super admin signs in and lands on the platform console, outside any business", async ({ page }) => {
     await login(page, ADMIN_EMAIL, ADMIN_PW);
+    await expectLanded(page, "/platform");
+    const menu = page.getByRole("complementary", { name: "Main menu" });
+    await expect(menu.getByRole("link", { name: "Businesses" })).toBeVisible();
+    await expect(menu.getByRole("link", { name: "Plans" })).toBeVisible();
+    await expect(menu.getByRole("link", { name: "Roles & permissions" })).toHaveCount(0);
+    await expect(menu.getByRole("link", { name: "Employees" })).toHaveCount(0);
+    expect((await page.request.get("/api/people")).status()).toBe(403); // no business data
+  });
+
+  test("the owner (business admin) lands on Overview", async ({ page }) => {
+    await login(page, OWNER);
     await expectLanded(page, "/overview");
     await expect(page.locator(".crumbs b")).toHaveText("Overview");
     await expect(page.getByRole("complementary", { name: "Main menu" }).getByRole("link", { name: "Roles & permissions" })).toBeVisible();
     await expect(page.getByRole("link", { name: "My attendance" })).toHaveCount(0);
   });
 
-  test("employee signs in by ID and lands on Home", async ({ page }) => {
+  test("employee signs in by email and lands on Home", async ({ page }) => {
     await login(page, "jc-074");
     await expectLanded(page, "/home");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Amit");
@@ -28,8 +39,8 @@ test.describe("authentication", () => {
 
   test("wrong password is rejected without revealing which part", async ({ page }) => {
     await login(page, "JC-049", "not-the-password");
-    await expect(page.locator(".err")).toHaveText("That employee ID / email and password don't match.");
-    await expect(page.getByLabel("Employee ID or email")).toHaveValue("JC-049");
+    await expect(page.locator(".err")).toHaveText("That email and password don't match.");
+    await expect(page.getByLabel("Email")).toHaveValue("naman.tyagi@jurislpo.com");
   });
 
   test("disabled access is blocked", async ({ page }) => {
@@ -76,7 +87,7 @@ test.describe("authentication", () => {
 
   test("a reset link works exactly once", async ({ page }) => {
     await page.goto("/forgot");
-    await page.getByLabel("Employee ID or email").fill("JC-090");
+    await page.getByLabel("Email").fill(await emailOf("JC-090"));
     await page.getByRole("button", { name: "Send reset link" }).click();
     await expect(page.getByRole("status")).toContainText("reset link is on its way");
     // tokens are stored hashed, so mint a known one for the test

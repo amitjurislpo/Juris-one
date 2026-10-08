@@ -52,7 +52,7 @@ The seed never overwrites a password that is already set.
 | `npm run dev` / `build` / `start` | Next.js on port 3005 |
 | `npm run lint` / `typecheck` | ESLint / route typegen + `tsc --noEmit` |
 | `npm test` | Vitest unit tests (`tests/unit`) |
-| `npm run test:e2e` | Playwright end-to-end tests (`tests/e2e`). Needs the seeded DB; starts (or reuses) the API and the dev server. |
+| `npm run test:e2e` | Playwright end-to-end tests (`tests/e2e`) in their own environment (`scripts/e2e-env.mjs`): the database `<db>_e2e` on the same Postgres is reset and seeded with the demo business on every run, the API runs on :8081 and a production build of the app (`.next-e2e`, rebuilt when `src/` changes) on :3006; files go to `storage/e2e`, no email is sent. Your development data is never touched. Needs Docker (Postgres) and the `SUPER_ADMIN_*`, `SEED_DEMO_PASSWORD` and `SEED_OWNER_PASSWORD` values in `.env`. `E2E_BUILD=1` forces a rebuild of the backend jar and the app. |
 | `npm run backend:dev` | Spring Boot API on port 8080 |
 | `npm run backend:test` | Backend unit + API tests (JUnit 5; Testcontainers starts its own Postgres, so Docker must be running) |
 | `npm run backend:up` | Build and start the API in docker-compose |

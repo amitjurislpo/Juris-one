@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ADMIN_EMAIL, ADMIN_PW, expectLanded, login } from "./helpers";
+import { OWNER, expectLanded, login } from "./helpers";
 
 const h3 = (page: Page, name: string | RegExp) => page.getByRole("heading", { level: 3, name });
 
@@ -50,7 +50,7 @@ test.describe("home & overview for every demo role", () => {
 
 test.describe("audit log", () => {
   test("Admin filters the log and opens before → after", async ({ page }) => {
-    await login(page, ADMIN_EMAIL, ADMIN_PW);
+    await login(page, OWNER);
     await expectLanded(page, "/overview");
     await page.goto("/audit");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Audit");

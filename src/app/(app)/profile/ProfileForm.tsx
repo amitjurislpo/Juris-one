@@ -48,7 +48,7 @@ export function ProfileForm({ p }: { p: MyProfile }) {
           <label className="field">Relationship<input value={f.emergencyRelation} onChange={on("emergencyRelation")} maxLength={40} /></label>
         </div>
         <div className="field">Their phone
-          <PhoneInput code={f.emergencyPhoneCountry} number={f.emergencyPhone} onChange={(c, n) => { setF({ ...f, emergencyPhoneCountry: c, emergencyPhone: n }); setErr(""); }} />
+          <PhoneInput label="Emergency contact phone" code={f.emergencyPhoneCountry} number={f.emergencyPhone} onChange={(c, n) => { setF({ ...f, emergencyPhoneCountry: c, emergencyPhone: n }); setErr(""); }} />
         </div>
         {err && <div className="err" role="alert">{err}</div>}
         <div><button className="btn btn-gold" disabled={busy || !dirty} onClick={save}>{busy ? "Saving…" : "Save"}</button></div>

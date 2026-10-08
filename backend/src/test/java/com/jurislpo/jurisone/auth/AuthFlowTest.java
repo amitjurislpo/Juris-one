@@ -93,6 +93,9 @@ class AuthFlowTest extends IntegrationTest {
                 .andExpect(jsonPath("$.data.landing").value("/home"));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM login_history WHERE employee_id = ? AND success AND reason = 'ok'", Integer.class, id)).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'auth.login'", Integer.class, id)).isEqualTo(2);
+        // signing in happens outside any business, but the event is filed under the person's business (its admin sees it)
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log a JOIN employees e ON e.id = a.actor_id WHERE a.actor_id = ? AND a.action = 'auth.login' "
+                + "AND a.business_id = e.business_id", Integer.class, id)).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT ip FROM sessions WHERE employee_id = ? LIMIT 1", String.class, id)).isEqualTo("10.0.0.7");
     }
 

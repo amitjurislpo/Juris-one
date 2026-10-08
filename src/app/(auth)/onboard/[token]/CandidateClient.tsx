@@ -86,7 +86,7 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
             </label>
           </div>
           <div className="field">Mobile number *
-            <PhoneInput code={f.phoneCountry || "+91"} number={f.phone} disabled={ro} onChange={(c, n) => { setF({ ...f, phoneCountry: c, phone: n }); setMsg(null); }} />
+            <PhoneInput label="Mobile number" code={f.phoneCountry || "+91"} number={f.phone} disabled={ro} onChange={(c, n) => { setF({ ...f, phoneCountry: c, phone: n }); setMsg(null); }} />
           </div>
           <label className="field">Current address *<textarea value={f.currentAddress} onChange={set("currentAddress")} rows={2} maxLength={500} disabled={ro} /></label>
           <label className="field">Permanent address <span className="hint">if different</span><textarea value={f.permanentAddress} onChange={set("permanentAddress")} rows={2} maxLength={500} disabled={ro} /></label>
@@ -107,7 +107,7 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
           <div className="grid2">{field("previousEmployer", "Previous employer")}{field("previousDesignation", "Your designation there")}</div>
           <div className="grid2">{field("emergencyName", "Emergency contact", { req: true })}{field("emergencyRelation", "Relationship", { max: 40 })}</div>
           <div className="field">Their phone *
-            <PhoneInput code={f.emergencyPhoneCountry || "+91"} number={f.emergencyPhone} disabled={ro}
+            <PhoneInput label="Emergency contact phone" code={f.emergencyPhoneCountry || "+91"} number={f.emergencyPhone} disabled={ro}
               onChange={(c, n) => { setF({ ...f, emergencyPhoneCountry: c, emergencyPhone: n }); setMsg(null); }} />
           </div>
         </div>

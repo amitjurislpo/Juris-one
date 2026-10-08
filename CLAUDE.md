@@ -11,6 +11,6 @@
 - Every page: `requirePage(navId)`; every API endpoint: `auth.assertPerm(...)` / `auth.requirePage(...)` in the controller. HR must never receive salary/tax fields.
 - REST: nouns in paths, ids in the path, GET never writes, POST creates (201), PUT sets, PATCH partial, DELETE removes; success bodies are `{ ok, msg?, data? }`, errors are `application/problem+json` with a `code` (see `references/MIGRATION_PLAN.md` §14).
 - Money = integer paise; dates = ISO strings / `date`; timestamps UTC. The API returns raw values; the pages format them with `src/lib/format.ts`.
-- Backend tests: `npm run backend:test` (JUnit 5 + Testcontainers; Docker must be running). If VS Code's Java extension is open, don't run the e2e suite against `spring-boot:run` while editing Java — it recompiles `target/classes` under the running server; run a packaged jar instead.
+- Backend tests: `npm run backend:test` (JUnit 5 + Testcontainers; Docker must be running). E2E: `npm run test:e2e` runs in its own environment (`scripts/e2e-env.mjs`: database `<db>_e2e` reset + demo seed + one jobs run, API :8081 from a copied jar, app build `.next-e2e` on :3006) — dev data is never touched; `E2E_BUILD=1` rebuilds the jar and the app.
 - `globals.css` is the prototype CSS verbatim; put app-only CSS in the "JurisOne additions" block at the end.
 - npm 11 blocks install scripts: approve new native packages with `npm install-scripts approve <pkg>`.

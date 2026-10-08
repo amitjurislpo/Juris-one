@@ -7,11 +7,10 @@ export function AuthFrame({ children }: { children: React.ReactNode }) {
       <section className="login-form-wrap">
         <div className="brandmark">
           <span className="monogram">J</span>JurisOne
-          <span className="chip neutral nodot" style={{ marginLeft: 6 }}>Juris Consultants</span>
         </div>
         {children}
         <div className="faint" style={{ fontSize: 12.5, display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <span>© {new Date().getFullYear()} Juris Consultants</span>
+          <span>© {new Date().getFullYear()} JurisOne</span>
           <span>Privacy · Help desk</span>
         </div>
       </section>
@@ -22,7 +21,7 @@ export function AuthFrame({ children }: { children: React.ReactNode }) {
         <div className="copy">
           <span className="pill-glass"><i className="dot live" style={{ color: "#7CFFB2" }}></i>Attendance · Leave · Payroll · Tax</span>
           <h1 className="display">Your workday,<br />beautifully in sync.</h1>
-          <p>One portal for everyone at Juris Consultants — check in, plan time off, download payslips and declare investments.</p>
+          <p>One portal for your whole team — check in, plan time off, download payslips and declare investments.</p>
         </div>
         <div className="mock">
           <div className="glass a">

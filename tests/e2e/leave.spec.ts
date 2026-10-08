@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ADMIN_EMAIL, ADMIN_PW, expectLanded, login, sql } from "./helpers";
+import { OWNER, expectLanded, login, sql } from "./helpers";
 
 const toast = (page: Page) => page.locator(".toast").last();
 const T0 = new Date().toISOString();
@@ -123,7 +123,7 @@ test.describe("leave & approvals", () => {
 
   test("holiday work earns a comp-off; Admin can approve too", async ({ page }) => {
     const before = await ledger("JC-049", "CO");
-    await login(page, ADMIN_EMAIL, ADMIN_PW);
+    await login(page, OWNER);
     await expectLanded(page, "/overview");
     await page.goto("/approvals?tab=att");
     const card = page.locator("article.req", { hasText: "Holiday work" });
