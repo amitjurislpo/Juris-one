@@ -79,7 +79,7 @@ class RestEndpointsTest extends IntegrationTest {
         mvc.perform(write(post("/api/leave/preview")).cookie(p.cookie()).content("{}"))
                 .andExpect(status().isMethodNotAllowed()).andExpect(header().string("Allow", org.hamcrest.Matchers.containsString("GET")))
                 .andExpect(jsonPath("$.detail").value("Method not allowed."));
-        mvc.perform(write(post("/api/notifications/read")).cookie(p.cookie())).andExpect(status().isNotFound());
+        mvc.perform(write(post("/api/notifications/read")).cookie(p.cookie())).andExpect(status().isMethodNotAllowed()); // now /{id}, PATCH only
         mvc.perform(write(post("/api/approvals/leave")).cookie(p.cookie()).content("{}")).andExpect(status().isNotFound());
     }
 

@@ -153,7 +153,8 @@ public class PolicyService {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (policy_version_id, employee_id) DO NOTHING""",
                 UUID.randomUUID(), policyId, v.get("id"), version, v.get("title"), v.get("body_sha256"), v.get("file_sha256"),
                 u.id(), me.get("code"), me.get("full_name"), me.get("email"), ip, userAgent == null ? null : userAgent.substring(0, Math.min(400, userAgent.length())));
-        return n == 0 ? "Already accepted" : "Thank you — \"" + v.get("title") + "\" accepted";
+        notifications.clearPolicy(u.id(), policyId);
+                return n == 0 ? "Already accepted" : "Thank you — \"" + v.get("title") + "\" accepted";
     }
 
     // ───────────────────────── HR: list, detail, edit, publish ─────────────────────────
@@ -344,6 +345,7 @@ public class PolicyService {
         if ("ARCHIVED".equals(status)) {
             if (!"PUBLISHED".equals(p.get("status"))) throw new UserException("Only a published policy can be archived.");
             jdbc.update("UPDATE policies SET status = 'ARCHIVED', archived_at = now(), updated_at = now() WHERE id = ?", id);
+            notifications.clearPolicy(null, id);
             audit.log(u.id(), "policy.archive", "policy", id.toString(), null, Map.of("version", version), ip);
             return "Policy archived — it no longer appears to employees";
         }
@@ -371,7 +373,13 @@ public class PolicyService {
         audit.log(u.id(), "policy.publish", "policy", id.toString(), null, Map.of("version", next, "title", p.get("title")), ip);
         boolean ack = Boolean.TRUE.equals(p.get("requires_ack"));
         String text = (next == 1 ? "New policy: " : "Updated policy: ") + p.get("title") + (ack ? " — please read and accept it" : "");
-        for (UUID e : jdbc.queryForList("SELECT id FROM (" + REQUIRED + ") x", UUID.class)) notifications.notify(e, text, "/my-policies");
+        for (UUID e : jdbc.queryForList("SELECT id FROM (" + REQUIRED + ") x", UUID.class)) {
+            if (ack) notifications.notifyPolicy(e, text, "/my-policies", id); // stays until accepted
+            else {
+                notifications.clearPolicy(e, id);
+                notifications.notify(e, text, "/my-policies");
+            }
+        }
         return "Version " + next + " published" + (ack ? " — everyone will be asked to accept it" : "");
     }
 

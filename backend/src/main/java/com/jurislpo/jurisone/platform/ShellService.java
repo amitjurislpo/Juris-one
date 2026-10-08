@@ -4,10 +4,7 @@ import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.Nav;
 import com.jurislpo.jurisone.engine.Shifts;
 import com.jurislpo.jurisone.security.CurrentUser;
-import java.sql.Timestamp;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,7 +24,12 @@ public class ShellService {
 
     public record Group(String g, List<NavLink> items) {}
 
-    public record Note(String t, String s, String href) {}
+    /** A bell line; {@code id} set for a stored notification ({@code unread}, {@code sticky}: stays until the policy is accepted). */
+    public record Note(String t, String s, String href, String id, boolean unread, boolean sticky) {
+        Note(String t, String s, String href) {
+            this(t, s, href, null, false, false);
+        }
+    }
 
     public record Me(String code, String name, String designation, String roleName, String department, String manager, String doj, String shift,
                      boolean isAdminLike) {}
@@ -41,9 +43,11 @@ public class ShellService {
 
     private final JdbcTemplate jdbc;
     private final com.jurislpo.jurisone.business.SubscriptionService subscriptions;
+    private final InboxService inbox;
 
-    public ShellService(JdbcTemplate jdbc, com.jurislpo.jurisone.business.SubscriptionService subscriptions) {
+    public ShellService(JdbcTemplate jdbc, com.jurislpo.jurisone.business.SubscriptionService subscriptions, InboxService inbox) {
         this.jdbc = jdbc;
+        this.inbox = inbox;
         this.subscriptions = subscriptions;
     }
 
@@ -60,9 +64,7 @@ public class ShellService {
         int proofs = u.can("proofs.verify") ? count("SELECT count(*) FROM declaration_items WHERE status = 'PENDING' AND employee_id <> ?", u.id()) : 0;
         int pending = pendingLeave + pendingReg;
 
-        List<Map<String, Object>> recent = jdbc.queryForList(
-                "SELECT text, link, read_at, created_at FROM notifications WHERE employee_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 8",
-                u.id(), Timestamp.from(Instant.now().minus(14, ChronoUnit.DAYS)));
+        List<InboxService.Item> recent = inbox.recent(u.id(), 8);
         LocalDate today = Format.todayIn(u.timeZone());
         List<Map<String, Object>> holiday = jdbc.queryForList(
                 "SELECT name, date FROM holidays WHERE date >= ? AND region::text IN ('ALL', ?) ORDER BY date ASC LIMIT 1", today, u.region());
@@ -70,14 +72,14 @@ public class ShellService {
         List<Note> notes = new ArrayList<>();
         if (u.can("appr.leave", "appr.reg")) notes.add(new Note(pending + " request" + (pending == 1 ? "" : "s") + " waiting for approval", "Approvals", "/approvals"));
         if (u.can("proofs.verify")) notes.add(new Note(proofs + " investment proof" + (proofs == 1 ? "" : "s") + " to verify", "Finance", "/proofs"));
-        for (Map<String, Object> n : recent) {
-            notes.add(new Note((String) n.get("text"), Format.fmtDateTime(((Timestamp) n.get("created_at")).toInstant(), u.timeZone()), (String) n.get("link")));
+        for (InboxService.Item n : recent) {
+            notes.add(new Note(n.text(), Format.fmtDateTime(java.time.Instant.parse(n.createdAt()), u.timeZone()), n.link(), n.id(), n.readAt() == null, n.sticky()));
         }
         if (!holiday.isEmpty()) {
             LocalDate d = ((java.sql.Date) holiday.get(0).get("date")).toLocalDate();
             notes.add(new Note(holiday.get(0).get("name") + " holiday on " + Format.fmtDL(d), "Holiday calendar", null));
         }
-        int unread = (int) recent.stream().filter(n -> n.get("read_at") == null).count();
+        int unread = inbox.unread(u.id());
 
         Map<String, Object> e = jdbc.queryForMap("""
             SELECT d.name AS department, m.full_name AS manager, e.date_of_joining, s.code AS shift_code, s.start_local, s.end_local
@@ -104,8 +106,4 @@ public class ShellService {
         return v == null ? "—" : v.toString();
     }
 
-    /** Opening the bell marks your own notifications as read. */
-    public void markRead(CurrentUser u) {
-        jdbc.update("UPDATE notifications SET read_at = ? WHERE employee_id = ? AND read_at IS NULL", Timestamp.from(Instant.now()), u.id());
-    }
 }

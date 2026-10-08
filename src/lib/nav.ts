@@ -1,7 +1,7 @@
 import type { Permission } from "./permissions";
 
 export type NavId =
-  | "platform" | "plans" | "juris-track" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
+  | "platform" | "plans" | "juris-track" | "notifications" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
   | "register" | "approvals" | "people" | "departments" | "holidays"
   | "payroll" | "structures" | "tax" | "proofs" | "roles" | "policies" | "settings" | "audit" | "subscription" | "my-policies";
 
@@ -34,6 +34,7 @@ export const NAV: NavItem[] = [
   { id: "plans", label: "Plans", icon: "layers", perm: [PLATFORM_MANAGE], group: "Platform" },
   { id: "home", label: "Home", icon: "home", perm: ["self"] },
   { id: "overview", label: "Overview", icon: "home", perm: ["roles.manage"] },
+  { id: "notifications", label: "Notifications", icon: "bell", perm: ["self", "dir", "roles.manage"] },
   { id: "attendance", label: "My attendance", icon: "clock", perm: ["self"] },
   { id: "leave", label: "Leave & holidays", icon: "cal", perm: ["self"] },
   { id: "payslips", label: "Payslips", icon: "doc", perm: ["self"] },

@@ -29,6 +29,7 @@ public final class Nav {
             item("plans", "Plans", "layers", List.of(PLATFORM_MANAGE), "Platform"),
             item("home", "Home", "home", List.of(SELF), null),
             item("overview", "Overview", "home", List.of(ROLES_MANAGE), null),
+            item("notifications", "Notifications", "bell", List.of(SELF, DIR, ROLES_MANAGE), null),
             item("attendance", "My attendance", "clock", List.of(SELF), null),
             item("leave", "Leave & holidays", "cal", List.of(SELF), null),
             item("payslips", "Payslips", "doc", List.of(SELF), null),

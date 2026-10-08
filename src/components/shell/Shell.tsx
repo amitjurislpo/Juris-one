@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logoutAction } from "@/app/(auth)/actions";
-import { markNotificationsRead } from "@/app/(app)/notification-actions";
+import { markAllNotifications, markNotification } from "@/app/(app)/notification-actions";
 import { Icon } from "@/components/Icon";
 import { fmtDL, initials } from "@/lib/format";
 import { PAGE_TITLES, type NavId } from "@/lib/nav";
@@ -25,7 +25,7 @@ export interface ShellProps {
   };
   groups: { g: string; items: { id: string; label: string; icon: string }[] }[];
   badges: { approvals: number; proofs: number };
-  notes: { t: string; s: string; href?: string }[];
+  notes: { t: string; s: string; href?: string; id?: string | null; unread?: boolean; sticky?: boolean }[];
   unread: number;
   landing: string;
   canSelf: boolean;
@@ -185,18 +185,28 @@ export function Shell(props: ShellProps) {
               <Icon n={theme === "dark" ? "sun" : "moon"} s={17} />
             </button>
             <div className="menu-anchor" style={{ position: "relative" }}>
-              <button className="icon-btn" onClick={() => { if (!notif && props.unread > 0) void markNotificationsRead(); setNotif(!notif); setMenu(false); }} aria-label={`Notifications (${notes.length})`} aria-expanded={notif}>
+              <button className="icon-btn" onClick={() => { setNotif(!notif); setMenu(false); }} aria-label={`Notifications (${props.unread} unread)`} aria-expanded={notif}>
                 <Icon n="bell" s={17} />
                 {(props.unread > 0 || badges.approvals + badges.proofs > 0) && <span style={{ position: "absolute", top: 8, right: 9, width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", boxShadow: "0 0 0 2px var(--surface)" }}></span>}
               </button>
               {notif && (
                 <div className="menu notif">
-                  <div className="head" style={{ justifyContent: "space-between" }}><b>Notifications</b><span className="chip gold nodot">{notes.length} new</span></div>
+                  <div className="head" style={{ justifyContent: "space-between" }}>
+                    <b>Notifications</b>
+                    {props.unread > 0 ? <span className="chip gold nodot">{props.unread} unread</span> : <span className="chip neutral nodot">All read</span>}
+                  </div>
                   {notes.length === 0 && <div className="n faint">You&apos;re all caught up.</div>}
                   {notes.map((n, i) => {
-                    const body = (<><i></i><div><div style={{ fontWeight: 500 }}>{n.t}</div><div className="faint" style={{ fontSize: 12, marginTop: 2 }}>{n.s}</div></div></>);
-                    return n.href ? <Link key={i} href={n.href} className="n" style={{ color: "inherit", textDecoration: "none" }}>{body}</Link> : <div key={i} className="n">{body}</div>;
+                    const unread = n.id ? !!n.unread : true;
+                    const body = (<><i style={unread ? undefined : { background: "transparent", boxShadow: "inset 0 0 0 1px var(--line3)" }}></i><div><div style={{ fontWeight: unread ? 600 : 400 }}>{n.t}</div><div className="faint" style={{ fontSize: 12, marginTop: 2 }}>{n.s}{n.sticky ? " · accept to clear" : ""}</div></div></>);
+                    // opening a stored notification marks it read (policy ones clear only when the policy is accepted)
+                    const onOpen = () => { if (n.id && n.unread && !n.sticky) startTransition(() => { void markNotification(n.id!, true).then(() => router.refresh()); }); setNotif(false); };
+                    return n.href ? <Link key={n.id ?? i} href={n.href} onClick={onOpen} className="n" style={{ color: "inherit", textDecoration: "none" }}>{body}</Link> : <div key={n.id ?? i} className="n">{body}</div>;
                   })}
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "8px 10px 4px", borderTop: "1px solid var(--line)" }}>
+                    <button type="button" className="btn btn-sm btn-ghost" disabled={props.unread === 0} onClick={() => startTransition(() => { void markAllNotifications().then(() => router.refresh()); })}>Mark all read</button>
+                    <Link className="btn btn-sm" href="/notifications" onClick={() => setNotif(false)}>View all</Link>
+                  </div>
                 </div>
               )}
             </div>

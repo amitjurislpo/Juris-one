@@ -10,6 +10,29 @@ export interface ShellNote {
   t: string;
   s: string;
   href?: string;
+  /** set for a stored notification (system lines such as "3 requests waiting" have none) */
+  id?: string | null;
+  unread?: boolean;
+  /** stays until the policy is accepted */
+  sticky?: boolean;
+}
+
+/** One item in the notification box. */
+export interface InboxItem {
+  id: string;
+  text: string;
+  link: string | null;
+  createdAt: string;
+  readAt: string | null;
+  sticky: boolean;
+}
+
+export interface InboxPage {
+  items: InboxItem[];
+  unread: number;
+  total: number;
+  page: number;
+  pages: number;
 }
 
 /** Leave apply preview (holidays skipped, paid vs LOP split). */

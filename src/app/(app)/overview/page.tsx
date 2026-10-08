@@ -4,6 +4,8 @@ import { Icon } from "@/components/Icon";
 import { PageHeader } from "@/components/PageHeader";
 import { allowedNav, can, requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
+import { NotificationsCard } from "@/components/home/NotificationList";
+import type { InboxPage } from "@/lib/api-types";
 import { fmtDL, inr, todayIn, ymLabel } from "@/lib/format";
 import { PAGE_TITLES } from "@/lib/nav";
 
@@ -20,7 +22,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 export default async function OverviewPage() {
   const u = await requirePage("overview");
-  const d = await apiData<Overview>("/api/overview");
+  const [d, box] = await Promise.all([apiData<Overview>("/api/overview"), apiData<InboxPage>("/api/notifications?limit=5")]);
   const pending = d.pending.leave + d.pending.reg;
   const maxDept = Math.max(1, ...d.byDept.map((x) => x.n));
   const pay = d.payroll;
@@ -40,6 +42,8 @@ export default async function OverviewPage() {
         <div className="card kpi lift enter" style={{ ["--i" as string]: 3 }}><span className="spot"></span><span className="ico" style={{ background: "var(--warnbg)", color: "var(--warn)" }}><Icon n="check" s={16} /></span><span className="l">Pending approvals</span><span className="v num">{pending}</span><span className="s">{d.pending.leave} leave · {d.pending.reg} attendance</span></div>
         <div className="card kpi lift enter" style={{ ["--i" as string]: 4 }}><span className="spot"></span><span className="ico" style={{ background: "var(--infobg)", color: "var(--info)" }}><Icon n="inbox" s={16} /></span><span className="l">Proofs to verify</span><span className="v num">{d.pending.proofs}</span><span className="s">investment declarations</span></div>
       </div>
+
+      {(box.total > 0) && <NotificationsCard items={box.items} unread={box.unread} timeZone={u.timeZone} i={5} />}
 
       <div className="bento">
         <section className="card pad span-8 enter" style={{ ["--i" as string]: 5 }}>

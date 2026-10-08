@@ -25,6 +25,13 @@ public class Notification {
     @Column(name = "read_at")
     private Instant readAt;
 
+    /** null = plain; "POLICY" = stays unread until the policy ({@link #refId}) is accepted. */
+    @Column(name = "kind")
+    private String kind;
+
+    @Column(name = "ref_id")
+    private UUID refId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -48,6 +55,10 @@ public class Notification {
     public void setLink(String link) { this.link = link; }
     public Instant getReadAt() { return readAt; }
     public void setReadAt(Instant readAt) { this.readAt = readAt; }
+    public String getKind() { return kind; }
+    public void setKind(String kind) { this.kind = kind; }
+    public UUID getRefId() { return refId; }
+    public void setRefId(UUID refId) { this.refId = refId; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     /** Read-only navigation; set employeeId to change it. */

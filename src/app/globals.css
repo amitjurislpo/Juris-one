@@ -572,3 +572,6 @@ main.content:focus{outline:none}
 :root,[data-theme="light"]{--faint:#6B6D7A;--ok:#117544;--bad:#BC3238}
 [data-theme="dark"]{--faint:#8E8E9A}
 .slip{--faint:#6B6D7A;--bad:#BC3238}
+/* segmented control made of links (filters that live in the URL) */
+.seg a{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:0 12px;border-radius:7px;font-size:13px;font-weight:500;color:var(--muted);text-decoration:none;white-space:nowrap;transition:background .2s,color .2s,box-shadow .2s}
+.seg a.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(16,16,24,.08),0 0 0 1px var(--line)}

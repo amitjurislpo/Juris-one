@@ -157,6 +157,8 @@ prisma/schema.prisma               the original data model, kept as a readable r
 - HR sees who has and hasn't accepted the current version, can send reminders, and can download the evidence (every acceptance of every version) as CSV. The download is audited.
 - Everyone can read the current policies under *My policies*. Published policies are archived, not deleted.
 
+**Notifications stay until they are read.** The bell, the *Notifications* card on Home (and on the owner's Overview) and the `/notifications` page list unread notifications first. Opening one marks it read; each can be marked read or unread, or all at once. A policy notification stays unread until the policy is accepted (a newer version replaces it). API: `GET /api/notifications?unread=&limit=&page=`, `PATCH /api/notifications/{id}` `{read}`, `PATCH /api/notifications` `{read: true}`.
+
 **Permissions are checked by the API.**
 - Every page calls `requirePage(<nav id>)` in Next.js, and the API checks the same permission again for the data it returns.
 - Every write goes through an API endpoint that calls `assertPerm(...)`.

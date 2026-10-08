@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Greeting } from "@/components/home/Greeting";
 import { HomeCards, type HomeCardsData } from "@/components/home/HomeCards";
+import { NotificationsCard } from "@/components/home/NotificationList";
+import type { InboxPage } from "@/lib/api-types";
 import { TimeCard } from "@/components/home/TimeCard";
 import { Icon } from "@/components/Icon";
 import { addDays, dowOf, type Status } from "@/lib/attendance/engine";
@@ -21,11 +23,16 @@ type Home =
 
 export default async function HomePage() {
   const u = await requirePage("home");
-  const home = await apiData<Home>("/api/home");
+  const [home, box] = await Promise.all([apiData<Home>("/api/home"), apiData<InboxPage>("/api/notifications?limit=5")]);
   const now = new Date();
 
   // Untracked (e.g. a custom role with `self` but no shift row) still gets the greeting.
-  if (!home.tracked) return <div className="col"><div className="page-h enter"><Greeting first={u.name.split(" ")[0]} timeZone={u.timeZone} initialIso={now.toISOString()} /></div></div>;
+  if (!home.tracked) return (
+    <div className="col">
+      <div className="page-h enter"><Greeting first={u.name.split(" ")[0]} timeZone={u.timeZone} initialIso={now.toISOString()} /></div>
+      <NotificationsCard items={box.items} unread={box.unread} timeZone={u.timeZone} i={1} />
+    </div>
+  );
 
   const { wd, on, shiftText, ticks, log, days, leaveAvail, hols, cards } = home;
   const policy = { shiftTargetHours: home.targetHours };
@@ -105,6 +112,7 @@ export default async function HomePage() {
         </section>
 
         <div className="span-4" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <NotificationsCard items={box.items} unread={box.unread} timeZone={u.timeZone} i={7} />
           <HomeCards c={cards} i0={7} />
         </div>
 
