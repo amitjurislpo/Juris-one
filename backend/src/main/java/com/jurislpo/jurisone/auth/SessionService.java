@@ -79,7 +79,8 @@ public class SessionService {
         if (refreshToken == null || refreshToken.isEmpty()) throw new RefreshRefused("missing");
         List<Map<String, Object>> rows = jdbc.queryForList("""
             SELECT t.used_at, t.expires_at, s.id AS sid, s.created_at, s.expires_at AS session_expires, s.revoked_at, s.employee_id,
-                   e.portal_access, e.status::text AS status, (SELECT u.employee_id FROM users u WHERE u.employee_id = e.id) AS user_id
+                   e.portal_access, e.status::text AS status, (SELECT u.employee_id FROM users u WHERE u.employee_id = e.id) AS user_id,
+                   (SELECT b.status FROM businesses b WHERE b.id = e.business_id) AS business_status
             FROM refresh_tokens t JOIN sessions s ON s.id = t.session_id JOIN employees e ON e.id = s.employee_id
             WHERE t.token_hash = ? FOR UPDATE OF t""", Tokens.sha256(refreshToken));
         if (rows.isEmpty()) throw new RefreshRefused("unknown");
@@ -96,7 +97,8 @@ public class SessionService {
         }
         Instant sessionExpires = ((Timestamp) r.get("session_expires")).toInstant();
         if (!sessionExpires.isAfter(now)) throw new RefreshRefused("expired");
-        if (!Boolean.TRUE.equals(r.get("portal_access")) || "EXITED".equals(r.get("status")) || r.get("user_id") == null) {
+        if (!Boolean.TRUE.equals(r.get("portal_access")) || "EXITED".equals(r.get("status")) || r.get("user_id") == null
+                || "SUSPENDED".equals(r.get("business_status"))) {
             revoke(sid, "access_ended");
             throw new RefreshRefused("blocked");
         }

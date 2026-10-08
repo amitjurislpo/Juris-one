@@ -1,21 +1,23 @@
 import type { Permission } from "./permissions";
 
 export type NavId =
-  | "platform" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
+  | "platform" | "plans" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
   | "register" | "approvals" | "people" | "departments" | "holidays"
-  | "payroll" | "structures" | "tax" | "proofs" | "roles" | "settings" | "audit";
+  | "payroll" | "structures" | "tax" | "proofs" | "roles" | "settings" | "audit" | "subscription";
 
 export type NavGroup = "Platform" | "My workspace" | "Workspace" | "Team" | "People ops" | "Finance" | "Administration";
 
 /** The platform super admin's permission — never part of a business role. */
 export const PLATFORM_MANAGE = "platform.manage";
+/** The business owner's (sub admin's) permission — subscription and employee export; owner role only. */
+export const BUSINESS_MANAGE = "business.manage";
 
 export interface NavItem {
   id: NavId;
   label: string;
   icon: string;
   /** Any one of these grants access. */
-  perm: (Permission | typeof PLATFORM_MANAGE)[];
+  perm: (Permission | typeof PLATFORM_MANAGE | typeof BUSINESS_MANAGE)[];
   /** Extra condition evaluated on the server (e.g. has direct reports). */
   needsReports?: boolean;
   group?: NavGroup;
@@ -24,6 +26,7 @@ export interface NavItem {
 /** Sidebar + route access table (prototype NAV). Every page checks this on the server. */
 export const NAV: NavItem[] = [
   { id: "platform", label: "Businesses", icon: "building", perm: [PLATFORM_MANAGE], group: "Platform" },
+  { id: "plans", label: "Plans", icon: "layers", perm: [PLATFORM_MANAGE], group: "Platform" },
   { id: "home", label: "Home", icon: "home", perm: ["self"] },
   { id: "overview", label: "Overview", icon: "home", perm: ["roles.manage"] },
   { id: "attendance", label: "My attendance", icon: "clock", perm: ["self"] },
@@ -44,6 +47,7 @@ export const NAV: NavItem[] = [
   { id: "roles", label: "Roles & permissions", icon: "key", perm: ["roles.manage"], group: "Administration" },
   { id: "settings", label: "Policies", icon: "sliders", perm: ["roles.manage"], group: "Administration" },
   { id: "audit", label: "Audit log", icon: "doc", perm: ["roles.manage"], group: "Administration" },
+  { id: "subscription", label: "Subscription", icon: "receipt", perm: [BUSINESS_MANAGE], group: "Administration" },
 ];
 
 export const PAGE_TITLES = Object.fromEntries(NAV.map((n) => [n.id, n.label])) as Record<NavId, string>;

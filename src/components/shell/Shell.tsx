@@ -29,6 +29,8 @@ export interface ShellProps {
   unread: number;
   landing: string;
   canSelf: boolean;
+  /** null for the super admin (the platform console) */
+  businessName: string | null;
   initialTheme: Theme;
   children: React.ReactNode;
 }
@@ -36,7 +38,7 @@ export interface ShellProps {
 interface Act { g: string; label: string; icon: string; run: () => void; idx: number }
 
 export function Shell(props: ShellProps) {
-  const { me, groups, badges, notes, landing, canSelf } = props;
+  const { me, groups, badges, notes, landing, canSelf, businessName } = props;
   const router = useRouter();
   const pathname = usePathname();
   const page = (pathname.split("/")[1] || "home") as NavId;
@@ -153,8 +155,8 @@ export function Shell(props: ShellProps) {
         <div className={`scrim${sideOpen ? " open" : ""}`} onClick={() => setSideOpen(false)}></div>
         <aside id="side" className={`side${sideOpen ? " open" : ""}`} aria-label="Main menu">
           <Link className="ws" href={landing}>
-            <span className="monogram">J</span>
-            <span style={{ flex: 1, minWidth: 0 }}><b>Juris Consultants</b><small>JurisOne workspace</small></span>
+            <span className="monogram">{(businessName ?? "J").charAt(0).toUpperCase()}</span>
+            <span style={{ flex: 1, minWidth: 0 }}><b>{businessName ?? "JurisOne"}</b><small>{businessName ? "JurisOne workspace" : "Platform console"}</small></span>
             <Icon n="chevD" s={14} />
           </Link>
           <button className="side-search" type="button" onClick={openPal}><Icon n="search" s={15} />Search<kbd>⌘K</kbd></button>

@@ -80,3 +80,54 @@ export interface TaxProjection {
 export type SettingKey = keyof typeof DEFAULT_SETTINGS;
 type Widen<T> = T extends readonly (infer U)[] ? Widen<U>[] : T extends object ? { -readonly [K in keyof T]: Widen<T[K]> } : T extends string ? string : T extends number ? number : T;
 export type SettingValue<K extends SettingKey> = Widen<(typeof DEFAULT_SETTINGS)[K]>;
+
+/** A business's subscription today (from the API). `daysLeft`: whole days until the end date (0 = ends today). */
+export interface SubscriptionCurrent {
+  state: "ACTIVE" | "UPCOMING" | "EXPIRED" | "NONE";
+  active: boolean;
+  planName: string | null;
+  startsOn: string | null;
+  endsOn: string | null;
+  daysLeft: number | null;
+  maxEmployees: number | null;
+  modules: string[];
+  employees: number;
+}
+
+/** One period of a business's subscription history (price in paise). */
+export interface SubscriptionRow {
+  id: string;
+  planId: string;
+  planName: string;
+  startsOn: string;
+  endsOn: string;
+  pricePaise: number;
+  status: "ACTIVE" | "CANCELLED";
+  notes: string | null;
+  createdAt: string;
+}
+
+/** A plan in the super admin's catalogue (price in paise; maxEmployees null = no limit). */
+export interface PlanRow {
+  id: string;
+  name: string;
+  description: string | null;
+  pricePaise: number;
+  periodMonths: number;
+  maxEmployees: number | null;
+  modules: string[];
+  active: boolean;
+  businesses: number;
+}
+
+export interface BusinessProfile {
+  name: string;
+  legalName: string | null;
+  code: string;
+  employeePrefix: string;
+  gstin: string | null;
+  address: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  timeZone: string;
+}

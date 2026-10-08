@@ -1,37 +1,137 @@
 package com.jurislpo.jurisone.business;
 
 import com.jurislpo.jurisone.common.ApiResult;
+import com.jurislpo.jurisone.common.RequestMeta;
 import com.jurislpo.jurisone.engine.Permissions;
+import com.jurislpo.jurisone.platform.AuditService;
 import com.jurislpo.jurisone.security.Auth;
+import com.jurislpo.jurisone.security.CurrentUser;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
-import org.springframework.jdbc.core.JdbcTemplate;
+import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** The super admin's platform API (system mode: every business is visible). */
+/** The super admin's platform API: businesses, sub admins, plans and subscriptions (system mode). */
 @RestController
+@RequestMapping("/api/platform")
 public class PlatformController {
 
-    public record BusinessRow(String id, String name, String code, String employeePrefix, String status, long employees, long owners, String createdAt) {}
+    public record StatusBody(String status) {}
+
+    public record AccessBody(Boolean on) {}
 
     private final Auth auth;
-    private final JdbcTemplate jdbc;
+    private final BusinessAdminService businesses;
+    private final SubscriptionService subscriptions;
+    private final AuditService audit;
 
-    public PlatformController(Auth auth, JdbcTemplate jdbc) {
+    public PlatformController(Auth auth, BusinessAdminService businesses, SubscriptionService subscriptions, AuditService audit) {
         this.auth = auth;
-        this.jdbc = jdbc;
+        this.businesses = businesses;
+        this.subscriptions = subscriptions;
+        this.audit = audit;
     }
 
-    /** Every business with its head-count and number of owners (sub admins). */
-    @GetMapping("/api/platform/businesses")
-    public ApiResult<List<BusinessRow>> businesses() {
-        auth.assertPerm(Permissions.PLATFORM_MANAGE);
-        return ApiResult.success(jdbc.query("""
-            SELECT b.id::text, b.name, b.code, b.employee_prefix, b.status, b.created_at,
-                   (SELECT count(*) FROM employees e WHERE e.business_id = b.id AND e.status <> 'EXITED') AS employees,
-                   (SELECT count(*) FROM employees e JOIN roles r ON r.id = e.role_id WHERE e.business_id = b.id AND r.key = 'owner') AS owners
-            FROM businesses b ORDER BY b.name""",
-                (rs, i) -> new BusinessRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getLong(7), rs.getLong(8),
-                        com.jurislpo.jurisone.engine.Format.jsIso(rs.getTimestamp(6).toInstant()))));
+    private CurrentUser admin() {
+        return auth.assertPerm(Permissions.PLATFORM_MANAGE);
+    }
+
+    // businesses
+    @GetMapping("/businesses")
+    public ApiResult<List<BusinessAdminService.BusinessRow>> list() {
+        admin();
+        return ApiResult.success(businesses.list());
+    }
+
+    /** {@code {business:{...}, subscription?:{planId, startsOn?, endsOn?, price?, notes?}, owner?:{name, email, password?}}} */
+    @PostMapping("/businesses")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Map<String, String>> create(@RequestBody BusinessAdminService.CreateInput body, HttpServletRequest req) {
+        Map<String, String> ids = businesses.create(admin(), body, RequestMeta.of(req).ip());
+        return ApiResult.success("Business created", ids);
+    }
+
+    @GetMapping("/businesses/{id}")
+    public ApiResult<Map<String, Object>> detail(@PathVariable String id) {
+        admin();
+        return ApiResult.success(businesses.detail(id));
+    }
+
+    @PutMapping("/businesses/{id}")
+    public ApiResult<Void> update(@PathVariable String id, @RequestBody BusinessAdminService.ProfileInput body, HttpServletRequest req) {
+        businesses.update(admin(), id, body, RequestMeta.of(req).ip());
+        return ApiResult.message("Business details saved");
+    }
+
+    /** {@code {"status": "ACTIVE" | "SUSPENDED"}} */
+    @PutMapping("/businesses/{id}/status")
+    public ApiResult<Void> status(@PathVariable String id, @RequestBody StatusBody body, HttpServletRequest req) {
+        return ApiResult.message(businesses.setStatus(admin(), id, body.status(), RequestMeta.of(req).ip()));
+    }
+
+    // sub admins
+    /** {@code {name, email, password?}} — without a password an invite email is sent. */
+    @PostMapping("/businesses/{id}/owners")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Map<String, String>> addOwner(@PathVariable String id, @RequestBody BusinessAdminService.OwnerInput body, HttpServletRequest req) {
+        Map<String, String> r = businesses.addOwner(admin(), id, body, RequestMeta.of(req).ip());
+        return ApiResult.success("Sub admin added as " + r.get("code"), r);
+    }
+
+    @PutMapping("/businesses/{id}/owners/{ownerId}/access")
+    public ApiResult<Void> ownerAccess(@PathVariable String id, @PathVariable String ownerId, @RequestBody AccessBody body, HttpServletRequest req) {
+        return ApiResult.message(businesses.setOwnerAccess(admin(), id, ownerId, body.on(), RequestMeta.of(req).ip()));
+    }
+
+    // subscriptions
+    @PostMapping("/businesses/{id}/subscriptions")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Map<String, String>> addSubscription(@PathVariable String id, @RequestBody SubscriptionService.SubscriptionInput body, HttpServletRequest req) {
+        CurrentUser u = admin();
+        java.util.UUID business = com.jurislpo.jurisone.common.Check.uuid(id);
+        String sid = subscriptions.addSubscription(business, body, u.id());
+        audit.log(u.id(), "subscription.add", "business_subscription", sid, null, Map.of("business", id, "plan", String.valueOf(body.planId())), RequestMeta.of(req).ip());
+        return ApiResult.success("Subscription added", Map.of("id", sid));
+    }
+
+    /** Change dates / notes, or {@code "status": "CANCELLED"}. */
+    @PutMapping("/subscriptions/{id}")
+    public ApiResult<Void> updateSubscription(@PathVariable String id, @RequestBody SubscriptionService.SubscriptionUpdate body, HttpServletRequest req) {
+        CurrentUser u = admin();
+        subscriptions.updateSubscription(id, body);
+        audit.log(u.id(), "subscription.update", "business_subscription", id, null, Map.of("status", String.valueOf(body.status())), RequestMeta.of(req).ip());
+        return ApiResult.message("CANCELLED".equals(body.status()) ? "Subscription cancelled" : "Subscription updated");
+    }
+
+    // plans
+    @GetMapping("/plans")
+    public ApiResult<List<SubscriptionService.Plan>> plans() {
+        admin();
+        return ApiResult.success(subscriptions.plans());
+    }
+
+    @PostMapping("/plans")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Map<String, String>> createPlan(@RequestBody SubscriptionService.PlanInput body, HttpServletRequest req) {
+        CurrentUser u = admin();
+        String id = subscriptions.createPlan(body);
+        audit.log(u.id(), "plan.create", "subscription_plan", id, null, Map.of("name", String.valueOf(body.name())), RequestMeta.of(req).ip());
+        return ApiResult.success("Plan created", Map.of("id", id));
+    }
+
+    @PutMapping("/plans/{id}")
+    public ApiResult<Void> updatePlan(@PathVariable String id, @RequestBody SubscriptionService.PlanInput body, HttpServletRequest req) {
+        CurrentUser u = admin();
+        subscriptions.updatePlan(id, body);
+        audit.log(u.id(), "plan.update", "subscription_plan", id, null, Map.of("name", String.valueOf(body.name())), RequestMeta.of(req).ip());
+        return ApiResult.message("Plan saved");
     }
 }

@@ -32,12 +32,19 @@ public class ShellService {
     public record Me(String code, String name, String designation, String roleName, String department, String manager, String doj, String shift,
                      boolean isAdminLike) {}
 
-    public record Shell(Me me, List<Group> groups, Map<String, Integer> badges, List<Note> notes, int unread, String landing, boolean canSelf) {}
+    /**
+     * {@code businessName} null for the super admin (platform); {@code subscription} null for the super admin — when it
+     * is not active the app shows the "subscription ended" screen instead of the pages.
+     */
+    public record Shell(Me me, List<Group> groups, Map<String, Integer> badges, List<Note> notes, int unread, String landing, boolean canSelf,
+                        String businessName, com.jurislpo.jurisone.business.SubscriptionService.Current subscription) {}
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.business.SubscriptionService subscriptions;
 
-    public ShellService(JdbcTemplate jdbc) {
+    public ShellService(JdbcTemplate jdbc, com.jurislpo.jurisone.business.SubscriptionService subscriptions) {
         this.jdbc = jdbc;
+        this.subscriptions = subscriptions;
     }
 
     public Shell shell(CurrentUser u) {
@@ -83,7 +90,9 @@ public class ShellService {
         Map<String, Integer> badges = new LinkedHashMap<>();
         badges.put("approvals", pending);
         badges.put("proofs", proofs);
-        return new Shell(me, new ArrayList<>(groups.values()), badges, notes, unread, u.landingPath(), u.perms().contains("self"));
+        String businessName = u.businessId() == null ? null : jdbc.queryForObject("SELECT name FROM businesses WHERE id = ?", String.class, u.businessId());
+        var subscription = u.businessId() == null ? null : subscriptions.current(u.businessId());
+        return new Shell(me, new ArrayList<>(groups.values()), badges, notes, unread, u.landingPath(), u.perms().contains("self"), businessName, subscription);
     }
 
     private int count(String sql, UUID id) {

@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.platform;
 
+import com.jurislpo.jurisone.business.SubscriptionService;
 import com.jurislpo.jurisone.common.ApiResult;
 import com.jurislpo.jurisone.common.UserException;
 import com.jurislpo.jurisone.security.Auth;
@@ -18,20 +19,26 @@ public class MeController {
 
     private final Auth auth;
     private final ShellService shell;
+    private final SubscriptionService subscriptions;
 
-    public MeController(Auth auth, ShellService shell) {
+    public MeController(Auth auth, ShellService shell, SubscriptionService subscriptions) {
         this.auth = auth;
         this.shell = shell;
+        this.subscriptions = subscriptions;
     }
 
-    /** The current user (permissions, region, time zone, direct reports) and their landing page. 401 when signed out. */
+    /**
+     * The current user (permissions, region, time zone, direct reports) and their landing page. 401 when signed out.
+     * {@code subscriptionActive}: whether the user's business may use JurisOne today (null for the super admin).
+     */
     @GetMapping("/me")
     public ApiResult<MeResponse> me() {
         CurrentUser u = auth.assertPerm();
-        return ApiResult.success(new MeResponse(u, u.landingPath()));
+        Boolean active = u.businessId() == null ? null : subscriptions.isActive(u.businessId());
+        return ApiResult.success(new MeResponse(u, u.landingPath(), active));
     }
 
-    public record MeResponse(CurrentUser user, String landing) {}
+    public record MeResponse(CurrentUser user, String landing, Boolean subscriptionActive) {}
 
     @GetMapping("/shell")
     public ApiResult<ShellService.Shell> shell() {

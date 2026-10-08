@@ -61,6 +61,8 @@ class PlatformApiTest extends IntegrationTest {
         String suffix = UUID.randomUUID().toString().substring(0, 6);
         UUID business = setup.create(new BusinessSetupService.NewBusiness("Acme Advisors " + suffix, null, "acme-" + suffix, "AA", "Asia/Kolkata",
                 null, null, null, null), null);
+        jdbc.update("INSERT INTO business_subscriptions (id, business_id, plan_id, starts_on, ends_on, price_paise) VALUES (?, ?, ?, current_date, current_date + 30, 0)",
+                UUID.randomUUID(), business, TestData.testPlan(jdbc));
         String ownerEmail = "owner." + suffix + "@acme.test";
         UUID owner = TenantContext.call(business, () -> setup.addOwner(new BusinessSetupService.NewOwner("Asha Owner", ownerEmail, PW, null), null));
 
@@ -88,7 +90,8 @@ class PlatformApiTest extends IntegrationTest {
         String email = "platform." + UUID.randomUUID().toString().substring(0, 6) + "@jurisone.test";
         superAdmin(email);
         Cookie c = signIn(email, PW);
-        mvc.perform(get("/api/me").cookie(c)).andExpect(status().isOk()).andExpect(jsonPath("$.data.landing").value("/platform"));
+        mvc.perform(get("/api/me").cookie(c)).andExpect(status().isOk()).andExpect(jsonPath("$.data.landing").value("/platform"))
+                .andExpect(jsonPath("$.data.subscriptionActive").value(org.hamcrest.Matchers.nullValue()));
         mvc.perform(get("/api/platform/businesses").cookie(c)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.code == '" + TestData.DEFAULT_BUSINESS + "')]").exists());
         mvc.perform(get("/api/people").cookie(c)).andExpect(status().isForbidden());

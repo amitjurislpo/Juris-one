@@ -21,6 +21,8 @@ export interface CurrentUser {
   timeZone: string;
   hasReports: boolean;
   sessionId: string;
+  /** Whether the user's business may use JurisOne today; null for the super admin. */
+  subscriptionActive: boolean | null;
 }
 
 export class ForbiddenError extends Error {
@@ -37,9 +39,9 @@ export class ForbiddenError extends Error {
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   if (!(await hasSessionCookie())) return null;
   // the Spring Boot API validates the session (revoked/expired, access off, exited) and loads permissions
-  const me = await apiGet<{ user: Omit<CurrentUser, "perms"> & { perms: Permission[] } }>("/api/me");
+  const me = await apiGet<{ user: Omit<CurrentUser, "perms" | "subscriptionActive"> & { perms: Permission[] }; subscriptionActive: boolean | null }>("/api/me");
   if (!me) return null;
-  return { ...me.user, perms: new Set(me.user.perms) };
+  return { ...me.user, perms: new Set(me.user.perms), subscriptionActive: me.subscriptionActive };
 });
 
 export const can = (u: CurrentUser | null, ...perms: Permission[]) => !!u && perms.some((p) => u.perms.has(p));
@@ -62,11 +64,18 @@ export async function requireUser(): Promise<CurrentUser> {
   return u;
 }
 
-/** Pages: the nav entry for this route must be allowed, else bounce to the user's landing page. */
+/** Pages that stay open when the business's subscription isn't active (the API allows the same). */
+const OPEN_WITHOUT_SUBSCRIPTION: NavId[] = ["subscription"];
+
+/**
+ * Pages: the nav entry for this route must be allowed, else bounce to the user's landing page. When the business's
+ * subscription isn't active, every page except the owner's Subscription page shows the "paused" screen instead.
+ */
 export async function requirePage(id: NavId): Promise<CurrentUser> {
   const u = await requireUser();
   const item = NAV.find((n) => n.id === id)!;
   if (!navAllowed(item, u.perms, u.hasReports)) redirect(landingPath(u));
+  if (u.subscriptionActive === false && !OPEN_WITHOUT_SUBSCRIPTION.includes(id)) redirect("/paused");
   return u;
 }
 

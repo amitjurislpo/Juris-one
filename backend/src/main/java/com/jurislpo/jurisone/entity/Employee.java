@@ -79,6 +79,10 @@ public class Employee {
     @Column(name = "role_id", nullable = false)
     private UUID roleId;
 
+    /** The business (null for the platform super admin). Read-only here: the database fills it from the current business. */
+    @Column(name = "business_id", insertable = false, updatable = false)
+    private UUID businessId;
+
     @Column(name = "date_of_joining", nullable = false)
     private LocalDate dateOfJoining;
 
@@ -187,6 +191,7 @@ public class Employee {
     public void setDesignation(String designation) { this.designation = designation; }
     public UUID getReportingManagerId() { return reportingManagerId; }
     public void setReportingManagerId(UUID reportingManagerId) { this.reportingManagerId = reportingManagerId; }
+    public UUID getBusinessId() { return businessId; }
     public UUID getRoleId() { return roleId; }
     public void setRoleId(UUID roleId) { this.roleId = roleId; }
     public LocalDate getDateOfJoining() { return dateOfJoining; }

@@ -409,6 +409,7 @@ public class SeedService {
         seedLeaveTypes();
         seedTax();
         UUID superAdminId = upsertSuperAdmin(platformRole, adminPw);
+        seedPlans();
 
         // demo business (development and tests only): the prototype company, with Sana as its owner (sub admin)
         boolean demo = "true".equals(env.getProperty("SEED_DEMO", "false"));
@@ -418,6 +419,12 @@ public class SeedService {
                     ? setup.create(new BusinessSetupService.NewBusiness("Juris Consultants", "Juris Consultants LLP", "juris-consultants", "JC", "Asia/Kolkata",
                             "hr@jurislpo.com", null, "[Registered office address]", null), superAdminId)
                     : found.get(0);
+            if (jdbc.queryForObject("SELECT count(*) FROM business_subscriptions WHERE business_id = ?", Integer.class, business) == 0) {
+                UUID plan = jdbc.queryForObject("SELECT id FROM subscription_plans WHERE name = 'Standard + Juris Track'", UUID.class);
+                jdbc.update("INSERT INTO business_subscriptions (id, business_id, plan_id, starts_on, ends_on, price_paise, notes, created_by) "
+                        + "VALUES (?, ?, ?, current_date, current_date + interval '12 months' - interval '1 day', 0, 'Demo subscription', ?)",
+                        UUID.randomUUID(), business, plan, superAdminId);
+            }
             TenantContext.run(business, () -> {
                 try {
                     seedDemo(superAdminId, shiftIds);
@@ -430,6 +437,25 @@ public class SeedService {
         long[] counts = {count("businesses"), count("employees"), count("roles"), count("departments"), count("holidays")};
         log.info("Seed complete — businesses {}, employees {}, roles {}, departments {}, holidays {}", counts[0], counts[1], counts[2], counts[3], counts[4]);
         log.info("Super admin: {}{}", adminEmail(), demo ? " · demo business \"Juris Consultants\": owner JC-002 (SEED_OWNER_PASSWORD), others (SEED_DEMO_PASSWORD)" : "");
+    }
+
+    /**
+     * Two starting plans for the catalogue (the super admin sets their prices and limits). Existing plans are left as they are.
+     */
+    void seedPlans() {
+        Object[][] plans = {
+                {"Standard", "HRMS and payroll for one business. Set the price before offering it.", new String[0]},
+                {"Standard + Juris Track", "Everything in Standard, plus Juris Track. Set the price before offering it.", new String[] {"JURIS_TRACK"}}};
+        for (Object[] p : plans) {
+            if (jdbc.queryForObject("SELECT count(*) FROM subscription_plans WHERE name = ?", Integer.class, p[0]) > 0) continue;
+            jdbc.update("INSERT INTO subscription_plans (id, name, description, price_paise, period_months, max_employees, modules) VALUES (?, ?, ?, 0, 12, NULL, ?)",
+                    ps -> {
+                        ps.setObject(1, UUID.randomUUID());
+                        ps.setString(2, (String) p[0]);
+                        ps.setString(3, (String) p[1]);
+                        ps.setArray(4, ps.getConnection().createArrayOf("text", (String[]) p[2]));
+                    });
+        }
     }
 
     /** The demo business's people and history; runs inside that business. */

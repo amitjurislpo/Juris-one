@@ -1,6 +1,7 @@
 package com.jurislpo.jurisone.jobs;
 
 import com.jurislpo.jurisone.attendance.AttendanceService;
+import com.jurislpo.jurisone.business.SubscriptionService;
 import com.jurislpo.jurisone.attendance.AttendanceService.AttEmployee;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.engine.LeaveRules;
@@ -45,12 +46,22 @@ public class JobsService {
     private final AttendanceService att;
     private final SettingsService settings;
     private final AuditService audit;
+    private final SubscriptionService subscriptions;
+    private final com.jurislpo.jurisone.platform.NotificationService notifications;
+    private final com.jurislpo.jurisone.platform.MailService mail;
+    private final String appUrl;
 
-    public JobsService(JdbcTemplate jdbc, AttendanceService att, SettingsService settings, AuditService audit) {
+    public JobsService(JdbcTemplate jdbc, AttendanceService att, SettingsService settings, AuditService audit, SubscriptionService subscriptions,
+                       com.jurislpo.jurisone.platform.NotificationService notifications, com.jurislpo.jurisone.platform.MailService mail,
+                       com.jurislpo.jurisone.config.JurisOneProperties props) {
         this.jdbc = jdbc;
         this.att = att;
         this.settings = settings;
         this.audit = audit;
+        this.subscriptions = subscriptions;
+        this.notifications = notifications;
+        this.mail = mail;
+        this.appUrl = props.frontendOrigin();
     }
 
     static LocalDate today(Instant now) {
@@ -99,7 +110,37 @@ public class JobsService {
         r.put("yearEnd", jobLeaveYearEnd(now));
         r.put("accrual", jobLeaveAccrual(now));
         r.put("compOff", jobCompOffExpiry(now));
+        r.put("subscription", jobSubscriptionWarnings());
         return r;
+    }
+
+    /**
+     * Tells the owners (bell + email) that the subscription ends in 7 days, ends tomorrow / today, or has ended —
+     * each warning once per subscription end date.
+     */
+    public Map<String, Object> jobSubscriptionWarnings() {
+        SubscriptionService.Current c = subscriptions.current(null);
+        String kind = null;
+        if ("ACTIVE".equals(c.state()) && c.daysLeft() != null) kind = c.daysLeft() <= 1 ? "d1" : c.daysLeft() <= 7 ? "d7" : null;
+        else if ("EXPIRED".equals(c.state())) kind = "ended";
+        if (kind == null) return Map.of("sent", 0);
+        String key = c.endsOn() + ":" + kind;
+        Integer done = jdbc.queryForObject("SELECT count(*) FROM job_runs WHERE name = 'subscription.warning' AND key = ?", Integer.class, key);
+        if (done != null && done > 0) return Map.of("sent", 0);
+        int days = "ended".equals(kind) ? 0 : Math.max(1, c.daysLeft());
+        String business = jdbc.queryForObject("SELECT name FROM businesses WHERE id = jurisone_tenant_id()", String.class);
+        String text = "ended".equals(kind) ? "Your " + c.planName() + " subscription has ended — only the employee export works until it is renewed"
+                : "Your " + c.planName() + " subscription ends " + (c.daysLeft() == 0 ? "today" : c.daysLeft() == 1 ? "tomorrow" : "in " + c.daysLeft() + " days")
+                        + " (" + c.endsOn() + ") — contact JurisOne to renew";
+        List<Map<String, Object>> owners = subscriptions.owners();
+        for (Map<String, Object> o : owners) {
+            notifications.notify((UUID) o.get("id"), text, "/subscription");
+            mail.send((String) o.get("email"), com.jurislpo.jurisone.platform.MailTemplates.subscription((String) o.get("full_name"), business, c.planName(),
+                    c.endsOn(), days, appUrl + "/subscription"));
+        }
+        jdbc.update("INSERT INTO job_runs (id, name, key, ran_at, ok, detail) VALUES (?, 'subscription.warning', ?, now(), true, ?::jsonb)",
+                UUID.randomUUID(), key, "{\"owners\":" + owners.size() + "}");
+        return Map.of("sent", owners.size(), "kind", kind);
     }
 
     /**

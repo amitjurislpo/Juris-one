@@ -44,9 +44,11 @@ public class PeopleService {
     private final PiiCrypto pii;
     private final SessionService sessions;
     private final AuthTokenService tokens;
+    private final com.jurislpo.jurisone.business.SubscriptionService subscriptions;
 
     public PeopleService(JdbcTemplate jdbc, TransactionTemplate tx, ActorService actors, AuditService audit, PiiCrypto pii, SessionService sessions,
-                         AuthTokenService tokens) {
+                         AuthTokenService tokens, com.jurislpo.jurisone.business.SubscriptionService subscriptions) {
+        this.subscriptions = subscriptions;
         this.jdbc = jdbc;
         this.tx = tx;
         this.actors = actors;
@@ -519,6 +521,7 @@ public class PeopleService {
         tx.executeWithoutResult(s -> {
             // serialise code allocation
             jdbc.execute("SELECT pg_advisory_xact_lock(74201, hashtext(jurisone_tenant_id()::text))"); // one allocation at a time per business
+            subscriptions.checkRoomForOneMore(); // the plan's employee limit (under the same lock, so two adds can't both slip past)
             String code = nextCode();
             codeOut[0] = code;
             jdbc.update("""

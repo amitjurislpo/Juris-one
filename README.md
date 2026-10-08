@@ -143,6 +143,13 @@ prisma/schema.prisma               the original data model, kept as a readable r
 
 **Businesses are kept apart by the database.** JurisOne hosts many businesses in one database. Every business-owned row carries `business_id`, and PostgreSQL row-level security lets a request see and change only its own business's rows: the API sets the business of the signed-in user on every database connection (and switches to the restricted `jurisone_tenant` role, because superusers skip row-level security). Sign-in, the super admin and the scheduled jobs run without a business; the jobs then process one business at a time. Employee codes, department names, holidays, roles, policies and payroll months are unique per business; emails are unique across the platform.
 
+**Subscriptions decide who can use JurisOne.** The super admin (Platform → Businesses, Plans) creates each business with its sub admin, the business owner, who has the `owner` role and runs everything in it but can't make another owner. Billing is manual: the super admin assigns a plan for a period (price, dates, notes) and renews it. A plan can cap the number of employees and include modules such as Juris Track.
+- **Covered today:** everything works.
+- **Last 7 days:** the owner sees a banner on every page and gets a bell notification and an email 7 days and 1 day before the end, and on the day after it ends.
+- **Not active** (ended, not started yet, or cancelled; no grace period): everyone can still sign in, but every page shows "JurisOne is paused" and the API answers `402 SUBSCRIPTION_INACTIVE`. Only these stay open: sign-in, `/api/me`, the shell, notifications, and for the owner the Subscription page and the employee export.
+- **Suspended business:** nobody in it can sign in, and existing sign-ins end at once.
+- **Employee export:** the owner can download every employee as Excel, before and after expiry. Identity numbers are masked unless the owner confirms the full export. Both downloads are audited.
+
 **Permissions are checked by the API.**
 - Every page calls `requirePage(<nav id>)` in Next.js, and the API checks the same permission again for the data it returns.
 - Every write goes through an API endpoint that calls `assertPerm(...)`.
@@ -321,6 +328,7 @@ Salary is never shown on Home; an e2e test checks that no ₹ amount appears the
 | Leave accrual | Credits each month's leave. It runs only once per employee, leave type and month. |
 | Comp-off expiry | Expires unused comp-off once its 60 days are up. The oldest credits are used first. |
 | Year end | Casual leave lapses and earned leave above the carry-forward cap is removed. Runs once a year. |
+| Subscription warnings | Tells each business's owners (bell + email) 7 days and 1 day before the subscription ends, and once it has ended. Each warning is sent once. |
 
 **How they run:**
 - **In the API (default):** with `JOBS_ENABLED=true` they run every 10 minutes.

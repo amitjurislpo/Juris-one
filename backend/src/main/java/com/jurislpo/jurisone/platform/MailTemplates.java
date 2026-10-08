@@ -38,7 +38,7 @@ public final class MailTemplates {
         return new Content(
                 "Welcome to JurisOne — set your password",
                 "Hi " + name + ",\n\nYour JurisOne account (" + code + ") is ready. Set your password with this one-time link (valid " + hours + " hours):\n"
-                        + link + "\n\nSign in afterwards with your employee ID or official email.",
+                        + link + "\n\nSign in afterwards with your official email.",
                 shell("Welcome, " + esc(name), "<p>Your JurisOne account <b>" + code + "</b> is ready. Set your password with this one-time link — it expires in "
                         + hours + " hours.</p>" + button(link, "Set my password")));
     }
@@ -52,6 +52,20 @@ public final class MailTemplates {
                         + "\n\nOpen JurisOne for details.",
                 shell(esc(what) + " " + verb, "<p>Hi " + esc(name) + ", your " + esc(what.toLowerCase()) + " was <b>" + verb + "</b> by " + esc(by) + ".</p>"
                         + (hasNote ? "<p style=\"color:#5D5F6D\">Note: " + esc(note) + "</p>" : "")));
+    }
+
+    /** Subscription ending soon ({@code daysLeft} > 0) or ended ({@code daysLeft} &lt;= 0). */
+    public static Content subscription(String name, String business, String plan, String endsOn, int daysLeft, String link) {
+        boolean ended = daysLeft <= 0;
+        String when = ended ? "ended on " + endsOn : daysLeft == 1 ? "ends tomorrow (" + endsOn + ")" : "ends in " + daysLeft + " days (" + endsOn + ")";
+        String subject = ended ? "Your JurisOne subscription has ended" : "Your JurisOne subscription " + (daysLeft == 1 ? "ends tomorrow" : "ends in " + daysLeft + " days");
+        String after = ended
+                ? "Your team can still sign in, but nothing else works until it is renewed. You can still export your employee details."
+                : "Renew it before then so your team keeps working without a break.";
+        return new Content(subject,
+                "Hi " + name + ",\n\nThe " + plan + " subscription for " + business + " " + when + ".\n" + after + "\n\nContact JurisOne to renew.\n" + link,
+                shell(esc(subject), "<p>Hi " + esc(name) + ", the <b>" + esc(plan) + "</b> subscription for <b>" + esc(business) + "</b> " + esc(when) + ".</p>"
+                        + "<p style=\"color:#5D5F6D\">" + esc(after) + " Contact JurisOne to renew.</p>" + button(link, "View subscription")));
     }
 
     public static Content reset(String name, String link, int minutes) {

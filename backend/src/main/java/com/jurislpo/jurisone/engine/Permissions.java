@@ -20,6 +20,9 @@ public final class Permissions {
      */
     public static final String PLATFORM_MANAGE = "platform.manage";
 
+    /** The business owner's (sub admin's) permission: subscription details and the employee export. Owner role only. */
+    public static final String BUSINESS_MANAGE = "business.manage";
+
     /** key → label, in catalogue order. */
     public static final Map<String, String> LABELS;
 

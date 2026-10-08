@@ -31,7 +31,8 @@ public class BusinessSetupService {
     public record RoleTemplate(String key, String name, boolean locked, List<String> perms, List<String> assign) {}
 
     public static final List<RoleTemplate> ROLES = List.of(
-            new RoleTemplate(OWNER, "Owner", true, Permissions.KEYS.stream().filter(p -> !Permissions.SELF.equals(p)).toList(),
+            new RoleTemplate(OWNER, "Owner", true, java.util.stream.Stream.concat(Permissions.KEYS.stream().filter(p -> !Permissions.SELF.equals(p)),
+                    java.util.stream.Stream.of(Permissions.BUSINESS_MANAGE)).toList(),
                     List.of("hrm", "hre", "fm", "fe", "employee")),
             new RoleTemplate("hrm", "HR Manager", false, List.of("self", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle",
                     "dept.manage", "holidays.manage"), List.of("hre", "employee")),

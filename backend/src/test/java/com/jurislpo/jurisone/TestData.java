@@ -43,6 +43,18 @@ public final class TestData {
         UUID id = UUID.randomUUID();
         String prefix = code.replaceAll("[^a-z]", "").toUpperCase().substring(0, 2);
         jdbc.update("INSERT INTO businesses (id, name, code, employee_prefix) VALUES (?, ?, ?, ?)", id, "Business " + code, code, prefix);
+        // an active subscription, so the business can be used (tests of the subscription rules make their own)
+        jdbc.update("INSERT INTO business_subscriptions (id, business_id, plan_id, starts_on, ends_on, price_paise) VALUES (?, ?, ?, current_date - 365, current_date + 365, 0)",
+                UUID.randomUUID(), id, testPlan(jdbc));
+        return id;
+    }
+
+    /** An unlimited test plan (created on first use). */
+    public static synchronized UUID testPlan(JdbcTemplate jdbc) {
+        List<UUID> found = jdbc.queryForList("SELECT id FROM subscription_plans WHERE name = 'Test plan'", UUID.class);
+        if (!found.isEmpty()) return found.get(0);
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO subscription_plans (id, name, price_paise, period_months) VALUES (?, 'Test plan', 0, 12)", id);
         return id;
     }
 

@@ -45,7 +45,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         SELECT s.id AS sid, s.employee_id AS session_employee, s.expires_at, s.revoked_at, s.last_seen_at,
                e.id, e.business_id, e.code, e.full_name, e.email, e.designation, e.role_id, e.portal_access, e.status::text AS status,
                e.region::text AS region, e.time_zone, u.is_super_admin, u.employee_id AS user_id, r.key AS role_key, r.name AS role_name,
-               EXISTS (SELECT 1 FROM employees d WHERE d.reporting_manager_id = e.id AND d.status <> 'EXITED') AS has_reports
+               EXISTS (SELECT 1 FROM employees d WHERE d.reporting_manager_id = e.id AND d.status <> 'EXITED') AS has_reports,
+               (SELECT b.status FROM businesses b WHERE b.id = e.business_id) AS business_status
         FROM sessions s
         JOIN employees e ON e.id = s.employee_id
         JOIN roles r ON r.id = e.role_id
@@ -101,6 +102,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (!claims.employeeId().equals(r.get("session_employee"))) return null;
         if (r.get("revoked_at") != null || !((Timestamp) r.get("expires_at")).toInstant().isAfter(now)) return null;
         if (!Boolean.TRUE.equals(r.get("portal_access")) || "EXITED".equals(r.get("status")) || r.get("user_id") == null) return null;
+        if ("SUSPENDED".equals(r.get("business_status"))) return null; // a suspended business is signed out everywhere
 
         Instant lastSeen = ((Timestamp) r.get("last_seen_at")).toInstant();
         if (Duration.between(lastSeen, now).compareTo(TOUCH_EVERY) >= 0) {

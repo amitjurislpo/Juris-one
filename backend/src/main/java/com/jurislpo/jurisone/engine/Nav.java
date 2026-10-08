@@ -23,6 +23,7 @@ public final class Nav {
 
     public static final List<Item> NAV = List.of(
             item("platform", "Businesses", "building", List.of(PLATFORM_MANAGE), "Platform"),
+            item("plans", "Plans", "layers", List.of(PLATFORM_MANAGE), "Platform"),
             item("home", "Home", "home", List.of(SELF), null),
             item("overview", "Overview", "home", List.of(ROLES_MANAGE), null),
             item("attendance", "My attendance", "clock", List.of(SELF), null),
@@ -42,7 +43,8 @@ public final class Nav {
             item("proofs", "Investment proofs", "inbox", List.of(PROOFS_VERIFY), "Finance"),
             item("roles", "Roles & permissions", "key", List.of(ROLES_MANAGE), "Administration"),
             item("settings", "Policies", "sliders", List.of(ROLES_MANAGE), "Administration"),
-            item("audit", "Audit log", "doc", List.of(ROLES_MANAGE), "Administration"));
+            item("audit", "Audit log", "doc", List.of(ROLES_MANAGE), "Administration"),
+            item("subscription", "Subscription", "receipt", List.of(BUSINESS_MANAGE), "Administration"));
 
     public static Optional<Item> find(String id) {
         return NAV.stream().filter(n -> n.id().equals(id)).findFirst();

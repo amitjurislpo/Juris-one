@@ -37,6 +37,7 @@ public class AuthService {
     static final String BAD_LOGIN = "That email and password don't match.";
     static final String MSG_DISABLED = "Your portal access is disabled. Please contact HR.";
     static final String MSG_EXITED = "This account belongs to a past employee and can no longer sign in.";
+    static final String MSG_SUSPENDED = "Your organisation's JurisOne account is suspended. Please contact JurisOne.";
 
     private final EntityManager em;
     private final TransactionTemplate tx;
@@ -57,6 +58,10 @@ public class AuthService {
         this.tokens = tokens;
         this.settings = settings;
         this.audit = audit;
+    }
+
+    private String jdbcStatus(java.util.UUID businessId) {
+        return (String) em.createNativeQuery("SELECT status FROM businesses WHERE id = :b").setParameter("b", businessId).getSingleResult();
     }
 
     static long minutes(long ms) {
@@ -154,6 +159,10 @@ public class AuthService {
         if (!Boolean.TRUE.equals(emp.getPortalAccess())) {
             history(emp, identifier, false, "access_disabled", meta);
             throw fail(MSG_DISABLED);
+        }
+        if (emp.getBusinessId() != null && "SUSPENDED".equals(jdbcStatus(emp.getBusinessId()))) {
+            history(emp, identifier, false, "business_suspended", meta);
+            throw fail(MSG_SUSPENDED);
         }
 
         SessionService.Issued issued = tx.execute(s -> {
