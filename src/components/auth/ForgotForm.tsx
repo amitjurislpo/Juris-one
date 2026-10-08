@@ -13,12 +13,12 @@ export function ForgotForm() {
       <div>
         <h2 className="display">Reset password</h2>
         <p className="muted" style={{ margin: "10px 0 0", fontSize: 14.5 }}>
-          Enter your employee ID or official email. We&apos;ll send a one-time link to your official email.
+          Enter your official email. We&apos;ll send a one-time link to it.
         </p>
       </div>
       <label className="field">
-        Employee ID or email
-        <input name="identifier" autoComplete="username" placeholder="e.g. JC-074" autoFocus required maxLength={200} />
+        Email
+        <input name="identifier" type="email" autoComplete="username" placeholder="name@company.com" autoFocus required maxLength={200} />
       </label>
       {state.error && <div className="err" role="alert">{state.error}</div>}
       {state.ok && <div className="chip ok" style={{ height: "auto", padding: "10px 12px", whiteSpace: "normal" }} role="status">{state.ok}</div>}

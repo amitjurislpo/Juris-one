@@ -13,6 +13,7 @@
     "db:up": "docker compose up -d db",
     "db:migrate": "node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=migrate",
     "db:seed": "node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=seed",
+    "db:reset": "node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=reset",
     "backend:dev": "node scripts/mvnw.mjs -q spring-boot:run",
     "backend:test": "node scripts/mvnw.mjs -B test",
     "backend:up": "docker compose up -d --build backend",

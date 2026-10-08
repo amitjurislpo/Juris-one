@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 /** Port of tests/unit/people-rules.test.ts (people rules, employee form checks, CSV cells). */
 class PeopleRulesTest {
 
-    static final Map<String, String> R = Map.of("admin", "r-admin", "hrm", "r-hrm", "hre", "r-hre", "fm", "r-fm", "fe", "r-fe", "emp", "r-emp");
+    static final Map<String, String> R = Map.of("owner", "r-admin", "hrm", "r-hrm", "hre", "r-hre", "fm", "r-fm", "fe", "r-fe", "emp", "r-emp");
 
     static Actor actor(String key, Set<String> perms, Set<String> assign, String dept) {
         return new Actor("me", key.equals("emp") ? "employee" : key, perms, assign.stream().map(R::get).collect(Collectors.toSet()), dept, R.get("emp"));
@@ -30,7 +30,7 @@ class PeopleRulesTest {
     }
 
     static final Set<String> MANAGE = Set.of("people.add", "access.toggle", "people.view");
-    static final Actor ADMIN = actor("admin", MANAGE, Set.of("hrm", "fm", "hre", "fe", "emp"), null);
+    static final Actor ADMIN = actor("owner", MANAGE, Set.of("hrm", "fm", "hre", "fe", "emp"), null);
     static final Actor HRM = actor("hrm", MANAGE, Set.of("hre", "emp"), "d-hr");
     static final Actor FM = actor("fm", MANAGE, Set.of("fe"), "d-fin");
     static final Actor HRE = actor("hre", Set.of("people.view"), Set.of(), null);
@@ -46,15 +46,15 @@ class PeopleRulesTest {
             assertThat(canEditEmployee(HRM, target("emp"))).isTrue();
             assertThat(canEditEmployee(HRM, target("hre"))).isTrue();
             assertThat(canEditEmployee(HRM, target("fe"))).isFalse();
-            assertThat(canEditEmployee(HRM, target("admin"))).isFalse();
+            assertThat(canEditEmployee(HRM, target("owner"))).isFalse();
         }
 
         @Test
         @DisplayName("Admin edits anyone except the super admin; nobody edits themselves")
         void admin() {
             assertThat(canEditEmployee(ADMIN, target("hrm"))).isTrue();
-            assertThat(canEditEmployee(ADMIN, target("admin", "t", EmployeeStatus.ACTIVE, true))).isFalse();
-            assertThat(canEditEmployee(ADMIN, target("admin", "me", EmployeeStatus.ACTIVE, false))).isFalse();
+            assertThat(canEditEmployee(ADMIN, target("owner", "t", EmployeeStatus.ACTIVE, true))).isFalse();
+            assertThat(canEditEmployee(ADMIN, target("owner", "me", EmployeeStatus.ACTIVE, false))).isFalse();
         }
 
         @Test
@@ -73,15 +73,15 @@ class PeopleRulesTest {
         @DisplayName("never yourself, never super admin, never exited")
         void never() {
             assertThat(canToggleAccess(HRM, target("emp", "me", EmployeeStatus.ACTIVE, false))).isFalse();
-            assertThat(canToggleAccess(ADMIN, target("admin", "t", EmployeeStatus.ACTIVE, true))).isFalse();
+            assertThat(canToggleAccess(ADMIN, target("owner", "t", EmployeeStatus.ACTIVE, true))).isFalse();
             assertThat(canToggleAccess(HRM, target("emp", "t", EmployeeStatus.EXITED, false))).isFalse();
         }
 
         @Test
         @DisplayName("only Admin can toggle an Admin")
         void onlyAdmin() {
-            assertThat(canToggleAccess(HRM, target("admin"))).isFalse();
-            assertThat(canToggleAccess(ADMIN, target("admin"))).isTrue();
+            assertThat(canToggleAccess(HRM, target("owner"))).isFalse();
+            assertThat(canToggleAccess(ADMIN, target("owner"))).isTrue();
             assertThat(canToggleAccess(HRM, target("fm"))).isTrue();
         }
 

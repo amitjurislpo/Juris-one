@@ -52,7 +52,8 @@ class AttendanceApiTest extends IntegrationTest {
             nightShift = UUID.randomUUID();
             jdbc.update("INSERT INTO shifts (id, code, name, start_local, end_local, grace_minutes, region) VALUES (?, 'IN_NIGHT', 'India Night', '19:30', '04:30', 15, 'IN')", nightShift);
         }
-        jdbc.update("INSERT INTO settings (key, value, updated_at) VALUES ('attendance.policy', '{\"trackingStartDate\":\"2026-04-01\"}', now()) ON CONFLICT (key) DO NOTHING");
+        jdbc.update("INSERT INTO settings (business_id, key, value, updated_at) VALUES (?, 'attendance.policy', '{\"trackingStartDate\":\"2026-04-01\"}', now()) ON CONFLICT (business_id, key) DO NOTHING",
+                data.business());
     }
 
     static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder b) {
@@ -71,7 +72,7 @@ class AttendanceApiTest extends IntegrationTest {
         String c = code();
         UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
         jdbc.update("UPDATE employees SET shift_id = ? WHERE id = ?", nightShift, id);
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}"))
+        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}"))
                 .andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -158,12 +159,17 @@ class AttendanceApiTest extends IntegrationTest {
 
     @Test
     void jobsAreIdempotentAndLockMonths() {
+        // jobs run business by business; results are keyed by business code
         Map<String, Object> first = jobs.runJobs(Instant.now());
-        assertThat(first).containsKeys("status", "lock", "finalize", "yearEnd", "accrual", "compOff");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM job_runs WHERE name = 'attendance.lock' AND key = '2026-04'", Integer.class)).isEqualTo(1);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> mine = (Map<String, Object>) first.get(TestData.DEFAULT_BUSINESS);
+        assertThat(mine).containsKeys("status", "lock", "finalize", "yearEnd", "accrual", "compOff");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM job_runs WHERE name = 'attendance.lock' AND key = '2026-04' AND business_id = ?", Integer.class,
+                data.business())).isEqualTo(1);
         int ledger = jdbc.queryForObject("SELECT count(*) FROM leave_ledger", Integer.class);
         Map<String, Object> second = jobs.runJobs(Instant.now());
-        assertThat(((Map<?, ?>) second.get("lock")).get("locked")).asList().isEmpty();
+        Map<?, ?> again = (Map<?, ?>) second.get(TestData.DEFAULT_BUSINESS);
+        assertThat(((Map<?, ?>) again.get("lock")).get("locked")).asList().isEmpty();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM leave_ledger", Integer.class)).isEqualTo(ledger);
         // the advisory lock was released (taken and freed on the same connection)
         assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND objid = 74202", Integer.class)).isZero();

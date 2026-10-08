@@ -34,7 +34,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class AuthService {
 
-    static final String BAD_LOGIN = "That employee ID / email and password don't match.";
+    static final String BAD_LOGIN = "That email and password don't match.";
     static final String MSG_DISABLED = "Your portal access is disabled. Please contact HR.";
     static final String MSG_EXITED = "This account belongs to a past employee and can no longer sign in.";
 
@@ -70,11 +70,14 @@ public class AuthService {
         return new UserException(HttpStatus.UNAUTHORIZED, msg);
     }
 
+    /**
+     * The account for a sign-in email. Email is the only sign-in name: it is unique across every business, while
+     * employee IDs repeat from one business to the next. (Runs in system mode — no business is known yet.)
+     */
     private Employee findByIdentifier(String identifier) {
-        String id = identifier.toLowerCase();
-        List<Employee> found = id.contains("@")
-                ? em.createQuery("SELECT e FROM Employee e WHERE e.email = :v", Employee.class).setParameter("v", id).getResultList()
-                : em.createQuery("SELECT e FROM Employee e WHERE e.code = :v", Employee.class).setParameter("v", id.toUpperCase()).getResultList();
+        String email = identifier.toLowerCase();
+        if (!email.contains("@")) return null;
+        List<Employee> found = em.createQuery("SELECT e FROM Employee e WHERE e.email = :v", Employee.class).setParameter("v", email).getResultList();
         return found.isEmpty() ? null : found.get(0);
     }
 
@@ -93,7 +96,7 @@ public class AuthService {
 
     public LoginResult login(String identifierRaw, String password, boolean remember, String next, RequestMeta meta) {
         String identifier = identifierRaw == null ? "" : identifierRaw.trim();
-        if (identifier.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter your employee ID or email.");
+        if (identifier.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter your email.");
         if (identifier.length() > 200) throw new UserException(HttpStatus.BAD_REQUEST, "Some details are invalid.");
         if (password == null || password.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter your password.");
         if (password.length() > 200) throw new UserException(HttpStatus.BAD_REQUEST, "Some details are invalid.");
@@ -180,7 +183,7 @@ public class AuthService {
 
     public String forgot(String identifierRaw, RequestMeta meta) {
         String identifier = identifierRaw == null ? "" : identifierRaw.trim().toLowerCase();
-        if (identifier.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter your employee ID or official email.");
+        if (identifier.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter your official email.");
         RateLimiter.Result rl = limiter.rateLimit("forgot:" + (meta.ip() != null ? meta.ip() : "unknown"), 5, 15 * 60_000L);
         if (rl.limited()) throw new UserException(HttpStatus.TOO_MANY_REQUESTS, "Too many requests. Try again in " + minutes(rl.retryInMs()) + " minute(s).");
         Employee emp = findByIdentifier(identifier);

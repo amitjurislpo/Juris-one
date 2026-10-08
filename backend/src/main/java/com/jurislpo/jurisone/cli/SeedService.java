@@ -1,12 +1,14 @@
 package com.jurislpo.jurisone.cli;
 
+import com.jurislpo.jurisone.business.BusinessSetupService;
 import com.jurislpo.jurisone.config.JurisOneProperties;
 import com.jurislpo.jurisone.crypto.Passwords;
 import com.jurislpo.jurisone.crypto.PiiCrypto;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
+import com.jurislpo.jurisone.engine.Permissions;
 import com.jurislpo.jurisone.jobs.JobsService;
 import com.jurislpo.jurisone.payroll.PayrollOpsService;
-import com.jurislpo.jurisone.platform.SettingsService;
+import com.jurislpo.jurisone.tenancy.TenantContext;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -33,12 +35,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * Seed — idempotent (safe to re-run). Port of prisma/seed.ts.
- *   Core:  roles & permissions, shifts, leave types, FY 2026-27 tax tables, policy settings,
- *          Human Resources + Finance departments, the super admin (SUPER_ADMIN_EMAIL).
- *   Demo:  REQUIREMENTS §8 employees, demo departments, 2026 holidays, salary structures,
- *          tax profiles and declarations from the prototype. Skip with SEED_DEMO=false.
- * The super admin's password comes from SUPER_ADMIN_PASSWORD only (no built-in default).
+ * Seed — idempotent (safe to re-run).
+ *   Platform: shifts, leave types, FY 2026-27 tax tables and the super admin (SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD;
+ *             an existing password is never changed). Businesses are created by the super admin.
+ *   Demo (SEED_DEMO=true, development and tests only): a "Juris Consultants" business with the prototype's people,
+ *             holidays, salary structures, declarations, punches, requests and closed Apr–Aug 2026 payroll. Its owner
+ *             (JC-002) signs in with SEED_OWNER_PASSWORD, everyone else with SEED_DEMO_PASSWORD.
  */
 @Service
 public class SeedService {
@@ -50,17 +52,19 @@ public class SeedService {
     private final Passwords passwords;
     private final PayrollOpsService payrollOps;
     private final JobsService jobs;
+    private final BusinessSetupService setup;
     private final Environment env;
     private final Path projectDir;
     private final String uploadDir;
 
-    public SeedService(JdbcTemplate jdbc, PiiCrypto pii, Passwords passwords, PayrollOpsService payrollOps, JobsService jobs, Environment env,
-                       JurisOneProperties props, @Value("${UPLOAD_DIR:./storage}") String uploadDir) {
+    public SeedService(JdbcTemplate jdbc, PiiCrypto pii, Passwords passwords, PayrollOpsService payrollOps, JobsService jobs, BusinessSetupService setup,
+                       Environment env, JurisOneProperties props, @Value("${UPLOAD_DIR:./storage}") String uploadDir) {
         this.jdbc = jdbc;
         this.pii = pii;
         this.passwords = passwords;
         this.payrollOps = payrollOps;
         this.jobs = jobs;
+        this.setup = setup;
         this.env = env;
         this.projectDir = Path.of(props.projectDir() == null ? "." : props.projectDir()).toAbsolutePath().normalize();
         this.uploadDir = uploadDir;
@@ -74,47 +78,19 @@ public class SeedService {
         return Math.round(rupees * 100);
     }
 
-    // ───────────────────────── roles ─────────────────────────
-    static final List<String> ALL_PERMS = List.of("self", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage",
-            "holidays.manage", "pay.view", "pay.close", "struct.manage", "tax.view", "proofs.verify", "roles.manage");
+    // ───────────────────────── platform role ─────────────────────────
+    static final String SUPER_ADMIN_ROLE = "super_admin";
 
-    record RoleSeed(String key, String name, boolean locked, List<String> perms, List<String> assign) {}
-
-    static final List<RoleSeed> ROLES = List.of(
-            new RoleSeed("admin", "Admin", true, ALL_PERMS.stream().filter(p -> !"self".equals(p)).toList(), List.of("hrm", "fm", "hre", "fe", "employee")),
-            new RoleSeed("hrm", "HR Manager", false, List.of("self", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage",
-                    "holidays.manage"), List.of("hre", "employee")),
-            new RoleSeed("hre", "HR Executive", false, List.of("self", "dir", "att.all", "appr.leave", "appr.reg", "people.view"), List.of()),
-            new RoleSeed("fm", "Finance Manager", false, List.of("self", "dir", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "pay.view", "pay.close",
-                    "struct.manage", "tax.view", "proofs.verify"), List.of("fe")),
-            new RoleSeed("fe", "Finance Executive", false, List.of("self", "dir", "appr.reg", "pay.view", "tax.view", "proofs.verify"), List.of()),
-            new RoleSeed("employee", "Employee", false, List.of("self", "dir"), List.of()));
-
-    Map<String, UUID> seedRoles() {
-        Map<String, UUID> ids = new HashMap<>();
-        for (RoleSeed r : ROLES) {
-            ids.put(r.key(), jdbc.queryForObject("""
-                INSERT INTO roles (id, key, name, is_builtin, is_locked) VALUES (?, ?, ?, true, ?)
-                ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name, is_builtin = true, is_locked = EXCLUDED.is_locked RETURNING id""",
-                    UUID.class, UUID.randomUUID(), r.key(), r.name(), r.locked()));
+    /** The super admin's role: platform-only (no business), with the one platform permission. */
+    UUID seedPlatformRole() {
+        List<UUID> found = jdbc.queryForList("SELECT id FROM roles WHERE key = ? AND business_id IS NULL", UUID.class, SUPER_ADMIN_ROLE);
+        UUID id = found.isEmpty() ? UUID.randomUUID() : found.get(0);
+        if (found.isEmpty()) {
+            jdbc.update("INSERT INTO roles (id, key, name, is_builtin, is_locked, business_id) VALUES (?, ?, 'Super admin', true, true, NULL)", id, SUPER_ADMIN_ROLE);
         }
-        for (RoleSeed r : ROLES) {
-            UUID id = ids.get(r.key());
-            // Defaults are only written when a role has no permissions yet — Admin edits survive re-seeding.
-            long has = jdbc.queryForObject("SELECT count(*) FROM role_permissions WHERE role_id = ?", Long.class, id);
-            if (has == 0 || r.locked()) {
-                jdbc.update("DELETE FROM role_permissions WHERE role_id = ?", id);
-                for (String p : r.perms()) jdbc.update("INSERT INTO role_permissions (role_id, permission_key) VALUES (?, ?) ON CONFLICT DO NOTHING", id, p);
-            }
-            long hasAssign = jdbc.queryForObject("SELECT count(*) FROM role_assignable_roles WHERE role_id = ?", Long.class, id);
-            if (hasAssign == 0 || r.locked()) {
-                jdbc.update("DELETE FROM role_assignable_roles WHERE role_id = ?", id);
-                for (String a : r.assign()) {
-                    jdbc.update("INSERT INTO role_assignable_roles (role_id, assignable_role_id) VALUES (?, ?) ON CONFLICT DO NOTHING", id, ids.get(a));
-                }
-            }
-        }
-        return ids;
+        jdbc.update("DELETE FROM role_permissions WHERE role_id = ?", id);
+        jdbc.update("INSERT INTO role_permissions (role_id, permission_key) VALUES (?, ?)", id, Permissions.PLATFORM_MANAGE);
+        return id;
     }
 
     // ───────────────────────── shifts ─────────────────────────
@@ -166,12 +142,6 @@ public class SeedService {
         }
     }
 
-    void seedSettings() {
-        for (Map.Entry<String, String> e : SettingsService.DEFAULTS.entrySet()) {
-            jdbc.update("INSERT INTO settings (key, value, updated_at) VALUES (?, ?::jsonb, now()) ON CONFLICT (key) DO NOTHING", e.getKey(), e.getValue());
-        }
-    }
-
     // ───────────────────────── employees ─────────────────────────
     record Person(String code, String name, String title, String dept, String manager, String doj, String role, String status, String shift, String tz, String father,
                   String exit, Boolean access, String email) {
@@ -205,7 +175,7 @@ public class SeedService {
     }
 
     static final List<Person> PEOPLE = List.of(
-            new Person("JC-002", "Sana Kapoor", "Portal Administrator", null, null, "2021-04-12", "admin", "ACTIVE", null, "Asia/Kolkata", "Rajeev Kapoor"),
+            new Person("JC-002", "Sana Kapoor", "Portal Administrator", null, null, "2021-04-12", "owner", "ACTIVE", null, "Asia/Kolkata", "Rajeev Kapoor"),
             new Person("JC-004", "Arjun Mehta", "Finance Manager", "Finance", null, "2020-07-01", "fm", "ACTIVE", "IN_DAY", "Asia/Kolkata", "Suresh Mehta"),
             new Person("JC-012", "Riya Malhotra", "HR Manager", "Human Resources", null, "2025-08-04", "hrm", "ACTIVE", "IN_DAY", "Asia/Kolkata", "Anil Malhotra"),
             new Person("JC-015", "Pooja Nair", "HR Executive", "Human Resources", "JC-012", "2026-01-12", "hre", "ACTIVE", "IN_DAY", "Asia/Kolkata", "Mohan Nair"),
@@ -227,9 +197,27 @@ public class SeedService {
         return (e.isEmpty() ? "admin@jurislpo.com" : e).toLowerCase();
     }
 
-    Person superAdmin() {
-        return new Person("JC-001", "JurisOne Administrator", "Super Administrator", null, null, "2020-06-01", "admin", "ACTIVE", null, "Asia/Kolkata", null, null, null,
-                adminEmail());
+    /**
+     * The super admin: a platform user with no business. An existing super admin (found by email) is moved onto the
+     * platform role; their password is never changed.
+     */
+    UUID upsertSuperAdmin(UUID platformRole, String password) {
+        String email = adminEmail();
+        List<UUID> existing = jdbc.queryForList("SELECT id FROM employees WHERE email = ?", UUID.class, email);
+        UUID id;
+        if (existing.isEmpty()) {
+            id = UUID.randomUUID();
+            jdbc.update("""
+                INSERT INTO employees (id, business_id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, updated_at)
+                VALUES (?, NULL, 'SA-001', 'JurisOne Administrator', ?, 'Super Administrator', ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, now())""",
+                    id, email, platformRole, d("2020-06-01"));
+        } else {
+            id = existing.get(0);
+            jdbc.update("UPDATE employees SET business_id = NULL, role_id = ?, department_id = NULL, reporting_manager_id = NULL, portal_access = true, updated_at = now() WHERE id = ?",
+                    platformRole, id);
+        }
+        setPassword(id, password, true);
+        return id;
     }
 
     UUID upsertEmployee(Person p, Map<String, UUID> roleIds, Map<String, UUID> shiftIds, Map<String, UUID> deptIds, Map<String, UUID> codeToId, UUID createdBy) {
@@ -408,33 +396,50 @@ public class SeedService {
     UUID upsertDepartment(String name, String description, UUID createdBy) {
         return jdbc.queryForObject("""
             INSERT INTO departments (id, name, description, created_by) VALUES (?, ?, ?, ?)
-            ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id""", UUID.class, UUID.randomUUID(), name, description, createdBy);
+            ON CONFLICT (business_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id""", UUID.class, UUID.randomUUID(), name, description, createdBy);
     }
 
     public void run() throws IOException {
         String adminPw = env.getProperty("SUPER_ADMIN_PASSWORD", "");
         if (adminPw.isBlank()) throw new IllegalStateException("Set SUPER_ADMIN_PASSWORD (in .env or the environment) before seeding.");
 
-        Map<String, UUID> roleIds = seedRoles();
+        // platform: shared shifts, leave types and tax tables, and the super admin (no business)
+        UUID platformRole = seedPlatformRole();
         Map<String, UUID> shiftIds = seedShifts();
         seedLeaveTypes();
         seedTax();
-        seedSettings();
+        UUID superAdminId = upsertSuperAdmin(platformRole, adminPw);
 
-        // Super admin first — it "creates" the two core departments.
-        Map<String, UUID> deptIds = new HashMap<>();
-        Map<String, UUID> codeToId = new LinkedHashMap<>();
-        Person sa = superAdmin();
-        codeToId.put(sa.code(), upsertEmployee(sa, roleIds, shiftIds, deptIds, codeToId, null));
-        setPassword(codeToId.get(sa.code()), adminPw, true);
-
-        deptIds.put("Human Resources", upsertDepartment("Human Resources", "People operations, hiring and policies", codeToId.get(sa.code())));
-        deptIds.put("Finance", upsertDepartment("Finance", "Payroll, tax and accounts", codeToId.get(sa.code())));
-
-        boolean demo = !"false".equals(env.getProperty("SEED_DEMO", "true"));
+        // demo business (development and tests only): the prototype company, with Sana as its owner (sub admin)
+        boolean demo = "true".equals(env.getProperty("SEED_DEMO", "false"));
         if (demo) {
-            // Sana (Admin) needs to exist before she can be "creator" of the core departments in the demo story.
-            codeToId.put("JC-002", upsertEmployee(PEOPLE.get(0), roleIds, shiftIds, deptIds, codeToId, codeToId.get(sa.code())));
+            List<UUID> found = jdbc.queryForList("SELECT id FROM businesses WHERE code = 'juris-consultants'", UUID.class);
+            UUID business = found.isEmpty()
+                    ? setup.create(new BusinessSetupService.NewBusiness("Juris Consultants", "Juris Consultants LLP", "juris-consultants", "JC", "Asia/Kolkata",
+                            "hr@jurislpo.com", null, "[Registered office address]", null), superAdminId)
+                    : found.get(0);
+            TenantContext.run(business, () -> {
+                try {
+                    seedDemo(superAdminId, shiftIds);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+            });
+        }
+
+        long[] counts = {count("businesses"), count("employees"), count("roles"), count("departments"), count("holidays")};
+        log.info("Seed complete — businesses {}, employees {}, roles {}, departments {}, holidays {}", counts[0], counts[1], counts[2], counts[3], counts[4]);
+        log.info("Super admin: {}{}", adminEmail(), demo ? " · demo business \"Juris Consultants\": owner JC-002 (SEED_OWNER_PASSWORD), others (SEED_DEMO_PASSWORD)" : "");
+    }
+
+    /** The demo business's people and history; runs inside that business. */
+    void seedDemo(UUID superAdminId, Map<String, UUID> shiftIds) throws IOException {
+        Map<String, UUID> roleIds = setup.initDefaults(superAdminId);
+        Map<String, UUID> deptIds = new HashMap<>();
+        jdbc.query("SELECT name, id FROM departments", rs -> { deptIds.put(rs.getString(1), (UUID) rs.getObject(2)); });
+        Map<String, UUID> codeToId = new LinkedHashMap<>();
+            // Sana (the owner) needs to exist before she can be "creator" of the departments in the demo story.
+            codeToId.put("JC-002", upsertEmployee(PEOPLE.get(0), roleIds, shiftIds, deptIds, codeToId, superAdminId));
             for (Person p : PEOPLE.subList(1, PEOPLE.size())) {
                 if (p.dept() != null && !deptIds.containsKey(p.dept())) {
                     UUID creator = codeToId.getOrDefault("JC-012", codeToId.get("JC-002"));
@@ -459,7 +464,11 @@ public class SeedService {
             for (String[] h : heads) jdbc.update("UPDATE departments SET head_employee_id = ? WHERE name = ?", codeToId.get(h[1]), h[0]);
 
             String demoPw = env.getProperty("SEED_DEMO_PASSWORD", "");
-            for (Person p : PEOPLE) setPassword(codeToId.get(p.code()), demoPw.isEmpty() ? null : demoPw, false);
+            String ownerPw = env.getProperty("SEED_OWNER_PASSWORD", "");
+            for (Person p : PEOPLE) {
+                String pw = "owner".equals(p.role()) ? ownerPw : demoPw;
+                setPassword(codeToId.get(p.code()), pw.isEmpty() ? null : pw, false);
+            }
 
             // 2026 holidays (prototype calendar), added by the HR Manager
             String[][] hol = {{"2026-01-26", "Republic Day", "IN"}, {"2026-03-04", "Holi", "IN"}, {"2026-08-15", "Independence Day", "IN"}, {"2026-09-07", "Labor Day", "US"},
@@ -467,7 +476,7 @@ public class SeedService {
                     {"2026-11-24", "Guru Nanak Jayanti", "IN"}, {"2026-11-26", "Thanksgiving Day", "US"}, {"2026-12-25", "Christmas", "ALL"},
                     {"2026-01-01", "New Year's Day", "US"}, {"2026-05-25", "Memorial Day", "US"}, {"2026-07-03", "Independence Day (observed)", "US"}};
             for (String[] h : hol) {
-                jdbc.update("INSERT INTO holidays (id, date, name, region, created_by) VALUES (?, ?, ?, ?::\"HolidayRegion\", ?) ON CONFLICT (date, region) DO NOTHING",
+                jdbc.update("INSERT INTO holidays (id, date, name, region, created_by) VALUES (?, ?, ?, ?::\"HolidayRegion\", ?) ON CONFLICT (business_id, date, region) DO NOTHING",
                         UUID.randomUUID(), d(h[0]), h[1], h[2], codeToId.get("JC-012"));
             }
 
@@ -526,14 +535,20 @@ public class SeedService {
             seedRequests(codeToId);
             seedPayroll(codeToId);
             seedProofFiles();
-        }
         // leave balances: credit every month so far (idempotent)
         jobs.jobLeaveAccrual(Instant.now());
+    }
 
-        long[] counts = {count("employees"), count("roles"), count("departments"), count("holidays"), count("salary_structures")};
-        log.info("Seed complete — employees {}, roles {}, departments {}, holidays {}, structures {}", counts[0], counts[1], counts[2], counts[3], counts[4]);
-        log.info("Super admin: {}{}", adminEmail(), demo ? " · demo password for JC-002…JC-091: "
-                + (env.getProperty("SEED_DEMO_PASSWORD", "").isEmpty() ? "none — use invite links" : "(SEED_DEMO_PASSWORD)") : "");
+    /** Deletes stored payslip PDFs and proof files (after a database reset they belong to nothing). */
+    public void clearStoredFiles() throws IOException {
+        for (String sub : List.of("payslips", "proofs")) {
+            Path dir = projectDir.resolve(uploadDir).normalize().resolve(sub);
+            if (!Files.exists(dir)) continue;
+            try (java.util.stream.Stream<Path> walk = Files.walk(dir)) {
+                for (Path f : walk.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(f);
+            }
+        }
+        log.info("Stored payslips and proofs cleared");
     }
 
     long count(String table) {

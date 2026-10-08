@@ -62,7 +62,7 @@ class JwtSessionTest extends IntegrationTest {
     Signed signIn() throws Exception {
         String c = "JC-J" + (int) (Math.random() * 1_000_000);
         UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
-        MockHttpServletResponse res = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}"))
+        MockHttpServletResponse res = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse();
         List<String> headers = res.getHeaders("Set-Cookie");
         assertThat(headers).anyMatch(h -> h.startsWith("jo_at=") && h.contains("HttpOnly") && h.contains("SameSite=Lax"));

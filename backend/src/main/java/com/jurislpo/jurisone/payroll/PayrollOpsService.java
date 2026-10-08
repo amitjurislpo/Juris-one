@@ -223,7 +223,10 @@ public class PayrollOpsService {
         List<PayrollService.PayRow> rows = payroll.computeRun(ym, null);
         SettingsService.Company company = settings.company();
         String payDate = payDateIn != null ? payDateIn : Format.todayIn("Asia/Kolkata").toString();
-        Path dir = projectDir.resolve(uploadDir).normalize().resolve("payslips").resolve(ym);
+        // employee IDs repeat across businesses, so each business has its own folder
+        java.util.UUID business = com.jurislpo.jurisone.tenancy.TenantContext.current();
+        if (business == null) throw new IllegalStateException("Payroll closes inside a business.");
+        Path dir = projectDir.resolve(uploadDir).normalize().resolve("payslips").resolve(business.toString()).resolve(ym);
         record File(UUID employeeId, String pdfPath, String snapshot, long net) {}
         List<File> files = new ArrayList<>();
         Map<UUID, Map<String, Object>> emps = new LinkedHashMap<>();

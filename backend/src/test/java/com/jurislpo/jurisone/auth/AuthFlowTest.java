@@ -58,6 +58,11 @@ class AuthFlowTest extends IntegrationTest {
         return "JC-" + (100 + (int) (Math.random() * 899_000));
     }
 
+    /** Test employees' sign-in email. */
+    static String mail(String code) {
+        return code.toLowerCase() + "@example.com";
+    }
+
     Cookie login(String id, String pw) throws Exception {
         MvcResult r = mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + id + "\",\"password\":\"" + pw + "\",\"remember\":true}"))
                 .andExpect(status().isCreated()).andReturn();
@@ -68,11 +73,15 @@ class AuthFlowTest extends IntegrationTest {
     }
 
     @Test
-    void signsInByIdOrEmailAndTheSessionAuthenticatesApiCalls() throws Exception {
+    void signsInByEmailOnlyAndTheSessionAuthenticatesApiCalls() throws Exception {
         String code = code();
         UUID id = data.employee(code, code.toLowerCase() + "@example.com", employeeRole, PW);
 
-        MvcResult r = mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code.toLowerCase() + "\",\"password\":\"" + PW + "\",\"remember\":false}"))
+        // employee IDs repeat across businesses, so they are not a sign-in name
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}")).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value(AuthService.BAD_LOGIN));
+
+        MvcResult r = mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code).toUpperCase() + "\",\"password\":\"" + PW + "\",\"remember\":false}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.data.redirect").value("/home")).andReturn();
         String set = r.getResponse().getHeader("Set-Cookie");
         assertThat(set).contains("HttpOnly").contains("SameSite=Lax").contains("Path=/").doesNotContain("Max-Age"); // browser-session cookie
@@ -91,7 +100,7 @@ class AuthFlowTest extends IntegrationTest {
     void wrongPasswordIsRejectedWithoutRevealingWhichPart() throws Exception {
         String code = code();
         data.employee(code, code.toLowerCase() + "@example.com", employeeRole, PW);
-        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"nope-nope-1\"}")).andExpect(status().isUnauthorized())
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"password\":\"nope-nope-1\"}")).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED")).andExpect(jsonPath("$.detail").value(AuthService.BAD_LOGIN));
         mvc.perform(api("/api/auth/session", "{\"identifier\":\"JC-000000\",\"password\":\"nope-nope-1\"}")).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value(AuthService.BAD_LOGIN));
@@ -101,10 +110,10 @@ class AuthFlowTest extends IntegrationTest {
     void locksAfterFiveFailures() throws Exception {
         String code = code();
         UUID id = data.employee(code, code.toLowerCase() + "@example.com", employeeRole, PW);
-        for (int i = 0; i < 4; i++) mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"bad-pass-" + i + "\"}"));
-        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"bad-pass-5\"}"))
+        for (int i = 0; i < 4; i++) mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"password\":\"bad-pass-" + i + "\"}"));
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"password\":\"bad-pass-5\"}"))
                 .andExpect(jsonPath("$.detail").value("Too many failed attempts — this account is locked for 15 minutes."));
-        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}")).andExpect(status().isUnauthorized())
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"password\":\"" + PW + "\"}")).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.startsWith("This account is locked after repeated failed sign-ins.")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'auth.locked'", Integer.class, id)).isEqualTo(1);
     }
@@ -113,20 +122,20 @@ class AuthFlowTest extends IntegrationTest {
     void disabledAndExitedAccountsAreBlockedAndLoseTheirSessionsImmediately() throws Exception {
         String code = code();
         UUID id = data.employee(code, code.toLowerCase() + "@example.com", employeeRole, PW);
-        Cookie c = login(code, PW);
+        Cookie c = login(mail(code), PW);
         jdbc.update("UPDATE employees SET portal_access = false WHERE id = ?", id);
         mvc.perform(get("/api/me").cookie(c)).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value("Your session has ended. Please sign in again."));
-        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}")).andExpect(jsonPath("$.detail").value(AuthService.MSG_DISABLED));
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"password\":\"" + PW + "\"}")).andExpect(jsonPath("$.detail").value(AuthService.MSG_DISABLED));
         jdbc.update("UPDATE employees SET portal_access = true, status = 'EXITED' WHERE id = ?", id);
-        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}")).andExpect(jsonPath("$.detail").value(AuthService.MSG_EXITED));
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"password\":\"" + PW + "\"}")).andExpect(jsonPath("$.detail").value(AuthService.MSG_EXITED));
     }
 
     @Test
     void logoutRevokesTheSessionAndClearsTheCookie() throws Exception {
         String code = code();
         data.employee(code, code.toLowerCase() + "@example.com", employeeRole, PW);
-        Cookie c = login(code, PW);
+        Cookie c = login(mail(code), PW);
         mvc.perform(api(delete("/api/auth/session"), "{}").cookie(c)).andExpect(status().isOk()).andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
         mvc.perform(get("/api/me").cookie(c)).andExpect(status().isUnauthorized());
     }
@@ -135,8 +144,8 @@ class AuthFlowTest extends IntegrationTest {
     void resetLinkWorksExactlyOnce() throws Exception {
         String code = code();
         UUID id = data.employee(code, code.toLowerCase() + "@example.com", employeeRole, PW);
-        Cookie old = login(code, PW);
-        mvc.perform(api("/api/auth/password-resets", "{\"identifier\":\"" + code + "\"}")).andExpect(status().isCreated())
+        Cookie old = login(mail(code), PW);
+        mvc.perform(api("/api/auth/password-resets", "{\"identifier\":\"" + mail(code) + "\"}")).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.msg").value("If that account exists and is active, a reset link is on its way to the official email."));
         String text = jdbc.queryForObject("SELECT text FROM email_outbox WHERE \"to\" = ? ORDER BY created_at DESC LIMIT 1", String.class, code.toLowerCase() + "@example.com");
         Matcher m = Pattern.compile("/reset/([A-Za-z0-9_-]+)").matcher(text);
@@ -150,7 +159,7 @@ class AuthFlowTest extends IntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.redirect").value("/login?reset=1"));
         mvc.perform(get("/api/auth/tokens/RESET/" + token)).andExpect(status().isNotFound());
         mvc.perform(get("/api/me").cookie(old)).andExpect(status().isUnauthorized()); // all sessions ended
-        login(code, "new-password-42");
+        login(mail(code), "new-password-42");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'auth.password_reset'", Integer.class, id)).isEqualTo(1);
     }
 

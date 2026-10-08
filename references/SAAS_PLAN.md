@@ -111,7 +111,7 @@ Statuses: `INVITED → IN_PROGRESS → SUBMITTED → CHANGES_REQUESTED → VERIF
 - Shared database, **`business_id` on every business-owned table**: employees, roles (+ role permissions / assignable roles via role), departments, holidays, settings (policy settings per business), leave types, payroll runs (unique month **per business**), audit log (null = platform event), notifications (via employee).
 - Uniqueness becomes per business: department name, holiday (date, region), role key, employee code. **Work email stays globally unique** (email-only sign-in).
 - Global tables stay global: tax years / sections (India FY rules), shifts (templates), subscription plans.
-- Every query takes the business id from the authenticated principal (`TenantContext`), never from the request. An API test per area proves that a user of business A gets 404 for business B's ids.
+- Every query takes the business id from the authenticated principal (`TenantContext`), never from the request. **Built (S2) with PostgreSQL row-level security:** `TenantDataSource` sets `app.business_id` and `SET ROLE jurisone_tenant` on every connection handed out during a business request; policies on every business-owned table (and, through `employee_id` / `role_id`, on their child tables) filter reads and writes; `business_id` defaults to the current business, so inserts need no code changes. System mode (no business) is used for sign-in, the super admin and the jobs (which then loop over businesses). `TenantIsolationTest` proves that business A can't read or write business B's rows, even with a query that has no filter at all.
 - `users.is_super_admin` users have no business; `employees` stay one-per-person inside a business.
 
 ### 3.3 Start fresh

@@ -49,7 +49,7 @@ class DashboardApiTest extends IntegrationTest {
         UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
         jdbc.update("UPDATE employees SET shift_id = (SELECT id FROM shifts WHERE code = 'IN_DAY') WHERE id = ?", id);
         String set = mvc.perform(post("/api/auth/session").header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
+                .content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
         return new Person(id, new Cookie("jo_at", m.group(1)));
@@ -90,10 +90,10 @@ class DashboardApiTest extends IntegrationTest {
         mvc.perform(get("/api/overview").cookie(admin.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.head").isNumber()).andExpect(jsonPath("$.data.payroll.month").isString());
 
-        jdbc.update("INSERT INTO audit_log (id, actor_id, action, entity, entity_id, after, at) VALUES (?, ?, 'payroll.close', 'payroll_run', 'x', '{\"net\": 123}'::jsonb, now())",
-                UUID.randomUUID(), admin.id());
-        jdbc.update("INSERT INTO audit_log (id, actor_id, action, entity, entity_id, after, at) VALUES (?, ?, 'employee.update', 'employee', ?, '{\"name\": \"A_B\"}'::jsonb, now())",
-                UUID.randomUUID(), admin.id(), emp.id().toString());
+        jdbc.update("INSERT INTO audit_log (id, actor_id, action, entity, entity_id, after, at, business_id) VALUES (?, ?, 'payroll.close', 'payroll_run', 'x', '{\"net\": 123}'::jsonb, now(), ?)",
+                UUID.randomUUID(), admin.id(), data.business());
+        jdbc.update("INSERT INTO audit_log (id, actor_id, action, entity, entity_id, after, at, business_id) VALUES (?, ?, 'employee.update', 'employee', ?, '{\"name\": \"A_B\"}'::jsonb, now(), ?)",
+                UUID.randomUUID(), admin.id(), emp.id().toString(), data.business());
         // no salary permission → payroll payloads are hidden
         mvc.perform(get("/api/audit").param("ev", "payroll").param("actor", admin.id().toString()).cookie(admin.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))

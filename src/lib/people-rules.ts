@@ -22,7 +22,7 @@ export interface Target {
   isSuperAdmin: boolean;
 }
 
-export const isAdmin = (a: Pick<Actor, "roleKey">) => a.roleKey === "admin";
+export const isAdmin = (a: Pick<Actor, "roleKey">) => a.roleKey === "owner"; // the business owner (sub admin)
 
 /** People ops can add employees only if their role can assign at least one role. */
 export const canAddEmployees = (a: Actor) => a.perms.has("people.add") && (isAdmin(a) || a.assignable.size > 0);
@@ -36,7 +36,7 @@ export function canEditEmployee(a: Actor, t: Target): boolean {
 /** access.toggle; never yourself; never the super admin; only Admin toggles an Admin; exited people stay off. */
 export function canToggleAccess(a: Actor, t: Target): boolean {
   if (!a.perms.has("access.toggle") || a.id === t.id || t.isSuperAdmin || t.status === "EXITED") return false;
-  return isAdmin(a) || t.roleKey !== "admin";
+  return isAdmin(a) || t.roleKey !== "owner";
 }
 
 /** May the actor give `roleId` to someone? Keeping a person's current role is always allowed for an editor. */

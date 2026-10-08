@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class RolesService {
 
     /** Built-in order from the prototype. */
-    static final List<String> ORDER = List.of("admin", "hrm", "hre", "fm", "fe", "employee");
+    static final List<String> ORDER = List.of("owner", "hrm", "hre", "fm", "fe", "employee");
 
     public record Member(String id, String name) {}
 

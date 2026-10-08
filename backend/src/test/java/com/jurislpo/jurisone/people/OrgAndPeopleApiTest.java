@@ -40,7 +40,7 @@ class OrgAndPeopleApiTest extends IntegrationTest {
     @BeforeEach
     void setUp() {
         data = new TestData(jdbc);
-        adminRole = data.role("admin", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage",
+        adminRole = data.role("owner", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage",
                 "holidays.manage", "pay.view", "pay.close", "struct.manage", "tax.view", "proofs.verify", "roles.manage");
         hrmRole = data.role("hrm", "self", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "holidays.manage");
         empRole = data.role("employee", "self", "dir");
@@ -70,8 +70,9 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         return b.header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON);
     }
 
+    /** Signs in the test employee with this code (its email is {@code <code>@example.com}). */
     Cookie login(String code) throws Exception {
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}"))
+        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + code.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -86,20 +87,20 @@ class OrgAndPeopleApiTest extends IntegrationTest {
 
     UUID department(String name) {
         UUID id = UUID.randomUUID();
-        jdbc.update("INSERT INTO departments (id, name) VALUES (?, ?)", id, name);
+        jdbc.update("INSERT INTO departments (id, name, business_id) VALUES (?, ?, ?)", id, name, data.business());
         return id;
     }
 
     @Test
     void rolesPermissionToggleIsAuditedAndTheAdminRoleIsLocked() throws Exception {
         Cookie admin = as(adminRole);
-        mvc.perform(get("/api/roles").cookie(admin)).andExpect(status().isOk()).andExpect(jsonPath("$.data[0].key").value("admin"));
+        mvc.perform(get("/api/roles").cookie(admin)).andExpect(status().isOk()).andExpect(jsonPath("$.data[0].key").value("owner"));
         mvc.perform(write(put("/api/roles/" + empRole + "/permissions/att.all")).cookie(admin))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.msg").value("Employee: granted “View everyone’s attendance (with time zones)”"));
         mvc.perform(write(delete("/api/roles/" + empRole + "/permissions/att.all")).cookie(admin)).andExpect(status().isOk());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'role.permission_change' AND entity_id = ?", Integer.class, empRole.toString())).isEqualTo(2);
         mvc.perform(write(put("/api/roles/" + adminRole + "/permissions/self")).cookie(admin))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("Admin has full access and can't be changed."));
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("Owner has full access and can't be changed."));
         mvc.perform(write(put("/api/roles/" + empRole + "/permissions/bogus")).cookie(admin))
                 .andExpect(jsonPath("$.detail").value("Unknown permission."));
 
@@ -141,7 +142,7 @@ class OrgAndPeopleApiTest extends IntegrationTest {
              "aadhaar":"2345 6789 0123","uan":"","address":"12 Lake Road, Pune","designation":"Associate","departmentId":"%s","managerId":"%s",
              "doj":"2031-10-12","shift":"IN_DAY","roleId":"%s"}""".formatted(email.toUpperCase(), dept, finance, empRole);
         JsonNode r = json.readTree(mvc.perform(write(post("/api/people")).cookie(hr).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
-        assertThat(r.at("/msg").asText()).matches("Meera Joshi added as JC-\\d+ · Employee · salary structure pending with Finance · invite sent");
+        assertThat(r.at("/msg").asText()).matches("Meera Joshi added as TE-\\d+ · Employee · salary structure pending with Finance · invite sent");
         String id = r.at("/data/id").asText();
 
         assertThat(jdbc.queryForObject("SELECT status::text FROM employees WHERE id = ?::uuid", String.class, id)).isEqualTo("ONBOARDING");

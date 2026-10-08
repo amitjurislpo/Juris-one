@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class PoliciesService {
 
-    static final List<String> ORDER = List.of("admin", "hrm", "hre", "fm", "fe", "employee");
+    static final List<String> ORDER = List.of("owner", "hrm", "hre", "fm", "fe", "employee");
 
     public record RolePerms(String id, String key, String name, List<String> perms) {}
 
@@ -78,10 +78,12 @@ public class PoliciesService {
                 Date.valueOf(LocalDate.of(year, 1, 1)), Date.valueOf(LocalDate.of(year + 1, 1, 1)));
     }
 
+    /** Shift templates, with this business's grace period. */
     public List<ShiftView> shifts() {
-        return jdbc.query("SELECT id, code, name, start_local, end_local, grace_minutes, region::text AS region FROM shifts ORDER BY code ASC",
+        int grace = settings.attendance().graceMinutes();
+        return jdbc.query("SELECT id, code, name, start_local, end_local, region::text AS region FROM shifts ORDER BY code ASC",
                 (rs, i) -> new ShiftView(rs.getString("id"), rs.getString("code"), rs.getString("name"), rs.getString("start_local"), rs.getString("end_local"),
-                        rs.getInt("grace_minutes"), rs.getString("region")));
+                        grace, rs.getString("region")));
     }
 
     public int lockedRuns() {
@@ -128,8 +130,8 @@ public class PoliciesService {
         ObjectNode value = before.deepCopy();
         value.setAll((ObjectNode) json.valueToTree(f));
         jdbc.update("INSERT INTO settings (key, value, updated_at) VALUES ('attendance.policy', ?::jsonb, now()) "
-                + "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()", value.toString());
-        jdbc.update("UPDATE shifts SET grace_minutes = ?", f.graceMinutes());
+                + "ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()", value.toString());
+        // grace minutes live in the business's policy (shifts are shared templates and are not changed)
         audit.log(u.id(), "policy.attendance_change", "setting", "attendance.policy", before, value, ip);
     }
 

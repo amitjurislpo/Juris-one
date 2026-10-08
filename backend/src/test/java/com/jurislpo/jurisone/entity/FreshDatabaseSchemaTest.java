@@ -43,12 +43,13 @@ class FreshDatabaseSchemaTest {
 
     @Test
     void flywayAppliedTheBaseline() {
-        assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class)).containsExactly("1", "2");
+        assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_type WHERE typname = 'EmployeeStatus'", Integer.class)).isEqualTo(1);
     }
 
     @Test
     void entitiesRoundTripWithNativeEnumsJsonAndDefaults() throws Exception {
+        insideABusiness();
         Role role = new Role();
         role.setKey("employee");
         role.setName("Employee");
@@ -112,8 +113,17 @@ class FreshDatabaseSchemaTest {
         assertThat(jdbc.queryForObject("SELECT \"to\" FROM email_outbox WHERE id = ?", String.class, mail.getId())).isEqualTo("t@example.com");
     }
 
+    /** Business-owned rows take their business from app.business_id (set on this test's transaction). */
+    UUID insideABusiness() {
+        UUID b = UUID.randomUUID();
+        jdbc.update("INSERT INTO businesses (id, name, code, employee_prefix) VALUES (?, 'Schema test', ?, 'ST')", b, "schema-" + b);
+        jdbc.queryForObject("SELECT set_config('app.business_id', ?, false)", String.class, b.toString());
+        return b;
+    }
+
     @Test
     void assignedIdsAreKept() {
+        UUID business = insideABusiness();
         UUID id = UUID.randomUUID();
         Department d = new Department();
         d.setId(id);
@@ -121,5 +131,6 @@ class FreshDatabaseSchemaTest {
         em.persist(d);
         em.flush();
         assertThat(jdbc.queryForObject("SELECT name FROM departments WHERE id = ?", String.class, id)).isEqualTo("Finance");
+        assertThat(jdbc.queryForObject("SELECT business_id FROM departments WHERE id = ?", UUID.class, id)).isEqualTo(business);
     }
 }

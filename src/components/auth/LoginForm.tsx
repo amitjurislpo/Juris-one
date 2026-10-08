@@ -14,13 +14,13 @@ export function LoginForm({ notice, next }: { notice?: string; next?: string }) 
       <div>
         <h2 className="display">Welcome back</h2>
         <p className="muted" style={{ margin: "10px 0 0", fontSize: 14.5 }}>
-          Sign in with your employee ID or official email. You&apos;ll land on the pages your role can use.
+          Sign in with your official email. You&apos;ll land on the pages your role can use.
         </p>
       </div>
       {notice && !state.error && <div className="chip ok" style={{ height: "auto", padding: "10px 12px", whiteSpace: "normal" }} role="status">{notice}</div>}
       <label className="field">
-        Employee ID or email
-        <input key={state.identifier ?? ""} defaultValue={state.identifier} name="identifier" autoComplete="username" placeholder="e.g. JC-074" autoFocus={!state.identifier} required maxLength={200} />
+        Email
+        <input key={state.identifier ?? ""} defaultValue={state.identifier} name="identifier" type="email" autoComplete="username" placeholder="name@company.com" autoFocus={!state.identifier} required maxLength={200} />
       </label>
       <label className="field">
         <span style={{ display: "flex", justifyContent: "space-between" }}>

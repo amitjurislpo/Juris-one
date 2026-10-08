@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { stepErrors, type EmployeeInput } from "@/lib/employee-schema";
 import { canAddEmployees, canAssignRole, canEditEmployee, canToggleAccess, createsCycle, derivedStatus, initialStatus, lockedDepartment, validAadhaar, type Actor, type Target } from "@/lib/people-rules";
 
-const R = { admin: "r-admin", hrm: "r-hrm", hre: "r-hre", fm: "r-fm", fe: "r-fe", emp: "r-emp" };
+const R = { owner: "r-owner", hrm: "r-hrm", hre: "r-hre", fm: "r-fm", fe: "r-fe", emp: "r-emp" };
 const actor = (key: keyof typeof R, perms: string[], assign: (keyof typeof R)[], dept: string | null = null, id = "me"): Actor => ({
   id, roleKey: key === "emp" ? "employee" : key, perms: new Set(perms), assignable: new Set(assign.map((a) => R[a])), departmentId: dept, employeeRoleId: R.emp,
 });
 const target = (key: keyof typeof R, over: Partial<Target> = {}): Target => ({ id: "t", roleId: R[key], roleKey: key === "emp" ? "employee" : key, status: "ACTIVE", isSuperAdmin: false, ...over });
 
-const ADMIN = actor("admin", ["people.add", "access.toggle", "people.view"], ["hrm", "fm", "hre", "fe", "emp"]);
+const ADMIN = actor("owner", ["people.add", "access.toggle", "people.view"], ["hrm", "fm", "hre", "fe", "emp"]);
 const HRM = actor("hrm", ["people.add", "access.toggle", "people.view"], ["hre", "emp"], "d-hr");
 const FM = actor("fm", ["people.add", "access.toggle", "people.view"], ["fe"], "d-fin");
 const HRE = actor("hre", ["people.view"], []);
@@ -18,12 +18,12 @@ describe("editing employees", () => {
     expect(canEditEmployee(HRM, target("emp"))).toBe(true);
     expect(canEditEmployee(HRM, target("hre"))).toBe(true);
     expect(canEditEmployee(HRM, target("fe"))).toBe(false);
-    expect(canEditEmployee(HRM, target("admin"))).toBe(false);
+    expect(canEditEmployee(HRM, target("owner"))).toBe(false);
   });
   it("Admin edits anyone except the super admin; nobody edits themselves", () => {
     expect(canEditEmployee(ADMIN, target("hrm"))).toBe(true);
-    expect(canEditEmployee(ADMIN, target("admin", { isSuperAdmin: true }))).toBe(false);
-    expect(canEditEmployee(ADMIN, target("admin", { id: "me" }))).toBe(false);
+    expect(canEditEmployee(ADMIN, target("owner", { isSuperAdmin: true }))).toBe(false);
+    expect(canEditEmployee(ADMIN, target("owner", { id: "me" }))).toBe(false);
   });
   it("needs people.add", () => {
     expect(canEditEmployee(HRE, target("emp"))).toBe(false);
@@ -35,12 +35,12 @@ describe("editing employees", () => {
 describe("access toggle", () => {
   it("never yourself, never super admin, never exited", () => {
     expect(canToggleAccess(HRM, target("emp", { id: "me" }))).toBe(false);
-    expect(canToggleAccess(ADMIN, target("admin", { isSuperAdmin: true }))).toBe(false);
+    expect(canToggleAccess(ADMIN, target("owner", { isSuperAdmin: true }))).toBe(false);
     expect(canToggleAccess(HRM, target("emp", { status: "EXITED" }))).toBe(false);
   });
   it("only Admin can toggle an Admin", () => {
-    expect(canToggleAccess(HRM, target("admin"))).toBe(false);
-    expect(canToggleAccess(ADMIN, target("admin"))).toBe(true);
+    expect(canToggleAccess(HRM, target("owner"))).toBe(false);
+    expect(canToggleAccess(ADMIN, target("owner"))).toBe(true);
     expect(canToggleAccess(HRM, target("fm"))).toBe(true);
   });
   it("needs access.toggle", () => expect(canToggleAccess(HRE, target("emp"))).toBe(false));

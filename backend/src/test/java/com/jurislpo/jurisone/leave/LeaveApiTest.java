@@ -73,7 +73,7 @@ class LeaveApiTest extends IntegrationTest {
         String c = "JC-" + (++seq) + (int) (Math.random() * 1000);
         UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
         jdbc.update("UPDATE employees SET shift_id = (SELECT id FROM shifts WHERE code = 'IN_DAY') WHERE id = ?", id);
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
+        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
         return new Person(id, c, new Cookie("jo_at", m.group(1)));

@@ -273,9 +273,12 @@ public class PeopleService {
     public record FormOptions(String nextCode, List<DeptOption> departments, String lockedDepartmentId, List<Manager> managers, List<RoleOption> roles,
                               EmployeeInput defaults, Editing editing) {}
 
+    /** Next employee ID in this business: its prefix plus the next number, e.g. AB-007 (row-level security scopes the max). */
     String nextCode() {
-        Integer n = jdbc.queryForObject("SELECT max(substring(code from 4)::int) FROM employees WHERE code ~ '^JC-[0-9]+$'", Integer.class);
-        return "JC-" + String.format(java.util.Locale.ROOT, "%03d", (n == null ? 0 : n) + 1);
+        String prefix = jdbc.queryForObject("SELECT employee_prefix FROM businesses WHERE id = jurisone_tenant_id()", String.class);
+        Integer n = jdbc.queryForObject("SELECT max(substring(code from ?)::int) FROM employees WHERE code ~ ?", Integer.class,
+                prefix.length() + 2, "^" + prefix + "-[0-9]+$");
+        return prefix + "-" + String.format(java.util.Locale.ROOT, "%03d", (n == null ? 0 : n) + 1);
     }
 
     private Map<String, Object> editable(Actor actor, UUID editId) {
@@ -287,7 +290,7 @@ public class PeopleService {
     record RoleRow(String id, String key, String name, int perms) {}
 
     private boolean roleAllowed(Actor actor, RoleRow r, String currentRoleId) {
-        return PeopleRules.canAssignRole(actor, r.id(), currentRoleId) || (PeopleRules.isAdmin(actor) && !"admin".equals(r.key())) || r.id().equals(currentRoleId);
+        return PeopleRules.canAssignRole(actor, r.id(), currentRoleId) || (PeopleRules.isAdmin(actor) && !"owner".equals(r.key())) || r.id().equals(currentRoleId);
     }
 
     public FormOptions formOptions(CurrentUser u, String editIdRaw) {
@@ -410,7 +413,7 @@ public class PeopleService {
         if (roleRows.isEmpty()) throw new UserException("Pick a role.");
         Map<String, Object> role = roleRows.get(0);
         String currentRole = current == null ? null : current.get("role_id").toString();
-        boolean ok = PeopleRules.canAssignRole(actor, f.roleId(), currentRole) || (PeopleRules.isAdmin(actor) && !"admin".equals(role.get("key")));
+        boolean ok = PeopleRules.canAssignRole(actor, f.roleId(), currentRole) || (PeopleRules.isAdmin(actor) && !"owner".equals(role.get("key")));
         if (!ok) throw new UserException("You can't give people the " + role.get("name") + " role.");
 
         // Department: must exist; locked to the actor's own department where the rule applies.
@@ -438,6 +441,10 @@ public class PeopleService {
                 ? jdbc.queryForList("SELECT code FROM employees WHERE email = ? LIMIT 1", String.class, email)
                 : jdbc.queryForList("SELECT code FROM employees WHERE email = ? AND id <> ? LIMIT 1", String.class, email, editId);
         if (!clash.isEmpty()) throw new UserException(clash.get(0) + " already uses that email.");
+        // the email is the sign-in, so it must also be free in every other business (which is not named)
+        if (Boolean.TRUE.equals(jdbc.queryForObject("SELECT jurisone_email_in_use(?, ?)", Boolean.class, email, editId == null ? null : UUID.fromString(editId.toString())))) {
+            throw new UserException("That email is already in use.");
+        }
 
         Location loc = PeopleRules.location(f.location());
         boolean india = "IN".equals(loc.region());
@@ -511,7 +518,7 @@ public class PeopleService {
         UUID id = UUID.randomUUID();
         tx.executeWithoutResult(s -> {
             // serialise code allocation
-            jdbc.execute("SELECT pg_advisory_xact_lock(74201)");
+            jdbc.execute("SELECT pg_advisory_xact_lock(74201, hashtext(jurisone_tenant_id()::text))"); // one allocation at a time per business
             String code = nextCode();
             codeOut[0] = code;
             jdbc.update("""

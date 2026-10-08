@@ -26,20 +26,22 @@ npm install
 cp .env.example .env        # then fill in every <placeholder> (commands to generate keys are in the file)
 npm run db:up               # Postgres 16 on localhost:5436
 npm run db:migrate          # create / update the schema (Flyway)
-npm run db:seed             # roles, policies, tax tables, super admin and demo data
+npm run db:seed             # shared tables and the super admin (SEED_DEMO=true adds a demo business)
 npm run backend:dev         # API on http://localhost:8080 (leave it running)
 npm run dev                 # http://localhost:3005
 ```
 
 ### Sign in
 
-| Who | Login | Password |
-|---|---|---|
-| Super admin | `SUPER_ADMIN_EMAIL` | `SUPER_ADMIN_PASSWORD` (both from your `.env`) |
-| Demo employees (REQUIREMENTS §8) | `JC-002`, `JC-004`, `JC-012`, `JC-015`, `JC-018`, `JC-035`, `JC-049`, `JC-058`, `JC-072`, `JC-074`, `JC-090`, `JC-091` | `SEED_DEMO_PASSWORD` from your `.env` (empty = invite links only) |
-| Blocked on purpose | `JC-081` (access disabled), `JC-030` (past employee) | same |
+Everyone signs in with their **email** (employee IDs repeat from one business to the next, so they are not a sign-in name).
 
-You can sign in with either the employee ID or the official email. The seed never overwrites a password that is already set.
+| Who | Email | Password |
+|---|---|---|
+| Super admin (platform) | `SUPER_ADMIN_EMAIL` | `SUPER_ADMIN_PASSWORD` (both from your `.env`) |
+| Demo business owner — sub admin (only with `SEED_DEMO=true`) | `sana.kapoor@jurislpo.com` (JC-002) | `SEED_OWNER_PASSWORD` |
+| Demo business employees (only with `SEED_DEMO=true`) | `firstname.lastname@jurislpo.com` (JC-004 … JC-091) | `SEED_DEMO_PASSWORD` |
+
+The seed never overwrites a password that is already set.
 
 **Change the super admin password after the first sign-in in any shared environment.**
 
@@ -56,7 +58,8 @@ You can sign in with either the employee ID or the official email. The seed neve
 | `npm run backend:up` | Build and start the API in docker-compose |
 | `npm run db:up` | Start Postgres in docker-compose |
 | `npm run db:migrate` | Apply pending Flyway migrations and exit |
-| `npm run db:seed` | Idempotent seed. `SEED_DEMO=false` seeds only the core data. |
+| `npm run db:seed` | Idempotent seed: shared tables (shifts, leave types, tax) and the super admin. `SEED_DEMO=true` also creates the demo business. |
+| `npm run db:reset` | **Development only:** empties the database, migrates, seeds and clears stored payslips / proofs. Refuses unless `APP_URL` is localhost or `ALLOW_DB_RESET=true`. |
 | `npm run jobs` | Run the scheduled jobs once (for cron) |
 | `scripts/backup.sh` / `scripts/restore.sh` | Postgres backup (keeps 14 days) / restore — see *Deploying* |
 
@@ -137,6 +140,8 @@ prisma/schema.prisma               the original data model, kept as a readable r
 ```
 
 ### Security model
+
+**Businesses are kept apart by the database.** JurisOne hosts many businesses in one database. Every business-owned row carries `business_id`, and PostgreSQL row-level security lets a request see and change only its own business's rows: the API sets the business of the signed-in user on every database connection (and switches to the restricted `jurisone_tenant` role, because superusers skip row-level security). Sign-in, the super admin and the scheduled jobs run without a business; the jobs then process one business at a time. Employee codes, department names, holidays, roles, policies and payroll months are unique per business; emails are unique across the platform.
 
 **Permissions are checked by the API.**
 - Every page calls `requirePage(<nav id>)` in Next.js, and the API checks the same permission again for the data it returns.

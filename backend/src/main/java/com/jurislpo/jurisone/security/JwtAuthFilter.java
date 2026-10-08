@@ -1,6 +1,7 @@
 package com.jurislpo.jurisone.security;
 
 import com.jurislpo.jurisone.auth.SessionService;
+import com.jurislpo.jurisone.tenancy.TenantContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -29,7 +30,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * one lookup confirms the session ({@code sid}) is not revoked or expired and the employee still has portal access,
  * is not exited and has a user row — so disabling access or signing out takes effect on the very next request.
  * Permissions are read on every request so role edits apply immediately. {@code last_seen_at} is touched at most
- * every 5 minutes.
+ * every 5 minutes. The user's business becomes the request's {@link TenantContext} (row-level security), and is
+ * always cleared when the request ends.
  */
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
@@ -41,7 +43,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final String USER_SQL = """
         SELECT s.id AS sid, s.employee_id AS session_employee, s.expires_at, s.revoked_at, s.last_seen_at,
-               e.id, e.code, e.full_name, e.email, e.designation, e.role_id, e.portal_access, e.status::text AS status,
+               e.id, e.business_id, e.code, e.full_name, e.email, e.designation, e.role_id, e.portal_access, e.status::text AS status,
                e.region::text AS region, e.time_zone, u.is_super_admin, u.employee_id AS user_id, r.key AS role_key, r.name AS role_name,
                EXISTS (SELECT 1 FROM employees d WHERE d.reporting_manager_id = e.id AND d.status <> 'EXITED') AS has_reports
         FROM sessions s
@@ -60,22 +62,28 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain) throws ServletException, IOException {
-        String token = cookie(req, SessionService.ACCESS_COOKIE);
-        if (token != null && !token.isEmpty()) {
-            try {
-                JwtService.AccessClaims claims = jwt.verify(token);
-                CurrentUser u = load(claims);
-                if (u != null) {
-                    List<SimpleGrantedAuthority> auth = u.perms().stream().map(SimpleGrantedAuthority::new).toList();
-                    SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(u, null, auth));
+        TenantContext.clear(); // the lookup below is a system query
+        try {
+            String token = cookie(req, SessionService.ACCESS_COOKIE);
+            if (token != null && !token.isEmpty()) {
+                try {
+                    JwtService.AccessClaims claims = jwt.verify(token);
+                    CurrentUser u = load(claims);
+                    if (u != null) {
+                        List<SimpleGrantedAuthority> auth = u.perms().stream().map(SimpleGrantedAuthority::new).toList();
+                        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(u, null, auth));
+                        TenantContext.set(u.businessId()); // null for the super admin: platform requests run in system mode
+                    }
+                } catch (JwtService.ExpiredException e) {
+                    req.setAttribute(EXPIRED_ATTR, Boolean.TRUE);
+                } catch (JwtException | IllegalArgumentException e) {
+                    log.debug("rejected access token: {}", e.getMessage()); // forged / malformed: treated as signed out
                 }
-            } catch (JwtService.ExpiredException e) {
-                req.setAttribute(EXPIRED_ATTR, Boolean.TRUE);
-            } catch (JwtException | IllegalArgumentException e) {
-                log.debug("rejected access token: {}", e.getMessage()); // forged / malformed: treated as signed out
             }
+            chain.doFilter(req, res);
+        } finally {
+            TenantContext.clear();
         }
-        chain.doFilter(req, res);
     }
 
     /** A cookie's value, or null. */
@@ -108,6 +116,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 (UUID) r.get("id"), (String) r.get("code"), (String) r.get("full_name"), (String) r.get("email"), (String) r.get("designation"),
                 roleId, (String) r.get("role_key"), (String) r.get("role_name"), java.util.Set.copyOf(new HashSet<>(perms)),
                 Boolean.TRUE.equals(r.get("is_super_admin")), (String) r.get("region"), (String) r.get("time_zone"),
-                Boolean.TRUE.equals(r.get("has_reports")), claims.sessionId());
+                Boolean.TRUE.equals(r.get("has_reports")), claims.sessionId(), (UUID) r.get("business_id"));
     }
 }

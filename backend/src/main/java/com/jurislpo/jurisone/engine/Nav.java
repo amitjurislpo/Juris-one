@@ -22,6 +22,7 @@ public final class Nav {
     }
 
     public static final List<Item> NAV = List.of(
+            item("platform", "Businesses", "building", List.of(PLATFORM_MANAGE), "Platform"),
             item("home", "Home", "home", List.of(SELF), null),
             item("overview", "Overview", "home", List.of(ROLES_MANAGE), null),
             item("attendance", "My attendance", "clock", List.of(SELF), null),
@@ -59,8 +60,9 @@ public final class Nav {
         return NAV.stream().filter(n -> allowed(n, perms, hasReports)).toList();
     }
 
-    /** Landing page after login: Home for anyone with `self`, Overview for Admin. */
+    /** Landing page after login: the platform console for the super admin, Home for anyone with `self`, Overview for the business admin. */
     public static String landingFor(Set<String> perms) {
+        if (perms.contains(PLATFORM_MANAGE)) return "/platform";
         return perms.contains(SELF) ? "/home" : perms.contains(ROLES_MANAGE) ? "/overview" : "/directory";
     }
 }

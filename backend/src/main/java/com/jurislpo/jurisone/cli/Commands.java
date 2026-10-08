@@ -8,8 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * One-shot commands: {@code migrate} (npm run db:migrate — Flyway runs while the app starts), {@code seed} (npm run db:seed)
- * and {@code jobs} (npm run jobs, for cron).
+ * One-shot commands: {@code migrate} (npm run db:migrate — Flyway runs while the app starts), {@code seed} (npm run db:seed),
+ * {@code reset} (npm run db:reset — development only: empty database, migrate, seed) and {@code jobs} (npm run jobs, for cron).
  */
 @Component
 public class Commands {
@@ -26,7 +26,7 @@ public class Commands {
         this.json = json;
     }
 
-    static final java.util.Set<String> NAMES = java.util.Set.of("migrate", "seed", "jobs");
+    static final java.util.Set<String> NAMES = java.util.Set.of("migrate", "seed", "reset", "jobs");
 
     /** The command named in the arguments, or null to run the API. */
     public static String of(String[] args) {
@@ -38,6 +38,10 @@ public class Commands {
         try {
             if ("migrate".equals(command)) log.info("Database schema is up to date");
             else if ("seed".equals(command)) seed.run();
+            else if ("reset".equals(command)) {
+                seed.clearStoredFiles(); // the schema was emptied and re-migrated while the app started
+                seed.run();
+            }
             else System.out.println(json.writerWithDefaultPrettyPrinter().writeValueAsString(jobs.runJobs(Instant.now())));
             return 0;
         } catch (Exception e) {

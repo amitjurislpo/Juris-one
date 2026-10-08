@@ -53,7 +53,7 @@ class TaxApiTest extends IntegrationTest {
     Person person(UUID role) throws Exception {
         String c = "JC-" + (++seq) + (int) (Math.random() * 1000);
         UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
+        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
         return new Person(id, new Cookie("jo_at", m.group(1)));

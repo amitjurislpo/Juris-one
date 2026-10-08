@@ -14,6 +14,12 @@ public final class Permissions {
             HOLIDAYS_MANAGE = "holidays.manage", PAY_VIEW = "pay.view", PAY_CLOSE = "pay.close", STRUCT_MANAGE = "struct.manage",
             TAX_VIEW = "tax.view", PROOFS_VERIFY = "proofs.verify", ROLES_MANAGE = "roles.manage";
 
+    /**
+     * The platform super admin's permission (businesses, plans, subscriptions). It is not part of the business catalogue
+     * below, so no business role can ever be given it.
+     */
+    public static final String PLATFORM_MANAGE = "platform.manage";
+
     /** key → label, in catalogue order. */
     public static final Map<String, String> LABELS;
 

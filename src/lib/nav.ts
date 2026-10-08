@@ -1,18 +1,21 @@
 import type { Permission } from "./permissions";
 
 export type NavId =
-  | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
+  | "platform" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
   | "register" | "approvals" | "people" | "departments" | "holidays"
   | "payroll" | "structures" | "tax" | "proofs" | "roles" | "settings" | "audit";
 
-export type NavGroup = "My workspace" | "Workspace" | "Team" | "People ops" | "Finance" | "Administration";
+export type NavGroup = "Platform" | "My workspace" | "Workspace" | "Team" | "People ops" | "Finance" | "Administration";
+
+/** The platform super admin's permission — never part of a business role. */
+export const PLATFORM_MANAGE = "platform.manage";
 
 export interface NavItem {
   id: NavId;
   label: string;
   icon: string;
   /** Any one of these grants access. */
-  perm: Permission[];
+  perm: (Permission | typeof PLATFORM_MANAGE)[];
   /** Extra condition evaluated on the server (e.g. has direct reports). */
   needsReports?: boolean;
   group?: NavGroup;
@@ -20,6 +23,7 @@ export interface NavItem {
 
 /** Sidebar + route access table (prototype NAV). Every page checks this on the server. */
 export const NAV: NavItem[] = [
+  { id: "platform", label: "Businesses", icon: "building", perm: [PLATFORM_MANAGE], group: "Platform" },
   { id: "home", label: "Home", icon: "home", perm: ["self"] },
   { id: "overview", label: "Overview", icon: "home", perm: ["roles.manage"] },
   { id: "attendance", label: "My attendance", icon: "clock", perm: ["self"] },
@@ -48,5 +52,6 @@ export function navAllowed(item: NavItem, perms: ReadonlySet<string>, hasReports
   return item.perm.some((p) => perms.has(p)) && (!item.needsReports || hasReports);
 }
 
-/** Landing page after login: Home for anyone with `self`, Overview for Admin. */
-export const landingFor = (perms: ReadonlySet<string>) => (perms.has("self") ? "/home" : perms.has("roles.manage") ? "/overview" : "/directory");
+/** Landing page after login: the platform console for the super admin, Home for anyone with `self`, Overview for the business admin. */
+export const landingFor = (perms: ReadonlySet<string>) =>
+  perms.has(PLATFORM_MANAGE) ? "/platform" : perms.has("self") ? "/home" : perms.has("roles.manage") ? "/overview" : "/directory";

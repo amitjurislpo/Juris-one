@@ -9,6 +9,7 @@ import com.jurislpo.jurisone.engine.PeopleRules;
 import com.jurislpo.jurisone.entity.EmployeeStatus;
 import com.jurislpo.jurisone.platform.AuditService;
 import com.jurislpo.jurisone.platform.SettingsService;
+import com.jurislpo.jurisone.tenancy.TenantContext;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
@@ -29,8 +30,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * Scheduled jobs — src/lib/jobs.ts, same order and idempotency (job_runs), each job committing as it goes.
- * One run at a time across instances: advisory lock 74202, taken and released on one dedicated connection
+ * Scheduled jobs — src/lib/jobs.ts, same order and idempotency (job_runs), each job committing as it goes,
+ * run business by business. One run at a time across instances: advisory lock 74202, taken and released on one dedicated connection
  * (the Node app took and released it through a pool, which could leak the lock).
  */
 @Service
@@ -70,14 +71,14 @@ public class JobsService {
             }
             if (!ok) return Map.of("skipped", true);
             try {
-                Map<String, Object> r = new LinkedHashMap<>();
-                r.put("status", jobEmployeeStatus(now));
-                r.put("lock", jobLockMonths(now));
-                r.put("finalize", jobFinalizeDays(now));
-                r.put("yearEnd", jobLeaveYearEnd(now));
-                r.put("accrual", jobLeaveAccrual(now));
-                r.put("compOff", jobCompOffExpiry(now));
-                return r;
+                // each business with its own policies; rows written are tagged with that business
+                Map<String, Object> all = new LinkedHashMap<>();
+                List<Map<String, Object>> businesses = TenantContext.call(null,
+                        () -> jdbc.queryForList("SELECT id, code FROM businesses WHERE status = 'ACTIVE' ORDER BY code"));
+                for (Map<String, Object> b : businesses) {
+                    all.put((String) b.get("code"), TenantContext.call((UUID) b.get("id"), () -> runForBusiness(now)));
+                }
+                return all;
             } finally {
                 try (java.sql.PreparedStatement st = lockConn.prepareStatement("SELECT pg_advisory_unlock(?)")) {
                     st.setLong(1, LOCK_ID);
@@ -87,6 +88,18 @@ public class JobsService {
         } catch (java.sql.SQLException e) {
             throw new IllegalStateException("jobs lock", e);
         }
+    }
+
+    /** Every job, in order, for the current business. */
+    public Map<String, Object> runForBusiness(Instant now) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("status", jobEmployeeStatus(now));
+        r.put("lock", jobLockMonths(now));
+        r.put("finalize", jobFinalizeDays(now));
+        r.put("yearEnd", jobLeaveYearEnd(now));
+        r.put("accrual", jobLeaveAccrual(now));
+        r.put("compOff", jobCompOffExpiry(now));
+        return r;
     }
 
     /**

@@ -9,7 +9,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 
 /**
  * JurisOne REST API. The Next.js app (port 3005) is its only client; it proxies /api/* here.
- * With a command argument it runs that once and exits instead: {@code migrate}, {@code seed} or {@code jobs} (see cli.Commands).
+ * With a command argument it runs that once and exits instead: {@code migrate}, {@code seed}, {@code reset} or {@code jobs} (see cli.Commands).
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan
@@ -23,6 +23,10 @@ public class JurisOneApplication {
         }
         app.setWebApplicationType(WebApplicationType.NONE);
         System.setProperty("jurisone.jobs-enabled", "false"); // no scheduler: the command is the only thing that runs
+        if ("reset".equals(command)) {
+            System.setProperty("jurisone.reset", "true");               // FlywayConfig cleans before migrating
+            System.setProperty("spring.flyway.clean-disabled", "false");
+        }
         ConfigurableApplicationContext ctx = app.run(args);
         int code = ctx.getBean(Commands.class).run(command);
         System.exit(SpringApplication.exit(ctx, () -> code));

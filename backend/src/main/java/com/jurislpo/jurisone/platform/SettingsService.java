@@ -57,13 +57,17 @@ public class SettingsService {
         this.json = json.copy().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
-    /** The merged JSON value for a key. */
+    /**
+     * The merged JSON value for a key in the current business (defaults + the business's saved value). Outside a
+     * business (sign-in, the super admin) the platform defaults apply.
+     */
     public ObjectNode get(String key) {
         String d = DEFAULTS.get(key);
         if (d == null) throw new IllegalArgumentException("Unknown setting " + key);
         try {
             ObjectNode base = (ObjectNode) json.readTree(d);
-            Setting row = em.find(Setting.class, key);
+            if (com.jurislpo.jurisone.tenancy.TenantContext.current() == null) return base;
+            Setting row = em.find(Setting.class, key); // row-level security: only this business's row is visible
             if (row != null && row.getValue() instanceof ObjectNode o) base.setAll(o);
             return base;
         } catch (java.io.IOException e) {

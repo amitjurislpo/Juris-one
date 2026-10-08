@@ -95,6 +95,7 @@ public class AttendanceService {
      * @param where e.g. {@code "e.id = ?"}; may be empty
      */
     public List<AttEmployee> loadAttEmployees(String where, Object... args) {
+        int grace = settings.attendance().graceMinutes(); // the business's grace period applies to every shift
         String sql = """
             SELECT e.id, e.code, e.full_name, e.designation, d.name AS dept, e.department_id, e.time_zone, e.region::text AS region,
                    e.date_of_joining, e.exit_date, s.code AS s_code, s.name AS s_name, s.start_local, s.end_local, s.grace_minutes
@@ -104,8 +105,8 @@ public class AttendanceService {
                 (UUID) rs.getObject("id"), rs.getString("code"), rs.getString("full_name"), rs.getString("designation"),
                 rs.getString("dept") == null ? "—" : rs.getString("dept"), (UUID) rs.getObject("department_id"), rs.getString("time_zone"),
                 rs.getString("region"), rs.getDate("date_of_joining").toLocalDate(), rs.getDate("exit_date") == null ? null : rs.getDate("exit_date").toLocalDate(),
-                rs.getString("s_code") == null ? DEFAULT_SHIFT
-                        : new Shift(rs.getString("s_code"), rs.getString("s_name"), rs.getString("start_local"), rs.getString("end_local"), rs.getInt("grace_minutes"))),
+                rs.getString("s_code") == null ? new Shift(DEFAULT_SHIFT.code(), DEFAULT_SHIFT.name(), DEFAULT_SHIFT.startLocal(), DEFAULT_SHIFT.endLocal(), grace)
+                        : new Shift(rs.getString("s_code"), rs.getString("s_name"), rs.getString("start_local"), rs.getString("end_local"), grace)),
                 args);
     }
 
