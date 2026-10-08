@@ -14,10 +14,10 @@ export async function taxDetail(employeeId: string): Promise<ActionResult<{ mont
 
 /** Finance overrides an employee's regime (REQUIREMENTS §5.9). */
 export async function overrideRegime(employeeId: string, regime: "NEW" | "OLD"): Promise<ActionResult> {
-  return apiAction("PUT", "/api/tax/regime", { employeeId, regime }, PAGES);
+  return apiAction("PUT", `/api/tax/${enc(employeeId)}/regime`, { regime }, PAGES);
 }
 
 /** Previous employer income and TDS this FY (Form 12B), in rupees. */
 export async function setPreviousEmployer(i: { employeeId: string; income: number; tds: number }): Promise<ActionResult> {
-  return apiAction("PUT", "/api/tax/previous-employer", i, PAGES);
+  return apiAction("PUT", `/api/tax/${enc(i.employeeId)}/previous-employer`, { income: i.income, tds: i.tds }, PAGES);
 }

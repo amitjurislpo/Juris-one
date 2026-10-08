@@ -17,9 +17,9 @@ export async function proofDetail(employeeId: string): Promise<ActionResult<Proo
 
 /** Approve / reject one proof. Only approved amounts reduce TDS. */
 export async function decideProof(i: { id: string; approve: boolean; reason?: string }): Promise<ActionResult> {
-  return apiAction("POST", "/api/proofs/decision", i, PAGES);
+  return apiAction("PUT", `/api/proofs/items/${enc(i.id)}/decision`, { approve: i.approve, reason: i.reason }, PAGES);
 }
 
 export async function approveAllPending(employeeId: string): Promise<ActionResult> {
-  return apiAction("POST", `/api/proofs/${enc(employeeId)}/approve-all`, {}, PAGES);
+  return apiAction("PUT", `/api/proofs/${enc(employeeId)}/decision`, { approve: true }, PAGES);
 }

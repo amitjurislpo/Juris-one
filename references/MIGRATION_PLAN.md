@@ -1707,3 +1707,42 @@ Each row is ticked only when the Spring module is live, its JUnit tests pass and
 | Jobs | status changes, month lock, absence marking, accrual, comp-off expiry, year end; idempotent; single runner (advisory lock); `npm run jobs` for cron | `AttendanceApiTest#jobsAreIdempotentAndLockMonths` | (covered by attendance/leave specs) | ☑ M4 / M9 |
 | Seed | `npm run db:seed` (Java) produces the same data as `prisma/seed.ts` did — all 30 tables identical after normalising ids and run-time timestamps, incl. the 55 payslip snapshots and 3,193 punches; no default admin password | `SeedServiceTest` + one-off table diff | full suite | ☑ M9 |
 | Data | existing passwords verify, existing PII decrypts, existing sessions stay valid, existing payslip PDFs open, Flyway baseline leaves the schema untouched | `CryptoTest`, `PasswordsTest`, `ExistingPrismaDatabaseTest`, `FreshDatabaseSchemaTest` | full suite | ☑ M1 / M2 |
+
+## 14. REST API (after the migration)
+
+Every endpoint lives under `/api` on the Spring Boot API. The browser reaches it through the Next.js `/api/*` rewrite; pages and server actions call it server-side through `src/lib/backend.ts`. Permissions are checked in every controller.
+
+### 14.1 Conventions
+
+| Rule | Applied as |
+|---|---|
+| Nouns, not verbs, in paths | `/api/leave/requests`, `/api/attendance/punches`, `/api/declarations/submissions`, `/api/auth/session` |
+| The resource id is in the path, never only in the body | `PUT /api/tax/{employeeId}/regime`, `PUT /api/payroll/{month}/adjustments/{employeeId}` |
+| `GET` reads and never changes data (audited reads are the only side effect) | `GET /api/leave/preview?type=&from=&to=&part=`, `GET /api/people/{id}/contact` |
+| `POST` creates → **201 Created** | person, role, department, holiday, leave request, regularization, punch, salary structure, invitation, declaration submission, session, password-reset request |
+| `PUT` sets a value or a state (idempotent) | access on/off, regime, profile, declared amount, decisions, payroll status, a granted permission |
+| `PATCH` changes part of a resource | `PATCH /api/notifications {"read": true}` |
+| `DELETE` removes or withdraws | session (sign out), leave request, regularization, department, holiday, role, revoked permission, payroll adjustment |
+| Status codes | 200 · 201 · 400 invalid input · 401 signed out · 403 not allowed · 404 not found · 405 wrong method (with `Allow`) · 409 duplicate · 410 used/expired link · 415 · 422 business rule · 429 throttled · 500 |
+| Body | `{ "ok": true, "msg"?, "data"? }` or `{ "ok": false, "error" }`, with the exact texts the app showed before the migration |
+
+The 7 file routes the browser opens directly keep their original paths, methods and status codes. They are linked from pages, may be bookmarked and are covered by the unchanged Playwright tests: `GET /api/people/export`, `GET /api/attendance/register` (CSV), `GET /api/payroll/export`, `GET /api/payslips/{month}/{code}` (PDF), `POST /api/declarations/proof` (multipart upload), `GET /api/declarations/proof/{id}`, `GET /api/tax/export`.
+
+### 14.2 Endpoints
+
+| Area | Endpoints |
+|---|---|
+| Auth | `POST /api/auth/session` (sign in, 201 + cookie) · `DELETE /api/auth/session` (sign out) · `POST /api/auth/password-resets` · `GET /api/auth/tokens/{purpose}/{token}` · `PUT /api/auth/password` |
+| Me & shell | `GET /api/me` · `GET /api/shell` · `PATCH /api/notifications` |
+| Roles | `GET /api/roles` · `POST /api/roles` · `DELETE /api/roles/{id}` · `PUT`/`DELETE /api/roles/{id}/permissions/{perm}` · `PUT`/`DELETE /api/roles/{id}/assignable-roles/{roleId}` |
+| Policies | `GET /api/settings/access` · `GET /api/settings/leave` · `GET /api/settings/holidays?year=` · `GET`/`PUT /api/settings/attendance` |
+| Departments & holidays | `GET`/`POST /api/departments` · `DELETE /api/departments/{id}` · `GET`/`POST /api/holidays` · `DELETE /api/holidays/{id}` |
+| People | `GET /api/people` · `POST /api/people` · `GET`/`PUT /api/people/{id}` · `GET /api/people/{id}/contact` · `PUT /api/people/{id}/access` · `PUT /api/people/{id}/exit` · `POST /api/people/{id}/invitations` · `GET /api/people/form-options` · `GET /api/directory` · `GET /api/people/export` |
+| Attendance | `GET /api/attendance/me` · `POST /api/attendance/punches` · `POST /api/attendance/regularizations` · `DELETE /api/attendance/regularizations/{id}` · `PUT /api/attendance/regularizations/{id}/decision` · `GET /api/register` · `GET /api/attendance/register` (CSV) |
+| Leave & approvals | `GET /api/leave` · `GET /api/leave/preview` · `POST /api/leave/requests` · `DELETE /api/leave/requests/{id}` · `PUT /api/leave/requests/{id}/decision` · `GET /api/approvals` |
+| Payroll | `GET /api/payroll?m=` · `PUT`/`DELETE /api/payroll/{month}/adjustments/{employeeId}` · `PUT /api/payroll/{month}/status` · `GET`/`POST /api/structures` · `GET /api/payslips` · `GET /api/payslips/{month}/{code}` · `GET /api/payroll/export` |
+| Tax | `GET /api/declarations` · `PUT /api/declarations/regime` · `PUT /api/declarations/profile` · `PUT /api/declarations/items/{key}` · `POST /api/declarations/submissions` · `POST /api/declarations/proof` · `GET /api/declarations/proof/{id}` · `GET /api/proofs` · `GET /api/proofs/{employeeId}` · `PUT /api/proofs/items/{id}/decision` · `PUT /api/proofs/{employeeId}/decision` · `GET /api/tax` · `GET /api/tax/{employeeId}` · `PUT /api/tax/{employeeId}/regime` · `PUT /api/tax/{employeeId}/previous-employer` · `GET /api/tax/export` |
+| Dashboards | `GET /api/home` · `GET /api/overview` · `GET /api/team` · `GET /api/audit` |
+| Health | `GET /actuator/health` |
+
+Every Next.js server action maps to exactly one of these endpoints (`src/app/**/actions.ts`), and every page reads its data from one `GET` (see each `page.tsx`). `RestEndpointsTest` checks the conventions; the area API tests check each endpoint's rules and messages.

@@ -2,27 +2,34 @@ package com.jurislpo.jurisone.payroll;
 
 import com.jurislpo.jurisone.common.ApiResult;
 import com.jurislpo.jurisone.common.RequestMeta;
+import com.jurislpo.jurisone.common.UserException;
 import com.jurislpo.jurisone.people.PeopleController;
 import com.jurislpo.jurisone.security.Auth;
+import com.jurislpo.jurisone.security.CurrentUser;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Payroll (pay.view / pay.close), salary structures (struct.manage), payslips (self) and the payroll file routes. */
 @RestController
 public class PayrollController {
 
-    public record MonthRequest(String month) {}
+    /** Finance's edits for one employee's month, in rupees ({@code lopDays} null = use attendance). */
+    public record AdjustmentBody(Double lopDays, Double bonus, Double otherDeduction, String note) {}
 
-    public record ResetRequest(String month, String employeeId) {}
+    public record StatusBody(String status) {}
 
     private final Auth auth;
     private final PayrollOpsService ops;
@@ -37,19 +44,25 @@ public class PayrollController {
         return ApiResult.success(ops.page(auth.requirePage("payroll"), sp));
     }
 
-    @PostMapping("/api/payroll/adjustments")
-    public ApiResult<Void> save(@RequestBody PayrollOpsService.AdjInput body, HttpServletRequest req) {
-        return ApiResult.message(ops.saveAdjustment(auth.assertPerm("pay.view"), body, RequestMeta.of(req).ip()));
+    /** Set Finance's edits for one employee while the run is open (each edit audited). */
+    @PutMapping("/api/payroll/{month}/adjustments/{employeeId}")
+    public ApiResult<Void> save(@PathVariable String month, @PathVariable String employeeId, @RequestBody AdjustmentBody body, HttpServletRequest req) {
+        PayrollOpsService.AdjInput in = new PayrollOpsService.AdjInput(month, employeeId, body.lopDays(), body.bonus(), body.otherDeduction(), body.note());
+        return ApiResult.message(ops.saveAdjustment(auth.assertPerm("pay.view"), in, RequestMeta.of(req).ip()));
     }
 
-    @PostMapping("/api/payroll/adjustments/reset")
-    public ApiResult<Void> reset(@RequestBody ResetRequest body) {
-        return ApiResult.message(ops.resetAdjustment(auth.assertPerm("pay.view"), body.month(), body.employeeId()));
+    /** Remove Finance's edits for one employee (back to the computed figures). */
+    @DeleteMapping("/api/payroll/{month}/adjustments/{employeeId}")
+    public ApiResult<Void> reset(@PathVariable String month, @PathVariable String employeeId) {
+        return ApiResult.message(ops.resetAdjustment(auth.assertPerm("pay.view"), month, employeeId));
     }
 
-    @PostMapping("/api/payroll/close")
-    public ApiResult<Void> close(@RequestBody MonthRequest body) {
-        return ApiResult.message(ops.approveAndClose(auth.assertPerm("pay.close"), body.month()));
+    /** Approve & close the month ({@code {"status": "CLOSED"}}, pay.close): snapshots and publishes every payslip. */
+    @PutMapping("/api/payroll/{month}/status")
+    public ApiResult<Void> close(@PathVariable String month, @RequestBody StatusBody body) {
+        CurrentUser u = auth.assertPerm("pay.close");
+        if (!"CLOSED".equals(body.status())) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid option: expected \"CLOSED\"");
+        return ApiResult.message(ops.approveAndClose(u, month));
     }
 
     @GetMapping("/api/structures")
@@ -59,6 +72,7 @@ public class PayrollController {
     }
 
     @PostMapping("/api/structures")
+    @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> addStructure(@RequestBody PayrollOpsService.StructureInput body, HttpServletRequest req) {
         return ApiResult.message(ops.addStructure(auth.assertPerm("struct.manage"), body, RequestMeta.of(req).ip()));
     }

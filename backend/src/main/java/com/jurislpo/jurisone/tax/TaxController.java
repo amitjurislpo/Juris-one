@@ -5,10 +5,12 @@ import com.jurislpo.jurisone.common.RequestMeta;
 import com.jurislpo.jurisone.common.UserException;
 import com.jurislpo.jurisone.people.PeopleController;
 import com.jurislpo.jurisone.security.Auth;
+import com.jurislpo.jurisone.security.CurrentUser;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.util.Map;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -27,7 +30,13 @@ public class TaxController {
 
     public record RegimeRequest(String regime) {}
 
-    public record OverrideRequest(String employeeId, String regime) {}
+    public record AmountBody(Double amount) {}
+
+    public record ProofDecisionBody(Boolean approve, String reason) {}
+
+    public record ApproveAllBody(Boolean approve) {}
+
+    public record PreviousEmployerBody(Double income, Double tds) {}
 
     private final Auth auth;
     private final TaxOpsService ops;
@@ -55,13 +64,16 @@ public class TaxController {
         return ApiResult.success();
     }
 
-    @PutMapping("/api/declarations/items")
-    public ApiResult<Void> item(@RequestBody TaxOpsService.ItemInput body) {
-        String msg = ops.saveItem(auth.assertPerm("self"), body);
+    /** Set the declared amount (₹) for one item, e.g. {@code PUT /api/declarations/items/ppf {"amount": 50000}}. */
+    @PutMapping("/api/declarations/items/{key}")
+    public ApiResult<Void> item(@PathVariable String key, @RequestBody AmountBody body) {
+        String msg = ops.saveItem(auth.assertPerm("self"), new TaxOpsService.ItemInput(key, body.amount()));
         return msg == null ? ApiResult.success() : ApiResult.message(msg);
     }
 
-    @PostMapping("/api/declarations/submit")
+    /** Send every draft with an amount to Finance for verification. */
+    @PostMapping("/api/declarations/submissions")
+    @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> submit(HttpServletRequest req) {
         return ApiResult.message(ops.submitForVerification(auth.assertPerm("self"), RequestMeta.of(req).ip()));
     }
@@ -103,14 +115,19 @@ public class TaxController {
         return ApiResult.success(ops.proofDetail(auth.assertPerm("proofs.verify"), employeeId));
     }
 
-    @PostMapping("/api/proofs/decision")
-    public ApiResult<Void> decide(@RequestBody TaxOpsService.ProofDecision body, HttpServletRequest req) {
-        return ApiResult.message(ops.decideProof(auth.assertPerm("proofs.verify"), body, RequestMeta.of(req).ip()));
+    /** Approve / reject one declared item ({@code {approve, reason?}}; a rejection needs a reason). */
+    @PutMapping("/api/proofs/items/{id}/decision")
+    public ApiResult<Void> decide(@PathVariable String id, @RequestBody ProofDecisionBody body, HttpServletRequest req) {
+        return ApiResult.message(ops.decideProof(auth.assertPerm("proofs.verify"), new TaxOpsService.ProofDecision(id, body.approve(), body.reason()),
+                RequestMeta.of(req).ip()));
     }
 
-    @PostMapping("/api/proofs/{employeeId}/approve-all")
-    public ApiResult<Void> approveAll(@PathVariable String employeeId, HttpServletRequest req) {
-        return ApiResult.message(ops.approveAllPending(auth.assertPerm("proofs.verify"), employeeId, RequestMeta.of(req).ip()));
+    /** Approve every pending item of one employee ({@code {"approve": true}}). */
+    @PutMapping("/api/proofs/{employeeId}/decision")
+    public ApiResult<Void> approveAll(@PathVariable String employeeId, @RequestBody ApproveAllBody body, HttpServletRequest req) {
+        CurrentUser u = auth.assertPerm("proofs.verify");
+        if (!Boolean.TRUE.equals(body.approve())) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected true");
+        return ApiResult.message(ops.approveAllPending(u, employeeId, RequestMeta.of(req).ip()));
     }
 
     // Tax & TDS
@@ -125,14 +142,17 @@ public class TaxController {
         return ApiResult.success(ops.taxDetail(employeeId));
     }
 
-    @PutMapping("/api/tax/regime")
-    public ApiResult<Void> override(@RequestBody OverrideRequest body, HttpServletRequest req) {
-        return ApiResult.message(ops.overrideRegime(auth.assertPerm("tax.view"), body.employeeId(), body.regime(), RequestMeta.of(req).ip()));
+    /** Finance overrides an employee's regime ({@code {"regime": "NEW" | "OLD"}}). */
+    @PutMapping("/api/tax/{employeeId}/regime")
+    public ApiResult<Void> override(@PathVariable String employeeId, @RequestBody RegimeRequest body, HttpServletRequest req) {
+        return ApiResult.message(ops.overrideRegime(auth.assertPerm("tax.view"), employeeId, body.regime(), RequestMeta.of(req).ip()));
     }
 
-    @PutMapping("/api/tax/previous-employer")
-    public ApiResult<Void> previous(@RequestBody TaxOpsService.PrevInput body, HttpServletRequest req) {
-        return ApiResult.message(ops.setPreviousEmployer(auth.assertPerm("tax.view"), body, RequestMeta.of(req).ip()));
+    /** Previous employer income and TDS this FY (Form 12B), in rupees. */
+    @PutMapping("/api/tax/{employeeId}/previous-employer")
+    public ApiResult<Void> previous(@PathVariable String employeeId, @RequestBody PreviousEmployerBody body, HttpServletRequest req) {
+        return ApiResult.message(ops.setPreviousEmployer(auth.assertPerm("tax.view"), new TaxOpsService.PrevInput(employeeId, body.income(), body.tds()),
+                RequestMeta.of(req).ip()));
     }
 
     /** The original route: CSV with the page's filters. */

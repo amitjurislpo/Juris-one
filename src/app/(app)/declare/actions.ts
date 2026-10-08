@@ -16,10 +16,10 @@ export async function saveProfile(i: { metro: boolean; parentsSenior: boolean; l
 
 /** Saves a declared amount (₹). Changing an approved or rejected amount sends it back to Draft. */
 export async function saveItem(i: { key: string; amount: number }): Promise<ActionResult> {
-  return apiAction("PUT", "/api/declarations/items", i, PAGES);
+  return apiAction("PUT", `/api/declarations/items/${encodeURIComponent(i.key)}`, { amount: i.amount }, PAGES);
 }
 
 /** Sends every draft with an amount for verification; each needs a proof. */
 export async function submitForVerification(): Promise<ActionResult> {
-  return apiAction("POST", "/api/declarations/submit", {}, PAGES);
+  return apiAction("POST", "/api/declarations/submissions", {}, PAGES);
 }

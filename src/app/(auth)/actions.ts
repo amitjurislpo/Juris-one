@@ -8,11 +8,11 @@ import { SESSION_COOKIE } from "@/lib/session-cookie";
 import type { FormState } from "./form-state";
 
 // Sign-in flows run in the Spring Boot API (/api/auth/*): rate limits, lockout, login history, audit and the
-// session cookie. These actions pass the form through and apply the result.
+// session cookie. Signing in creates the session resource, signing out deletes it.
 
 export async function loginAction(_prev: FormState, form: FormData): Promise<FormState> {
   const identifier = String(form.get("identifier") ?? "");
-  const r = await apiCall<{ redirect: string }>("POST", "/api/auth/login", {
+  const r = await apiCall<{ redirect: string }>("POST", "/api/auth/session", {
     identifier,
     password: String(form.get("password") ?? ""),
     remember: form.get("remember") === "on",
@@ -24,18 +24,18 @@ export async function loginAction(_prev: FormState, form: FormData): Promise<For
 }
 
 export async function logoutAction() {
-  await apiCall("POST", "/api/auth/logout");
+  await apiCall("DELETE", "/api/auth/session");
   (await cookies()).delete(SESSION_COOKIE);
   redirect("/login?signedout=1");
 }
 
 export async function forgotAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const r = await apiCall("POST", "/api/auth/forgot", { identifier: String(form.get("identifier") ?? "") });
+  const r = await apiCall("POST", "/api/auth/password-resets", { identifier: String(form.get("identifier") ?? "") });
   return r.body.ok ? { ok: r.body.msg } : { error: r.body.error };
 }
 
 export async function setPasswordAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const r = await apiCall<{ redirect: string }>("POST", "/api/auth/set-password",
+  const r = await apiCall<{ redirect: string }>("PUT", "/api/auth/password",
     Object.fromEntries(["token", "purpose", "password", "confirm"].map((k) => [k, String(form.get(k) ?? "")])));
   if (!r.body.ok) return { error: r.body.error };
   redirect(r.body.data!.redirect);

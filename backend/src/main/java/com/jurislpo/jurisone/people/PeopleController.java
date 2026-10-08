@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** /api/people (people.view / people.add / access.toggle), /api/directory (dir) and the people CSV export. */
@@ -45,12 +47,14 @@ public class PeopleController {
         return ApiResult.success(people.directory(sp));
     }
 
-    @GetMapping("/api/people/{id}/profile")
+    /** The profile drawer (masked identity numbers; no salary). */
+    @GetMapping("/api/people/{id}")
     public ApiResult<PeopleService.Profile> profile(@PathVariable String id) {
         return ApiResult.success(people.profile(auth.assertPerm("people.view"), id));
     }
 
-    @PostMapping("/api/people/{id}/reveal-contact")
+    /** Full phone number and address (people.add); every read is audited. */
+    @GetMapping("/api/people/{id}/contact")
     public ApiResult<Map<String, String>> reveal(@PathVariable String id, HttpServletRequest req) {
         return ApiResult.success(people.reveal(auth.assertPerm("people.add"), id, RequestMeta.of(req).ip()));
     }
@@ -60,23 +64,27 @@ public class PeopleController {
         return ApiResult.message(people.toggleAccess(auth.assertPerm("access.toggle"), id, body.on(), RequestMeta.of(req).ip()));
     }
 
-    @PostMapping("/api/people/{id}/exit")
+    /** Mark exited ({@code {"exitDate": "YYYY-MM-DD"}}); access is turned off and sessions end. */
+    @PutMapping("/api/people/{id}/exit")
     public ApiResult<Void> exit(@PathVariable String id, @RequestBody ExitRequest body, HttpServletRequest req) {
         return ApiResult.message(people.markExited(auth.assertPerm("people.add"), id, body.exitDate(), RequestMeta.of(req).ip()));
     }
 
-    @PostMapping("/api/people/{id}/invite")
+    /** Send a new invitation (the earlier link stops working). */
+    @PostMapping("/api/people/{id}/invitations")
+    @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> invite(@PathVariable String id, HttpServletRequest req) {
         return ApiResult.message(people.resendInvite(auth.assertPerm("people.add"), id, RequestMeta.of(req).ip()));
     }
 
     /** Add (no {@code id}) or edit form options. */
-    @GetMapping("/api/people/form")
+    @GetMapping("/api/people/form-options")
     public ApiResult<PeopleService.FormOptions> form(@RequestParam(required = false) String id) {
         return ApiResult.success(people.formOptions(auth.assertPerm("people.add"), id));
     }
 
     @PostMapping("/api/people")
+    @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> create(@RequestBody EmployeeInput body, HttpServletRequest req) {
         PeopleService.Saved s = people.save(auth.assertPerm("people.add"), body, null, RequestMeta.of(req).ip());
         return ApiResult.success(s.msg(), Map.of("id", s.id(), "code", s.code()));

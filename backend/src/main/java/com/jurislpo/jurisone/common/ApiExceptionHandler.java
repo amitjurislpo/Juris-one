@@ -79,8 +79,14 @@ public class ApiExceptionHandler {
     ResponseEntity<ApiResult<Void>> unexpected(Exception e) {
         // Spring's own 404 / 405 / 415 … keep their status
         if (e instanceof org.springframework.web.ErrorResponse er && !er.getStatusCode().is5xxServerError()) {
-            String msg = er.getStatusCode().value() == 404 ? "Not found." : INVALID;
-            return ResponseEntity.status(er.getStatusCode()).body(ApiResult.fail(msg));
+            String msg = switch (er.getStatusCode().value()) {
+                case 404 -> "Not found.";
+                case 405 -> "Method not allowed.";
+                case 415 -> "Unsupported content type.";
+                default -> INVALID;
+            };
+            // keeps headers such as Allow (405) and Accept (415)
+            return ResponseEntity.status(er.getStatusCode()).headers(er.getHeaders()).body(ApiResult.fail(msg));
         }
         log.error("[api]", e);
         return ResponseEntity.internalServerError().body(ApiResult.fail(GENERIC));

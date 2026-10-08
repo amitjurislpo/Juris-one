@@ -8,5 +8,5 @@ import { apiAction } from "@/lib/backend";
  * double-click or a stale tab can't record the opposite of what they meant.
  */
 export async function punch(expect: "IN" | "OUT"): Promise<ActionResult<{ kind: "IN" | "OUT" }>> {
-  return apiAction("POST", "/api/attendance/punch", { expect }, ["/home", "/attendance"]);
+  return apiAction("POST", "/api/attendance/punches", { expect }, ["/home", "/attendance"]);
 }

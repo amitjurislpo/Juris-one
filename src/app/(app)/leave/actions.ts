@@ -17,7 +17,8 @@ export interface ApplyInput {
 
 /** Live numbers for the apply form — same rules the server enforces on submit. */
 export async function preview(i: ApplyInput): Promise<ActionResult<Preview>> {
-  return (await apiCall<Preview>("POST", "/api/leave/preview", i)).body;
+  const q = new URLSearchParams({ type: i.type, from: i.from, to: i.to, part: i.part });
+  return (await apiCall<Preview>("GET", `/api/leave/preview?${q}`)).body;
 }
 
 export async function applyLeave(i: ApplyInput): Promise<ActionResult> {

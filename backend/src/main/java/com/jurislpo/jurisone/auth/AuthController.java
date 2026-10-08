@@ -9,11 +9,14 @@ import java.util.Map;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** /api/auth/* — the sign-in pages' server actions in the Next.js app call these. */
@@ -37,22 +40,24 @@ public class AuthController {
         this.current = current;
     }
 
-    /** 200 {data:{redirect}} + Set-Cookie; 400 invalid input, 401 wrong credentials / blocked, 429 throttled. */
-    @PostMapping("/login")
+    /** Sign in: 201 {data:{redirect}} + Set-Cookie; 400 invalid input, 401 wrong credentials / blocked, 429 throttled. */
+    @PostMapping("/session")
     public ResponseEntity<ApiResult<Map<String, String>>> login(@RequestBody LoginRequest body, HttpServletRequest req) {
         AuthService.LoginResult r = auth.login(body.identifier(), body.password(), Boolean.TRUE.equals(body.remember()), body.next(), RequestMeta.of(req));
-        return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, r.cookie().toString()).body(ApiResult.success(Map.of("redirect", r.redirect())));
+        return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.SET_COOKIE, r.cookie().toString()).body(ApiResult.success(Map.of("redirect", r.redirect())));
     }
 
-    /** Always 200; clears the cookie. */
-    @PostMapping("/logout")
+    /** Sign out: always 200; ends the session and clears the cookie. */
+    @DeleteMapping("/session")
     public ResponseEntity<ApiResult<Map<String, String>>> logout(HttpServletRequest req) {
         auth.logout(SessionAuthFilter.cookieValue(req), current.current(), RequestMeta.of(req));
         return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, sessions.clearCookie().toString())
                 .body(ApiResult.success(Map.of("redirect", "/login?signedout=1")));
     }
 
-    @PostMapping("/forgot")
+    /** Ask for a reset link (always the same answer, so it doesn't reveal who has an account). */
+    @PostMapping("/password-resets")
+    @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> forgot(@RequestBody ForgotRequest body, HttpServletRequest req) {
         return ApiResult.message(auth.forgot(body.identifier(), RequestMeta.of(req)));
     }
@@ -65,8 +70,8 @@ public class AuthController {
                 : ResponseEntity.ok(ApiResult.success(info));
     }
 
-    /** 200 {data:{redirect}}; 400 bad link, 422 password rules, 410 expired/used. */
-    @PostMapping("/set-password")
+    /** Set the password from an invite or reset link: 200 {data:{redirect}}; 400 bad link, 422 password rules, 410 expired/used. */
+    @PutMapping("/password")
     public ApiResult<Map<String, String>> setPassword(@RequestBody SetPasswordRequest body, HttpServletRequest req) {
         return ApiResult.success(Map.of("redirect", auth.setPassword(body.token(), body.purpose(), body.password(), body.confirm(), RequestMeta.of(req))));
     }

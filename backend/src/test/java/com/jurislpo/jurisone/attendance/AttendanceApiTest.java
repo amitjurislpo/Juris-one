@@ -71,7 +71,7 @@ class AttendanceApiTest extends IntegrationTest {
         String c = code();
         UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
         jdbc.update("UPDATE employees SET shift_id = ? WHERE id = ?", nightShift, id);
-        String set = mvc.perform(write(post("/api/auth/login")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}"))
+        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}"))
                 .andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_session=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -81,13 +81,13 @@ class AttendanceApiTest extends IntegrationTest {
     @Test
     void checkInAndOutFollowTheButtonTheUserSaw() throws Exception {
         Person p = person(empRole);
-        mvc.perform(write(post("/api/attendance/punch")).cookie(p.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.error").value("You're not checked in."));
-        mvc.perform(write(post("/api/attendance/punch")).cookie(p.cookie()).content("{\"expect\":\"IN\"}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.msg").value("Checked in. Have a productive shift.")).andExpect(jsonPath("$.data.kind").value("IN"));
-        mvc.perform(write(post("/api/attendance/punch")).cookie(p.cookie()).content("{\"expect\":\"IN\"}")).andExpect(jsonPath("$.error").value("You're already checked in."));
-        mvc.perform(write(post("/api/attendance/punch")).cookie(p.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.error").value("Just recorded — give it a few seconds."));
+        mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.error").value("You're not checked in."));
+        mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"IN\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.msg").value("Checked in. Have a productive shift.")).andExpect(jsonPath("$.data.kind").value("IN"));
+        mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"IN\"}")).andExpect(jsonPath("$.error").value("You're already checked in."));
+        mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.error").value("Just recorded — give it a few seconds."));
         jdbc.update("UPDATE punches SET at = at - interval '2 hours' WHERE employee_id = ?", p.id());
-        mvc.perform(write(post("/api/attendance/punch")).cookie(p.cookie()).content("{\"expect\":\"OUT\"}"))
+        mvc.perform(write(post("/api/attendance/punches")).cookie(p.cookie()).content("{\"expect\":\"OUT\"}"))
                 .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.matchesPattern("Checked out — 2h 0[01]m recorded today")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM punches WHERE employee_id = ? AND source = 'WEB' AND ip IS NULL", Integer.class, p.id())).isEqualTo(2);
     }
@@ -126,7 +126,7 @@ class AttendanceApiTest extends IntegrationTest {
         if (!day.isBefore(today.minusDays(1))) return; // too early in the month for a finished working day
         String body = "{\"date\":\"" + day + "\",\"kind\":\"ABSENT\",\"proposedIn\":\"\",\"proposedOut\":\"\",\"reason\":\"was at client\"}";
         mvc.perform(write(post("/api/attendance/regularizations")).cookie(p.cookie()).content(body))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.msg").value("Regularization sent — HR, Finance or Admin can approve it"));
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.msg").value("Regularization sent — HR, Finance or Admin can approve it"));
         mvc.perform(write(post("/api/attendance/regularizations")).cookie(p.cookie()).content(body)).andExpect(jsonPath("$.error").value("You already have a pending request for this day."));
         mvc.perform(write(post("/api/attendance/regularizations")).cookie(p.cookie())
                 .content("{\"date\":\"" + day + "\",\"kind\":\"LATE_CHECKIN\",\"proposedIn\":\"\",\"proposedOut\":\"\",\"reason\":\"\"}"))

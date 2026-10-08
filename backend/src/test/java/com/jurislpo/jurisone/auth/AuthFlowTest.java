@@ -2,6 +2,8 @@ package com.jurislpo.jurisone.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -43,7 +45,12 @@ class AuthFlowTest extends IntegrationTest {
 
     /** A POST as the Next.js server sends it: same-origin headers, JSON body. */
     static MockHttpServletRequestBuilder api(String path, String json) {
-        return post(path).header("origin", ORIGIN).header("host", "localhost:3005").header("x-forwarded-for", "10.0.0.7")
+        return api(post(path), json);
+    }
+
+    /** Any write as the Next.js server sends it. */
+    static MockHttpServletRequestBuilder api(MockHttpServletRequestBuilder b, String json) {
+        return b.header("origin", ORIGIN).header("host", "localhost:3005").header("x-forwarded-for", "10.0.0.7")
                 .contentType(MediaType.APPLICATION_JSON).content(json);
     }
 
@@ -52,8 +59,8 @@ class AuthFlowTest extends IntegrationTest {
     }
 
     Cookie login(String id, String pw) throws Exception {
-        MvcResult r = mvc.perform(api("/api/auth/login", "{\"identifier\":\"" + id + "\",\"password\":\"" + pw + "\",\"remember\":true}"))
-                .andExpect(status().isOk()).andReturn();
+        MvcResult r = mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + id + "\",\"password\":\"" + pw + "\",\"remember\":true}"))
+                .andExpect(status().isCreated()).andReturn();
         String set = r.getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_session=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -65,8 +72,8 @@ class AuthFlowTest extends IntegrationTest {
         String code = code();
         UUID id = data.employee(code, code.toLowerCase() + "@example.com", employeeRole, PW);
 
-        MvcResult r = mvc.perform(api("/api/auth/login", "{\"identifier\":\"" + code.toLowerCase() + "\",\"password\":\"" + PW + "\",\"remember\":false}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.redirect").value("/home")).andReturn();
+        MvcResult r = mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code.toLowerCase() + "\",\"password\":\"" + PW + "\",\"remember\":false}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.data.redirect").value("/home")).andReturn();
         String set = r.getResponse().getHeader("Set-Cookie");
         assertThat(set).contains("HttpOnly").contains("SameSite=Lax").contains("Path=/").doesNotContain("Max-Age"); // browser-session cookie
 
@@ -84,9 +91,9 @@ class AuthFlowTest extends IntegrationTest {
     void wrongPasswordIsRejectedWithoutRevealingWhichPart() throws Exception {
         String code = code();
         data.employee(code, code.toLowerCase() + "@example.com", employeeRole, PW);
-        mvc.perform(api("/api/auth/login", "{\"identifier\":\"" + code + "\",\"password\":\"nope-nope-1\"}")).andExpect(status().isUnauthorized())
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"nope-nope-1\"}")).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.ok").value(false)).andExpect(jsonPath("$.error").value(AuthService.BAD_LOGIN));
-        mvc.perform(api("/api/auth/login", "{\"identifier\":\"JC-000000\",\"password\":\"nope-nope-1\"}")).andExpect(status().isUnauthorized())
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"JC-000000\",\"password\":\"nope-nope-1\"}")).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value(AuthService.BAD_LOGIN));
     }
 
@@ -94,10 +101,10 @@ class AuthFlowTest extends IntegrationTest {
     void locksAfterFiveFailures() throws Exception {
         String code = code();
         UUID id = data.employee(code, code.toLowerCase() + "@example.com", employeeRole, PW);
-        for (int i = 0; i < 4; i++) mvc.perform(api("/api/auth/login", "{\"identifier\":\"" + code + "\",\"password\":\"bad-pass-" + i + "\"}"));
-        mvc.perform(api("/api/auth/login", "{\"identifier\":\"" + code + "\",\"password\":\"bad-pass-5\"}"))
+        for (int i = 0; i < 4; i++) mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"bad-pass-" + i + "\"}"));
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"bad-pass-5\"}"))
                 .andExpect(jsonPath("$.error").value("Too many failed attempts — this account is locked for 15 minutes."));
-        mvc.perform(api("/api/auth/login", "{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}")).andExpect(status().isUnauthorized())
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}")).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.startsWith("This account is locked after repeated failed sign-ins.")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'auth.locked'", Integer.class, id)).isEqualTo(1);
     }
@@ -110,9 +117,9 @@ class AuthFlowTest extends IntegrationTest {
         jdbc.update("UPDATE employees SET portal_access = false WHERE id = ?", id);
         mvc.perform(get("/api/me").cookie(c)).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("Your session has ended. Please sign in again."));
-        mvc.perform(api("/api/auth/login", "{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}")).andExpect(jsonPath("$.error").value(AuthService.MSG_DISABLED));
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}")).andExpect(jsonPath("$.error").value(AuthService.MSG_DISABLED));
         jdbc.update("UPDATE employees SET portal_access = true, status = 'EXITED' WHERE id = ?", id);
-        mvc.perform(api("/api/auth/login", "{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}")).andExpect(jsonPath("$.error").value(AuthService.MSG_EXITED));
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"password\":\"" + PW + "\"}")).andExpect(jsonPath("$.error").value(AuthService.MSG_EXITED));
     }
 
     @Test
@@ -120,7 +127,7 @@ class AuthFlowTest extends IntegrationTest {
         String code = code();
         data.employee(code, code.toLowerCase() + "@example.com", employeeRole, PW);
         Cookie c = login(code, PW);
-        mvc.perform(api("/api/auth/logout", "{}").cookie(c)).andExpect(status().isOk()).andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
+        mvc.perform(api(delete("/api/auth/session"), "{}").cookie(c)).andExpect(status().isOk()).andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
         mvc.perform(get("/api/me").cookie(c)).andExpect(status().isUnauthorized());
     }
 
@@ -129,7 +136,7 @@ class AuthFlowTest extends IntegrationTest {
         String code = code();
         UUID id = data.employee(code, code.toLowerCase() + "@example.com", employeeRole, PW);
         Cookie old = login(code, PW);
-        mvc.perform(api("/api/auth/forgot", "{\"identifier\":\"" + code + "\"}")).andExpect(status().isOk())
+        mvc.perform(api("/api/auth/password-resets", "{\"identifier\":\"" + code + "\"}")).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.msg").value("If that account exists and is active, a reset link is on its way to the official email."));
         String text = jdbc.queryForObject("SELECT text FROM email_outbox WHERE \"to\" = ? ORDER BY created_at DESC LIMIT 1", String.class, code.toLowerCase() + "@example.com");
         Matcher m = Pattern.compile("/reset/([A-Za-z0-9_-]+)").matcher(text);
@@ -137,9 +144,9 @@ class AuthFlowTest extends IntegrationTest {
         String token = m.group(1);
 
         mvc.perform(get("/api/auth/tokens/RESET/" + token)).andExpect(status().isOk()).andExpect(jsonPath("$.data.code").value(code));
-        mvc.perform(api("/api/auth/set-password", "{\"token\":\"" + token + "\",\"purpose\":\"RESET\",\"password\":\"short\",\"confirm\":\"short\"}"))
+        mvc.perform(api(put("/api/auth/password"), "{\"token\":\"" + token + "\",\"purpose\":\"RESET\",\"password\":\"short\",\"confirm\":\"short\"}"))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.error").value("Use at least 10 characters."));
-        mvc.perform(api("/api/auth/set-password", "{\"token\":\"" + token + "\",\"purpose\":\"RESET\",\"password\":\"new-password-42\",\"confirm\":\"new-password-42\"}"))
+        mvc.perform(api(put("/api/auth/password"), "{\"token\":\"" + token + "\",\"purpose\":\"RESET\",\"password\":\"new-password-42\",\"confirm\":\"new-password-42\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.redirect").value("/login?reset=1"));
         mvc.perform(get("/api/auth/tokens/RESET/" + token)).andExpect(status().isNotFound());
         mvc.perform(get("/api/me").cookie(old)).andExpect(status().isUnauthorized()); // all sessions ended
@@ -149,10 +156,10 @@ class AuthFlowTest extends IntegrationTest {
 
     @Test
     void crossSiteWritesAreBlocked() throws Exception {
-        mvc.perform(post("/api/auth/forgot").header("origin", "https://evil.example").header("host", "localhost:3005")
+        mvc.perform(post("/api/auth/password-resets").header("origin", "https://evil.example").header("host", "localhost:3005")
                 .contentType(MediaType.APPLICATION_JSON).content("{\"identifier\":\"x\"}"))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.error").value("Cross-site request blocked."));
-        mvc.perform(post("/api/auth/forgot").contentType(MediaType.APPLICATION_JSON).content("{\"identifier\":\"x\"}")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/auth/password-resets").contentType(MediaType.APPLICATION_JSON).content("{\"identifier\":\"x\"}")).andExpect(status().isForbidden());
     }
 
     @Test

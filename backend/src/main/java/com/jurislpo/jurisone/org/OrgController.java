@@ -5,12 +5,14 @@ import com.jurislpo.jurisone.common.RequestMeta;
 import com.jurislpo.jurisone.security.Auth;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** /api/departments (dept.manage) and /api/holidays (holidays.manage). */
@@ -37,6 +39,7 @@ public class OrgController {
     }
 
     @PostMapping("/api/departments")
+    @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> createDepartment(@RequestBody CreateDepartment body, HttpServletRequest req) {
         return ApiResult.message(departments.create(auth.assertPerm("dept.manage"), body.name(), body.headId(), body.description(), RequestMeta.of(req).ip()));
     }
@@ -52,6 +55,7 @@ public class OrgController {
     }
 
     @PostMapping("/api/holidays")
+    @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> addHoliday(@RequestBody AddHoliday body, HttpServletRequest req) {
         return ApiResult.message(holidays.add(auth.assertPerm("holidays.manage"), body.date(), body.name(), body.region(), RequestMeta.of(req).ip()));
     }

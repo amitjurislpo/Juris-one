@@ -40,12 +40,12 @@ export interface Profile {
 }
 
 export async function getProfile(id: string): Promise<ActionResult<Profile>> {
-  return (await apiCall<Profile>("GET", `/api/people/${enc(id)}/profile`)).body;
+  return (await apiCall<Profile>("GET", `/api/people/${enc(id)}`)).body;
 }
 
 /** Full phone + address for people who may edit the record. Every reveal is audited. */
 export async function revealContact(id: string): Promise<ActionResult<{ phone: string; address: string }>> {
-  return apiAction("POST", `/api/people/${enc(id)}/reveal-contact`);
+  return (await apiCall<{ phone: string; address: string }>("GET", `/api/people/${enc(id)}/contact`)).body;
 }
 
 // ───────────────────────── access & exit ─────────────────────────
@@ -55,11 +55,11 @@ export async function toggleAccess(id: string, on: boolean): Promise<ActionResul
 }
 
 export async function markExited(id: string, exitDate: string): Promise<ActionResult> {
-  return apiAction("POST", `/api/people/${enc(id)}/exit`, { exitDate }, PAGES);
+  return apiAction("PUT", `/api/people/${enc(id)}/exit`, { exitDate }, PAGES);
 }
 
 export async function resendInvite(id: string): Promise<ActionResult> {
-  return apiAction("POST", `/api/people/${enc(id)}/invite`);
+  return apiAction("POST", `/api/people/${enc(id)}/invitations`);
 }
 
 // ───────────────────────── add / edit ─────────────────────────
@@ -75,7 +75,7 @@ export interface FormOptions {
 }
 
 export async function getFormOptions(editId?: string): Promise<ActionResult<FormOptions>> {
-  return (await apiCall<FormOptions>("GET", `/api/people/form${editId ? `?id=${enc(editId)}` : ""}`)).body;
+  return (await apiCall<FormOptions>("GET", `/api/people/form-options${editId ? `?id=${enc(editId)}` : ""}`)).body;
 }
 
 export async function saveEmployee(input: EmployeeInput, editId?: string): Promise<ActionResult<{ id: string; code: string }>> {

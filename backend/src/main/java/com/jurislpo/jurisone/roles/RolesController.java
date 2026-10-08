@@ -6,6 +6,7 @@ import com.jurislpo.jurisone.security.Auth;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** /api/roles — Roles & permissions page (roles.manage). */
@@ -20,9 +22,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/roles")
 public class RolesController {
 
-    public record PermissionChange(String perm, boolean on) {}
-
-    public record AssignableChange(String roleId, boolean on) {}
 
     public record CreateRole(String name, String fromRoleId) {}
 
@@ -40,17 +39,31 @@ public class RolesController {
         return ApiResult.success(roles.list());
     }
 
-    @PutMapping("/{id}/permissions")
-    public ApiResult<Void> setPermission(@PathVariable String id, @RequestBody PermissionChange body, HttpServletRequest req) {
-        return ApiResult.message(roles.setPermission(auth.assertPerm("roles.manage"), id, body.perm(), body.on(), RequestMeta.of(req).ip()));
+    /** Grant a permission to the role. */
+    @PutMapping("/{id}/permissions/{perm}")
+    public ApiResult<Void> grant(@PathVariable String id, @PathVariable String perm, HttpServletRequest req) {
+        return ApiResult.message(roles.setPermission(auth.assertPerm("roles.manage"), id, perm, true, RequestMeta.of(req).ip()));
     }
 
-    @PutMapping("/{id}/assignable")
-    public ApiResult<Void> setAssignable(@PathVariable String id, @RequestBody AssignableChange body, HttpServletRequest req) {
-        return ApiResult.message(roles.setAssignable(auth.assertPerm("roles.manage"), id, body.roleId(), body.on(), RequestMeta.of(req).ip()));
+    /** Take a permission away from the role. */
+    @DeleteMapping("/{id}/permissions/{perm}")
+    public ApiResult<Void> revoke(@PathVariable String id, @PathVariable String perm, HttpServletRequest req) {
+        return ApiResult.message(roles.setPermission(auth.assertPerm("roles.manage"), id, perm, false, RequestMeta.of(req).ip()));
+    }
+
+    /** Let people with this role assign {@code roleId} to others. */
+    @PutMapping("/{id}/assignable-roles/{roleId}")
+    public ApiResult<Void> allowAssign(@PathVariable String id, @PathVariable String roleId, HttpServletRequest req) {
+        return ApiResult.message(roles.setAssignable(auth.assertPerm("roles.manage"), id, roleId, true, RequestMeta.of(req).ip()));
+    }
+
+    @DeleteMapping("/{id}/assignable-roles/{roleId}")
+    public ApiResult<Void> disallowAssign(@PathVariable String id, @PathVariable String roleId, HttpServletRequest req) {
+        return ApiResult.message(roles.setAssignable(auth.assertPerm("roles.manage"), id, roleId, false, RequestMeta.of(req).ip()));
     }
 
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> create(@RequestBody CreateRole body) {
         RolesService.Created c = roles.create(auth.assertPerm("roles.manage"), body.name(), body.fromRoleId());
         return ApiResult.success("Role “" + c.name() + "” created — adjust its permissions", Map.of("id", c.id()));

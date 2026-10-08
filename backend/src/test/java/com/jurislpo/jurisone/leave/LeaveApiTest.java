@@ -3,6 +3,7 @@ package com.jurislpo.jurisone.leave;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -59,6 +60,11 @@ class LeaveApiTest extends IntegrationTest {
         return b.header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON);
     }
 
+    /** GET /api/leave/preview for a full-day request. */
+    static MockHttpServletRequestBuilder preview(Person p, String type, LocalDate from, LocalDate to) {
+        return get("/api/leave/preview").cookie(p.cookie()).param("type", type).param("from", from.toString()).param("to", to.toString()).param("part", "FULL");
+    }
+
     static int seq = 7000;
 
     record Person(UUID id, String code, Cookie cookie) {}
@@ -67,7 +73,7 @@ class LeaveApiTest extends IntegrationTest {
         String c = "JC-" + (++seq) + (int) (Math.random() * 1000);
         UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
         jdbc.update("UPDATE employees SET shift_id = (SELECT id FROM shifts WHERE code = 'IN_DAY') WHERE id = ?", id);
-        String set = mvc.perform(write(post("/api/auth/login")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
+        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c + "\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_session=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
         return new Person(id, c, new Cookie("jo_session", m.group(1)));
@@ -91,22 +97,22 @@ class LeaveApiTest extends IntegrationTest {
         credit(e.id(), "EL", 1.5);
         LocalDate mon = nextMonday();
         String body = "{\"type\":\"EL\",\"from\":\"" + mon + "\",\"to\":\"" + mon.plusDays(2) + "\",\"part\":\"FULL\",\"reason\":\"family\"}";
-        mvc.perform(write(post("/api/leave/preview")).cookie(e.cookie()).content(body)).andExpect(status().isOk())
+        mvc.perform(preview(e, "EL", mon, mon.plusDays(2))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.days").value(3.0)).andExpect(jsonPath("$.data.paidDays").value(1.5)).andExpect(jsonPath("$.data.lopDays").value(1.5))
                 .andExpect(jsonPath("$.data.balanceAfter").value(0.0));
         mvc.perform(write(post("/api/leave/requests")).cookie(e.cookie()).content(body)).andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.endsWith("sent to HR · 1.5 day(s) unpaid")));
         mvc.perform(write(post("/api/leave/requests")).cookie(e.cookie()).content(body))
                 .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.startsWith("You already have a pending request from " + mon)));
-        mvc.perform(write(post("/api/leave/preview")).cookie(e.cookie()).content(body.replace("\"EL\"", "\"CL\"").replace(mon.plusDays(2).toString(), mon.plusDays(3).toString())))
+        mvc.perform(preview(e, "CL", mon, mon.plusDays(3)))
                 .andExpect(jsonPath("$.data.error").value("Casual leave can be taken for at most 3 days at a stretch."));
 
         String id = jdbc.queryForObject("SELECT id::text FROM leave_requests WHERE employee_id = ?", String.class, e.id());
-        mvc.perform(write(post("/api/approvals/leave")).cookie(e.cookie()).content("{\"id\":\"" + id + "\",\"approve\":true}")).andExpect(status().isForbidden());
+        mvc.perform(write(put("/api/leave/requests/" + id + "/decision")).cookie(e.cookie()).content("{\"approve\":true}")).andExpect(status().isForbidden());
         mvc.perform(get("/api/approvals").cookie(hr.cookie())).andExpect(jsonPath("$.data.leaveCards[?(@.id == '" + id + "')].impact")
                 .value(org.hamcrest.Matchers.hasItem("Only 1.5 available — 1.5 day(s) become loss of pay")));
-        mvc.perform(write(post("/api/approvals/leave")).cookie(hr.cookie()).content("{\"id\":\"" + id + "\",\"approve\":true,\"note\":\"ok\"}"))
+        mvc.perform(write(put("/api/leave/requests/" + id + "/decision")).cookie(hr.cookie()).content("{\"approve\":true,\"note\":\"ok\"}"))
                 .andExpect(jsonPath("$.msg").value("Approved Person " + e.code() + "’s earned leave"));
-        mvc.perform(write(post("/api/approvals/leave")).cookie(hr.cookie()).content("{\"id\":\"" + id + "\",\"approve\":false}"))
+        mvc.perform(write(put("/api/leave/requests/" + id + "/decision")).cookie(hr.cookie()).content("{\"approve\":false}"))
                 .andExpect(jsonPath("$.error").value("This request was already decided."));
         assertThat(jdbc.queryForObject("SELECT delta FROM leave_ledger WHERE ref_id = ? AND reason = 'USED'", BigDecimal.class, id)).isEqualByComparingTo("-1.5");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE employee_id = ? AND link = '/leave'", Integer.class, e.id())).isEqualTo(1);
@@ -143,7 +149,7 @@ class LeaveApiTest extends IntegrationTest {
                 reg, e.id(), Date.valueOf(day), Timestamp.from(AttendanceEngine.atLocal(day, "18:45", "Asia/Kolkata")));
         mvc.perform(get("/api/approvals?tab=att").cookie(fin.cookie())).andExpect(jsonPath("$.data.regCards[?(@.id == '" + reg + "')].detail")
                 .value(org.hamcrest.Matchers.hasItem("Checked in 9:30 AM · asks to set check-out to 6:45 PM")));
-        mvc.perform(write(post("/api/approvals/regularization")).cookie(fin.cookie()).content("{\"id\":\"" + reg + "\",\"approve\":true}"))
+        mvc.perform(write(put("/api/attendance/regularizations/" + reg + "/decision")).cookie(fin.cookie()).content("{\"approve\":true}"))
                 .andExpect(jsonPath("$.msg").value("Approved Person " + e.code() + "’s missed check-out regularization"));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM punches WHERE employee_id = ? AND source = 'REGULARIZATION' AND kind = 'OUT'", Integer.class, e.id())).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT decided_role FROM regularization_requests WHERE id = ?", String.class, reg)).isEqualTo("Fm");
@@ -157,7 +163,7 @@ class LeaveApiTest extends IntegrationTest {
                 UUID.randomUUID(), e.id(), Timestamp.from(AttendanceEngine.atLocal(sat, "15:00", "Asia/Kolkata")));
         UUID hw = UUID.randomUUID();
         jdbc.update("INSERT INTO regularization_requests (id, employee_id, work_date, kind, status) VALUES (?, ?, ?, 'HOLIDAY_WORK', 'PENDING')", hw, e.id(), Date.valueOf(sat));
-        mvc.perform(write(post("/api/approvals/regularization")).cookie(fin.cookie()).content("{\"id\":\"" + hw + "\",\"approve\":true}"))
+        mvc.perform(write(put("/api/attendance/regularizations/" + hw + "/decision")).cookie(fin.cookie()).content("{\"approve\":true}"))
                 .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.endsWith("comp-off request · 0.5 comp-off credited")));
         assertThat(jdbc.queryForObject("SELECT expires_on FROM leave_ledger WHERE ref_id = ?", Date.class, hw.toString()).toLocalDate()).isEqualTo(sat.plusDays(60));
     }

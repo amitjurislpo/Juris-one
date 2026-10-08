@@ -31,7 +31,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     /** Reachable without a session. */
-    static final String[] PUBLIC = {"/api/auth/login", "/api/auth/forgot", "/api/auth/set-password", "/api/auth/tokens/**", "/api/auth/logout"};
+    static final String[] PUBLIC = {"/api/auth/session", "/api/auth/password-resets", "/api/auth/password", "/api/auth/tokens/**"};
 
     @Bean
     SecurityFilterChain api(HttpSecurity http, SessionAuthFilter sessions, OriginCheckFilter origin, JsonAuthEntryPoint entryPoint) throws Exception {

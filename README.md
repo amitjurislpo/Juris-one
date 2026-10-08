@@ -15,7 +15,7 @@ HRMS and payroll portal for Juris Consultants. It covers attendance, leave, peop
 | Database | PostgreSQL 16 in docker-compose | 5436 on the host |
 | Tests | JUnit 5 + Testcontainers (backend), Vitest (frontend helpers), Playwright (end to end) | |
 
-The browser only talks to Next.js. Next.js calls the API server-side (`src/lib/backend.ts`) and forwards `/api/*` to it (`next.config.ts`), so the API is never exposed on its own. Sessions are the same HTTP-only `jo_session` cookie as before; passwords are argon2id.
+The browser only talks to Next.js. Next.js calls the API server-side (`src/lib/backend.ts`) and forwards `/api/*` to it (`next.config.ts`), so the API is never exposed on its own. Sessions are the same HTTP-only `jo_session` cookie as before; passwords are argon2id. Every endpoint, with its method and status codes, is listed in [MIGRATION_PLAN.md §14](references/MIGRATION_PLAN.md#14-rest-api-after-the-migration).
 
 ## Quick start (development)
 
