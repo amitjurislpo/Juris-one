@@ -38,7 +38,7 @@ public class PeopleController {
 
     @GetMapping("/api/people")
     public ApiResult<PeopleService.Page> page(@RequestParam Map<String, String> sp) {
-        return ApiResult.success(people.page(auth.requirePage("people"), sp));
+        return ApiResult.success(people.page(auth.requirePage("employees"), sp));
     }
 
     @GetMapping("/api/directory")

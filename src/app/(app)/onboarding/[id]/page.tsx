@@ -45,7 +45,7 @@ export default async function OnboardingReviewPage(props: PageProps<"/onboarding
         sub={<><span className={`chip ${st.cls}`}>{st.text}</span>{" "}
           {d.designation ?? "No designation yet"}{d.joiningDate ? ` · joining ${fmtDY(d.joiningDate)}` : ""}
           {d.linkExpiresAt && !closed ? ` · link valid until ${fmtDY(d.linkExpiresAt.slice(0, 10))}` : ""}
-          {d.employeeCode && d.employeeId ? <> · added as <Link className="linkish" href={`/people?q=${d.employeeCode}`}>{d.employeeCode}</Link> — turn on portal access in People to send their invite</> : null}</>}>
+          {d.employeeCode && d.employeeId ? <> · added as <Link className="linkish" href={`/employees?q=${d.employeeCode}`}>{d.employeeCode}</Link> — turn on portal access in Employees to send their invite</> : null}</>}>
         {!closed && <EditPlanButton id={d.id} plan={plan} />}
         <OnboardingActions id={d.id} status={d.status} name={d.candidateName} />
         {d.status === "VERIFIED" && <AddEmployeeButton id={d.id} name={d.candidateName} plan={plan} />}

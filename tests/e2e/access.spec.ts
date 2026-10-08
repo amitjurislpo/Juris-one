@@ -5,7 +5,7 @@ test.describe("server-side page permissions", () => {
   test("employee cannot open finance or admin pages by URL", async ({ page }) => {
     await login(page, "JC-049");
     await expectLanded(page, "/home");
-    for (const path of ["/payroll", "/roles", "/people", "/register", "/overview"]) {
+    for (const path of ["/payroll", "/roles", "/employees", "/register", "/overview"]) {
       await page.goto(path);
       await expectLanded(page, "/home");
     }

@@ -2,7 +2,7 @@ import type { Permission } from "./permissions";
 
 export type NavId =
   | "platform" | "plans" | "juris-track" | "notifications" | "profile" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
-  | "register" | "approvals" | "people" | "onboarding" | "departments" | "holidays"
+  | "register" | "approvals" | "employees" | "onboarding" | "departments" | "holidays"
   | "payroll" | "structures" | "tax" | "proofs" | "roles" | "policies" | "settings" | "audit" | "subscription" | "my-policies";
 
 export type NavGroup = "Platform" | "My workspace" | "Workspace" | "Team" | "People ops" | "Finance" | "Administration";
@@ -46,7 +46,7 @@ export const NAV: NavItem[] = [
   { id: "team", label: "My team", icon: "team", perm: ["self"], needsReports: true, group: "Team" },
   { id: "register", label: "Attendance register", icon: "grid", perm: ["att.all"], group: "People ops" },
   { id: "approvals", label: "Approvals", icon: "check", perm: ["appr.leave", "appr.reg"], group: "People ops" },
-  { id: "people", label: "Employees", icon: "users", perm: ["people.view"], group: "People ops" },
+  { id: "employees", label: "Employees", icon: "users", perm: ["people.view"], group: "People ops" },
   { id: "onboarding", label: "Onboarding", icon: "inbox", perm: ["people.add"], group: "People ops" },
   { id: "departments", label: "Departments", icon: "building", perm: ["dept.manage"], group: "People ops" },
   { id: "holidays", label: "Holiday calendar", icon: "sun", perm: ["holidays.manage"], group: "People ops" },

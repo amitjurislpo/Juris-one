@@ -32,7 +32,7 @@ export default async function OverviewPage() {
     <div className="col">
       <PageHeader eyebrow={`${fmtDL(todayIn(u.timeZone))} · Administration`} title="Company" em="overview" sub="Everything HR and Finance are working on, in one place.">
         <Link className="btn" href="/register"><Icon n="grid" s={15} />Attendance register</Link>
-        <Link className="btn" href="/people"><Icon n="users" s={15} />People</Link>
+        <Link className="btn" href="/employees"><Icon n="users" s={15} />Employees</Link>
         {can(u, "pay.view") && <Link className="btn btn-gold" href="/payroll"><Icon n="wallet" s={15} />Open payroll</Link>}
       </PageHeader>
 

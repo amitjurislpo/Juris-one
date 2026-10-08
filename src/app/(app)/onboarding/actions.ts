@@ -35,5 +35,5 @@ export async function setOnboardingStatus(id: string, status: "CHANGES_REQUESTED
 }
 
 export async function addOnboardedEmployee(id: string, i: AddInput): Promise<ActionResult<{ id: string; code: string }>> {
-  return apiAction("POST", `/api/onboardings/${enc(id)}/employee`, i, [...pages(id), "/people"]);
+  return apiAction("POST", `/api/onboardings/${enc(id)}/employee`, i, [...pages(id), "/employees"]);
 }

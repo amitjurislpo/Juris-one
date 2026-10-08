@@ -5,7 +5,7 @@ import { apiAction, apiCall } from "@/lib/backend";
 import type { EmployeeInput } from "@/lib/employee-schema";
 
 // People records run in the Spring Boot API (/api/people). Salary is only sent to struct.manage; PII is masked.
-const PAGES = ["/people", "/directory", "/team", "/departments"];
+const PAGES = ["/employees", "/directory", "/team", "/departments"];
 const enc = encodeURIComponent;
 
 // ───────────────────────── profile drawer ─────────────────────────

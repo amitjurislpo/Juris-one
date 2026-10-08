@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import { Icon } from "@/components/Icon";
 import { useToast } from "@/components/shell/Toasts";
 import { ConfirmDialog, Modal } from "@/components/ui/Modal";
-import { getFormOptions, type FormOptions } from "../people/actions";
+import { getFormOptions, type FormOptions } from "../employees/actions";
 import { addOnboardedEmployee, decideDocument, resendOnboarding, setOnboardingStatus, startOnboarding, updateOnboarding, type PlanInput } from "./actions";
 import { DEFAULT_REQUIRED, DOC_KINDS } from "./status";
 

@@ -24,7 +24,7 @@ test.describe("people operations", () => {
   test("HR Manager adds an India employee in three steps; Finance is notified and an invite is sent", async ({ page }) => {
     await login(page, "JC-012");
     await expectLanded(page, "/home");
-    await page.goto("/people");
+    await page.goto("/employees");
     await page.getByRole("button", { name: "Add employee" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByText(/New hire · JC-\d{3}/)).toBeVisible();
@@ -94,7 +94,7 @@ test.describe("people operations", () => {
   test("a manager with direct reports can't be exited until they're reassigned", async ({ page }) => {
     await login(page, "JC-012");
     await expectLanded(page, "/home");
-    await page.goto("/people?q=Nazneen");
+    await page.goto("/employees?q=Nazneen");
     await page.getByRole("button", { name: "Nazneen Khan" }).click();
     await page.getByRole("button", { name: "Mark as past employee" }).click();
     await page.getByRole("button", { name: "Mark as exited" }).click();
@@ -104,7 +104,7 @@ test.describe("people operations", () => {
   test("access toggle: HR disables an employee; the owner (admin) isn't in the list at all", async ({ page }) => {
     await login(page, "JC-012");
     await expectLanded(page, "/home");
-    await page.goto("/people?q=Naman");
+    await page.goto("/employees?q=Naman");
     await page.getByRole("switch", { name: /portal access for Naman Tyagi/ }).click();
     await expect(toast(page)).toContainText("Naman Tyagi can no longer sign in");
     const [row] = await sql<{ portal_access: boolean }>(`SELECT portal_access FROM employees WHERE code = 'JC-049'`);
@@ -112,17 +112,17 @@ test.describe("people operations", () => {
     const logged = await sql(`SELECT 1 FROM audit_log WHERE action = 'employee.access_toggle' AND entity_id = (SELECT id::text FROM employees WHERE code = 'JC-049')`);
     expect(logged.length).toBeGreaterThan(0);
 
-    await page.goto("/people?q=Sana");
+    await page.goto("/employees?q=Sana");
     await expect(page.getByRole("button", { name: "Sana Kapoor" })).toHaveCount(0); // (she may still show as someone's manager)
     // nor is the signed-in person
-    await page.goto("/people?q=JC-012");
+    await page.goto("/employees?q=JC-012");
     await expect(page.locator("tbody tr")).toHaveCount(0);
   });
 
   test("filters, sorting and past employees", async ({ page }) => {
     await login(page, "JC-012");
     await expectLanded(page, "/home");
-    await page.goto("/people");
+    await page.goto("/employees");
     await expect(page.getByText("Vikas Rao")).toHaveCount(0); // Current by default
     await page.getByLabel("Status").selectOption("EXITED");
     await expect(page.getByRole("button", { name: "Vikas Rao" })).toBeVisible();
@@ -136,7 +136,7 @@ test.describe("people operations", () => {
   test("Finance Manager adds into Finance only, as Finance Executive, and sees salary", async ({ page }) => {
     await login(page, "JC-004");
     await expectLanded(page, "/home");
-    await page.goto("/people?q=Amit");
+    await page.goto("/employees?q=Amit");
     await page.getByRole("button", { name: "Amit Jaspal" }).click();
     await expect(page.getByRole("dialog", { name: "Employee profile" }).getByText("₹1,50,000")).toBeVisible();
     await page.keyboard.press("Escape");
@@ -161,7 +161,7 @@ test.describe("people operations", () => {
   test("HR Executive can view people but not add or toggle", async ({ page }) => {
     await login(page, "JC-015");
     await expectLanded(page, "/home");
-    await page.goto("/people");
+    await page.goto("/employees");
     await expect(page.getByRole("button", { name: "Add employee" })).toHaveCount(0);
     await expect(page.getByRole("switch").first()).toBeDisabled();
   });

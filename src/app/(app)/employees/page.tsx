@@ -7,8 +7,8 @@ import { AddEmployeeButton, PeopleTable, type PersonRow } from "./PeopleClient";
 
 export const metadata: Metadata = { title: "Employees" };
 
-export default async function PeoplePage(props: PageProps<"/people">) {
-  await requirePage("people");
+export default async function PeoplePage(props: PageProps<"/employees">) {
+  await requirePage("employees");
   const sp = await props.searchParams;
   const { rows: view, total, page, take, depts, counts: k, seePay, canAdd } = await apiData<{
     rows: PersonRow[]; total: number; page: number; take: number; depts: { id: string; name: string }[];

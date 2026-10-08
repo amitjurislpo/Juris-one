@@ -119,7 +119,7 @@ test.describe.serial("a business on JurisOne, end to end", () => {
 
   test("access on → invite to the work email → the new hire must accept the policy first", async ({ page, browser }) => {
     await asOwner(page);
-    await page.goto("/people");
+    await page.goto("/employees");
     await page.getByRole("switch", { name: "Enable portal access for Riya Sen" }).click();
     await expect(toast(page)).toContainText("invite sent to their work email");
 
