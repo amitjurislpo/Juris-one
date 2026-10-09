@@ -11,6 +11,7 @@ import com.jurislpo.jurisone.engine.PayrollEngine.PayInput;
 import com.jurislpo.jurisone.engine.PayrollEngine.PayLine;
 import com.jurislpo.jurisone.engine.PayrollEngine.PayResult;
 import com.jurislpo.jurisone.engine.PayrollEngine.Structure;
+import com.jurislpo.jurisone.repository.PayrollRepository;
 import com.jurislpo.jurisone.service.TaxService.MonthFigures;
 import com.jurislpo.jurisone.service.TaxService.Projection;
 import java.math.BigDecimal;
@@ -26,21 +27,20 @@ import java.util.Map;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Function;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /** Payroll run computation, payslip snapshots and the payroll view — src/lib/payroll/service.ts + view.ts. */
 @Service
 public class PayrollService {
 
-    private final JdbcTemplate jdbc;
+    private final PayrollRepository repo;
     private final AttendanceService att;
     private final SettingsService settings;
     private final TaxService tax;
     private final ObjectMapper json;
 
-    public PayrollService(JdbcTemplate jdbc, AttendanceService att, SettingsService settings, TaxService tax, ObjectMapper json) {
-        this.jdbc = jdbc;
+    public PayrollService(PayrollRepository repo, AttendanceService att, SettingsService settings, TaxService tax, ObjectMapper json) {
+        this.repo = repo;
         this.att = att;
         this.settings = settings;
         this.tax = tax;
@@ -88,10 +88,10 @@ public class PayrollService {
     public List<PayRow> computeRun(String ym, List<UUID> ids) {
         YearMonth m = YearMonth.parse(ym);
         LocalDate first = m.atDay(1), last = m.atEndOfMonth();
-        List<Map<String, Object>> runs = jdbc.queryForList("SELECT id FROM payroll_runs WHERE month = ?", ym);
+        List<Map<String, Object>> runs = repo.runIds(ym);
         Map<UUID, Map<String, Object>> adjustments = new HashMap<>();
         if (!runs.isEmpty()) {
-            for (Map<String, Object> a : jdbc.queryForList("SELECT * FROM payroll_adjustments WHERE run_id = ?", runs.get(0).get("id"))) {
+            for (Map<String, Object> a : repo.adjustments(runs.get(0).get("id"))) {
                 adjustments.put((UUID) a.get("employee_id"), a);
             }
         }
@@ -101,18 +101,12 @@ public class PayrollService {
         List<Object> args = new ArrayList<>(List.of(Date.valueOf(last), Date.valueOf(first), Date.valueOf(last)));
         if (ids != null) args.add(ids.toArray(UUID[]::new));
         // India employees on payroll that month (structure on the last day, employed some day of it)
-        List<Map<String, Object>> emps = jdbc.queryForList("""
-            SELECT e.id, e.code, e.full_name, e.designation, e.date_of_joining, e.exit_date, d.name AS dept
-            FROM employees e LEFT JOIN departments d ON d.id = e.department_id
-            WHERE e.region = 'IN' AND e.date_of_joining <= ? AND (e.exit_date IS NULL OR e.exit_date >= ?)
-              AND EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?)""" + idFilter + " ORDER BY e.full_name ASC",
-                args.toArray());
+        List<Map<String, Object>> emps = repo.payrollEmployees(idFilter, args.toArray());
         List<UUID> empIds = emps.stream().map(e -> (UUID) e.get("id")).toList();
         List<AttEmployee> attEmps = empIds.isEmpty() ? List.of() : att.loadAttEmployees("e.id = ANY (?)", (Object) empIds.toArray(UUID[]::new));
         Instant now = Instant.ofEpochMilli(Math.max(System.currentTimeMillis(), last.atTime(23, 59, 59).toInstant(java.time.ZoneOffset.UTC).toEpochMilli() + 2 * 86400_000L));
         Map<UUID, List<DayView>> days = att.attendanceFor(attEmps, first, last, now);
-        List<LocalDate> holidays = jdbc.query("SELECT date FROM holidays WHERE date >= ? AND date <= ? AND region::text IN ('IN', 'ALL')",
-                (rs, i) -> rs.getDate(1).toLocalDate(), Date.valueOf(first), Date.valueOf(last));
+        List<LocalDate> holidays = repo.indiaHolidays(first, last);
         int D = m.lengthOfMonth();
         List<PayRow> rows = new ArrayList<>();
         for (Map<String, Object> e : emps) {
@@ -121,8 +115,7 @@ public class PayrollService {
             LocalDate exit = e.get("exit_date") == null ? null : ((Date) e.get("exit_date")).toLocalDate();
             int elig = PayrollEngine.eligibleDays(m, doj, exit);
             if (elig == 0) continue;
-            Map<String, Object> st = jdbc.queryForMap("SELECT basic, hra, lta, special FROM salary_structures WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1",
-                    id, Date.valueOf(last));
+            Map<String, Object> st = repo.structureOn(id, last);
             Structure structure = new Structure(((Number) st.get("basic")).longValue(), ((Number) st.get("hra")).longValue(), ((Number) st.get("lta")).longValue(),
                     ((Number) st.get("special")).longValue());
             LocalDate from = doj.isAfter(first) ? doj : first, to = exit != null && exit.isBefore(last) ? exit : last;
@@ -155,19 +148,21 @@ public class PayrollService {
 
     /** Snapshot rows of a closed run (closed payslips never change). */
     public List<Map.Entry<UUID, JsonNode>> closedRows(String ym) {
-        return jdbc.query("SELECT p.employee_id, p.snapshot::text FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE r.month = ?", (rs, i) -> {
+        List<Map.Entry<UUID, JsonNode>> out = new ArrayList<>();
+        for (Map.Entry<UUID, String> en : repo.payslipSnapshots(ym)) {
             try {
-                return Map.entry((UUID) rs.getObject(1), json.readTree(rs.getString(2)));
+                out.add(Map.entry(en.getKey(), json.readTree(en.getValue())));
             } catch (java.io.IOException e) {
                 throw new IllegalStateException(e);
             }
-        }, ym);
+        }
+        return out;
     }
 
     public record RunStatus(Map<String, Object> run, boolean attendanceLocked) {}
 
     public RunStatus runStatus(String ym) {
-        List<Map<String, Object>> runs = jdbc.queryForList("SELECT id, month, status::text AS status, approved_at, closed_at, pay_date, attendance_locked_at, approved_by FROM payroll_runs WHERE month = ?", ym);
+        List<Map<String, Object>> runs = repo.findRun(ym);
         return new RunStatus(runs.isEmpty() ? null : runs.get(0), att.isMonthLocked(ym, att.policy(), Instant.now()));
     }
 
@@ -224,7 +219,7 @@ public class PayrollService {
 
     /** Months shown in the switcher: closed runs + the first open month after them (or last month). */
     public Months payrollMonths(LocalDate today) {
-        List<Map<String, Object>> runs = jdbc.queryForList("SELECT month, status::text AS status FROM payroll_runs ORDER BY month ASC");
+        List<Map<String, Object>> runs = repo.runMonths();
         String cur = today.toString().substring(0, 7);
         String prev = YearMonth.parse(cur).minusMonths(1).toString();
         String lastClosed = null;

@@ -10,9 +10,8 @@ import com.jurislpo.jurisone.engine.AttendanceEngine.MonthSummary;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Punch;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.entity.DayStatus;
-import com.jurislpo.jurisone.entity.PunchKind;
+import com.jurislpo.jurisone.repository.MyAttendanceRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
-import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -24,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /** My attendance, regularization requests and check-in/out (REQUIREMENTS §5.4). self. */
@@ -34,12 +32,12 @@ public class MyAttendanceService {
     static final String NOT_TRACKED = "Attendance isn't tracked for your account.";
 
     private final AttendanceService att;
-    private final JdbcTemplate jdbc;
+    private final MyAttendanceRepository repo;
     private final AuditService audit;
 
-    public MyAttendanceService(AttendanceService att, JdbcTemplate jdbc, AuditService audit) {
+    public MyAttendanceService(AttendanceService att, MyAttendanceRepository repo, AuditService audit) {
         this.att = att;
-        this.jdbc = jdbc;
+        this.repo = repo;
         this.audit = audit;
     }
 
@@ -75,11 +73,7 @@ public class MyAttendanceService {
         LocalDate first = YearMonth.parse(ym).atDay(1), last = YearMonth.parse(ym).atEndOfMonth();
 
         List<DayView> days = att.attendanceFor(List.of(emp), first, last, now).get(emp.id());
-        List<RegView> regs = jdbc.query("""
-            SELECT r.id::text, r.work_date, r.kind::text, r.status::text, d.full_name AS by, r.reason FROM regularization_requests r
-            LEFT JOIN employees d ON d.id = r.decided_by WHERE r.employee_id = ? AND r.work_date >= ? AND r.work_date <= ? ORDER BY r.created_at DESC""",
-                (rs, i) -> new RegView(rs.getString(1), rs.getDate(2).toLocalDate().toString(), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6)),
-                u.id(), Date.valueOf(first), Date.valueOf(last));
+        List<RegView> regs = repo.regularizations(u.id(), first, last);
         List<HolidayView> hols = upcomingHolidays(emp.region(), wd, 6);
         MonthSummary s = AttendanceEngine.summarize(days.stream().filter(d -> !d.r.future).map(d -> d.r).toList(), policy.engine());
         boolean locked = att.isMonthLocked(ym, policy, now);
@@ -112,8 +106,7 @@ public class MyAttendanceService {
 
     /** Holidays an employee sees: their own region plus "Everyone" (src/lib/holidays.ts). */
     public List<HolidayView> upcomingHolidays(String region, LocalDate from, int take) {
-        return jdbc.query("SELECT id::text, date, name, region::text FROM holidays WHERE date >= ? AND region::text IN ('ALL', ?) ORDER BY date ASC LIMIT ?",
-                (rs, i) -> new HolidayView(rs.getString(1), rs.getDate(2).toLocalDate().toString(), rs.getString(3), rs.getString(4)), Date.valueOf(from), region, take);
+        return repo.upcomingHolidays(region, from, take);
     }
 
     // ───────────────────────── regularization ─────────────────────────
@@ -153,8 +146,7 @@ public class MyAttendanceService {
                 default -> "You need 4h+ of work on a holiday or weekly off for a comp-off.";
             });
         }
-        List<String> dup = jdbc.queryForList("SELECT status::text FROM regularization_requests WHERE employee_id = ? AND work_date = ? AND kind = ?::\"RegularizationKind\" "
-                + "AND status IN ('PENDING', 'APPROVED') LIMIT 1", String.class, u.id(), Date.valueOf(date), kind);
+        List<String> dup = repo.openRegularizationStatus(u.id(), date, kind);
         if (!dup.isEmpty()) throw new UserException("PENDING".equals(dup.get(0)) ? "You already have a pending request for this day." : "This day is already regularized.");
 
         // Proposed times are local to the employee; a night-shift check-out rolls to the next day.
@@ -164,9 +156,7 @@ public class MyAttendanceService {
         if ("MISSED_CHECKOUT".equals(kind) && proposedOut == null) throw new UserException("Enter the time you actually checked out.");
 
         UUID id = UUID.randomUUID();
-        jdbc.update("INSERT INTO regularization_requests (id, employee_id, work_date, kind, proposed_in, proposed_out, reason, status, created_at) "
-                + "VALUES (?, ?, ?, ?::\"RegularizationKind\", ?, ?, ?, 'PENDING', now())",
-                id, u.id(), Date.valueOf(date), kind, ts(proposedIn), ts(proposedOut), reason.isEmpty() ? null : reason);
+        repo.insertRegularization(id, u.id(), date, kind, proposedIn, proposedOut, reason.isEmpty() ? null : reason);
         Map<String, Object> a = new LinkedHashMap<>();
         a.put("date", f.date());
         a.put("kind", kind);
@@ -188,16 +178,12 @@ public class MyAttendanceService {
         return t;
     }
 
-    private static Timestamp ts(Instant i) {
-        return i == null ? null : Timestamp.from(i);
-    }
-
     public String cancelRegularization(CurrentUser u, String idRaw) {
         UUID id = Check.uuid(idRaw);
-        List<Map<String, Object>> rs = jdbc.queryForList("SELECT employee_id, status::text AS status FROM regularization_requests WHERE id = ?", id);
+        List<Map<String, Object>> rs = repo.findRegularization(id);
         if (rs.isEmpty() || !u.id().equals(rs.get(0).get("employee_id"))) throw new UserException("Request not found.");
         if (!"PENDING".equals(rs.get(0).get("status"))) throw new UserException("Only pending requests can be withdrawn.");
-        jdbc.update("UPDATE regularization_requests SET status = 'CANCELLED' WHERE id = ?", id);
+        repo.cancelRegularization(id);
         audit.log(u.id(), "regularization.cancel", "regularization", id.toString(), Map.of("status", "PENDING"), Map.of("status", "CANCELLED"), null);
         return "Request withdrawn";
     }
@@ -220,20 +206,18 @@ public class MyAttendanceService {
         LocalDate today = Format.isoInZone(now, emp.tz());
         if (today.isBefore(emp.doj())) throw new UserException("You can check in from your joining date.");
 
-        List<Map<String, Object>> last = jdbc.queryForList("SELECT at, kind::text AS kind FROM punches WHERE employee_id = ? ORDER BY at DESC LIMIT 1", u.id());
+        List<Map<String, Object>> last = repo.lastPunch(u.id());
         String current = !last.isEmpty() && "IN".equals(last.get(0).get("kind")) ? "IN" : "OUT";
         if ("IN".equals(expect) && "IN".equals(current)) throw new UserException("You're already checked in.");
         if ("OUT".equals(expect) && !"IN".equals(current)) throw new UserException("You're not checked in.");
         if (!last.isEmpty() && now.toEpochMilli() - ((Timestamp) last.get(0).get("at")).toInstant().toEpochMilli() < MIN_GAP_MS) {
             throw new UserException("Just recorded — give it a few seconds.");
         }
-        jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, ip, created_at) VALUES (?, ?, ?, ?::\"PunchKind\", 'WEB', ?, now())",
-                UUID.randomUUID(), u.id(), Timestamp.from(now), expect, ip);
+        repo.insertWebPunch(u.id(), now, expect, ip);
         if ("IN".equals(expect)) return new PunchResult("Checked in. Have a productive shift.", "IN");
 
         LocalDate wd = AttendanceEngine.workDateOf(now, emp.shift().def(), emp.tz());
-        List<Punch> ps = jdbc.query("SELECT at, kind::text FROM punches WHERE employee_id = ? AND at >= ? ORDER BY at ASC",
-                (rs, i) -> new Punch(rs.getTimestamp(1).toInstant(), PunchKind.valueOf(rs.getString(2))), u.id(), Timestamp.from(now.minus(Duration.ofHours(40))))
+        List<Punch> ps = repo.punchesSince(u.id(), now.minus(Duration.ofHours(40)))
                 .stream().filter(p -> AttendanceEngine.workDateOf(p.at(), emp.shift().def(), emp.tz()).equals(wd)).toList();
         return new PunchResult("Checked out — " + Format.fmtH(AttendanceEngine.workedMinutes(ps).minutes() / 60.0) + " recorded today", "OUT");
     }

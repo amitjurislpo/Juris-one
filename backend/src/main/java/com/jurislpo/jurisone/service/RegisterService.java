@@ -10,6 +10,7 @@ import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.PeopleRules;
 import com.jurislpo.jurisone.entity.DayStatus;
 import com.jurislpo.jurisone.repository.PeopleQuery;
+import com.jurislpo.jurisone.repository.RegisterRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.sql.Date;
 import java.time.Instant;
@@ -24,7 +25,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /** Attendance register: daily log and monthly grid, time-zone aware, plus its CSV — src/lib/attendance/register.ts. att.all. */
@@ -44,12 +44,12 @@ public class RegisterService {
     public record Params(String view, LocalDate day, String ym, String tz, LocalDate today, String region, String dept, String st, ListParams ls) {}
 
     private final AttendanceService att;
-    private final JdbcTemplate jdbc;
+    private final RegisterRepository repo;
     private final AuditService audit;
 
-    public RegisterService(AttendanceService att, JdbcTemplate jdbc, AuditService audit) {
+    public RegisterService(AttendanceService att, RegisterRepository repo, AuditService audit) {
         this.att = att;
-        this.jdbc = jdbc;
+        this.repo = repo;
         this.audit = audit;
     }
 
@@ -213,7 +213,7 @@ public class RegisterService {
         out.put("today", p.today().toString());
         out.put("page", p.ls().page());
         out.put("take", p.ls().take());
-        out.put("depts", jdbc.query("SELECT id::text, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (rs, i) -> new Dept(rs.getString(1), rs.getString(2))));
+        out.put("depts", repo.activeDepartments());
         out.put("zones", ZONES);
         out.put("statuses", DAY_STATUSES);
         if ("day".equals(p.view())) {

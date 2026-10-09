@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.engine.Format;
+import com.jurislpo.jurisone.repository.AuditViewRepository;
+import com.jurislpo.jurisone.repository.AuditViewRepository.LogRow;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -13,7 +15,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /** Audit log view (audit page) — src/lib/audit-view.ts. */
@@ -45,11 +46,11 @@ public class AuditViewService {
 
     public record Option(String v, String l) {}
 
-    private final JdbcTemplate jdbc;
+    private final AuditViewRepository repo;
     private final ObjectMapper json;
 
-    public AuditViewService(JdbcTemplate jdbc, ObjectMapper json) {
-        this.jdbc = jdbc;
+    public AuditViewService(AuditViewRepository repo, ObjectMapper json) {
+        this.repo = repo;
         this.json = json;
     }
 
@@ -98,27 +99,17 @@ public class AuditViewService {
         };
         String from = " FROM audit_log a LEFT JOIN employees e ON e.id = a.actor_id";
 
-        record Log(String id, Instant at, String actor, String actorCode, String action, String entity, String entityId, String ip, String before, String after) {}
         List<Object> pageArgs = new ArrayList<>(args);
         pageArgs.add(ls.skip());
         pageArgs.add(ls.take());
-        List<Log> logs = jdbc.query("SELECT a.id::text, a.at, e.full_name, e.code, a.action, a.entity, a.entity_id, a.ip, a.before::text, a.after::text" + from + where
-                + " ORDER BY " + order + " OFFSET ? LIMIT ?",
-                (rs, i) -> new Log(rs.getString(1), rs.getTimestamp(2).toInstant(), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7),
-                        rs.getString(8), rs.getString(9), rs.getString(10)), pageArgs.toArray());
-        long total = jdbc.queryForObject("SELECT count(*)" + from + where, Long.class, args.toArray());
-        List<Option> actors = jdbc.query("SELECT e.id::text, e.full_name, e.code FROM employees e WHERE EXISTS (SELECT 1 FROM audit_log a WHERE a.actor_id = e.id) ORDER BY e.full_name ASC",
-                (rs, i) -> new Option(rs.getString(1), rs.getString(2) + " (" + rs.getString(3) + ")"));
+        List<LogRow> logs = repo.findPage(from + where, order, pageArgs.toArray());
+        long total = repo.count(from + where, args.toArray());
+        List<Option> actors = repo.actorOptions();
 
         // Name the employee an entry is about (entity ids are employee uuids for these entities).
         String[] empIds = logs.stream().filter(l -> ("employee".equals(l.entity()) || "user".equals(l.entity())) && l.entityId() != null)
-                .map(Log::entityId).distinct().filter(id -> id.matches(UUIDISH)).toArray(String[]::new);
-        Map<String, String> subjects = new LinkedHashMap<>();
-        if (empIds.length > 0) {
-            jdbc.query("SELECT id::text, full_name, code FROM employees WHERE id::text = ANY (?)", rs -> {
-                subjects.put(rs.getString(1), rs.getString(2) + " (" + rs.getString(3) + ")");
-            }, (Object) empIds);
-        }
+                .map(LogRow::entityId).distinct().filter(id -> id.matches(UUIDISH)).toArray(String[]::new);
+        Map<String, String> subjects = empIds.length > 0 ? repo.employeeLabels(empIds) : new LinkedHashMap<>();
 
         boolean seePay = u.can("pay.view", "struct.manage", "tax.view", "proofs.verify");
         List<Row> rows = logs.stream().map(l -> {

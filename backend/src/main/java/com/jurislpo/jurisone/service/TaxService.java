@@ -12,6 +12,7 @@ import com.jurislpo.jurisone.engine.TaxEngine.Slab;
 import com.jurislpo.jurisone.engine.TaxEngine.Surcharge;
 import com.jurislpo.jurisone.engine.TaxEngine.TaxResult;
 import com.jurislpo.jurisone.engine.TaxEngine.TaxYearConfig;
+import com.jurislpo.jurisone.repository.TaxRepository;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -22,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -46,11 +46,11 @@ public class TaxService {
                              double jurisTdsSoFar, double income, Deductions deductions, TaxResult current, TaxResult newRegime, TaxResult oldRegime,
                              long monthly, long pfAnnual, boolean regimeOverridden) {}
 
-    private final JdbcTemplate jdbc;
+    private final TaxRepository repo;
     private final ObjectMapper json;
 
-    public TaxService(JdbcTemplate jdbc, ObjectMapper json) {
-        this.jdbc = jdbc;
+    public TaxService(TaxRepository repo, ObjectMapper json) {
+        this.repo = repo;
         this.json = json;
     }
 
@@ -59,8 +59,8 @@ public class TaxService {
     }
 
     public Config taxConfig(String fy) {
-        List<Map<String, Object>> years = jdbc.queryForList("SELECT regime::text AS regime, std_deduction, rebate_limit, marginal_relief, cess_rate, slabs::text AS slabs, surcharge::text AS surcharge FROM tax_years WHERE fy = ?", fy);
-        List<Map<String, Object>> sections = jdbc.queryForList("SELECT key, label, cap FROM tax_sections WHERE fy = ?", fy);
+        List<Map<String, Object>> years = repo.taxYears(fy);
+        List<Map<String, Object>> sections = repo.taxSections(fy);
         if (years.size() < 2) throw new IllegalStateException("Tax tables for FY " + fy + " are missing — add them under tax_years.");
         Map<String, TaxYearConfig> cfg = new HashMap<>();
         for (Map<String, Object> y : years) {
@@ -91,8 +91,8 @@ public class TaxService {
 
     /** Declared amounts (₹). TDS uses "approved" only; "submitted" adds pending (Finance preview); "all" adds drafts (employee comparison). */
     public Decl declarations(UUID employeeId, String fy, DeclMode mode) {
-        List<Map<String, Object>> items = jdbc.queryForList("SELECT item_key, amount, status::text AS status FROM declaration_items WHERE employee_id = ? AND fy = ?", employeeId, fy);
-        List<Map<String, Object>> profile = jdbc.queryForList("SELECT metro, parents_senior FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, fy);
+        List<Map<String, Object>> items = repo.declarationItems(employeeId, fy);
+        List<Map<String, Object>> profile = repo.profileFlags(employeeId, fy);
         Declared d = new Declared();
         d.metro = !profile.isEmpty() && Boolean.TRUE.equals(profile.get(0).get("metro"));
         d.parentsSenior = !profile.isEmpty() && Boolean.TRUE.equals(profile.get(0).get("parents_senior"));
@@ -115,14 +115,12 @@ public class TaxService {
         String fy = f.fy();
         String fyStartYm = fy.substring(0, 4) + "-04";
         Config cfg = taxConfig(fy);
-        List<Map<String, Object>> prof = jdbc.queryForList("SELECT regime::text AS regime, regime_overridden, prev_employer_income, prev_employer_tds FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, fy);
+        List<Map<String, Object>> prof = repo.profileRegime(employeeId, fy);
         Map<String, Object> profile = prof.isEmpty() ? null : prof.get(0);
-        List<Map<String, Object>> prior = jdbc.queryForList("""
-            SELECT p.snapshot::text AS snapshot, r.month FROM payslips p JOIN payroll_runs r ON r.id = p.run_id
-            WHERE p.employee_id = ? AND r.status = 'CLOSED' AND r.month >= ? AND r.month < ?""", employeeId, fyStartYm, ym);
+        List<Map<String, Object>> prior = repo.closedPayslipSnapshots(employeeId, fyStartYm, ym);
         Decl dec = declarations(employeeId, fy, decl == null ? DeclMode.approved : decl);
-        Map<String, Object> emp = jdbc.queryForMap("SELECT date_of_joining, exit_date FROM employees WHERE id = ?", employeeId);
-        List<Map<String, Object>> structures = jdbc.queryForList("SELECT effective_from, basic, hra, lta, special FROM salary_structures WHERE employee_id = ? ORDER BY effective_from ASC", employeeId);
+        Map<String, Object> emp = repo.employmentDates(employeeId);
+        List<Map<String, Object>> structures = repo.salaryStructures(employeeId);
 
         List<Snap> snaps = new ArrayList<>();
         Set<String> closedMonths = new HashSet<>();
