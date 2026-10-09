@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.security;
 
+import com.jurislpo.jurisone.repository.SessionRepository;
 import com.jurislpo.jurisone.service.SessionService;
 import com.jurislpo.jurisone.tenancy.TenantContext;
 import jakarta.servlet.FilterChain;
@@ -17,7 +18,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -41,23 +41,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private static final Duration TOUCH_EVERY = Duration.ofMinutes(5);
     private static final Logger log = LoggerFactory.getLogger(JwtAuthFilter.class);
 
-    private static final String USER_SQL = """
-        SELECT s.id AS sid, s.employee_id AS session_employee, s.expires_at, s.revoked_at, s.last_seen_at,
-               e.id, e.business_id, e.code, e.full_name, e.email, e.designation, e.role_id, e.portal_access, e.status::text AS status,
-               e.region::text AS region, e.time_zone, u.is_super_admin, u.employee_id AS user_id, r.key AS role_key, r.name AS role_name,
-               EXISTS (SELECT 1 FROM employees d WHERE d.reporting_manager_id = e.id AND d.status <> 'EXITED') AS has_reports,
-               (SELECT b.status FROM businesses b WHERE b.id = e.business_id) AS business_status
-        FROM sessions s
-        JOIN employees e ON e.id = s.employee_id
-        JOIN roles r ON r.id = e.role_id
-        LEFT JOIN users u ON u.employee_id = e.id
-        WHERE s.id = ?""";
-
-    private final JdbcTemplate jdbc;
+    private final SessionRepository sessions;
     private final JwtService jwt;
 
-    public JwtAuthFilter(JdbcTemplate jdbc, JwtService jwt) {
-        this.jdbc = jdbc;
+    public JwtAuthFilter(SessionRepository sessions, JwtService jwt) {
+        this.sessions = sessions;
         this.jwt = jwt;
     }
 
@@ -95,7 +83,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     CurrentUser load(JwtService.AccessClaims claims) {
-        List<Map<String, Object>> rows = jdbc.queryForList(USER_SQL, claims.sessionId());
+        List<Map<String, Object>> rows = sessions.findSessionUser(claims.sessionId());
         if (rows.isEmpty()) return null;
         Map<String, Object> r = rows.get(0);
         Instant now = Instant.now();
@@ -107,13 +95,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         Instant lastSeen = ((Timestamp) r.get("last_seen_at")).toInstant();
         if (Duration.between(lastSeen, now).compareTo(TOUCH_EVERY) >= 0) {
             try {
-                jdbc.update("UPDATE sessions SET last_seen_at = now() WHERE id = ?", claims.sessionId());
+                sessions.touch(claims.sessionId());
             } catch (RuntimeException e) {
                 log.debug("session touch failed", e);
             }
         }
         UUID roleId = (UUID) r.get("role_id");
-        List<String> perms = jdbc.queryForList("SELECT permission_key FROM role_permissions WHERE role_id = ?", String.class, roleId);
+        List<String> perms = sessions.findPermissionKeys(roleId);
         return new CurrentUser(
                 (UUID) r.get("id"), (String) r.get("code"), (String) r.get("full_name"), (String) r.get("email"), (String) r.get("designation"),
                 roleId, (String) r.get("role_key"), (String) r.get("role_name"), java.util.Set.copyOf(new HashSet<>(perms)),
