@@ -2,6 +2,7 @@ package com.jurislpo.jurisone.service;
 
 import com.jurislpo.jurisone.entity.EmailOutbox;
 import com.jurislpo.jurisone.entity.EmailStatus;
+import com.jurislpo.jurisone.repository.MailRepository;
 import jakarta.mail.internet.MimeMessage;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -9,7 +10,6 @@ import java.util.Properties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -25,17 +25,15 @@ public class MailService {
     private static final Logger log = LoggerFactory.getLogger(MailService.class);
 
     private final TransactionTemplate tx;
-    private final JdbcTemplate jdbc;
-    private final jakarta.persistence.EntityManager em;
+    private final MailRepository repo;
     private final String host, user, pass, from;
     private final int port;
 
-    public MailService(TransactionTemplate tx, JdbcTemplate jdbc, jakarta.persistence.EntityManager em,
+    public MailService(TransactionTemplate tx, MailRepository repo,
                        @Value("${SMTP_HOST:}") String host, @Value("${SMTP_PORT:587}") int port, @Value("${SMTP_USER:}") String user,
                        @Value("${SMTP_PASS:}") String pass, @Value("${MAIL_FROM:JurisOne <no-reply@jurislpo.com>}") String from) {
         this.tx = tx;
-        this.jdbc = jdbc;
-        this.em = em;
+        this.repo = repo;
         this.host = host;
         this.port = port;
         this.user = user;
@@ -50,13 +48,13 @@ public class MailService {
             row.setSubject(c.subject());
             row.setText(c.text());
             row.setHtml(c.html());
-            em.persist(row);
+            repo.insert(row);
             return row.getId();
         });
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         if (host == null || host.isBlank()) {
             log.info("\n✉  [email:dev] to={}\n   subject={}\n   {}\n", to, c.subject(), c.text().replace("\n", "\n   "));
-            jdbc.update("UPDATE email_outbox SET status = ?::\"EmailStatus\", sent_at = ? WHERE id = ?", EmailStatus.LOGGED.name(), java.sql.Timestamp.from(now), id);
+            repo.markDone(id, EmailStatus.LOGGED, java.sql.Timestamp.from(now));
             return;
         }
         try {
@@ -79,12 +77,10 @@ public class MailService {
             if (c.html() != null) h.setText(c.text(), c.html());
             else h.setText(c.text());
             sender.send(m);
-            jdbc.update("UPDATE email_outbox SET status = ?::\"EmailStatus\", sent_at = ? WHERE id = ?", EmailStatus.SENT.name(),
-                    java.sql.Timestamp.from(Instant.now().truncatedTo(ChronoUnit.MICROS)), id);
+            repo.markDone(id, EmailStatus.SENT, java.sql.Timestamp.from(Instant.now().truncatedTo(ChronoUnit.MICROS)));
         } catch (Exception err) {
             String msg = String.valueOf(err);
-            jdbc.update("UPDATE email_outbox SET status = ?::\"EmailStatus\", error = ? WHERE id = ?", EmailStatus.FAILED.name(),
-                    msg.substring(0, Math.min(1000, msg.length())), id);
+            repo.markFailed(id, EmailStatus.FAILED, msg.substring(0, Math.min(1000, msg.length())));
             log.error("[email] send failed", err);
         }
     }

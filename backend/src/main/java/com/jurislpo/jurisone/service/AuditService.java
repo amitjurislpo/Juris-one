@@ -3,7 +3,7 @@ package com.jurislpo.jurisone.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.entity.AuditLog;
-import jakarta.persistence.EntityManager;
+import com.jurislpo.jurisone.repository.AuditRepository;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,11 +17,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class AuditService {
 
-    private final EntityManager em;
+    private final AuditRepository repo;
     private final ObjectMapper json;
 
-    public AuditService(EntityManager em, ObjectMapper json) {
-        this.em = em;
+    public AuditService(AuditRepository repo, ObjectMapper json) {
+        this.repo = repo;
         this.json = json;
     }
 
@@ -34,13 +34,11 @@ public class AuditService {
         a.setBefore(toJson(before));
         a.setAfter(toJson(after));
         a.setIp(ip);
-        em.persist(a);
+        repo.persist(a);
         if (com.jurislpo.jurisone.tenancy.TenantContext.current() == null && actorId != null) {
             // outside a business request (sign-in, password set): the event belongs to the actor's business, so its
             // admin sees it; platform users (no business) keep NULL
-            em.flush();
-            em.createNativeQuery("UPDATE audit_log SET business_id = (SELECT business_id FROM employees WHERE id = ?1) WHERE id = ?2 AND business_id IS NULL")
-                    .setParameter(1, actorId).setParameter(2, a.getId()).executeUpdate();
+            repo.assignActorBusiness(a.getId(), actorId);
         }
     }
 

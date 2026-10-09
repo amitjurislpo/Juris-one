@@ -6,6 +6,8 @@ import com.jurislpo.jurisone.engine.LeaveRules;
 import com.jurislpo.jurisone.engine.Num;
 import com.jurislpo.jurisone.engine.PeopleRules;
 import com.jurislpo.jurisone.entity.EmployeeStatus;
+import com.jurislpo.jurisone.repository.JobsRepository;
+import com.jurislpo.jurisone.repository.JobsRepository.CompOffRow;
 import com.jurislpo.jurisone.tenancy.TenantContext;
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -15,7 +17,6 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +24,6 @@ import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -38,7 +38,7 @@ public class JobsService {
     static final String IST = "Asia/Kolkata";
     static final long LOCK_ID = 74202;
 
-    private final JdbcTemplate jdbc;
+    private final JobsRepository repo;
     private final AttendanceService att;
     private final SettingsService settings;
     private final AuditService audit;
@@ -47,10 +47,10 @@ public class JobsService {
     private final com.jurislpo.jurisone.service.MailService mail;
     private final String appUrl;
 
-    public JobsService(JdbcTemplate jdbc, AttendanceService att, SettingsService settings, AuditService audit, SubscriptionService subscriptions,
+    public JobsService(JobsRepository repo, AttendanceService att, SettingsService settings, AuditService audit, SubscriptionService subscriptions,
                        com.jurislpo.jurisone.service.NotificationService notifications, com.jurislpo.jurisone.service.MailService mail,
                        com.jurislpo.jurisone.config.JurisOneProperties props) {
-        this.jdbc = jdbc;
+        this.repo = repo;
         this.att = att;
         this.settings = settings;
         this.audit = audit;
@@ -66,35 +66,15 @@ public class JobsService {
 
     /** Runs every job once; returns a summary, or {@code {skipped:true}} when another instance holds the lock. */
     public Map<String, Object> runJobs(Instant now) {
-        javax.sql.DataSource ds = jdbc.getDataSource();
-        try (java.sql.Connection lockConn = ds.getConnection()) {
-            lockConn.setAutoCommit(true);
-            boolean ok;
-            try (java.sql.PreparedStatement st = lockConn.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
-                st.setLong(1, LOCK_ID);
-                try (java.sql.ResultSet rs = st.executeQuery()) {
-                    ok = rs.next() && rs.getBoolean(1);
-                }
+        return repo.withAdvisoryLock(LOCK_ID, () -> {
+            // each business with its own policies; rows written are tagged with that business
+            Map<String, Object> all = new LinkedHashMap<>();
+            List<Map<String, Object>> businesses = TenantContext.call(null, repo::findActiveBusinesses);
+            for (Map<String, Object> b : businesses) {
+                all.put((String) b.get("code"), TenantContext.call((UUID) b.get("id"), () -> runForBusiness(now)));
             }
-            if (!ok) return Map.of("skipped", true);
-            try {
-                // each business with its own policies; rows written are tagged with that business
-                Map<String, Object> all = new LinkedHashMap<>();
-                List<Map<String, Object>> businesses = TenantContext.call(null,
-                        () -> jdbc.queryForList("SELECT id, code FROM businesses WHERE status = 'ACTIVE' ORDER BY code"));
-                for (Map<String, Object> b : businesses) {
-                    all.put((String) b.get("code"), TenantContext.call((UUID) b.get("id"), () -> runForBusiness(now)));
-                }
-                return all;
-            } finally {
-                try (java.sql.PreparedStatement st = lockConn.prepareStatement("SELECT pg_advisory_unlock(?)")) {
-                    st.setLong(1, LOCK_ID);
-                    st.execute();
-                }
-            }
-        } catch (java.sql.SQLException e) {
-            throw new IllegalStateException("jobs lock", e);
-        }
+            return all;
+        }).orElseGet(() -> Map.of("skipped", true));
     }
 
     /** Every job, in order, for the current business. */
@@ -121,10 +101,10 @@ public class JobsService {
         else if ("EXPIRED".equals(c.state())) kind = "ended";
         if (kind == null) return Map.of("sent", 0);
         String key = c.endsOn() + ":" + kind;
-        Integer done = jdbc.queryForObject("SELECT count(*) FROM job_runs WHERE name = 'subscription.warning' AND key = ?", Integer.class, key);
+        Integer done = repo.countSubscriptionWarningRuns(key);
         if (done != null && done > 0) return Map.of("sent", 0);
         int days = "ended".equals(kind) ? 0 : Math.max(1, c.daysLeft());
-        String business = jdbc.queryForObject("SELECT name FROM businesses WHERE id = jurisone_tenant_id()", String.class);
+        String business = repo.currentBusinessName();
         String text = "ended".equals(kind) ? "Your " + c.planName() + " subscription has ended — only the employee export works until it is renewed"
                 : "Your " + c.planName() + " subscription ends " + (c.daysLeft() == 0 ? "today" : c.daysLeft() == 1 ? "tomorrow" : "in " + c.daysLeft() + " days")
                         + " (" + c.endsOn() + ") — contact JurisOne to renew";
@@ -134,8 +114,7 @@ public class JobsService {
             mail.send((String) o.get("email"), com.jurislpo.jurisone.service.MailTemplates.subscription((String) o.get("full_name"), business, c.planName(),
                     c.endsOn(), days, appUrl + "/subscription"));
         }
-        jdbc.update("INSERT INTO job_runs (id, name, key, ran_at, ok, detail) VALUES (?, 'subscription.warning', ?, now(), true, ?::jsonb)",
-                UUID.randomUUID(), key, "{\"owners\":" + owners.size() + "}");
+        repo.insertSubscriptionWarningRun(key, "{\"owners\":" + owners.size() + "}");
         return Map.of("sent", owners.size(), "kind", kind);
     }
 
@@ -156,7 +135,7 @@ public class JobsService {
         AttendanceService.Pol p = att.policy();
         List<String> locked = new ArrayList<>();
         for (YearMonth ym = YearMonth.from(p.trackingStart()); !att.lockInstant(ym.toString(), p).isAfter(now); ym = ym.plusMonths(1)) {
-            Integer done = jdbc.queryForObject("SELECT count(*) FROM job_runs WHERE name = 'attendance.lock' AND key = ?", Integer.class, ym.toString());
+            Integer done = repo.countLockRuns(ym.toString());
             if (done != null && done > 0) continue;
             LocalDate from = ym.atDay(1).isBefore(p.trackingStart()) ? p.trackingStart() : ym.atDay(1);
             LocalDate to = ym.atEndOfMonth();
@@ -165,8 +144,7 @@ public class JobsService {
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("employees", emps.size());
             detail.put("rows", written);
-            jdbc.update("INSERT INTO job_runs (id, name, key, ran_at, ok, detail) VALUES (?, 'attendance.lock', ?, now(), true, ?::jsonb)",
-                    UUID.randomUUID(), ym.toString(), "{\"employees\":" + emps.size() + ",\"rows\":" + written + "}");
+            repo.insertLockRun(ym.toString(), "{\"employees\":" + emps.size() + ",\"rows\":" + written + "}");
             audit.log(null, "attendance.month_locked", "attendance", ym.toString(), null, detail, null);
             locked.add(ym.toString());
         }
@@ -177,13 +155,13 @@ public class JobsService {
     public Map<String, Object> jobEmployeeStatus(Instant now) {
         int months = settings.employee().probationMonths();
         LocalDate today = today(now);
-        List<Map<String, Object>> emps = jdbc.queryForList("SELECT id, status::text AS status, date_of_joining FROM employees WHERE status IN ('ONBOARDING', 'PROBATION')");
+        List<Map<String, Object>> emps = repo.findOnboardingOrProbation();
         int changed = 0;
         for (Map<String, Object> e : emps) {
             EmployeeStatus cur = EmployeeStatus.valueOf((String) e.get("status"));
             EmployeeStatus next = PeopleRules.derivedStatus(cur, ((Date) e.get("date_of_joining")).toLocalDate(), today, months);
             if (next == cur) continue;
-            jdbc.update("UPDATE employees SET status = ?::\"EmployeeStatus\", updated_at = now() WHERE id = ?", next.name(), e.get("id"));
+            repo.updateEmployeeStatus(e.get("id"), next.name());
             audit.log(null, "employee.status_auto", "employee", e.get("id").toString(), Map.of("status", cur.name()), Map.of("status", next.name()), null);
             changed++;
         }
@@ -198,14 +176,9 @@ public class JobsService {
     public Map<String, Object> jobLeaveAccrual(Instant now) {
         String ym = today(now).toString().substring(0, 7);
         String year = ym.substring(0, 4);
-        List<Map<String, Object>> types = jdbc.queryForList("SELECT code, accrual_per_month FROM leave_types WHERE active AND accrual_per_month > 0");
-        List<Map<String, Object>> emps = jdbc.queryForList("""
-            SELECT e.id, e.date_of_joining FROM employees e
-            WHERE EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = e.role_id AND rp.permission_key = 'self')
-              AND e.status <> 'EXITED' AND e.date_of_joining <= ?""", Date.valueOf(YearMonth.parse(ym).atEndOfMonth()));
-        Set<String> done = new HashSet<>();
-        jdbc.query("SELECT employee_id, ref_id FROM leave_ledger WHERE reason = 'ACCRUAL' AND ref_id LIKE 'accrual:%'",
-                rs -> { done.add(rs.getObject(1) + "|" + rs.getString(2)); });
+        List<Map<String, Object>> types = repo.findAccruingTypes();
+        List<Map<String, Object>> emps = repo.findAccrualEmployees(Date.valueOf(YearMonth.parse(ym).atEndOfMonth()));
+        Set<String> done = repo.findAccrualKeys();
         int credited = 0;
         for (Map<String, Object> e : emps) {
             LocalDate doj = ((Date) e.get("date_of_joining")).toLocalDate();
@@ -216,8 +189,7 @@ public class JobsService {
                     if (done.contains(e.get("id") + "|" + refId)) continue;
                     double amount = LeaveRules.accrualFor(YearMonth.parse(month), doj, ((BigDecimal) t.get("accrual_per_month")).doubleValue());
                     if (amount > 0) {
-                        jdbc.update("INSERT INTO leave_ledger (id, employee_id, leave_type, delta, reason, ref_id, note, at) VALUES (?, ?, ?, ?, 'ACCRUAL', ?, ?, now())",
-                                UUID.randomUUID(), e.get("id"), t.get("code"), BigDecimal.valueOf(amount), refId, "Accrual " + month);
+                        repo.insertAccrual(e.get("id"), t.get("code"), BigDecimal.valueOf(amount), refId, "Accrual " + month);
                         credited++;
                     }
                 }
@@ -229,26 +201,20 @@ public class JobsService {
     /** Comp-offs expire 60 days after the work date; usage comes out of the oldest credits first. */
     public Map<String, Object> jobCompOffExpiry(Instant now) {
         LocalDate today = today(now);
-        record Row(UUID id, UUID employeeId, double delta, String reason, String refId, LocalDate expiresOn) {}
-        List<Row> credits = jdbc.query("SELECT id, employee_id, delta, reason::text, ref_id, expires_on FROM leave_ledger WHERE leave_type = 'CO' AND reason = 'COMP_OFF_CREDIT'",
-                (rs, i) -> new Row((UUID) rs.getObject(1), (UUID) rs.getObject(2), rs.getBigDecimal(3).doubleValue(), rs.getString(4), rs.getString(5),
-                        rs.getDate(6) == null ? null : rs.getDate(6).toLocalDate()));
-        Map<UUID, List<Row>> byEmp = new LinkedHashMap<>();
-        for (Row c : credits) byEmp.computeIfAbsent(c.employeeId(), k -> new ArrayList<>()).add(c);
+        List<CompOffRow> credits = repo.findCompOffCredits();
+        Map<UUID, List<CompOffRow>> byEmp = new LinkedHashMap<>();
+        for (CompOffRow c : credits) byEmp.computeIfAbsent(c.employeeId(), k -> new ArrayList<>()).add(c);
         int expired = 0;
-        for (Map.Entry<UUID, List<Row>> en : byEmp.entrySet()) {
-            List<Row> rows = jdbc.query("SELECT id, employee_id, delta, reason::text, ref_id, expires_on FROM leave_ledger WHERE employee_id = ? AND leave_type = 'CO' "
-                    + "AND reason IN ('USED', 'CANCELLED', 'EXPIRED', 'ADJUSTMENT')",
-                    (rs, i) -> new Row((UUID) rs.getObject(1), (UUID) rs.getObject(2), rs.getBigDecimal(3).doubleValue(), rs.getString(4), rs.getString(5), null), en.getKey());
-            double used = -rows.stream().filter(r -> !"EXPIRED".equals(r.reason())).mapToDouble(Row::delta).sum();
+        for (Map.Entry<UUID, List<CompOffRow>> en : byEmp.entrySet()) {
+            List<CompOffRow> rows = repo.findCompOffDebits(en.getKey());
+            double used = -rows.stream().filter(r -> !"EXPIRED".equals(r.reason())).mapToDouble(CompOffRow::delta).sum();
             List<LeaveRules.Credit> cs = new ArrayList<>();
-            for (Row c : en.getValue()) {
-                double exp = -rows.stream().filter(r -> "EXPIRED".equals(r.reason()) && c.id().toString().equals(r.refId())).mapToDouble(Row::delta).sum();
+            for (CompOffRow c : en.getValue()) {
+                double exp = -rows.stream().filter(r -> "EXPIRED".equals(r.reason()) && c.id().toString().equals(r.refId())).mapToDouble(CompOffRow::delta).sum();
                 cs.add(new LeaveRules.Credit(c.id().toString(), c.delta(), c.expiresOn() != null ? c.expiresOn() : LocalDate.of(9999, 12, 31), exp));
             }
             for (LeaveRules.Expiry x : LeaveRules.compOffExpiries(cs, used, today)) {
-                jdbc.update("INSERT INTO leave_ledger (id, employee_id, leave_type, delta, reason, ref_id, note, at) VALUES (?, ?, 'CO', ?, 'EXPIRED', ?, 'Comp-off expired', now())",
-                        UUID.randomUUID(), en.getKey(), BigDecimal.valueOf(-x.amount()), x.id());
+                repo.insertCompOffExpiry(en.getKey(), BigDecimal.valueOf(-x.amount()), x.id());
                 expired++;
             }
         }
@@ -258,31 +224,28 @@ public class JobsService {
     /** On 1 January: casual leave lapses, earned leave carries forward up to its cap. Once per year. */
     public Map<String, Object> jobLeaveYearEnd(Instant now) {
         String prev = String.valueOf(today(now).getYear() - 1);
-        Integer ran = jdbc.queryForObject("SELECT count(*) FROM job_runs WHERE name = 'leave.year_end' AND key = ?", Integer.class, prev);
+        Integer ran = repo.countYearEndRuns(prev);
         if (ran != null && ran > 0) return Map.of("lapsed", 0);
         String firstYear = String.valueOf(att.policy().trackingStart().getYear());
         if (prev.compareTo(firstYear) < 0) return Map.of("lapsed", 0);
-        List<Map<String, Object>> types = jdbc.queryForList("SELECT code, carry_forward_cap FROM leave_types WHERE active AND needs_balance AND code <> 'CO'");
+        List<Map<String, Object>> types = repo.findYearEndTypes();
         Timestamp end = Timestamp.from(LocalDate.parse(prev + "-12-31").atTime(23, 59, 59).toInstant(ZoneOffset.UTC));
         int lapsed = 0;
         for (Map<String, Object> t : types) {
             BigDecimal cap = (BigDecimal) t.get("carry_forward_cap");
-            List<Map<String, Object>> sums = jdbc.queryForList("SELECT employee_id, sum(delta) AS s FROM leave_ledger WHERE leave_type = ? AND at <= ? GROUP BY employee_id",
-                    t.get("code"), end);
+            List<Map<String, Object>> sums = repo.sumBalancesUntil(t.get("code"), end);
             for (Map<String, Object> s : sums) {
                 BigDecimal sum = (BigDecimal) s.get("s");
                 double amount = LeaveRules.yearEndLapse(Num.round2(sum == null ? 0 : sum.doubleValue()), cap.doubleValue());
                 if (amount > 0) {
                     // Prisma Decimal.toString(): "0" for zero
                     String note = cap.compareTo(BigDecimal.ZERO) == 0 ? "Lapsed at year end" : "Above carry-forward cap";
-                    jdbc.update("INSERT INTO leave_ledger (id, employee_id, leave_type, delta, reason, ref_id, note, at) VALUES (?, ?, ?, ?, 'EXPIRED', ?, ?, now())",
-                            UUID.randomUUID(), s.get("employee_id"), t.get("code"), BigDecimal.valueOf(-amount), "year_end:" + prev, note);
+                    repo.insertYearEndLapse(s.get("employee_id"), t.get("code"), BigDecimal.valueOf(-amount), "year_end:" + prev, note);
                     lapsed++;
                 }
             }
         }
-        jdbc.update("INSERT INTO job_runs (id, name, key, ran_at, ok, detail) VALUES (?, 'leave.year_end', ?, now(), true, ?::jsonb)",
-                UUID.randomUUID(), prev, "{\"lapsed\":" + lapsed + "}");
+        repo.insertYearEndRun(prev, "{\"lapsed\":" + lapsed + "}");
         return Map.of("lapsed", lapsed);
     }
 
