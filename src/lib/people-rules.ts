@@ -22,7 +22,7 @@ export interface Target {
   isSuperAdmin: boolean;
 }
 
-export const isAdmin = (a: Pick<Actor, "roleKey">) => a.roleKey === "owner"; // the business owner (sub admin)
+export const isAdmin = (a: Pick<Actor, "roleKey">) => a.roleKey === "owner" || a.roleKey === "super_admin"; // the business owner (sub admin), or the super admin in the platform company
 
 /** People ops can add employees only if their role can assign at least one role. */
 export const canAddEmployees = (a: Actor) => a.perms.has("people.add") && (isAdmin(a) || a.assignable.size > 0);

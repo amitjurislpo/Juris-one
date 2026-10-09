@@ -51,8 +51,10 @@ class ExistingPrismaDatabaseTest {
             try (ConfigurableApplicationContext ctx = start(pg)) {
                 JdbcTemplate jdbc = ctx.getBean(JdbcTemplate.class);
                 assertThat(jdbc.queryForObject("SELECT type FROM flyway_schema_history WHERE version = '1'", String.class)).isEqualTo("BASELINE");
-                assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8"); // baseline, then later migrations
-                assertThat(jdbc.queryForObject("SELECT name FROM roles", String.class)).isEqualTo("Admin");
+                assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9"); // baseline, then later migrations
+                // (the platform company, created at startup, has roles of its own)
+                assertThat(jdbc.queryForList("SELECT name FROM roles WHERE business_id IS NULL OR business_id NOT IN (SELECT id FROM businesses WHERE is_platform)",
+                        String.class)).containsExactly("Admin");
             }
         } finally {
             pg.stop();

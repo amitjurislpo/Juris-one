@@ -62,6 +62,7 @@ public class SubscriptionService {
         if (b == null) throw new IllegalStateException("No business");
         LocalDate today = today();
         long employees = jdbc.queryForObject("SELECT count(*) FROM employees WHERE business_id = ? AND status <> 'EXITED'", Long.class, b);
+        if (isPlatform(b)) return new Current("ACTIVE", true, "Platform company", null, null, null, null, MODULES, employees); // never needs a plan
         List<Current> now = jdbc.query("""
             SELECT p.name, s.starts_on, s.ends_on, p.max_employees, p.modules FROM business_subscriptions s JOIN subscription_plans p ON p.id = s.plan_id
             WHERE s.business_id = ? AND s.status = 'ACTIVE' AND s.starts_on <= ? AND s.ends_on >= ? ORDER BY s.ends_on DESC LIMIT 1""",
@@ -106,7 +107,13 @@ public class SubscriptionService {
         return c.active() ? java.util.Set.copyOf(c.modules()) : java.util.Set.of();
     }
 
+    /** The JurisOne operator's own business (needs no subscription). */
+    boolean isPlatform(UUID businessId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT is_platform FROM businesses WHERE id = ?", Boolean.class, businessId));
+    }
+
     public boolean isActive(UUID businessId) {
+        if (isPlatform(businessId)) return true;
         return Boolean.TRUE.equals(jdbc.queryForObject("""
             SELECT EXISTS (SELECT 1 FROM business_subscriptions WHERE business_id = ? AND status = 'ACTIVE' AND starts_on <= ? AND ends_on >= ?)""",
                 Boolean.class, businessId, Date.valueOf(today()), Date.valueOf(today())));
@@ -204,6 +211,7 @@ public class SubscriptionService {
 
     /** Assigns / renews a plan for a business. End date defaults to the plan's period; price defaults to the plan's price. */
     public String addSubscription(UUID businessId, SubscriptionInput in, UUID by) {
+        if (isPlatform(businessId)) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         UUID planId = Check.uuid(in.planId(), "Choose a plan.");
         List<Map<String, Object>> plan = jdbc.queryForList("SELECT period_months, price_paise, active FROM subscription_plans WHERE id = ?", planId);
         if (plan.isEmpty()) throw new UserException("Plan not found.");

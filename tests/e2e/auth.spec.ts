@@ -11,15 +11,17 @@ test.describe("authentication", () => {
     await sql(`UPDATE users SET password_hash = $1 FROM employees e WHERE e.id = users.employee_id AND e.code = 'JC-090'`, [await hashPassword(DEMO_PW)]);
   });
 
-  test("super admin signs in and lands on the platform console, outside any business", async ({ page }) => {
+  test("super admin lands on the platform console and runs only the platform company's own staff", async ({ page }) => {
     await login(page, ADMIN_EMAIL, ADMIN_PW);
     await expectLanded(page, "/platform");
     const menu = page.getByRole("complementary", { name: "Main menu" });
     await expect(menu.getByRole("link", { name: "Businesses" })).toBeVisible();
     await expect(menu.getByRole("link", { name: "Plans" })).toBeVisible();
-    await expect(menu.getByRole("link", { name: "Roles & permissions" })).toHaveCount(0);
-    await expect(menu.getByRole("link", { name: "Employees" })).toHaveCount(0);
-    expect((await page.request.get("/api/people")).status()).toBe(403); // no business data
+    await expect(menu.getByRole("link", { name: "Employees" })).toBeVisible(); // the platform company's staff
+    await expect(page.getByRole("link", { name: "My attendance" })).toHaveCount(0);
+    const people = await page.request.get("/api/people?status=All");
+    expect(people.status()).toBe(200);
+    expect(await people.text()).not.toContain("JC-0"); // never a customer's employees
   });
 
   test("the owner (business admin) lands on Overview", async ({ page }) => {

@@ -43,7 +43,7 @@ class FreshDatabaseSchemaTest {
 
     @Test
     void flywayAppliedTheBaseline() {
-        assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+        assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_type WHERE typname = 'EmployeeStatus'", Integer.class)).isEqualTo(1);
     }
 
@@ -107,7 +107,7 @@ class FreshDatabaseSchemaTest {
         assertThat(back.getUpdatedAt()).isNotNull();
         assertThat(back.getRole().getKey()).isEqualTo("employee"); // read-only navigation
         assertThat(em.find(AttendanceDay.class, new AttendanceDay.Key(e.getId(), LocalDate.of(2026, 9, 8))).getStatus()).isEqualTo(DayStatus.NOT_TRACKED);
-        assertThat(em.find(Setting.class, "company").getValue().get("n").asInt()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT (value->>'n')::int FROM settings WHERE key = 'company' AND value->>'name' = 'Juris'", Integer.class)).isEqualTo(1);
         assertThat(em.find(EmailOutbox.class, mail.getId()).getStatus()).isEqualTo(EmailStatus.QUEUED);
         assertThat(jdbc.queryForObject("SELECT status::text FROM employees WHERE id = ?", String.class, e.getId())).isEqualTo("ONBOARDING");
         assertThat(jdbc.queryForObject("SELECT \"to\" FROM email_outbox WHERE id = ?", String.class, mail.getId())).isEqualTo("t@example.com");

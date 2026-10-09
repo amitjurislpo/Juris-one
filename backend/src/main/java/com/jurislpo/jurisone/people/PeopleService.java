@@ -92,7 +92,7 @@ public class PeopleService {
         Map<String, Integer> k = jdbc.queryForObject("""
             SELECT count(*) FILTER (WHERE status <> 'EXITED') AS cur, count(*) FILTER (WHERE status <> 'EXITED' AND region = 'US') AS us,
                    count(*) FILTER (WHERE status <> 'EXITED' AND NOT portal_access) AS off, count(*) FILTER (WHERE status = 'EXITED') AS past
-            FROM employees e JOIN roles r ON r.id = e.role_id WHERE r.key <> 'owner' AND e.id <> ?""",
+            FROM employees e JOIN roles r ON r.id = e.role_id WHERE r.key NOT IN ('owner', 'super_admin') AND e.id <> ?""",
                 (rs, i) -> {
                     Map<String, Integer> m = new LinkedHashMap<>();
                     for (String c : List.of("cur", "us", "off", "past")) m.put(c, rs.getInt(c));
@@ -296,7 +296,7 @@ public class PeopleService {
     record RoleRow(String id, String key, String name, int perms) {}
 
     private boolean roleAllowed(Actor actor, RoleRow r, String currentRoleId) {
-        return PeopleRules.canAssignRole(actor, r.id(), currentRoleId) || (PeopleRules.isAdmin(actor) && !"owner".equals(r.key())) || r.id().equals(currentRoleId);
+        return PeopleRules.canAssignRole(actor, r.id(), currentRoleId) || (PeopleRules.isAdmin(actor) && !PeopleRules.isAdminRole(r.key())) || r.id().equals(currentRoleId);
     }
 
     public FormOptions formOptions(CurrentUser u, String editIdRaw) {
@@ -449,7 +449,7 @@ public class PeopleService {
         if (roleRows.isEmpty()) throw new UserException("Pick a role.");
         Map<String, Object> role = roleRows.get(0);
         String currentRole = current == null ? null : current.get("role_id").toString();
-        boolean ok = PeopleRules.canAssignRole(actor, f.roleId(), currentRole) || (PeopleRules.isAdmin(actor) && !"owner".equals(role.get("key")));
+        boolean ok = PeopleRules.canAssignRole(actor, f.roleId(), currentRole) || (PeopleRules.isAdmin(actor) && !PeopleRules.isAdminRole((String) role.get("key")));
         if (!ok) throw new UserException("You can't give people the " + role.get("name") + " role.");
 
         // Department: must exist; locked to the actor's own department where the rule applies.

@@ -23,8 +23,13 @@ public final class PeopleRules {
 
     public record Target(String id, String roleId, String roleKey, EmployeeStatus status, boolean isSuperAdmin) {}
 
+    /** Roles that run a business: the owner, and the super admin inside the platform company. Never assignable, never listed. */
+    public static boolean isAdminRole(String roleKey) {
+        return "owner".equals(roleKey) || "super_admin".equals(roleKey);
+    }
+
     public static boolean isAdmin(Actor a) {
-        return "owner".equals(a.roleKey()); // the business owner (sub admin)
+        return isAdminRole(a.roleKey()); // the business owner (sub admin), or the super admin in the platform company
     }
 
     /** People ops can add employees only if their role can assign at least one role. */
@@ -41,7 +46,7 @@ public final class PeopleRules {
     /** access.toggle; never yourself; never the super admin; only Admin toggles an Admin; exited people stay off. */
     public static boolean canToggleAccess(Actor a, Target t) {
         if (!a.perms().contains(Permissions.ACCESS_TOGGLE) || a.id().equals(t.id()) || t.isSuperAdmin() || t.status() == EmployeeStatus.EXITED) return false;
-        return isAdmin(a) || !"owner".equals(t.roleKey());
+        return isAdmin(a) || !isAdminRole(t.roleKey());
     }
 
     /** May the actor give {@code roleId} to someone? Keeping a person's current role is always allowed for an editor. */

@@ -3,6 +3,7 @@ package com.jurislpo.jurisone.business;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -30,6 +31,11 @@ class PlatformApiTest extends IntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired BusinessSetupService setup;
+    @Autowired PlatformCompanyService platformCompany;
+
+    static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder write(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder b) {
+        return b.header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON);
+    }
 
     Cookie signIn(String email, String pw) throws Exception {
         String set = mvc.perform(post("/api/auth/session").header("origin", "http://localhost:3005").header("host", "localhost:3005")
@@ -96,5 +102,48 @@ class PlatformApiTest extends IntegrationTest {
                 .andExpect(jsonPath("$.data[?(@.code == '" + TestData.DEFAULT_BUSINESS + "')]").exists());
         mvc.perform(get("/api/people").cookie(c)).andExpect(status().isForbidden());
         mvc.perform(get("/api/payroll").cookie(c)).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void theSuperAdminRunsThePlatformCompanyWhichCustomersNeverSee() throws Exception {
+        String customerCode = "customer-" + TestData.letters(6);
+        TestData customer = new TestData(jdbc).inBusiness(customerCode);
+        UUID customerEmp = customer.employee("PC-" + TestData.letters(4).toUpperCase(), TestData.letters(8) + "@customer.test", customer.role("employee", "self", "dir"), PW);
+        String email = "platform." + TestData.letters(6) + "@jurisone.test";
+        UUID sa = superAdmin(email);
+        UUID company = platformCompany.ensure();
+        assertThat(jdbc.queryForObject("SELECT business_id FROM employees WHERE id = ?", UUID.class, sa)).isEqualTo(company);
+        assertThat(platformCompany.ensure()).isEqualTo(company); // idempotent
+
+        Cookie c = signIn(email, PW);
+        mvc.perform(get("/api/me").cookie(c)).andExpect(jsonPath("$.data.landing").value("/platform"))
+                .andExpect(jsonPath("$.data.subscriptionActive").value(true)); // the platform company needs no plan
+        // the console still works across businesses, and doesn't list the platform company as a customer
+        String list = mvc.perform(get("/api/platform/businesses").cookie(c)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(list).contains(customerCode).doesNotContain(company.toString());
+        mvc.perform(get("/api/platform/businesses/" + company).cookie(c)).andExpect(status().isNotFound());
+        mvc.perform(write(put("/api/platform/businesses/" + company + "/status")).cookie(c).content("{\"status\":\"SUSPENDED\"}")).andExpect(status().isNotFound());
+
+        // its own employees: the super admin adds one; customers' people are not there
+        for (String[] sh : new String[][] {{"IN_NIGHT", "19:30", "04:30", "IN"}, {"IN_DAY", "09:30", "18:30", "IN"}, {"US_DAY", "09:00", "18:00", "US"}}) {
+            jdbc.update("INSERT INTO shifts (id, code, name, start_local, end_local, region) SELECT ?, ?, ?, ?, ?, ?::\"Region\" WHERE NOT EXISTS (SELECT 1 FROM shifts WHERE code = ?)",
+                    UUID.randomUUID(), sh[0], sh[0], sh[1], sh[2], sh[3], sh[0]);
+        }
+        UUID hrDept = jdbc.queryForObject("SELECT id FROM departments WHERE business_id = ? AND name = 'Human Resources'", UUID.class, company);
+        UUID hrRole = jdbc.queryForObject("SELECT id FROM roles WHERE business_id = ? AND key = 'hrm'", UUID.class, company);
+        String body = """
+            {"firstName":"Kiran","lastName":"Rao","fatherName":"M Rao","email":"kiran.%s@jurisone.test","phoneCountry":"+91","phone":"9876501234","location":"",
+             "joiningOffice":"Head office","pan":"","aadhaar":"","uan":"","address":"","designation":"HR Manager","departmentId":"%s","managerId":"%s",
+             "doj":"2026-10-01","shift":"IN_DAY","roleId":"%s"}""".formatted(TestData.letters(5), hrDept, sa, hrRole);
+        String created = mvc.perform(write(post("/api/people")).cookie(c).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        assertThat(created).contains("JO-");
+        String people = mvc.perform(get("/api/people").cookie(c)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(people).contains("Kiran Rao").doesNotContain(customerEmp.toString()).doesNotContain(email);
+        // and a customer's admin can't reach them
+        UUID ownerRole = customer.role("owner", "dir", "roles.manage", "people.view", "people.add");
+        String ownerEmail = TestData.letters(8) + "@customer.test";
+        customer.employee("PO-" + TestData.letters(4).toUpperCase(), ownerEmail, ownerRole, PW);
+        String theirs = mvc.perform(get("/api/people?q=Kiran").cookie(signIn(ownerEmail, PW))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(theirs).doesNotContain("Kiran Rao");
     }
 }

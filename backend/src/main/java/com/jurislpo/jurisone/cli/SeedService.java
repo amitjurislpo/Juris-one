@@ -57,8 +57,12 @@ public class SeedService {
     private final Path projectDir;
     private final String uploadDir;
 
+    private final com.jurislpo.jurisone.business.PlatformCompanyService platformCompany;
+
     public SeedService(JdbcTemplate jdbc, PiiCrypto pii, Passwords passwords, PayrollOpsService payrollOps, JobsService jobs, BusinessSetupService setup,
-                       Environment env, JurisOneProperties props, @Value("${UPLOAD_DIR:./storage}") String uploadDir) {
+                       com.jurislpo.jurisone.business.PlatformCompanyService platformCompany, Environment env, JurisOneProperties props,
+                       @Value("${UPLOAD_DIR:./storage}") String uploadDir) {
+        this.platformCompany = platformCompany;
         this.jdbc = jdbc;
         this.pii = pii;
         this.passwords = passwords;
@@ -409,6 +413,7 @@ public class SeedService {
         seedLeaveTypes();
         seedTax();
         UUID superAdminId = upsertSuperAdmin(platformRole, adminPw);
+        platformCompany.ensure(); // the operator's own company; the super admin belongs to it
         seedPlans();
 
         // demo business (development and tests only): the prototype company, with Sana as its owner (sub admin)

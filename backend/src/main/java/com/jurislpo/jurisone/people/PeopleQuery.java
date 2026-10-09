@@ -45,7 +45,7 @@ public final class PeopleQuery {
         String access = ListParams.pick(sp, "access", ACCESS, "All");
         String dept = ListParams.str(sp, "dept", "All");
         List<String> and = new ArrayList<>();
-        and.add("r.key <> 'owner'");
+        and.add("r.key NOT IN ('owner', 'super_admin')"); // the business admin (or the platform's super admin) is never listed
         if (viewer != null) {
             and.add("e.id <> ?");
             args.add(viewer);

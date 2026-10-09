@@ -56,7 +56,7 @@ public class BusinessAdminService {
             SELECT b.id, b.name, b.code, b.employee_prefix, b.status, b.created_at,
                    (SELECT count(*) FROM employees e WHERE e.business_id = b.id AND e.status <> 'EXITED') AS employees,
                    (SELECT count(*) FROM employees e JOIN roles r ON r.id = e.role_id WHERE e.business_id = b.id AND r.key = 'owner') AS owners
-            FROM businesses b ORDER BY b.name""",
+            FROM businesses b WHERE NOT b.is_platform ORDER BY b.name""",
                 (rs, i) -> new BusinessRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getLong(7), rs.getLong(8),
                         Format.jsIso(rs.getTimestamp(6).toInstant()), subscriptions.current((UUID) rs.getObject(1))));
     }
@@ -67,7 +67,7 @@ public class BusinessAdminService {
         UUID id = Check.uuid(idRaw);
         List<Map<String, Object>> rows = jdbc.queryForList("""
             SELECT id::text, name, legal_name, code, employee_prefix, gstin, address, contact_email, contact_phone, time_zone, status, created_at
-            FROM businesses WHERE id = ?""", id);
+            FROM businesses WHERE id = ? AND NOT is_platform""", id);
         if (rows.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         Map<String, Object> b = new LinkedHashMap<>(rows.get(0));
         b.put("created_at", Format.jsIso(((java.sql.Timestamp) b.get("created_at")).toInstant()));
@@ -167,7 +167,7 @@ public class BusinessAdminService {
 
     public void update(CurrentUser u, String idRaw, ProfileInput in, String ip) {
         UUID id = Check.uuid(idRaw);
-        if (jdbc.queryForList("SELECT 1 FROM businesses WHERE id = ?", id).isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
+        if (jdbc.queryForList("SELECT 1 FROM businesses WHERE id = ? AND NOT is_platform", id).isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         ValidProfile p = validate(in, id);
         jdbc.update("""
             UPDATE businesses SET name = ?, legal_name = ?, code = ?, employee_prefix = ?, time_zone = ?, contact_email = ?, contact_phone = ?, address = ?,
@@ -180,7 +180,7 @@ public class BusinessAdminService {
     public String setStatus(CurrentUser u, String idRaw, String statusRaw, String ip) {
         UUID id = Check.uuid(idRaw);
         String status = Check.oneOf(statusRaw, List.of("ACTIVE", "SUSPENDED"));
-        int n = jdbc.update("UPDATE businesses SET status = ?, updated_at = now() WHERE id = ?", status, id);
+        int n = jdbc.update("UPDATE businesses SET status = ?, updated_at = now() WHERE id = ? AND NOT is_platform", status, id);
         if (n == 0) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         if ("SUSPENDED".equals(status)) {
             jdbc.update("UPDATE sessions SET revoked_at = now(), revoked_reason = 'business_suspended' WHERE revoked_at IS NULL "
@@ -208,7 +208,7 @@ public class BusinessAdminService {
     /** Adds a sub admin: with a password they can sign in at once; without one they get an invite email. */
     public Map<String, String> addOwner(CurrentUser u, String businessIdRaw, OwnerInput o, String ip) {
         UUID business = Check.uuid(businessIdRaw);
-        if (jdbc.queryForList("SELECT 1 FROM businesses WHERE id = ?", business).isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
+        if (jdbc.queryForList("SELECT 1 FROM businesses WHERE id = ? AND NOT is_platform", business).isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         validateOwner(o);
         String password = o.password() == null || o.password().isEmpty() ? null : o.password();
         UUID owner = TenantContext.call(business, () -> {

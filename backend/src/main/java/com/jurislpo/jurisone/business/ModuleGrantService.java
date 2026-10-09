@@ -76,7 +76,7 @@ public class ModuleGrantService {
     }
 
     public String grant(UUID businessId, GrantInput in, UUID by) {
-        if (jdbc.queryForList("SELECT 1 FROM businesses WHERE id = ?", businessId).isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
+        if (jdbc.queryForList("SELECT 1 FROM businesses WHERE id = ? AND NOT is_platform", businessId).isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         Valid v = validate(in, businessId, null);
         UUID id = UUID.randomUUID();
         jdbc.update("""

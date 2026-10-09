@@ -279,7 +279,7 @@ public class OnboardingService {
         UUID dept = blankUuid(in.departmentId());
         if (dept != null && jdbc.queryForList("SELECT 1 FROM departments WHERE id = ? AND archived_at IS NULL", dept).isEmpty()) throw new UserException("Pick a department.");
         UUID role = blankUuid(in.roleId());
-        if (role != null && jdbc.queryForList("SELECT 1 FROM roles WHERE id = ? AND key <> 'owner'", role).isEmpty()) throw new UserException("Pick a role.");
+        if (role != null && jdbc.queryForList("SELECT 1 FROM roles WHERE id = ? AND key NOT IN ('owner', 'super_admin')", role).isEmpty()) throw new UserException("Pick a role.");
         UUID manager = blankUuid(in.managerId());
         if (manager != null && jdbc.queryForList("SELECT 1 FROM employees WHERE id = ? AND status <> 'EXITED'", manager).isEmpty()) {
             throw new UserException("Pick a current employee as reporting manager.");

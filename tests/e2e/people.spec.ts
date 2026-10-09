@@ -11,7 +11,7 @@ async function cleanup() {
   await sql(`DELETE FROM departments WHERE name LIKE 'E2E %'`);
   await sql(`DELETE FROM roles WHERE name LIKE 'E2E %'`);
   await sql(`UPDATE employees SET portal_access = true WHERE code = 'JC-049'`);
-  await sql(`DELETE FROM role_permissions WHERE permission_key = 'att.all' AND role_id = (SELECT id FROM roles WHERE key = 'employee')`);
+  await sql(`DELETE FROM role_permissions WHERE permission_key = 'att.all' AND role_id IN (SELECT id FROM roles WHERE key = 'employee')`);
   await sql(`UPDATE users SET failed_attempts = 0, locked_until = NULL`);
 }
 

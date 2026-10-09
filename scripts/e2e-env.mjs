@@ -4,7 +4,7 @@
 // Playwright starts both (playwright.config.ts). Uploaded files go to storage/e2e; no email is sent (no SMTP).
 import "dotenv/config";
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -79,7 +79,16 @@ function frontend() {
   const id = path.join(root, dist, "BUILD_ID");
   const sources = Math.max(newest(path.join(root, "src")), statSync(path.join(root, "next.config.ts")).mtimeMs);
   const built = existsSync(id) && statSync(id).mtimeMs > sources;
-  if (!built || process.env.E2E_BUILD === "1") run("npx", ["next", "build"], { cwd: root, env });
+  if (!built || process.env.E2E_BUILD === "1") {
+    // next build adds the e2e build's type folders to tsconfig.json: put the file back afterwards
+    const tsconfig = path.join(root, "tsconfig.json");
+    const before = readFileSync(tsconfig, "utf8");
+    try {
+      run("npx", ["next", "build"], { cwd: root, env });
+    } finally {
+      writeFileSync(tsconfig, before);
+    }
+  }
   const web = spawn("npx", ["next", "start", "-p", String(E2E.web)], { cwd: root, env, stdio: "inherit", shell: win });
   web.on("exit", (code) => process.exit(code ?? 0));
 }

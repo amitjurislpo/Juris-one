@@ -5,6 +5,7 @@ import com.jurislpo.jurisone.common.UserException;
 import com.jurislpo.jurisone.config.JurisOneProperties;
 import com.jurislpo.jurisone.engine.Csv;
 import com.jurislpo.jurisone.engine.Format;
+import com.jurislpo.jurisone.engine.PeopleRules;
 import com.jurislpo.jurisone.platform.AuditService;
 import com.jurislpo.jurisone.platform.NotificationService;
 import com.jurislpo.jurisone.security.CurrentUser;
@@ -72,7 +73,7 @@ public class PolicyService {
 
     /** Whether this user must acknowledge policies (everyone in a business except its owners). */
     public static boolean mustAcknowledge(CurrentUser u) {
-        return u != null && u.businessId() != null && !OWNER.equals(u.roleKey());
+        return u != null && u.businessId() != null && !PeopleRules.isAdminRole(u.roleKey());
     }
 
     // ───────────────────────── employees: pending, mine, acknowledge ─────────────────────────
@@ -163,7 +164,7 @@ public class PolicyService {
     static final String REQUIRED = """
         SELECT e.id, e.code, e.full_name, d.name AS department FROM employees e JOIN roles r ON r.id = e.role_id
         LEFT JOIN departments d ON d.id = e.department_id
-        WHERE e.business_id = jurisone_tenant_id() AND e.status <> 'EXITED' AND r.key <> 'owner'""";
+        WHERE e.business_id = jurisone_tenant_id() AND e.status <> 'EXITED' AND r.key NOT IN ('owner', 'super_admin')""";
 
     public List<Map<String, Object>> list() {
         int total = jdbc.queryForObject("SELECT count(*) FROM (" + REQUIRED + ") x", Integer.class);
