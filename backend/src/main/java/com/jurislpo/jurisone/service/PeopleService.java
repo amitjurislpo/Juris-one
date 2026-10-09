@@ -1,6 +1,7 @@
 package com.jurislpo.jurisone.service;
 
 import com.jurislpo.jurisone.repository.PeopleQuery;
+import com.jurislpo.jurisone.repository.PeopleRepository;
 import com.jurislpo.jurisone.common.Check;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.crypto.Masks;
@@ -19,13 +20,11 @@ import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -35,7 +34,7 @@ public class PeopleService {
 
     static final String IST = "Asia/Kolkata";
 
-    private final JdbcTemplate jdbc;
+    private final PeopleRepository repo;
     private final TransactionTemplate tx;
     private final ActorService actors;
     private final AuditService audit;
@@ -44,10 +43,10 @@ public class PeopleService {
     private final AuthTokenService tokens;
     private final com.jurislpo.jurisone.service.SubscriptionService subscriptions;
 
-    public PeopleService(JdbcTemplate jdbc, TransactionTemplate tx, ActorService actors, AuditService audit, PiiCrypto pii, SessionService sessions,
+    public PeopleService(PeopleRepository repo, TransactionTemplate tx, ActorService actors, AuditService audit, PiiCrypto pii, SessionService sessions,
                          AuthTokenService tokens, com.jurislpo.jurisone.service.SubscriptionService subscriptions) {
         this.subscriptions = subscriptions;
-        this.jdbc = jdbc;
+        this.repo = repo;
         this.tx = tx;
         this.actors = actors;
         this.audit = audit;
@@ -68,34 +67,10 @@ public class PeopleService {
     public Page page(CurrentUser u, Map<String, String> sp) {
         PeopleQuery pq = new PeopleQuery(sp, u.id());
         Actor actor = actors.actor(u);
-        List<Object> args = new ArrayList<>(pq.args);
-        args.add(pq.ls.take());
-        args.add(pq.ls.skip());
-        List<PersonRow> rows = jdbc.query("""
-            SELECT e.id::text AS id, e.code, e.full_name, e.designation, e.status::text AS status, e.portal_access, e.time_zone, e.region::text AS region,
-                   e.role_id::text AS role_id, e.date_of_joining, d.name AS dept, m.full_name AS manager, r.name AS role_name, r.key AS role_key,
-                   (SELECT u.is_super_admin FROM users u WHERE u.employee_id = e.id) AS super_admin
-            """ + PeopleQuery.FROM + pq.where + pq.orderBy + " LIMIT ? OFFSET ?",
-                (rs, i) -> {
-                    Target t = new Target(rs.getString("id"), rs.getString("role_id"), rs.getString("role_key"), EmployeeStatus.valueOf(rs.getString("status")),
-                            rs.getBoolean("super_admin"));
-                    return new PersonRow(rs.getString("id"), rs.getString("code"), rs.getString("full_name"), rs.getString("designation"),
-                            rs.getString("dept") == null ? "—" : rs.getString("dept"), rs.getString("manager") == null ? "—" : rs.getString("manager"),
-                            PeopleRules.locationOfTz(rs.getString("time_zone")).l(), "IN".equals(rs.getString("region")), rs.getString("role_name"),
-                            rs.getString("status"), rs.getBoolean("portal_access"), rs.getDate("date_of_joining").toLocalDate().toString(),
-                            PeopleRules.canToggleAccess(actor, t));
-                }, args.toArray());
-        Integer total = jdbc.queryForObject("SELECT count(*) " + PeopleQuery.FROM + pq.where, Integer.class, pq.args.toArray());
-        List<Dept> depts = jdbc.query("SELECT id::text, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (rs, i) -> new Dept(rs.getString(1), rs.getString(2)));
-        Map<String, Integer> k = jdbc.queryForObject("""
-            SELECT count(*) FILTER (WHERE status <> 'EXITED') AS cur, count(*) FILTER (WHERE status <> 'EXITED' AND region = 'US') AS us,
-                   count(*) FILTER (WHERE status <> 'EXITED' AND NOT portal_access) AS off, count(*) FILTER (WHERE status = 'EXITED') AS past
-            FROM employees e JOIN roles r ON r.id = e.role_id WHERE r.key NOT IN ('owner', 'super_admin') AND e.id <> ?""",
-                (rs, i) -> {
-                    Map<String, Integer> m = new LinkedHashMap<>();
-                    for (String c : List.of("cur", "us", "off", "past")) m.put(c, rs.getInt(c));
-                    return m;
-                }, u.id());
+        List<PersonRow> rows = repo.findPage(pq, t -> PeopleRules.canToggleAccess(actor, t));
+        Integer total = repo.count(pq);
+        List<Dept> depts = repo.findActiveDepartments();
+        Map<String, Integer> k = repo.countTabs(u.id());
         return new Page(rows, total == null ? 0 : total, pq.ls.page(), pq.ls.take(), depts, k, u.perms().contains("struct.manage"), PeopleRules.canAddEmployees(actor));
     }
 
@@ -128,14 +103,10 @@ public class PeopleService {
             case "st" -> "status " + d + ", full_name ASC";
             default -> "full_name " + d;
         };
-        List<Object> pageArgs = new ArrayList<>(args);
-        pageArgs.add(ls.take());
-        pageArgs.add(ls.skip());
-        List<DirRow> rows = jdbc.query("SELECT id::text, full_name, email, designation, status::text FROM employees" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
-                (rs, i) -> new DirRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)), pageArgs.toArray());
-        Integer total = jdbc.queryForObject("SELECT count(*) FROM employees" + where, Integer.class, args.toArray());
-        Integer active = jdbc.queryForObject("SELECT count(*) FROM employees WHERE status <> 'EXITED'", Integer.class);
-        List<Dept> depts = jdbc.query("SELECT id::text, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (rs, i) -> new Dept(rs.getString(1), rs.getString(2)));
+        List<DirRow> rows = repo.findDirectoryPage(where, order, args, ls.take(), ls.skip());
+        Integer total = repo.countDirectory(where, args);
+        Integer active = repo.countCurrent();
+        List<Dept> depts = repo.findActiveDepartments();
         return new Directory(rows, total == null ? 0 : total, ls.page(), ls.take(), active == null ? 0 : active, depts);
     }
 
@@ -154,11 +125,7 @@ public class PeopleService {
 
     public Profile profile(CurrentUser u, String idRaw) {
         UUID id = Check.uuid(idRaw);
-        List<Map<String, Object>> rs = jdbc.queryForList("""
-            SELECT e.*, e.status::text AS status_s, e.region::text AS region_s, d.name AS dept, m.full_name AS manager, r.name AS role_name, r.key AS role_key,
-                   s.code AS shift_code, s.start_local, s.end_local, us.is_super_admin, us.password_hash
-            FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees m ON m.id = e.reporting_manager_id
-            JOIN roles r ON r.id = e.role_id LEFT JOIN shifts s ON s.id = e.shift_id LEFT JOIN users us ON us.employee_id = e.id WHERE e.id = ?""", id);
+        List<Map<String, Object>> rs = repo.findProfile(id);
         if (rs.isEmpty()) throw new UserException("That employee no longer exists.");
         Map<String, Object> e = rs.get(0);
         Actor actor = actors.actor(u);
@@ -168,12 +135,11 @@ public class PeopleService {
         // Salary is fetched only for struct.manage — HR never receives it.
         Long gross = null;
         if (u.perms().contains("struct.manage")) {
-            List<Long> g = jdbc.queryForList("SELECT basic + hra + lta + special FROM salary_structures WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1",
-                    Long.class, id, Date.valueOf(Format.todayIn(IST)));
+            List<Long> g = repo.findGross(id, Date.valueOf(Format.todayIn(IST)));
             gross = g.isEmpty() ? 0L : g.get(0);
         }
         boolean india = "IN".equals(e.get("region_s"));
-        List<String> reports = jdbc.queryForList("SELECT full_name FROM employees WHERE reporting_manager_id = ? AND status <> 'EXITED' ORDER BY full_name ASC", String.class, id);
+        List<String> reports = repo.findCurrentReportNames(id);
         String shift = e.get("shift_code") == null ? "—" : Shifts.label((String) e.get("shift_code"), (String) e.get("start_local"), (String) e.get("end_local"));
         Date exit = (Date) e.get("exit_date");
         return new Profile(id.toString(), (String) e.get("code"), (String) e.get("full_name"), e.get("father_name") == null ? "—" : (String) e.get("father_name"),
@@ -191,7 +157,7 @@ public class PeopleService {
         UUID id = Check.uuid(idRaw);
         Target t = actors.target(id);
         if (t == null || !PeopleRules.canEditEmployee(actors.actor(u), t)) throw new UserException("You can't view this person's contact details.");
-        Map<String, Object> e = jdbc.queryForMap("SELECT phone_enc, address_enc FROM employees WHERE id = ?", id);
+        Map<String, Object> e = repo.findContactEnc(id);
         audit.log(u.id(), "employee.pii_reveal", "employee", id.toString(), null, Map.of("fields", List.of("phone", "address")), ip);
         String phone = pii.decrypt((String) e.get("phone_enc")), address = pii.decrypt((String) e.get("address_enc"));
         return Map.of("phone", phone == null ? "—" : phone, "address", address == null ? "—" : address);
@@ -203,15 +169,15 @@ public class PeopleService {
         UUID id = Check.uuid(idRaw);
         Target t = actors.target(id);
         if (t == null || !PeopleRules.canToggleAccess(actors.actor(u), t)) throw new UserException("You can't change portal access for this person.");
-        Map<String, Object> e = jdbc.queryForMap("SELECT full_name, portal_access FROM employees WHERE id = ?", id);
+        Map<String, Object> e = repo.findNameAndAccess(id);
         tx.executeWithoutResult(s -> {
-            jdbc.update("UPDATE employees SET portal_access = ?, updated_at = now() WHERE id = ?", on, id);
+            repo.setPortalAccess(id, on);
             if (!on) sessions.revokeAll(id, "access_disabled");
             audit.log(u.id(), "employee.access_toggle", "employee", id.toString(), Map.of("portalAccess", e.get("portal_access")), Map.of("portalAccess", on), ip);
         });
         String name = (String) e.get("full_name");
         // someone who has never set a password (e.g. added from onboarding) gets the invite on their work email now
-        boolean invite = on && jdbc.queryForList("SELECT 1 FROM users WHERE employee_id = ? AND password_hash IS NULL", id).size() > 0;
+        boolean invite = on && repo.hasNoPassword(id);
         if (invite) tokens.sendInvite(id);
         return on ? "Portal access enabled for " + name + (invite ? " · invite sent to their work email" : "") : name + " can no longer sign in";
     }
@@ -222,10 +188,7 @@ public class PeopleService {
         Target t = actors.target(id);
         if (t == null || !PeopleRules.canEditEmployee(actors.actor(u), t)) throw new UserException("You can't change this person's record.");
         if (t.status() == EmployeeStatus.EXITED) throw new UserException("Already a past employee.");
-        Map<String, Object> e = jdbc.queryForMap("""
-            SELECT full_name, date_of_joining, status::text AS status, portal_access,
-                   (SELECT count(*) FROM employees r WHERE r.reporting_manager_id = e.id AND r.status <> 'EXITED') AS reports
-            FROM employees e WHERE id = ?""", id);
+        Map<String, Object> e = repo.findForExit(id);
         if (exitDate.compareTo(((Date) e.get("date_of_joining")).toLocalDate().toString()) < 0) {
             throw new UserException("The last working day can't be before the joining date.");
         }
@@ -234,8 +197,8 @@ public class PeopleService {
             throw new UserException(e.get("full_name") + " still has " + reports + " direct report" + (reports == 1 ? "" : "s") + ". Assign them a new manager first.");
         }
         tx.executeWithoutResult(s -> {
-            jdbc.update("UPDATE employees SET status = 'EXITED', exit_date = ?, portal_access = false, updated_at = now() WHERE id = ?", Date.valueOf(exitDate), id);
-            jdbc.update("UPDATE departments SET head_employee_id = NULL WHERE head_employee_id = ?", id);
+            repo.markExited(id, Date.valueOf(exitDate));
+            repo.clearDepartmentHead(id);
             sessions.revokeAll(id, "exited");
             Map<String, Object> before = new LinkedHashMap<>();
             before.put("status", e.get("status"));
@@ -255,7 +218,7 @@ public class PeopleService {
         if (t == null || !PeopleRules.canEditEmployee(actors.actor(u), t) || t.status() == EmployeeStatus.EXITED) {
             throw new UserException("You can't send an invite for this person.");
         }
-        List<String> hash = jdbc.queryForList("SELECT password_hash FROM users WHERE employee_id = ?", String.class, id);
+        List<String> hash = repo.findPasswordHash(id);
         if (!hash.isEmpty() && hash.get(0) != null) throw new UserException("This person has already set a password.");
         tokens.sendInvite(id);
         audit.log(u.id(), "employee.invite_sent", "employee", id.toString(), ip);
@@ -279,19 +242,18 @@ public class PeopleService {
 
     /** Next employee ID in this business: its prefix plus the next number, e.g. AB-007 (row-level security scopes the max). */
     String nextCode() {
-        String prefix = jdbc.queryForObject("SELECT employee_prefix FROM businesses WHERE id = jurisone_tenant_id()", String.class);
-        Integer n = jdbc.queryForObject("SELECT max(substring(code from ?)::int) FROM employees WHERE code ~ ?", Integer.class,
-                prefix.length() + 2, "^" + prefix + "-[0-9]+$");
+        String prefix = repo.findEmployeePrefix();
+        Integer n = repo.findMaxCodeNumber(prefix);
         return prefix + "-" + String.format(java.util.Locale.ROOT, "%03d", (n == null ? 0 : n) + 1);
     }
 
     private Map<String, Object> editable(Actor actor, UUID editId) {
         Target t = actors.target(editId);
         if (t == null || !PeopleRules.canEditEmployee(actor, t) || t.status() == EmployeeStatus.EXITED) throw new UserException("You can't edit this person.");
-        return jdbc.queryForMap("SELECT e.*, e.region::text AS region_s, e.status::text AS status_s FROM employees e WHERE id = ?", editId);
+        return repo.findEditable(editId);
     }
 
-    record RoleRow(String id, String key, String name, int perms) {}
+    public record RoleRow(String id, String key, String name, int perms) {}
 
     private boolean roleAllowed(Actor actor, RoleRow r, String currentRoleId) {
         return PeopleRules.canAssignRole(actor, r.id(), currentRoleId) || (PeopleRules.isAdmin(actor) && !PeopleRules.isAdminRole(r.key())) || r.id().equals(currentRoleId);
@@ -309,22 +271,14 @@ public class PeopleService {
         }
         String locked = PeopleRules.lockedDepartment(actor);
         List<DeptOption> departments = locked == null
-                ? jdbc.query("SELECT id::text, name, head_employee_id::text FROM departments WHERE archived_at IS NULL ORDER BY name ASC",
-                        (rs, i) -> new DeptOption(rs.getString(1), rs.getString(2), rs.getString(3)))
-                : jdbc.query("SELECT id::text, name, head_employee_id::text FROM departments WHERE archived_at IS NULL AND id = ?::uuid ORDER BY name ASC",
-                        (rs, i) -> new DeptOption(rs.getString(1), rs.getString(2), rs.getString(3)), locked);
-        List<Manager> managers = jdbc.query("""
-            SELECT e.id::text, e.full_name, e.designation, d.name FROM employees e LEFT JOIN departments d ON d.id = e.department_id
-            WHERE e.status <> 'EXITED' AND (?::uuid IS NULL OR e.id <> ?::uuid) ORDER BY e.full_name ASC""",
-                (rs, i) -> new Manager(rs.getString(1), rs.getString(2), rs.getString(3) + (rs.getString(4) != null ? " · " + rs.getString(4) : "")),
-                editId, editId);
-        List<RoleRow> roles = jdbc.query("SELECT r.id::text, r.key, r.name, (SELECT count(*) FROM role_permissions p WHERE p.role_id = r.id) FROM roles r ORDER BY r.created_at ASC",
-                (rs, i) -> new RoleRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getInt(4)));
+                ? repo.findDepartmentOptions()
+                : repo.findDepartmentOption(locked);
+        List<Manager> managers = repo.findManagerOptions(editId);
+        List<RoleRow> roles = repo.findRoles();
         String currentRole = current == null ? null : current.get("role_id").toString();
         List<RoleRow> allowed = roles.stream().filter(r -> roleAllowed(actor, r, currentRole)).toList();
         RoleRow employeeRole = roles.stream().filter(r -> "employee".equals(r.key())).findFirst().orElse(null);
-        Map<String, String> shiftCodes = new HashMap<>();
-        jdbc.query("SELECT id::text, code FROM shifts", rs -> { shiftCodes.put(rs.getString(1), rs.getString(2)); });
+        Map<String, String> shiftCodes = repo.findShiftCodesById();
 
         EmployeeInput defaults;
         if (current != null) {
@@ -443,7 +397,7 @@ public class PeopleService {
         }
 
         // Role: only from the creator's assignable list (or unchanged on edit).
-        List<Map<String, Object>> roleRows = jdbc.queryForList("SELECT id::text AS id, key, name FROM roles WHERE id = ?::uuid", f.roleId());
+        List<Map<String, Object>> roleRows = repo.findRole(f.roleId());
         if (roleRows.isEmpty()) throw new UserException("Pick a role.");
         Map<String, Object> role = roleRows.get(0);
         String currentRole = current == null ? null : current.get("role_id").toString();
@@ -451,19 +405,18 @@ public class PeopleService {
         if (!ok) throw new UserException("You can't give people the " + role.get("name") + " role.");
 
         // Department: must exist; locked to the actor's own department where the rule applies.
-        List<Map<String, Object>> dept = jdbc.queryForList("SELECT archived_at FROM departments WHERE id = ?::uuid", f.departmentId());
+        List<Map<String, Object>> dept = repo.findDepartmentArchivedAt(f.departmentId());
         if (dept.isEmpty() || dept.get(0).get("archived_at") != null) throw new UserException("Pick a department.");
         String locked = PeopleRules.lockedDepartment(actor);
         if (locked != null && !f.departmentId().equals(locked)) throw new UserException("You can add people to your own department only.");
 
         // Manager: current employee, not themselves, no reporting loops.
         if (!f.managerId().isEmpty()) {
-            List<String> ms = jdbc.queryForList("SELECT status::text FROM employees WHERE id = ?::uuid", String.class, f.managerId());
+            List<String> ms = repo.findStatus(f.managerId());
             if (ms.isEmpty() || "EXITED".equals(ms.get(0))) throw new UserException("Pick a current employee as reporting manager.");
             if (editId != null) {
                 if (f.managerId().equals(editId.toString())) throw new UserException("Someone can't report to themselves.");
-                Map<String, String> managerOf = new HashMap<>();
-                jdbc.query("SELECT id::text, reporting_manager_id::text FROM employees", rs -> { managerOf.put(rs.getString(1), rs.getString(2)); });
+                Map<String, String> managerOf = repo.findManagerByEmployee();
                 if (PeopleRules.createsCycle(editId.toString(), f.managerId(), managerOf)) {
                     throw new UserException("That manager already reports (directly or indirectly) to this person.");
                 }
@@ -472,18 +425,18 @@ public class PeopleService {
 
         String email = f.email().toLowerCase();
         List<String> clash = editId == null
-                ? jdbc.queryForList("SELECT code FROM employees WHERE email = ? LIMIT 1", String.class, email)
-                : jdbc.queryForList("SELECT code FROM employees WHERE email = ? AND id <> ? LIMIT 1", String.class, email, editId);
+                ? repo.findCodeByEmail(email)
+                : repo.findCodeByEmailExcept(email, editId);
         if (!clash.isEmpty()) throw new UserException(clash.get(0) + " already uses that email.");
         // the email is the sign-in, so it must also be free in every other business (which is not named)
-        if (Boolean.TRUE.equals(jdbc.queryForObject("SELECT jurisone_email_in_use(?, ?)", Boolean.class, email, editId == null ? null : UUID.fromString(editId.toString())))) {
+        if (Boolean.TRUE.equals(repo.emailInUse(email, editId == null ? null : UUID.fromString(editId.toString())))) {
             throw new UserException("That email is already in use.");
         }
 
         Location loc = PeopleRules.location(f.locationOrDefault());
         boolean india = "IN".equals(loc.region());
         String shiftCode = india ? ("US_DAY".equals(f.shift()) ? "IN_NIGHT" : f.shift()) : "US_DAY";
-        UUID shiftId = jdbc.queryForObject("SELECT id FROM shifts WHERE code = ?", UUID.class, shiftCode);
+        UUID shiftId = repo.findShiftId(shiftCode);
 
         // PII: on edit, blank means keep; switching to the US clears the Indian IDs. Insertion order = the TS object.
         Map<String, String> piiCols = new LinkedHashMap<>();
@@ -541,14 +494,10 @@ public class PeopleService {
             String newStatus = "ONBOARDING".equals(status) || "PROBATION".equals(status)
                     ? PeopleRules.initialStatus(LocalDate.parse(f.doj()), today).name() : status;
             tx.executeWithoutResult(s -> {
-                jdbc.update("""
-                    UPDATE employees SET full_name = ?, first_name = ?, middle_name = ?, last_name = ?, joining_office = ?, father_name = ?, email = ?, designation = ?,
-                      department_id = ?::uuid, reporting_manager_id = ?::uuid,
-                      role_id = ?::uuid, date_of_joining = ?, time_zone = ?, region = ?::"Region", shift_id = ?, status = ?::"EmployeeStatus", updated_at = now()
-                    WHERE id = ?""", fullName, f.firstName(), f.middleName().isEmpty() ? null : f.middleName(), f.lastName(),
+                repo.updateEmployee(id, fullName, f.firstName(), f.middleName().isEmpty() ? null : f.middleName(), f.lastName(),
                         f.joiningOffice().isEmpty() ? null : f.joiningOffice(), f.fatherName(), email, f.designation(), f.departmentId(), managerId, f.roleId(), Date.valueOf(f.doj()),
-                        loc.tz(), loc.region(), shiftId, newStatus, id);
-                updatePii(id, piiCols);
+                        loc.tz(), loc.region(), shiftId, newStatus);
+                repo.updatePii(id, piiCols);
                 audit.log(u.id(), "employee.edit", "employee", id.toString(), before, after, ip);
             });
             return new Saved(id.toString(), (String) cur.get("code"), "Saved changes for " + fullName);
@@ -558,19 +507,15 @@ public class PeopleService {
         UUID id = UUID.randomUUID();
         tx.executeWithoutResult(s -> {
             // serialise code allocation
-            jdbc.execute("SELECT pg_advisory_xact_lock(74201, hashtext(jurisone_tenant_id()::text))"); // one allocation at a time per business
+            repo.lockCodeAllocation(); // one allocation at a time per business
             subscriptions.checkRoomForOneMore(); // the plan's employee limit (under the same lock, so two adds can't both slip past)
             String code = nextCode();
             codeOut[0] = code;
-            jdbc.update("""
-                INSERT INTO employees (id, code, full_name, first_name, middle_name, last_name, joining_office, father_name, email, designation, department_id,
-                  reporting_manager_id, role_id, date_of_joining, time_zone, region, shift_id, status, portal_access, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?::"Region", ?, ?::"EmployeeStatus", ?, ?, now(), now())""",
-                    id, code, fullName, f.firstName(), f.middleName().isEmpty() ? null : f.middleName(), f.lastName(), f.joiningOffice().isEmpty() ? null : f.joiningOffice(),
+            repo.insertEmployee(id, code, fullName, f.firstName(), f.middleName().isEmpty() ? null : f.middleName(), f.lastName(), f.joiningOffice().isEmpty() ? null : f.joiningOffice(),
                     f.fatherName(), email, f.designation(), f.departmentId(), managerId, f.roleId(), Date.valueOf(f.doj()),
                     loc.tz(), loc.region(), shiftId, PeopleRules.initialStatus(LocalDate.parse(f.doj()), today).name(), access, u.id());
-            updatePii(id, piiCols);
-            jdbc.update("INSERT INTO users (employee_id, failed_attempts, is_super_admin) VALUES (?, 0, false)", id);
+            repo.updatePii(id, piiCols);
+            repo.insertUser(id);
             // the TS audit: { code, ...data without *Enc, piiProvided }
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("code", code);
@@ -590,12 +535,9 @@ public class PeopleService {
             audit.log(u.id(), "employee.create", "employee", id.toString(), null, after, ip);
             if (india) {
                 // Finance is told a salary structure is needed (REQUIREMENTS §5.2).
-                List<UUID> finance = jdbc.queryForList("""
-                    SELECT e.id FROM employees e WHERE e.status <> 'EXITED' AND e.portal_access
-                      AND EXISTS (SELECT 1 FROM role_permissions p WHERE p.role_id = e.role_id AND p.permission_key = 'struct.manage')""", UUID.class);
+                List<UUID> finance = repo.findFinanceRecipients();
                 for (UUID x : finance) {
-                    jdbc.update("INSERT INTO notifications (id, employee_id, text, link, created_at) VALUES (?, ?, ?, '/structures', now())",
-                            UUID.randomUUID(), x, fullName + " (" + code + ") joined — salary structure pending");
+                    repo.insertStructuresNotification(x, fullName + " (" + code + ") joined — salary structure pending");
                 }
             }
         });
@@ -608,31 +550,13 @@ public class PeopleService {
         return o == null ? null : o.toString();
     }
 
-    /** Writes the changed PII columns (camelCase keys → snake_case columns). */
-    private void updatePii(UUID id, Map<String, String> cols) {
-        for (Map.Entry<String, String> c : cols.entrySet()) {
-            String col = c.getKey().replaceAll("([A-Z])", "_$1").toLowerCase();
-            jdbc.update("UPDATE employees SET " + col + " = ? WHERE id = ?", c.getValue(), id);
-        }
-    }
-
     // ───────────────────────── export ─────────────────────────
 
     public record Export(String filename, String body) {}
 
     public Export export(CurrentUser u, Map<String, String> sp) {
         PeopleQuery pq = new PeopleQuery(sp);
-        List<Object> args = new ArrayList<>(pq.args);
-        List<List<Object>> rows = jdbc.query("""
-            SELECT e.code, e.full_name, e.email, e.designation, d.name AS dept, m.full_name AS mname, m.code AS mcode, e.time_zone, s.name AS shift,
-                   r.name AS role, e.status::text AS status, e.portal_access, e.date_of_joining, e.exit_date
-            """ + PeopleQuery.FROM + " LEFT JOIN shifts s ON s.id = e.shift_id" + pq.where + pq.orderBy + " LIMIT 20000",
-                (rs, i) -> Arrays.asList(rs.getString("code"), rs.getString("full_name"), rs.getString("email"), rs.getString("designation"),
-                        nz(rs.getString("dept")), nz(rs.getString("mname")), nz(rs.getString("mcode")), PeopleRules.locationOfTz(rs.getString("time_zone")).l(),
-                        rs.getString("time_zone"), nz(rs.getString("shift")), rs.getString("role"), rs.getString("status"),
-                        rs.getBoolean("portal_access") ? "Enabled" : "Disabled", rs.getDate("date_of_joining").toLocalDate().toString(),
-                        rs.getDate("exit_date") == null ? "" : rs.getDate("exit_date").toLocalDate().toString()),
-                args.toArray());
+        List<List<Object>> rows = repo.findExportRows(pq);
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("rows", rows.size());
         after.put("filters", sp);
@@ -640,9 +564,5 @@ public class PeopleService {
         String body = Csv.toCsv(List.of("Employee ID", "Name", "Email", "Designation", "Department", "Reporting manager", "Manager ID", "Location", "Time zone",
                 "Shift", "Role", "Status", "Portal access", "Date of joining", "Last working day"), rows);
         return new Export("jurisone-people-" + Format.todayIn(u.timeZone()) + ".csv", body);
-    }
-
-    private static String nz(String s) {
-        return s == null ? "" : s;
     }
 }

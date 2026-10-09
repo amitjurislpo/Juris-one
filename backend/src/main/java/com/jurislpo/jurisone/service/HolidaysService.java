@@ -5,6 +5,7 @@ import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.engine.AttendanceLock;
 import com.jurislpo.jurisone.engine.Format;
+import com.jurislpo.jurisone.repository.HolidaysRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.sql.Date;
 import java.time.Instant;
@@ -15,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,12 +29,12 @@ public class HolidaysService {
 
     public record Page(List<Item> items, List<Item> rows, String today) {}
 
-    private final JdbcTemplate jdbc;
+    private final HolidaysRepository repo;
     private final AuditService audit;
     private final SettingsService settings;
 
-    public HolidaysService(JdbcTemplate jdbc, AuditService audit, SettingsService settings) {
-        this.jdbc = jdbc;
+    public HolidaysService(HolidaysRepository repo, AuditService audit, SettingsService settings) {
+        this.repo = repo;
         this.audit = audit;
         this.settings = settings;
     }
@@ -42,11 +42,7 @@ public class HolidaysService {
     public Page page(CurrentUser u, Map<String, String> sp) {
         ListParams ls = ListParams.of(sp, SORTS, "k");
         String region = ListParams.pick(sp, "region", List.of("All", "IN", "US"), "All");
-        List<Item> items = jdbc.query("""
-            SELECT h.id, h.date, h.name, h.region::text AS region, c.full_name AS by
-            FROM holidays h LEFT JOIN employees c ON c.id = h.created_by ORDER BY h.date ASC""",
-                (rs, i) -> new Item(rs.getString("id"), rs.getDate("date").toLocalDate().toString(), rs.getString("name"), rs.getString("region"),
-                        rs.getString("by") == null ? "—" : rs.getString("by")));
+        List<Item> items = repo.findAll();
         String q = ls.q().toLowerCase();
         List<Item> rows = new ArrayList<>(items.stream()
                 .filter(h -> ("All".equals(region) || h.region().equals(region) || "ALL".equals(h.region())) && (q.isEmpty() || h.n().toLowerCase().contains(q)))
@@ -70,12 +66,10 @@ public class HolidaysService {
             throw new UserException("That month's attendance is already locked.");
         }
         List<String> regions = "ALL".equals(region) ? List.of("IN", "US", "ALL") : List.of(region, "ALL");
-        List<String> clash = jdbc.queryForList("SELECT name FROM holidays WHERE date = ? AND region::text IN (?, ?, ?) LIMIT 1", String.class,
-                Date.valueOf(date), regions.get(0), regions.get(1), regions.size() > 2 ? regions.get(2) : regions.get(1));
+        List<String> clash = repo.findClashingName(Date.valueOf(date), regions.get(0), regions.get(1), regions.size() > 2 ? regions.get(2) : regions.get(1));
         if (!clash.isEmpty()) throw new UserException("There's already a holiday on this date for this team (" + clash.get(0) + ").");
         UUID id = UUID.randomUUID();
-        jdbc.update("INSERT INTO holidays (id, date, name, region, created_by, created_at) VALUES (?, ?, ?, ?::\"HolidayRegion\", ?, now())",
-                id, Date.valueOf(date), name, region, u.id());
+        repo.insert(id, Date.valueOf(date), name, region, u.id());
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("date", date);
         after.put("name", name);
@@ -87,12 +81,12 @@ public class HolidaysService {
     @Transactional
     public String delete(CurrentUser u, String idRaw, String ip) {
         UUID id = Check.uuid(idRaw);
-        List<Map<String, Object>> hs = jdbc.queryForList("SELECT date, name, region::text AS region FROM holidays WHERE id = ?", id);
+        List<Map<String, Object>> hs = repo.findById(id);
         if (hs.isEmpty()) throw new UserException("That holiday no longer exists.");
         Map<String, Object> h = hs.get(0);
         LocalDate date = ((Date) h.get("date")).toLocalDate();
         if (date.isBefore(Format.todayIn("Asia/Kolkata"))) throw new UserException("Past holidays can't be deleted.");
-        jdbc.update("DELETE FROM holidays WHERE id = ?", id);
+        repo.delete(id);
         Map<String, Object> before = new LinkedHashMap<>();
         before.put("date", date.toString());
         before.put("name", h.get("name"));

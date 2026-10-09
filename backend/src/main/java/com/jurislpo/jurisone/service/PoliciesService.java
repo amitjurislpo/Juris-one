@@ -3,15 +3,14 @@ package com.jurislpo.jurisone.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jurislpo.jurisone.exception.UserException;
+import com.jurislpo.jurisone.repository.PoliciesRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
-import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,24 +33,20 @@ public class PoliciesService {
                                         List<Integer> weeklyOffs, Integer absenceJobBufferMinutes, Integer lockDayOfNextMonth, String lockTime,
                                         String trackingStartDate) {}
 
-    private final JdbcTemplate jdbc;
+    private final PoliciesRepository repo;
     private final SettingsService settings;
     private final AuditService audit;
     private final ObjectMapper json;
 
-    public PoliciesService(JdbcTemplate jdbc, SettingsService settings, AuditService audit, ObjectMapper json) {
-        this.jdbc = jdbc;
+    public PoliciesService(PoliciesRepository repo, SettingsService settings, AuditService audit, ObjectMapper json) {
+        this.repo = repo;
         this.settings = settings;
         this.audit = audit;
         this.json = json;
     }
 
     public List<RolePerms> accessMatrix() {
-        List<RolePerms> roles = new ArrayList<>(jdbc.query("SELECT id, key, name FROM roles ORDER BY created_at ASC", (rs, i) -> {
-            String id = rs.getString(1);
-            return new RolePerms(id, rs.getString(2), rs.getString(3),
-                    jdbc.queryForList("SELECT permission_key FROM role_permissions WHERE role_id = ?::uuid", String.class, id));
-        }));
+        List<RolePerms> roles = new ArrayList<>(repo.findRolesWithPermissions());
         roles.sort((a, b) -> rank(a.key()) - rank(b.key()));
         return roles;
     }
@@ -62,32 +57,21 @@ public class PoliciesService {
     }
 
     public List<LeaveTypeView> leaveTypes() {
-        return jdbc.query("SELECT * FROM leave_types WHERE active ORDER BY sort_order ASC", (rs, i) -> new LeaveTypeView(
-                rs.getString("code"), rs.getString("name"), rs.getBigDecimal("annual_quota").doubleValue(), rs.getBigDecimal("accrual_per_month").doubleValue(),
-                rs.getBigDecimal("carry_forward_cap").doubleValue(), dbl(rs.getBigDecimal("max_stretch")), rs.getBigDecimal("encash_per_year").doubleValue(),
-                rs.getInt("encash_after_months"), (Integer) rs.getObject("expiry_days")));
-    }
-
-    private static Double dbl(BigDecimal b) {
-        return b == null ? null : b.doubleValue();
+        return repo.findActiveLeaveTypes();
     }
 
     public List<HolidayView> holidays(int year) {
-        return jdbc.query("SELECT id, date, name, region::text AS region FROM holidays WHERE date >= ? AND date < ? ORDER BY date ASC",
-                (rs, i) -> new HolidayView(rs.getString("id"), rs.getDate("date").toLocalDate().toString(), rs.getString("name"), rs.getString("region")),
-                Date.valueOf(LocalDate.of(year, 1, 1)), Date.valueOf(LocalDate.of(year + 1, 1, 1)));
+        return repo.findHolidaysBetween(Date.valueOf(LocalDate.of(year, 1, 1)), Date.valueOf(LocalDate.of(year + 1, 1, 1)));
     }
 
     /** Shift templates, with this business's grace period. */
     public List<ShiftView> shifts() {
         int grace = settings.attendance().graceMinutes();
-        return jdbc.query("SELECT id, code, name, start_local, end_local, region::text AS region FROM shifts ORDER BY code ASC",
-                (rs, i) -> new ShiftView(rs.getString("id"), rs.getString("code"), rs.getString("name"), rs.getString("start_local"), rs.getString("end_local"),
-                        grace, rs.getString("region")));
+        return repo.findShifts(grace);
     }
 
     public int lockedRuns() {
-        Integer n = jdbc.queryForObject("SELECT count(*) FROM job_runs WHERE name = 'attendance.lock'", Integer.class);
+        Integer n = repo.countLockRuns();
         return n == null ? 0 : n;
     }
 
@@ -129,8 +113,7 @@ public class PoliciesService {
         }
         ObjectNode value = before.deepCopy();
         value.setAll((ObjectNode) json.valueToTree(f));
-        jdbc.update("INSERT INTO settings (key, value, updated_at) VALUES ('attendance.policy', ?::jsonb, now()) "
-                + "ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()", value.toString());
+        repo.upsertAttendancePolicy(value.toString());
         // grace minutes live in the business's policy (shifts are shared templates and are not changed)
         audit.log(u.id(), "policy.attendance_change", "setting", "attendance.policy", before, value, ip);
     }

@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jurislpo.jurisone.entity.Setting;
-import jakarta.persistence.EntityManager;
+import com.jurislpo.jurisone.repository.SettingsRepository;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -49,11 +49,11 @@ public class SettingsService {
 
     public record Company(String name, String address) {}
 
-    private final EntityManager em;
+    private final SettingsRepository repo;
     private final ObjectMapper json;
 
-    public SettingsService(EntityManager em, ObjectMapper json) {
-        this.em = em;
+    public SettingsService(SettingsRepository repo, ObjectMapper json) {
+        this.repo = repo;
         this.json = json.copy().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
@@ -67,7 +67,7 @@ public class SettingsService {
         try {
             ObjectNode base = (ObjectNode) json.readTree(d);
             if (com.jurislpo.jurisone.tenancy.TenantContext.current() == null) return base;
-            Setting row = em.find(Setting.class, key); // row-level security: only this business's row is visible
+            Setting row = repo.find(key); // row-level security: only this business's row is visible
             if (row != null && row.getValue() instanceof ObjectNode o) base.setAll(o);
             return base;
         } catch (java.io.IOException e) {

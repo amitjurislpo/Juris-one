@@ -5,6 +5,7 @@ import com.jurislpo.jurisone.crypto.Masks;
 import com.jurislpo.jurisone.crypto.PiiCrypto;
 import com.jurislpo.jurisone.engine.Phones;
 import com.jurislpo.jurisone.engine.PeopleRules;
+import com.jurislpo.jurisone.repository.ProfileRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -12,7 +13,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -22,12 +22,12 @@ import org.springframework.stereotype.Service;
 @Service
 public class ProfileService {
 
-    private final JdbcTemplate jdbc;
+    private final ProfileRepository repo;
     private final PiiCrypto pii;
     private final AuditService audit;
 
-    public ProfileService(JdbcTemplate jdbc, PiiCrypto pii, AuditService audit) {
-        this.jdbc = jdbc;
+    public ProfileService(ProfileRepository repo, PiiCrypto pii, AuditService audit) {
+        this.repo = repo;
         this.pii = pii;
         this.audit = audit;
     }
@@ -37,10 +37,7 @@ public class ProfileService {
     }
 
     public Map<String, Object> mine(CurrentUser u) {
-        Map<String, Object> e = jdbc.queryForMap("""
-            SELECT e.*, d.name AS dept, m.full_name AS manager, r.name AS role_name, s.name AS shift_name
-            FROM employees e JOIN roles r ON r.id = e.role_id LEFT JOIN departments d ON d.id = e.department_id
-            LEFT JOIN employees m ON m.id = e.reporting_manager_id LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.id = ?""", u.id());
+        Map<String, Object> e = repo.findProfile(u.id());
         String[] names = PeopleService.names(e);
         String[] emergency = splitPhone((String) e.get("emergency_phone"));
         Map<String, Object> out = new LinkedHashMap<>();
@@ -121,11 +118,9 @@ public class ProfileService {
             if (p != null) throw bad("Emergency contact: " + p + ".");
         }
         if (!ePhone.isEmpty() && eName.length() < 2) throw bad("Enter your emergency contact's name.");
-        jdbc.update("""
-            UPDATE employees SET father_name = ?, date_of_birth = ?, address_enc = ?, permanent_address_enc = ?, emergency_name = ?, emergency_relation = ?,
-              emergency_phone = ?, updated_at = now() WHERE id = ?""",
+        repo.updateSelfService(u.id(),
                 father, birth == null ? null : Date.valueOf(birth), current.isEmpty() ? null : pii.encrypt(current), permanent.isEmpty() ? null : pii.encrypt(permanent),
-                eName.isEmpty() ? null : eName, eRel.isEmpty() ? null : eRel, ePhone.isEmpty() ? null : (eCode.isEmpty() ? "+91" : eCode) + " " + ePhone, u.id());
+                eName.isEmpty() ? null : eName, eRel.isEmpty() ? null : eRel, ePhone.isEmpty() ? null : (eCode.isEmpty() ? "+91" : eCode) + " " + ePhone);
         audit.log(u.id(), "profile.self_update", "employee", u.id().toString(), null,
                 Map.of("fields", List.of("fatherName", "dateOfBirth", "address", "permanentAddress", "emergencyContact")), ip);
         return "Your profile was saved";
