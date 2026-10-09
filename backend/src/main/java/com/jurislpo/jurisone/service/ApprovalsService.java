@@ -7,6 +7,7 @@ import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.LeaveRules;
+import com.jurislpo.jurisone.repository.ApprovalsRepository;
 import com.jurislpo.jurisone.repository.PeopleQuery;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.math.BigDecimal;
@@ -22,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -38,15 +38,15 @@ public class ApprovalsService {
     static final Map<String, String> KIND_SHORT = Map.of("ABSENT", "Absent", "LATE_CHECKIN", "Late check-in", "MISSED_CHECKOUT", "Missed check-out", "HOLIDAY_WORK", "Holiday work");
     static final Map<String, String> PART = Map.of("FULL", "Full day", "FIRST_HALF", "First half", "SECOND_HALF", "Second half");
 
-    private final JdbcTemplate jdbc;
+    private final ApprovalsRepository repo;
     private final TransactionTemplate tx;
     private final AttendanceService att;
     private final LeaveService leave;
     private final AuditService audit;
     private final NotificationService notify;
 
-    public ApprovalsService(JdbcTemplate jdbc, TransactionTemplate tx, AttendanceService att, LeaveService leave, AuditService audit, NotificationService notify) {
-        this.jdbc = jdbc;
+    public ApprovalsService(ApprovalsRepository repo, TransactionTemplate tx, AttendanceService att, LeaveService leave, AuditService audit, NotificationService notify) {
+        this.repo = repo;
         this.tx = tx;
         this.att = att;
         this.leave = leave;
@@ -73,9 +73,7 @@ public class ApprovalsService {
     /** HR (`appr.leave`; Admin too). Approving posts the used days to the ledger; any shortfall is LOP. */
     public String decideLeave(CurrentUser u, Decision in, String ip) {
         Parsed d = parse(in);
-        List<Map<String, Object>> rs = jdbc.queryForList("""
-            SELECT l.employee_id, l.leave_type, l.from_date, l.to_date, l.part::text AS part, l.days, l.lop_days, l.status::text AS status, t.name AS type_name,
-                   e.full_name FROM leave_requests l JOIN leave_types t ON t.code = l.leave_type JOIN employees e ON e.id = l.employee_id WHERE l.id = ?""", d.id());
+        List<Map<String, Object>> rs = repo.findLeaveForDecision(d.id());
         if (rs.isEmpty()) throw new UserException("Request not found.");
         Map<String, Object> r = rs.get(0);
         UUID employeeId = (UUID) r.get("employee_id");
@@ -93,8 +91,7 @@ public class ApprovalsService {
         }
         double lop = lopDays, paid = paidDays;
         tx.executeWithoutResult(s -> {
-            int n = jdbc.update("UPDATE leave_requests SET status = ?::\"RequestStatus\", decided_by = ?, decided_at = ?, lop_days = ? WHERE id = ? AND status = 'PENDING'",
-                    d.approve() ? "APPROVED" : "DECLINED", u.id(), Timestamp.from(Instant.now()), BigDecimal.valueOf(lop), d.id());
+            int n = repo.decideLeave(d.id(), d.approve() ? "APPROVED" : "DECLINED", u.id(), Timestamp.from(Instant.now()), BigDecimal.valueOf(lop));
             if (n == 0) throw new UserException("Someone else decided this request a moment ago.");
             if (d.approve()) leave.postUsage(d.id(), employeeId, (String) r.get("leave_type"), paid);
             Map<String, Object> after = new LinkedHashMap<>();
@@ -115,9 +112,7 @@ public class ApprovalsService {
      */
     public String decideRegularization(CurrentUser u, Decision in, String ip) {
         Parsed d = parse(in);
-        List<Map<String, Object>> rs = jdbc.queryForList("""
-            SELECT r.employee_id, r.work_date, r.kind::text AS kind, r.status::text AS status, r.proposed_in, r.proposed_out, e.full_name
-            FROM regularization_requests r JOIN employees e ON e.id = r.employee_id WHERE r.id = ?""", d.id());
+        List<Map<String, Object>> rs = repo.findRegularizationForDecision(d.id());
         if (rs.isEmpty()) throw new UserException("Request not found.");
         Map<String, Object> r = rs.get(0);
         UUID employeeId = (UUID) r.get("employee_id");
@@ -141,19 +136,17 @@ public class ApprovalsService {
 
         double co = compOff;
         tx.executeWithoutResult(s -> {
-            int n = jdbc.update("UPDATE regularization_requests SET status = ?::\"RequestStatus\", decided_by = ?, decided_at = ?, decided_role = ? WHERE id = ? AND status = 'PENDING'",
-                    d.approve() ? "APPROVED" : "DECLINED", u.id(), Timestamp.from(Instant.now()), u.roleName(), d.id());
+            int n = repo.decideRegularization(d.id(), d.approve() ? "APPROVED" : "DECLINED", u.id(), Timestamp.from(Instant.now()), u.roleName());
             if (n == 0) throw new UserException("Someone else decided this request a moment ago.");
             if (d.approve() && "MISSED_CHECKOUT".equals(kind)) {
                 if (proposedIn != null) {
-                    jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, created_at) VALUES (?, ?, ?, 'IN', 'REGULARIZATION', now())", UUID.randomUUID(), employeeId, proposedIn);
+                    repo.insertRegularizationPunchIn(employeeId, proposedIn);
                 }
-                jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, created_at) VALUES (?, ?, ?, 'OUT', 'REGULARIZATION', now())", UUID.randomUUID(), employeeId, proposedOut);
+                repo.insertRegularizationPunchOut(employeeId, proposedOut);
             }
             if (co > 0) {
-                Integer expiry = jdbc.queryForObject("SELECT expiry_days FROM leave_types WHERE code = 'CO'", Integer.class);
-                jdbc.update("INSERT INTO leave_ledger (id, employee_id, leave_type, delta, reason, ref_id, expires_on, note, at) VALUES (?, ?, 'CO', ?, 'COMP_OFF_CREDIT', ?, ?, ?, now())",
-                        UUID.randomUUID(), employeeId, BigDecimal.valueOf(co), d.id().toString(), Date.valueOf(date.plusDays(expiry != null ? expiry : 60)), "Worked on " + date);
+                Integer expiry = repo.compOffExpiryDays();
+                repo.insertCompOffCredit(employeeId, BigDecimal.valueOf(co), d.id().toString(), Date.valueOf(date.plusDays(expiry != null ? expiry : 60)), "Worked on " + date);
             }
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("status", d.approve() ? "APPROVED" : "DECLINED");
@@ -193,11 +186,7 @@ public class ApprovalsService {
         if (canLeave) {
             List<Object> args = new ArrayList<>(List.of(u.id()));
             args.addAll(List.of(nameArg));
-            List<Map<String, Object>> leaves = jdbc.queryForList("""
-                SELECT l.id, l.employee_id, l.leave_type, t.name AS type_name, l.from_date, l.to_date, l.part::text AS part, l.days, l.lop_days, l.reason,
-                       e.full_name, e.department_id, d.name AS dept
-                FROM leave_requests l JOIN leave_types t ON t.code = l.leave_type JOIN employees e ON e.id = l.employee_id LEFT JOIN departments d ON d.id = e.department_id
-                WHERE l.status = 'PENDING' AND l.employee_id <> ?""" + nameFilter + " ORDER BY l.from_date ASC", args.toArray());
+            List<Map<String, Object>> leaves = repo.findPendingLeave(nameFilter, args.toArray());
             for (Map<String, Object> l : leaves) {
                 UUID empId = (UUID) l.get("employee_id");
                 LocalDate f = ((Date) l.get("from_date")).toLocalDate(), t = ((Date) l.get("to_date")).toLocalDate();
@@ -209,10 +198,7 @@ public class ApprovalsService {
                         : "Only " + LeaveService.num(Math.max(0, available)) + " available — " + fmt2(days - Math.max(0, Math.floor(available * 2) / 2)) + " day(s) become loss of pay";
                 int overlap = 0;
                 if (l.get("department_id") != null) {
-                    Integer n = jdbc.queryForObject("""
-                        SELECT count(*) FROM leave_requests o JOIN employees oe ON oe.id = o.employee_id
-                        WHERE o.id <> ? AND o.employee_id <> ? AND o.status IN ('PENDING', 'APPROVED') AND oe.department_id = ? AND o.from_date <= ? AND o.to_date >= ?""",
-                            Integer.class, l.get("id"), empId, l.get("department_id"), Date.valueOf(t), Date.valueOf(f));
+                    Integer n = repo.countDepartmentOverlap(l.get("id"), empId, l.get("department_id"), f, t);
                     overlap = n == null ? 0 : n;
                 }
                 leaveCards.add(new LeaveCard(l.get("id").toString(), (String) l.get("full_name"), l.get("dept") == null ? "—" : (String) l.get("dept"),
@@ -224,10 +210,7 @@ public class ApprovalsService {
         if (canReg) {
             List<Object> args = new ArrayList<>(List.of(u.id()));
             args.addAll(List.of(nameArg));
-            List<Map<String, Object>> regs = jdbc.queryForList("""
-                SELECT r.id, r.employee_id, r.work_date, r.kind::text AS kind, r.proposed_in, r.proposed_out, r.reason, e.full_name, e.time_zone, d.name AS dept
-                FROM regularization_requests r JOIN employees e ON e.id = r.employee_id LEFT JOIN departments d ON d.id = e.department_id
-                WHERE r.status = 'PENDING' AND r.employee_id <> ?""" + nameFilter + " ORDER BY r.work_date ASC", args.toArray());
+            List<Map<String, Object>> regs = repo.findPendingRegularizations(nameFilter, args.toArray());
             for (Map<String, Object> r : regs) {
                 LocalDate date = ((Date) r.get("work_date")).toLocalDate();
                 List<AttEmployee> es = att.loadAttEmployees("e.id = ?", r.get("employee_id"));
@@ -250,33 +233,27 @@ public class ApprovalsService {
             }
         }
 
-        int leaveCount = canLeave ? count("SELECT count(*) FROM leave_requests WHERE status = 'PENDING' AND employee_id <> ?", u.id()) : 0;
-        int regCount = canReg ? count("SELECT count(*) FROM regularization_requests WHERE status = 'PENDING' AND employee_id <> ?", u.id()) : 0;
+        int leaveCount = canLeave ? count(repo.countPendingLeave(u.id())) : 0;
+        int regCount = canReg ? count(repo.countPendingRegularizations(u.id())) : 0;
 
         Timestamp since = Timestamp.from(Instant.now().minus(30, ChronoUnit.DAYS));
         List<Decided> decided = new ArrayList<>();
         if ("leave".equals(tab) && canLeave) {
-            jdbc.query("""
-                SELECT l.id::text, l.decided_at, e.full_name, t.name, l.from_date, l.to_date, l.status::text, dd.full_name AS by
-                FROM leave_requests l JOIN employees e ON e.id = l.employee_id JOIN leave_types t ON t.code = l.leave_type LEFT JOIN employees dd ON dd.id = l.decided_by
-                WHERE l.status IN ('APPROVED', 'DECLINED') AND l.decided_at >= ? ORDER BY l.decided_at DESC LIMIT 15""", rs -> {
-                LocalDate f = rs.getDate(5).toLocalDate(), t = rs.getDate(6).toLocalDate();
-                Instant at = rs.getTimestamp(2).toInstant();
-                decided.add(new Decided(rs.getString(1), at, Format.fmtDateTime(at, u.timeZone()), rs.getString(3),
-                        rs.getString(4) + " · " + Format.fmtD(f) + (!t.equals(f) ? " – " + Format.fmtD(t) : ""), "APPROVED".equals(rs.getString(7)),
-                        rs.getString(8) == null ? "—" : rs.getString(8)));
-            }, since);
+            for (ApprovalsRepository.DecidedLeave x : repo.findDecidedLeave(since)) {
+                LocalDate f = x.from(), t = x.to();
+                Instant at = x.at();
+                decided.add(new Decided(x.id(), at, Format.fmtDateTime(at, u.timeZone()), x.name(),
+                        x.typeName() + " · " + Format.fmtD(f) + (!t.equals(f) ? " – " + Format.fmtD(t) : ""), "APPROVED".equals(x.status()),
+                        x.by() == null ? "—" : x.by()));
+            }
         }
         if ("att".equals(tab) && canReg) {
-            jdbc.query("""
-                SELECT r.id::text, r.decided_at, e.full_name, r.kind::text, r.work_date, r.status::text, dd.full_name AS by, r.decided_role
-                FROM regularization_requests r JOIN employees e ON e.id = r.employee_id LEFT JOIN employees dd ON dd.id = r.decided_by
-                WHERE r.status IN ('APPROVED', 'DECLINED') AND r.decided_at >= ? ORDER BY r.decided_at DESC LIMIT 15""", rs -> {
-                Instant at = rs.getTimestamp(2).toInstant();
-                decided.add(new Decided(rs.getString(1), at, Format.fmtDateTime(at, u.timeZone()), rs.getString(3),
-                        KIND_SHORT.get(rs.getString(4)) + " · " + Format.fmtD(rs.getDate(5).toLocalDate()), "APPROVED".equals(rs.getString(6)),
-                        (rs.getString(7) == null ? "—" : rs.getString(7)) + (rs.getString(8) != null ? " (" + rs.getString(8) + ")" : "")));
-            }, since);
+            for (ApprovalsRepository.DecidedReg x : repo.findDecidedRegularizations(since)) {
+                Instant at = x.at();
+                decided.add(new Decided(x.id(), at, Format.fmtDateTime(at, u.timeZone()), x.name(),
+                        KIND_SHORT.get(x.kind()) + " · " + Format.fmtD(x.workDate()), "APPROVED".equals(x.status()),
+                        (x.by() == null ? "—" : x.by()) + (x.role() != null ? " (" + x.role() + ")" : "")));
+            }
         }
         decided.sort(Comparator.comparing(Decided::at).reversed());
 
@@ -293,8 +270,7 @@ public class ApprovalsService {
         return out;
     }
 
-    private int count(String sql, UUID id) {
-        Integer n = jdbc.queryForObject(sql, Integer.class, id);
+    private static int count(Integer n) {
         return n == null ? 0 : n;
     }
 }
