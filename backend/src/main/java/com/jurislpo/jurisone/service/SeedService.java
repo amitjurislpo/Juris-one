@@ -32,11 +32,11 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 /**
- * Seed â€” idempotent (safe to re-run).
+ * Seed — idempotent (safe to re-run).
  *   Platform: shifts, leave types, FY 2026-27 tax tables and the super admin (SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD;
  *             an existing password is never changed). Businesses are created by the super admin.
  *   Demo (SEED_DEMO=true, development and tests only): a "Juris Consultants" business with the prototype's people,
- *             holidays, salary structures, declarations, punches, requests and closed Aprâ€“Aug 2026 payroll. Its owner
+ *             holidays, salary structures, declarations, punches, requests and closed Apr–Aug 2026 payroll. Its owner
  *             (JC-002) signs in with SEED_OWNER_PASSWORD, everyone else with SEED_DEMO_PASSWORD.
  */
 @Service
@@ -111,7 +111,7 @@ public class SeedService {
         repo.insertLeaveTypes();
     }
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ tax (FY 2026-27 â€” Finance/CA must verify) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ───────────────────────── tax (FY 2026-27 — Finance/CA must verify) ─────────────────────────
     void seedTax() {
         String fy = "2026-27";
         String surcharge = "[{\"above\":5000000,\"rate\":0.1},{\"above\":10000000,\"rate\":0.15},{\"above\":20000000,\"rate\":0.25}";
@@ -121,8 +121,8 @@ public class SeedService {
         repo.insertTaxYear(fy, "OLD", 50000, 500000, false,
                 "[{\"upto\":250000,\"rate\":0},{\"upto\":500000,\"rate\":0.05},{\"upto\":1000000,\"rate\":0.2},{\"upto\":null,\"rate\":0.3}]",
                 surcharge + ",{\"above\":50000000,\"rate\":0.37}]");
-        Object[][] sections = {{"HRA", "HRA", null}, {"80C", "80C", 150000}, {"80CCD1B", "80CCD(1B)", 50000}, {"80D_SELF", "80D Â· self & family", 25000},
-                {"80D_PARENTS", "80D Â· parents", 25000}, {"80D_PARENTS_SENIOR", "80D Â· senior-citizen parents", 50000}, {"24B", "24(b)", 200000},
+        Object[][] sections = {{"HRA", "HRA", null}, {"80C", "80C", 150000}, {"80CCD1B", "80CCD(1B)", 50000}, {"80D_SELF", "80D · self & family", 25000},
+                {"80D_PARENTS", "80D · parents", 25000}, {"80D_PARENTS_SENIOR", "80D · senior-citizen parents", 50000}, {"24B", "24(b)", 200000},
                 {"80E", "80E", null}, {"80G", "80G", null}, {"80TTA", "80TTA", 10000}};
         for (int i = 0; i < sections.length; i++) {
             repo.insertTaxSection(fy, sections[i][0], sections[i][1], sections[i][2], i);
@@ -273,9 +273,9 @@ public class SeedService {
                 boolean late = LATE.getOrDefault(e.code(), Set.of()).contains(day.toString());
                 int offset = late ? 18 + (h % 15) : (h % 23) - 10; // minutes vs shift start
                 Instant inAt = inAtBase.plusSeconds(offset * 60L);
-                int worked = (8 * 60 + 36) + (h % 49); // 8h36m â€“ 9h24m
+                int worked = (8 * 60 + 36) + (h % 49); // 8h36m – 9h24m
                 Instant outAt = inAt.plusSeconds(worked * 60L);
-                if (outAt.isAfter(now)) break; // only completed shifts â€” today stays free to check in
+                if (outAt.isAfter(now)) break; // only completed shifts — today stays free to check in
                 rows.add(new Object[] {UUID.randomUUID(), e.id(), Timestamp.from(inAt), "IN"});
                 rows.add(new Object[] {UUID.randomUUID(), e.id(), Timestamp.from(outAt), "OUT"});
             }
@@ -286,7 +286,7 @@ public class SeedService {
     }
 
     /**
-     * Closed payroll for Aprilâ€“August 2026 (the prototype shows earlier months closed and September
+     * Closed payroll for April–August 2026 (the prototype shows earlier months closed and September
      * in review). Closing runs the real payroll + snapshot + PDF code; nobody is notified.
      */
     void seedPayroll(Map<String, UUID> codeToId) {
@@ -295,11 +295,11 @@ public class SeedService {
             if (!st.isEmpty() && "CLOSED".equals(st.get(0))) continue;
             String next = YearMonth.parse(ym).plusMonths(1).atDay(1).toString();
             int n = payrollOps.closeRun(ym, codeToId.get("JC-004"), false, next);
-            log.info("Payroll {} closed â€” {} payslips", ym, n);
+            log.info("Payroll {} closed — {} payslips", ym, n);
         }
     }
 
-    /** Demo declarations name a proof file â€” write a small PDF for each so Finance can open it. */
+    /** Demo declarations name a proof file — write a small PDF for each so Finance can open it. */
     void seedProofFiles() throws IOException {
         List<Map<String, Object>> items = repo.findItemsMissingProofFile();
         for (Map<String, Object> it : items) {
@@ -326,7 +326,7 @@ public class SeedService {
         String[][] leaves = {
                 {"JC-058", "EL", "2026-10-23", "2026-10-23", "Personal work", "PENDING", "2026-10-05"},
                 {"JC-074", "CL", "2026-11-02", "2026-11-02", "", "PENDING", "2026-10-04"},
-                {"JC-049", "CL", "2026-10-21", "2026-10-22", "Sisterâ€™s wedding", "PENDING", "2026-10-06"},
+                {"JC-049", "CL", "2026-10-21", "2026-10-22", "Sister’s wedding", "PENDING", "2026-10-06"},
                 {"JC-058", "EL", "2026-10-06", "2026-10-06", "Family function", "APPROVED", "2026-09-30"},
                 {"JC-074", "LOP", "2026-09-22", "2026-09-22", "Unapplied absence", "APPROVED", "2026-10-01"}};
         for (String[] l : leaves) {
@@ -349,7 +349,7 @@ public class SeedService {
         repo.insertMissedCheckout(
                 UUID.randomUUID(), codeToId.get("JC-072"), d("2026-10-01"), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-02"), "04:36", "Asia/Kolkata")),
                 "Laptop shut down on battery", Timestamp.from(Instant.parse("2026-10-02T06:00:00Z")));
-        // JC-049 worked 8h40m on Gandhi Jayanti â†’ asks for a comp-off
+        // JC-049 worked 8h40m on Gandhi Jayanti → asks for a comp-off
         repo.insertPunchPair(
                 UUID.randomUUID(), codeToId.get("JC-049"), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-02"), "19:30", "Asia/Kolkata")),
                 UUID.randomUUID(), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-03"), "04:10", "Asia/Kolkata")));
@@ -398,8 +398,8 @@ public class SeedService {
         }
 
         long[] counts = {count("businesses"), count("employees"), count("roles"), count("departments"), count("holidays")};
-        log.info("Seed complete â€” businesses {}, employees {}, roles {}, departments {}, holidays {}", counts[0], counts[1], counts[2], counts[3], counts[4]);
-        log.info("Super admin: {}{}", adminEmail(), demo ? " Â· demo business \"Juris Consultants\": owner JC-002 (SEED_OWNER_PASSWORD), others (SEED_DEMO_PASSWORD)" : "");
+        log.info("Seed complete — businesses {}, employees {}, roles {}, departments {}, holidays {}", counts[0], counts[1], counts[2], counts[3], counts[4]);
+        log.info("Super admin: {}{}", adminEmail(), demo ? " · demo business \"Juris Consultants\": owner JC-002 (SEED_OWNER_PASSWORD), others (SEED_DEMO_PASSWORD)" : "");
     }
 
     /**
@@ -462,7 +462,7 @@ public class SeedService {
                 repo.insertHoliday(UUID.randomUUID(), d(h[0]), h[1], h[2], codeToId.get("JC-012"));
             }
 
-            // Salary structures (monthly, â‚¹ â†’ paise). Effective-dated; history only grows.
+            // Salary structures (monthly, ₹ → paise). Effective-dated; history only grows.
             Object[][] st = {
                     {"JC-002", "2026-04-01", 55000, 22000, 5500, 27500, "APPRAISAL"},
                     {"JC-004", "2025-04-01", 55000, 22000, 5500, 27500, "APPRAISAL"}, {"JC-004", "2026-04-01", 60000, 24000, 6000, 30000, "APPRAISAL"},
