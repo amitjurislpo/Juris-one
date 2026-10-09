@@ -3,6 +3,7 @@ package com.jurislpo.jurisone.service;
 import com.jurislpo.jurisone.crypto.Masks;
 import com.jurislpo.jurisone.crypto.PiiCrypto;
 import com.jurislpo.jurisone.engine.Shifts;
+import com.jurislpo.jurisone.repository.BusinessRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
 import com.jurislpo.jurisone.tenancy.TenantContext;
 import java.io.ByteArrayOutputStream;
@@ -19,20 +20,19 @@ import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /** The owner's (sub admin's) view of their business: profile, subscription, and the employee export. */
 @Service
 public class BusinessService {
 
-    private final JdbcTemplate jdbc;
+    private final BusinessRepository repo;
     private final SubscriptionService subscriptions;
     private final PiiCrypto pii;
     private final AuditService audit;
 
-    public BusinessService(JdbcTemplate jdbc, SubscriptionService subscriptions, PiiCrypto pii, AuditService audit) {
-        this.jdbc = jdbc;
+    public BusinessService(BusinessRepository repo, SubscriptionService subscriptions, PiiCrypto pii, AuditService audit) {
+        this.repo = repo;
         this.subscriptions = subscriptions;
         this.pii = pii;
         this.audit = audit;
@@ -41,7 +41,7 @@ public class BusinessService {
     /** Profile, the current subscription and its history. */
     public Map<String, Object> subscriptionPage() {
         UUID b = TenantContext.current();
-        Map<String, Object> biz = jdbc.queryForMap("SELECT name, legal_name, code, employee_prefix, contact_email, contact_phone, address, gstin, time_zone FROM businesses WHERE id = ?", b);
+        Map<String, Object> biz = repo.findProfile(b);
         Map<String, Object> profile = new LinkedHashMap<>();
         profile.put("name", biz.get("name"));
         profile.put("legalName", biz.get("legal_name"));
@@ -70,16 +70,8 @@ public class BusinessService {
      * unless {@code full} — reading them in full is audited.
      */
     public Export employees(CurrentUser u, boolean full, String ip) throws IOException {
-        List<Map<String, Object>> rows = jdbc.queryForList("""
-            SELECT e.code, e.full_name, e.father_name, e.email, e.phone_enc, e.phone_last4, e.designation, d.name AS dept, r.name AS role,
-                   m.full_name AS manager, e.status::text AS status, e.date_of_joining, e.exit_date, e.region::text AS region, e.time_zone,
-                   s.code AS s_code, s.start_local, s.end_local, e.portal_access, e.pan_enc, e.pan_last4, e.aadhaar_enc, e.aadhaar_last4,
-                   e.uan_enc, e.uan_last4, e.bank_name, e.bank_account_enc, e.bank_account_last4, e.bank_ifsc, e.address_enc
-            FROM employees e JOIN roles r ON r.id = e.role_id
-            LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees m ON m.id = e.reporting_manager_id LEFT JOIN shifts s ON s.id = e.shift_id
-            WHERE r.key NOT IN ('owner', 'super_admin') -- the business admin's own details are never exported
-            ORDER BY e.code""");
-        String business = jdbc.queryForObject("SELECT code FROM businesses WHERE id = ?", String.class, TenantContext.current());
+        List<Map<String, Object>> rows = repo.findEmployeesForExport();
+        String business = repo.findCode(TenantContext.current());
         try (SXSSFWorkbook wb = new SXSSFWorkbook(100); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("Employees");
             CellStyle bold = wb.createCellStyle();

@@ -5,6 +5,7 @@ import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.crypto.Passwords;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.PeopleRules;
+import com.jurislpo.jurisone.repository.BusinessAdminRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
 import com.jurislpo.jurisone.tenancy.TenantContext;
 import java.time.ZoneId;
@@ -14,7 +15,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /** The super admin's management of businesses and their sub admins (owners). Runs in system mode. */
@@ -24,7 +24,7 @@ public class BusinessAdminService {
     static final java.util.regex.Pattern GSTIN = java.util.regex.Pattern.compile("^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$");
     public static final List<String> TIME_ZONES = List.of("Asia/Kolkata", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles");
 
-    private final JdbcTemplate jdbc;
+    private final BusinessAdminRepository repo;
     private final BusinessSetupService setup;
     private final SubscriptionService subscriptions;
     private final ModuleGrantService grants;
@@ -32,10 +32,10 @@ public class BusinessAdminService {
     private final SessionService sessions;
     private final AuditService audit;
 
-    public BusinessAdminService(JdbcTemplate jdbc, BusinessSetupService setup, SubscriptionService subscriptions, ModuleGrantService grants,
+    public BusinessAdminService(BusinessAdminRepository repo, BusinessSetupService setup, SubscriptionService subscriptions, ModuleGrantService grants,
                                 AuthTokenService tokens, SessionService sessions, AuditService audit) {
         this.grants = grants;
-        this.jdbc = jdbc;
+        this.repo = repo;
         this.setup = setup;
         this.subscriptions = subscriptions;
         this.tokens = tokens;
@@ -49,22 +49,14 @@ public class BusinessAdminService {
                               SubscriptionService.Current subscription) {}
 
     public List<BusinessRow> list() {
-        return jdbc.query("""
-            SELECT b.id, b.name, b.code, b.employee_prefix, b.status, b.created_at,
-                   (SELECT count(*) FROM employees e WHERE e.business_id = b.id AND e.status <> 'EXITED') AS employees,
-                   (SELECT count(*) FROM employees e JOIN roles r ON r.id = e.role_id WHERE e.business_id = b.id AND r.key = 'owner') AS owners
-            FROM businesses b WHERE NOT b.is_platform ORDER BY b.name""",
-                (rs, i) -> new BusinessRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getLong(7), rs.getLong(8),
-                        Format.jsIso(rs.getTimestamp(6).toInstant()), subscriptions.current((UUID) rs.getObject(1))));
+        return repo.findAll(subscriptions::current);
     }
 
     public record Owner(String id, String code, String name, String email, boolean access, boolean activated, String status) {}
 
     public Map<String, Object> detail(String idRaw) {
         UUID id = Check.uuid(idRaw);
-        List<Map<String, Object>> rows = jdbc.queryForList("""
-            SELECT id::text, name, legal_name, code, employee_prefix, gstin, address, contact_email, contact_phone, time_zone, status, created_at
-            FROM businesses WHERE id = ? AND NOT is_platform""", id);
+        List<Map<String, Object>> rows = repo.findProfile(id);
         if (rows.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         Map<String, Object> b = new LinkedHashMap<>(rows.get(0));
         b.put("created_at", Format.jsIso(((java.sql.Timestamp) b.get("created_at")).toInstant()));
@@ -83,11 +75,7 @@ public class BusinessAdminService {
         profile.put("status", b.get("status"));
         profile.put("createdAt", b.get("created_at"));
         out.put("business", profile);
-        out.put("owners", jdbc.query("""
-            SELECT e.id::text, e.code, e.full_name, e.email, e.portal_access, u.password_hash IS NOT NULL AS activated, e.status::text
-            FROM employees e JOIN roles r ON r.id = e.role_id LEFT JOIN users u ON u.employee_id = e.id
-            WHERE e.business_id = ? AND r.key = 'owner' ORDER BY e.full_name""",
-                (rs, i) -> new Owner(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getBoolean(5), rs.getBoolean(6), rs.getString(7)), id));
+        out.put("owners", repo.findOwners(id));
         out.put("subscription", subscriptions.current(id));
         out.put("subscriptions", subscriptions.history(id));
         out.put("modules", grants.list(id));
@@ -134,11 +122,11 @@ public class BusinessAdminService {
             gstin = gstin.toUpperCase(Locale.ROOT);
             if (!GSTIN.matcher(gstin).matches()) throw new UserException(HttpStatus.BAD_REQUEST, "GSTIN looks like 22AAAAA0000A1Z5.");
         }
-        List<UUID> clash = jdbc.queryForList("SELECT id FROM businesses WHERE code = ? AND (?::uuid IS NULL OR id <> ?::uuid)", UUID.class, code, editing, editing);
+        List<UUID> clash = repo.findIdsByCode(code, editing);
         if (!clash.isEmpty()) throw new UserException(HttpStatus.CONFLICT, "Another business already uses the short name \"" + code + "\".");
         if (editing != null) {
-            String before = jdbc.queryForObject("SELECT employee_prefix FROM businesses WHERE id = ?", String.class, editing);
-            long people = jdbc.queryForObject("SELECT count(*) FROM employees WHERE business_id = ?", Long.class, editing);
+            String before = repo.findEmployeePrefix(editing);
+            long people = repo.countEmployees(editing);
             if (!prefix.equals(before) && people > 0) throw new UserException("The employee ID prefix can't change once the business has people.");
         }
         return new ValidProfile(name, opt(in.legalName(), 160, "legal name"), code, prefix, tz, email == null ? null : email.toLowerCase(Locale.ROOT),
@@ -164,12 +152,9 @@ public class BusinessAdminService {
 
     public void update(CurrentUser u, String idRaw, ProfileInput in, String ip) {
         UUID id = Check.uuid(idRaw);
-        if (jdbc.queryForList("SELECT 1 FROM businesses WHERE id = ? AND NOT is_platform", id).isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
+        if (!repo.customerBusinessExists(id)) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         ValidProfile p = validate(in, id);
-        jdbc.update("""
-            UPDATE businesses SET name = ?, legal_name = ?, code = ?, employee_prefix = ?, time_zone = ?, contact_email = ?, contact_phone = ?, address = ?,
-              gstin = ?, updated_at = now() WHERE id = ?""",
-                p.name(), p.legalName(), p.code(), p.prefix(), p.timeZone(), p.contactEmail(), p.contactPhone(), p.address(), p.gstin(), id);
+        repo.updateProfile(id, p.name(), p.legalName(), p.code(), p.prefix(), p.timeZone(), p.contactEmail(), p.contactPhone(), p.address(), p.gstin());
         audit.log(u.id(), "business.update", "business", id.toString(), null, Map.of("name", p.name(), "code", p.code()), ip);
     }
 
@@ -177,11 +162,10 @@ public class BusinessAdminService {
     public String setStatus(CurrentUser u, String idRaw, String statusRaw, String ip) {
         UUID id = Check.uuid(idRaw);
         String status = Check.oneOf(statusRaw, List.of("ACTIVE", "SUSPENDED"));
-        int n = jdbc.update("UPDATE businesses SET status = ?, updated_at = now() WHERE id = ? AND NOT is_platform", status, id);
+        int n = repo.updateStatus(id, status);
         if (n == 0) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         if ("SUSPENDED".equals(status)) {
-            jdbc.update("UPDATE sessions SET revoked_at = now(), revoked_reason = 'business_suspended' WHERE revoked_at IS NULL "
-                    + "AND employee_id IN (SELECT id FROM employees WHERE business_id = ?)", id);
+            repo.revokeSessionsOfBusiness(id);
         }
         audit.log(u.id(), "business.status", "business", id.toString(), null, Map.of("status", status), ip);
         return "SUSPENDED".equals(status) ? "Business suspended — everyone in it has been signed out" : "Business reactivated";
@@ -193,7 +177,7 @@ public class BusinessAdminService {
         Check.trimmed(o.name(), 2, "Enter the sub admin's name.", 120, "Keep the name under 120 characters.");
         String email = o.email() == null ? "" : o.email().trim().toLowerCase(Locale.ROOT);
         if (!PeopleRules.EMAIL_RE.matcher(email).matches()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter a valid email for the sub admin.");
-        if (Boolean.TRUE.equals(jdbc.queryForObject("SELECT jurisone_email_in_use(?, NULL)", Boolean.class, email))) {
+        if (Boolean.TRUE.equals(repo.emailInUse(email))) {
             throw new UserException("That email is already in use.");
         }
         if (o.password() != null && !o.password().isEmpty()) {
@@ -205,7 +189,7 @@ public class BusinessAdminService {
     /** Adds a sub admin: with a password they can sign in at once; without one they get an invite email. */
     public Map<String, String> addOwner(CurrentUser u, String businessIdRaw, OwnerInput o, String ip) {
         UUID business = Check.uuid(businessIdRaw);
-        if (jdbc.queryForList("SELECT 1 FROM businesses WHERE id = ? AND NOT is_platform", business).isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
+        if (!repo.customerBusinessExists(business)) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         validateOwner(o);
         String password = o.password() == null || o.password().isEmpty() ? null : o.password();
         UUID owner = TenantContext.call(business, () -> {
@@ -214,7 +198,7 @@ public class BusinessAdminService {
             if (password == null) tokens.sendInvite(id);
             return id;
         });
-        String code = jdbc.queryForObject("SELECT code FROM employees WHERE id = ?", String.class, owner);
+        String code = repo.findEmployeeCode(owner);
         audit.log(u.id(), "business.owner_add", "employee", owner.toString(), null, Map.of("business", business.toString(), "invited", password == null), ip);
         Map<String, String> out = new LinkedHashMap<>();
         out.put("id", owner.toString());
@@ -227,9 +211,7 @@ public class BusinessAdminService {
         UUID business = Check.uuid(businessIdRaw);
         UUID owner = Check.uuid(ownerIdRaw);
         if (on == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean");
-        int n = jdbc.update("""
-            UPDATE employees e SET portal_access = ?, updated_at = now() FROM roles r
-            WHERE r.id = e.role_id AND r.key = 'owner' AND e.id = ? AND e.business_id = ?""", on, owner, business);
+        int n = repo.updateOwnerAccess(owner, business, on);
         if (n == 0) throw new UserException(HttpStatus.NOT_FOUND, "Sub admin not found.");
         if (!on) sessions.revokeAll(owner, "access_disabled");
         audit.log(u.id(), "business.owner_access", "employee", owner.toString(), null, Map.of("portalAccess", on), ip);

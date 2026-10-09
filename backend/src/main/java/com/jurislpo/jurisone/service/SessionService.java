@@ -2,6 +2,7 @@ package com.jurislpo.jurisone.service;
 
 import com.jurislpo.jurisone.common.RequestMeta;
 import com.jurislpo.jurisone.crypto.Tokens;
+import com.jurislpo.jurisone.repository.SessionRepository;
 import com.jurislpo.jurisone.security.JwtService;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -12,7 +13,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseCookie;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,16 +40,16 @@ public class SessionService {
         }
     }
 
-    private final JdbcTemplate jdbc;
+    private final SessionRepository repo;
     private final JwtService jwt;
     private final int ttlDays;
     private final boolean secureCookie;
     private final Duration reuseGrace;
 
-    public SessionService(JdbcTemplate jdbc, JwtService jwt, @Value("${SESSION_TTL_DAYS:30}") int ttlDays,
+    public SessionService(SessionRepository repo, JwtService jwt, @Value("${SESSION_TTL_DAYS:30}") int ttlDays,
                           @Value("${COOKIE_SECURE:${APP_URL:http://localhost:3005}}") String secure,
                           @Value("${jurisone.refresh-reuse-grace-seconds:30}") long reuseGraceSeconds) {
-        this.jdbc = jdbc;
+        this.repo = repo;
         this.jwt = jwt;
         this.ttlDays = ttlDays;
         this.reuseGrace = Duration.ofSeconds(reuseGraceSeconds);
@@ -63,8 +63,7 @@ public class SessionService {
         String sid = Tokens.randomToken(24);
         Duration ttl = remember ? Duration.ofDays(ttlDays) : Duration.ofHours(SHORT_SESSION_HOURS);
         Instant expiresAt = Instant.now().plus(ttl).truncatedTo(ChronoUnit.MILLIS);
-        jdbc.update("INSERT INTO sessions (id, employee_id, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?)",
-                sid, employeeId, Timestamp.from(expiresAt), meta.ip(), meta.userAgent());
+        repo.insertSession(sid, employeeId, expiresAt, meta.ip(), meta.userAgent());
         String refresh = newRefreshToken(sid, expiresAt, meta);
         return new Issued(sid, cookies(employeeId, sid, refresh, remember ? ttl : null));
     }
@@ -77,12 +76,7 @@ public class SessionService {
     @Transactional(noRollbackFor = RefreshRefused.class) // a reused token must stay revoked even though the call fails
     public Issued refresh(String refreshToken, RequestMeta meta) {
         if (refreshToken == null || refreshToken.isEmpty()) throw new RefreshRefused("missing");
-        List<Map<String, Object>> rows = jdbc.queryForList("""
-            SELECT t.used_at, t.expires_at, s.id AS sid, s.created_at, s.expires_at AS session_expires, s.revoked_at, s.employee_id,
-                   e.portal_access, e.status::text AS status, (SELECT u.employee_id FROM users u WHERE u.employee_id = e.id) AS user_id,
-                   (SELECT b.status FROM businesses b WHERE b.id = e.business_id) AS business_status
-            FROM refresh_tokens t JOIN sessions s ON s.id = t.session_id JOIN employees e ON e.id = s.employee_id
-            WHERE t.token_hash = ? FOR UPDATE OF t""", Tokens.sha256(refreshToken));
+        List<Map<String, Object>> rows = repo.findRefreshTokenForUpdate(Tokens.sha256(refreshToken));
         if (rows.isEmpty()) throw new RefreshRefused("unknown");
         Map<String, Object> r = rows.get(0);
         String sid = (String) r.get("sid");
@@ -102,8 +96,8 @@ public class SessionService {
             revoke(sid, "access_ended");
             throw new RefreshRefused("blocked");
         }
-        if (r.get("used_at") == null) jdbc.update("UPDATE refresh_tokens SET used_at = ? WHERE token_hash = ?", Timestamp.from(now), Tokens.sha256(refreshToken));
-        jdbc.update("UPDATE sessions SET last_seen_at = ? WHERE id = ?", Timestamp.from(now), sid);
+        if (r.get("used_at") == null) repo.markRefreshTokenUsed(Tokens.sha256(refreshToken), now);
+        repo.updateLastSeen(sid, now);
         String next = newRefreshToken(sid, sessionExpires, meta);
         Instant created = ((Timestamp) r.get("created_at")).toInstant();
         boolean remember = Duration.between(created, sessionExpires).compareTo(Duration.ofHours(SHORT_SESSION_HOURS + 1)) > 0;
@@ -112,8 +106,7 @@ public class SessionService {
 
     private String newRefreshToken(String sid, Instant expiresAt, RequestMeta meta) {
         String token = Tokens.randomToken(32);
-        jdbc.update("INSERT INTO refresh_tokens (token_hash, session_id, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?)",
-                Tokens.sha256(token), sid, Timestamp.from(expiresAt), meta.ip(), meta.userAgent());
+        repo.insertRefreshToken(Tokens.sha256(token), sid, expiresAt, meta.ip(), meta.userAgent());
         return token;
     }
 
@@ -145,21 +138,20 @@ public class SessionService {
     @Transactional
     public void revoke(String sessionId, String reason) {
         if (sessionId == null) return;
-        jdbc.update("UPDATE sessions SET revoked_at = ?, revoked_reason = ? WHERE id = ? AND revoked_at IS NULL", Timestamp.from(Instant.now()), reason, sessionId);
+        repo.revoke(sessionId, reason, Instant.now());
     }
 
     /** Sign-out with only the refresh cookie (access token already expired). */
     @Transactional
     public void revokeByRefreshToken(String refreshToken, String reason) {
         if (refreshToken == null || refreshToken.isEmpty()) return;
-        List<String> sid = jdbc.queryForList("SELECT session_id FROM refresh_tokens WHERE token_hash = ?", String.class, Tokens.sha256(refreshToken));
+        List<String> sid = repo.findSessionIdByRefreshToken(Tokens.sha256(refreshToken));
         if (!sid.isEmpty()) revoke(sid.get(0), reason);
     }
 
     /** Ends every active session of an employee immediately (access disabled, exit, password reset). */
     @Transactional
     public void revokeAll(UUID employeeId, String reason) {
-        jdbc.update("UPDATE sessions SET revoked_at = ?, revoked_reason = ? WHERE employee_id = ? AND revoked_at IS NULL",
-                Timestamp.from(Instant.now()), reason, employeeId);
+        repo.revokeAll(employeeId, reason, Instant.now());
     }
 }

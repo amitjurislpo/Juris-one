@@ -10,9 +10,9 @@ import com.jurislpo.jurisone.entity.Employee;
 import com.jurislpo.jurisone.entity.EmployeeStatus;
 import com.jurislpo.jurisone.entity.LoginHistory;
 import com.jurislpo.jurisone.entity.User;
+import com.jurislpo.jurisone.repository.AuthRepository;
 import com.jurislpo.jurisone.service.SettingsService.AuthPolicy;
 import com.jurislpo.jurisone.security.CurrentUser;
-import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
@@ -37,7 +37,7 @@ public class AuthService {
     public static final String MSG_EXITED = "This account belongs to a past employee and can no longer sign in.";
     static final String MSG_SUSPENDED = "Your organisation's JurisOne account is suspended. Please contact JurisOne.";
 
-    private final EntityManager em;
+    private final AuthRepository repo;
     private final TransactionTemplate tx;
     private final Passwords passwords;
     private final RateLimiter limiter;
@@ -46,9 +46,9 @@ public class AuthService {
     private final SettingsService settings;
     private final AuditService audit;
 
-    public AuthService(EntityManager em, TransactionTemplate tx, Passwords passwords, RateLimiter limiter, SessionService sessions,
+    public AuthService(AuthRepository repo, TransactionTemplate tx, Passwords passwords, RateLimiter limiter, SessionService sessions,
                        AuthTokenService tokens, SettingsService settings, AuditService audit) {
-        this.em = em;
+        this.repo = repo;
         this.tx = tx;
         this.passwords = passwords;
         this.limiter = limiter;
@@ -59,7 +59,7 @@ public class AuthService {
     }
 
     private String jdbcStatus(java.util.UUID businessId) {
-        return (String) em.createNativeQuery("SELECT status FROM businesses WHERE id = :b").setParameter("b", businessId).getSingleResult();
+        return repo.findBusinessStatus(businessId);
     }
 
     static long minutes(long ms) {
@@ -80,7 +80,7 @@ public class AuthService {
     private Employee findByIdentifier(String identifier) {
         String email = identifier.toLowerCase();
         if (!email.contains("@")) return null;
-        List<Employee> found = em.createQuery("SELECT e FROM Employee e WHERE e.email = :v", Employee.class).setParameter("v", email).getResultList();
+        List<Employee> found = repo.findEmployeesByEmail(email);
         return found.isEmpty() ? null : found.get(0);
     }
 
@@ -93,7 +93,7 @@ public class AuthService {
             h.setReason(reason);
             h.setIp(meta.ip());
             h.setUserAgent(meta.userAgent());
-            em.persist(h);
+            repo.persistLoginHistory(h);
         });
     }
 
@@ -114,7 +114,7 @@ public class AuthService {
         Runnable failedFromIp = () -> limiter.hit(ipKey, policy.ipWindowMinutes() * 60_000L);
 
         Employee emp = findByIdentifier(identifier);
-        User user = emp == null ? null : em.find(User.class, emp.getId());
+        User user = emp == null ? null : repo.findUser(emp.getId());
         if (emp == null || user == null) {
             passwords.verify(passwords.dummyHash(), password);
             failedFromIp.run();
@@ -133,7 +133,7 @@ public class AuthService {
             boolean lock = failed >= policy.maxFailedAttempts();
             boolean activated = user.getPasswordHash() != null;
             tx.executeWithoutResult(s -> {
-                User u = em.find(User.class, emp.getId());
+                User u = repo.findUser(emp.getId());
                 if (lock) {
                     u.setFailedAttempts(0);
                     u.setLockedUntil(Instant.now().plusSeconds(policy.lockMinutes() * 60L).truncatedTo(ChronoUnit.MILLIS));
@@ -164,7 +164,7 @@ public class AuthService {
         }
 
         SessionService.Issued issued = tx.execute(s -> {
-            User u = em.find(User.class, emp.getId());
+            User u = repo.findUser(emp.getId());
             u.setFailedAttempts(0);
             u.setLockedUntil(null);
             u.setLastLoginAt(Instant.now().truncatedTo(ChronoUnit.MILLIS));
@@ -175,8 +175,7 @@ public class AuthService {
         after.put("userAgent", meta.userAgent());
         audit.log(emp.getId(), "auth.login", "session", emp.getId().toString(), null, after, meta.ip());
 
-        Set<String> perms = new HashSet<>(em.createQuery("SELECT p.permissionKey FROM RolePermission p WHERE p.roleId = :r", String.class)
-                .setParameter("r", emp.getRoleId()).getResultList());
+        Set<String> perms = new HashSet<>(repo.findPermissionKeys(emp.getRoleId()));
         String target = next != null && next.startsWith("/") && !next.startsWith("//") ? next : Nav.landingFor(perms);
         return new LoginResult(target, issued.cookies());
     }
@@ -194,7 +193,7 @@ public class AuthService {
         RateLimiter.Result rl = limiter.rateLimit("forgot:" + (meta.ip() != null ? meta.ip() : "unknown"), 5, 15 * 60_000L);
         if (rl.limited()) throw new UserException(HttpStatus.TOO_MANY_REQUESTS, "Too many requests. Try again in " + minutes(rl.retryInMs()) + " minute(s).");
         Employee emp = findByIdentifier(identifier);
-        if (emp != null && em.find(User.class, emp.getId()) != null && emp.getStatus() != EmployeeStatus.EXITED && Boolean.TRUE.equals(emp.getPortalAccess())) {
+        if (emp != null && repo.findUser(emp.getId()) != null && emp.getStatus() != EmployeeStatus.EXITED && Boolean.TRUE.equals(emp.getPortalAccess())) {
             tokens.sendPasswordReset(emp.getId());
             audit.log(emp.getId(), "auth.reset_requested", "user", emp.getId().toString(), meta.ip());
         }
@@ -232,16 +231,16 @@ public class AuthService {
         UUID employeeId = t.getEmployeeId();
         boolean reset = p == AuthTokenPurpose.RESET;
         tx.executeWithoutResult(s -> {
-            AuthToken row = em.find(AuthToken.class, t.getId());
+            AuthToken row = repo.findAuthToken(t.getId());
             row.setUsedAt(Instant.now().truncatedTo(ChronoUnit.MILLIS));
-            User u = em.find(User.class, employeeId);
+            User u = repo.findUser(employeeId);
             Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
             if (u == null) {
                 u = new User();
                 u.setEmployeeId(employeeId);
                 u.setPasswordHash(hash);
                 u.setPasswordSetAt(now);
-                em.persist(u);
+                repo.persistUser(u);
             } else {
                 u.setPasswordHash(hash);
                 u.setPasswordSetAt(now);

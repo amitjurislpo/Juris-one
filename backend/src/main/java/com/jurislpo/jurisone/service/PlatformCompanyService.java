@@ -1,6 +1,7 @@
 package com.jurislpo.jurisone.service;
 
 import com.jurislpo.jurisone.engine.Permissions;
+import com.jurislpo.jurisone.repository.PlatformCompanyRepository;
 import com.jurislpo.jurisone.tenancy.TenantContext;
 import java.util.List;
 import java.util.UUID;
@@ -10,7 +11,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
@@ -26,12 +26,12 @@ public class PlatformCompanyService {
     private static final Logger log = LoggerFactory.getLogger(PlatformCompanyService.class);
     public static final String SUPER_ADMIN = "super_admin";
 
-    private final JdbcTemplate jdbc;
+    private final PlatformCompanyRepository repo;
     private final BusinessSetupService setup;
     private final String name;
 
-    public PlatformCompanyService(JdbcTemplate jdbc, BusinessSetupService setup, @Value("${PLATFORM_COMPANY_NAME:${APP_NAME:JurisOne}}") String name) {
-        this.jdbc = jdbc;
+    public PlatformCompanyService(PlatformCompanyRepository repo, BusinessSetupService setup, @Value("${PLATFORM_COMPANY_NAME:${APP_NAME:JurisOne}}") String name) {
+        this.repo = repo;
         this.setup = setup;
         this.name = name == null || name.isBlank() ? "JurisOne" : name.trim();
     }
@@ -45,32 +45,28 @@ public class PlatformCompanyService {
     /** Creates the platform company if needed and puts every super admin in it. Returns its id. */
     public UUID ensure() {
         return TenantContext.call(null, () -> {
-            List<UUID> found = jdbc.queryForList("SELECT id FROM businesses WHERE is_platform", UUID.class);
+            List<UUID> found = repo.findPlatformIds();
             UUID business;
             if (found.isEmpty()) {
-                String code = jdbc.queryForList("SELECT 1 FROM businesses WHERE code = 'jurisone-platform'").isEmpty() ? "jurisone-platform"
+                String code = !repo.defaultCodeTaken() ? "jurisone-platform"
                         : "jurisone-platform-" + UUID.randomUUID().toString().substring(0, 6);
                 business = setup.create(new BusinessSetupService.NewBusiness(name, null, code, "JO", "Asia/Kolkata", null, null, null, null), null);
-                jdbc.update("UPDATE businesses SET is_platform = true WHERE id = ?", business);
+                repo.markPlatform(business);
                 log.info("Platform company \"{}\" created", name);
             } else {
                 business = found.get(0);
             }
             // the super admin role of the platform company (locked; can assign every role there except owner)
-            List<UUID> roles = jdbc.queryForList("SELECT id FROM roles WHERE business_id = ? AND key = ?", UUID.class, business, SUPER_ADMIN);
+            List<UUID> roles = repo.findRoleIds(business, SUPER_ADMIN);
             UUID role = roles.isEmpty() ? UUID.randomUUID() : roles.get(0);
             if (roles.isEmpty()) {
-                jdbc.update("INSERT INTO roles (id, key, name, is_builtin, is_locked, business_id) VALUES (?, ?, 'Super admin', true, true, ?)", role, SUPER_ADMIN, business);
+                repo.insertSuperAdminRole(role, SUPER_ADMIN, business);
             }
             for (String p : superAdminPerms()) {
-                jdbc.update("INSERT INTO role_permissions (role_id, permission_key) VALUES (?, ?) ON CONFLICT DO NOTHING", role, p);
+                repo.grantPermission(role, p);
             }
-            jdbc.update("""
-                INSERT INTO role_assignable_roles (role_id, assignable_role_id)
-                SELECT ?, r.id FROM roles r WHERE r.business_id = ? AND r.key NOT IN ('owner', ?) ON CONFLICT DO NOTHING""", role, business, SUPER_ADMIN);
-            int moved = jdbc.update("""
-                UPDATE employees e SET business_id = ?, role_id = ?, updated_at = now() FROM users u
-                WHERE u.employee_id = e.id AND u.is_super_admin AND (e.business_id IS DISTINCT FROM ? OR e.role_id <> ?)""", business, role, business, role);
+            repo.grantAssignableRoles(role, business, SUPER_ADMIN);
+            int moved = repo.placeSuperAdmins(business, role);
             if (moved > 0) log.info("{} super admin(s) placed in the platform company", moved);
             return business;
         });
@@ -79,7 +75,7 @@ public class PlatformCompanyService {
     /** Whether this is the platform company. */
     public boolean isPlatform(UUID businessId) {
         return businessId != null && Boolean.TRUE.equals(TenantContext.call(null,
-                () -> jdbc.queryForObject("SELECT is_platform FROM businesses WHERE id = ?", Boolean.class, businessId)));
+                () -> repo.isPlatform(businessId)));
     }
 
     /** Keeps the platform company in place on every start of the API. */
