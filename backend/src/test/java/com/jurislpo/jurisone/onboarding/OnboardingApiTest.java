@@ -168,6 +168,25 @@ class OnboardingApiTest extends IntegrationTest {
     }
 
     @Test
+    void theBusinessSetsWhichDocumentsNewOnboardingsAskFor() throws Exception {
+        mvc.perform(get("/api/onboardings/defaults").cookie(hr)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.requiredDocs.length()").value(5)).andExpect(jsonPath("$.data.kinds.PHOTO").exists());
+        mvc.perform(write(put("/api/onboardings/defaults")).cookie(hr).content("{\"requiredDocs\":[\"PAN\",\"BOGUS\"]}")).andExpect(status().isBadRequest());
+        mvc.perform(write(put("/api/onboardings/defaults")).cookie(hr).content("{\"requiredDocs\":[\"PAN\",\"PHOTO\",\"PAN\"]}")).andExpect(status().isOk());
+        mvc.perform(get("/api/onboardings/defaults").cookie(hr)).andExpect(jsonPath("$.data.requiredDocs[0]").value("PAN"))
+                .andExpect(jsonPath("$.data.requiredDocs.length()").value(2));
+        // a new onboarding without its own list asks for the business's defaults
+        String id = json.readTree(mvc.perform(write(post("/api/onboardings")).cookie(hr).content("{\"candidateName\":\"Mira Das\",\"personalEmail\":\"mira." + s + "@gmail.test\"}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).at("/data/id").asText();
+        mvc.perform(get("/api/onboardings/" + id).cookie(hr)).andExpect(jsonPath("$.data.requiredDocs.length()").value(2))
+                .andExpect(jsonPath("$.data.requiredDocs[1]").value("PHOTO"));
+        // other businesses keep theirs
+        TestData other = new TestData(jdbc).inBusiness("onboard-def-" + s);
+        other.employee("DH-" + s, "dhr." + s + "@example.com", other.role("hrm", "self", "dir", "people.view", "people.add"), PW);
+        mvc.perform(get("/api/onboardings/defaults").cookie(signIn("dhr." + s + "@example.com"))).andExpect(jsonPath("$.data.requiredDocs.length()").value(5));
+    }
+
+    @Test
     void aCancelledLinkStopsWorkingAndOtherUsersCantSeeOnboarding() throws Exception {
         String personal = "kabir." + s + "@gmail.test";
         String id = json.readTree(mvc.perform(write(post("/api/onboardings")).cookie(hr).content("{\"candidateName\":\"Kabir Rao\",\"personalEmail\":\"" + personal + "\"}"))

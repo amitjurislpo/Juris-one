@@ -46,3 +46,7 @@ next-env.d.ts
 /storage/
 /test-results/
 /playwright-report/
+
+# local tooling
+/.vscode/
+/.claude/worktrees/

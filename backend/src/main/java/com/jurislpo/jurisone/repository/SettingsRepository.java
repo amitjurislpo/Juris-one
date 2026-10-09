@@ -18,4 +18,11 @@ public class SettingsRepository {
     public Setting find(String key) {
         return em.find(Setting.class, key);
     }
+
+    /** Saves the current business's value for a key (insert or replace). */
+    public void upsert(String key, String valueJson) {
+        em.createNativeQuery("INSERT INTO settings (key, value, updated_at) VALUES (?1, CAST(?2 AS jsonb), now()) "
+                + "ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()")
+                .setParameter(1, key).setParameter(2, valueJson).executeUpdate();
+    }
 }

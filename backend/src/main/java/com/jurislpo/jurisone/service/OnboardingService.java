@@ -107,12 +107,13 @@ public class OnboardingService {
     private final AuditService audit;
     private final PeopleService people;
     private final SubscriptionService subscriptions;
+    private final SettingsService settings;
     private final Path projectDir;
     private final String uploadDir;
     private final String appUrl;
 
     public OnboardingService(OnboardingRepository repo, PiiCrypto pii, ObjectMapper json, MailService mail, NotificationService notifications, AuditService audit,
-                             PeopleService people, SubscriptionService subscriptions, JurisOneProperties props,
+                             PeopleService people, SubscriptionService subscriptions, SettingsService settings, JurisOneProperties props,
                              @Value("${UPLOAD_DIR:./storage}") String uploadDir, @Value("${APP_URL:http://localhost:3005}") String appUrl) {
         this.repo = repo;
         this.pii = pii;
@@ -122,9 +123,42 @@ public class OnboardingService {
         this.audit = audit;
         this.people = people;
         this.subscriptions = subscriptions;
+        this.settings = settings;
         this.projectDir = Path.of(props.projectDir() == null ? "." : props.projectDir()).toAbsolutePath().normalize();
         this.uploadDir = uploadDir;
         this.appUrl = appUrl.replaceAll("/$", "");
+    }
+
+    // ───────────────────────── the business's default document list ─────────────────────────
+
+    static List<String> validDocs(List<String> docs) {
+        if (docs == null) throw new UserException(HttpStatus.BAD_REQUEST, "Choose the documents.");
+        for (String k : docs) if (k == null || !KINDS.containsKey(k) || "OTHER".equals(k)) throw new UserException(HttpStatus.BAD_REQUEST, "Unknown document: " + k);
+        return docs.stream().distinct().toList();
+    }
+
+    /** What a new onboarding asks for unless HR changes the list for that candidate (per business; ID, address, PAN, Aadhaar, 3 salary slips by default). */
+    public List<String> defaultDocs() {
+        List<String> d = settings.onboarding().requiredDocs();
+        return d == null ? DEFAULT_REQUIRED : d.stream().filter(k -> KINDS.containsKey(k) && !"OTHER".equals(k)).distinct().toList();
+    }
+
+    public Map<String, Object> defaults() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("requiredDocs", defaultDocs());
+        Map<String, String> kinds = new LinkedHashMap<>(KINDS);
+        kinds.remove("OTHER");
+        out.put("kinds", kinds);
+        return out;
+    }
+
+    @Transactional
+    public String saveDefaults(CurrentUser u, List<String> docs, String ip) {
+        List<String> before = defaultDocs();
+        List<String> valid = validDocs(docs);
+        settings.save("onboarding.policy", json.valueToTree(Map.of("requiredDocs", valid)));
+        audit.log(u.id(), "onboarding.default_documents", "setting", "onboarding.policy", Map.of("requiredDocs", before), Map.of("requiredDocs", valid), ip);
+        return valid.isEmpty() ? "New onboardings ask for no documents by default" : "Default documents saved (" + valid.size() + ")";
     }
 
     // ───────────────────────── helpers ─────────────────────────
@@ -242,8 +276,7 @@ public class OnboardingService {
         }
         LocalDate joining = in.joiningDate() == null || in.joiningDate().isBlank() ? null : LocalDate.parse(Check.isoDate(in.joiningDate(), "Pick the joining date."));
         String location = in.location() == null || in.location().isBlank() ? "IN_IST" : Check.oneOf(in.location(), PeopleRules.LOCATIONS.stream().map(PeopleRules.Location::v).toList());
-        List<String> req = in.requiredDocs() == null ? DEFAULT_REQUIRED : in.requiredDocs();
-        for (String k : req) if (!KINDS.containsKey(k) || "OTHER".equals(k)) throw new UserException(HttpStatus.BAD_REQUEST, "Unknown document: " + k);
+        List<String> req = in.requiredDocs() == null ? defaultDocs() : validDocs(in.requiredDocs());
         return new ValidPlan(name, email, designation.isEmpty() ? null : designation, dept, role, manager, joining, location,
                 req.stream().distinct().toArray(String[]::new));
     }

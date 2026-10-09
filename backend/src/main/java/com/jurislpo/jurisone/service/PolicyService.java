@@ -328,6 +328,17 @@ public class PolicyService {
         return new Export("policy-acknowledgements-" + (slug.isEmpty() ? "policy" : slug) + ".csv", Csv.toCsv(EVIDENCE, rows));
     }
 
+    /** The same evidence as a printable PDF (audited like the CSV). */
+    public PolicyFile evidencePdf(CurrentUser u, String idRaw, String ip) {
+        UUID id = Check.uuid(idRaw);
+        Map<String, Object> p = row(id);
+        List<List<Object>> rows = repo.findAcknowledgements(id);
+        audit.log(u.id(), "policy.evidence_export", "policy", id.toString(), null, Map.of("rows", rows.size(), "format", "pdf"), ip);
+        String slug = ((String) p.get("title")).toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
+        return new PolicyFile("policy-acknowledgements-" + (slug.isEmpty() ? "policy" : slug) + ".pdf",
+                PolicyEvidencePdf.render(repo.businessName(), (String) p.get("title"), u.name() + " (" + u.code() + ")", rows));
+    }
+
     public record PolicyFile(String name, byte[] bytes) {}
 
     /**

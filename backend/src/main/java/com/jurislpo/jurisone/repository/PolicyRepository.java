@@ -280,4 +280,9 @@ public class PolicyRepository {
             SELECT v.file_path, v.file_name FROM policy_versions v JOIN policies p ON p.id = v.policy_id
             WHERE v.policy_id = ? AND v.version = ? AND (? OR p.status = 'PUBLISHED')""", id, version, anyStatus);
     }
+
+    /** The current business's name (for the evidence PDF). */
+    public String businessName() {
+        return jdbc.queryForObject("SELECT name FROM businesses WHERE id = jurisone_tenant_id()", String.class);
+    }
 }

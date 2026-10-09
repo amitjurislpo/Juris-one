@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
 import { fmtDY } from "@/lib/format";
-import { StartOnboardingButton } from "./OnboardingClient";
+import { DefaultDocumentsButton, StartOnboardingButton } from "./OnboardingClient";
 import { ONBOARDING_STATUS } from "./status";
 
 export const metadata: Metadata = { title: "Onboarding" };
@@ -24,6 +24,7 @@ export default async function OnboardingPage() {
     <div className="col">
       <PageHeader eyebrow="People ops" title={<>On<em>boarding</em></>}
         sub="Send a new hire a link on their personal email. They fill in their details and upload documents; you verify them and add the employee.">
+        <DefaultDocumentsButton />
         <StartOnboardingButton />
       </PageHeader>
       <section className="card enter" style={{ ["--i" as string]: 1 }}>

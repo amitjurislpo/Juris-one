@@ -136,6 +136,13 @@ class PolicyApiTest extends IntegrationTest {
         String csv = mvc.perform(get("/api/policies/" + id + "/acknowledgements/export").cookie(owner)).andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith("text/csv")).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(csv).contains("Accepted at (UTC)").contains(employeeCode).contains((String) ack.get("body_sha256")).contains("JUnit browser");
+        // the same evidence as a printable PDF, with the full fingerprints
+        byte[] pdf = mvc.perform(get("/api/policies/" + id + "/acknowledgements/export?format=pdf").cookie(owner)).andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF)).andReturn().getResponse().getContentAsByteArray();
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(pdf)) {
+            String text = new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
+            assertThat(text).contains("Policy acceptance record").contains("Code of conduct").contains(employeeCode).contains((String) ack.get("body_sha256"));
+        }
     }
 
     @Test

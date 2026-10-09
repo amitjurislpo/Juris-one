@@ -37,4 +37,6 @@ export const DEFAULT_SETTINGS = {
     name: "Juris Consultants",
     address: "[Registered office address]",
   },
+  // documents a new onboarding asks for (per business; HR can change it per candidate)
+  "onboarding.policy": { requiredDocs: ["ID_PROOF", "ADDRESS_PROOF", "PAN", "AADHAAR", "SALARY_SLIP"] as string[] },
 } as const;

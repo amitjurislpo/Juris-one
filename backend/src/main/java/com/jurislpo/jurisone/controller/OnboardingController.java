@@ -67,6 +67,21 @@ public class OnboardingController {
         return ApiResult.success("Onboarding link sent to " + body.personalEmail().trim().toLowerCase(), Map.of("id", id));
     }
 
+    /** The business's default list of required documents (and every kind HR can pick). */
+    @GetMapping("/api/onboardings/defaults")
+    public ApiResult<Map<String, Object>> defaults() {
+        auth.requirePage("onboarding");
+        return ApiResult.success(onboarding.defaults());
+    }
+
+    public record DefaultsBody(List<String> requiredDocs) {}
+
+    /** {@code {"requiredDocs": [...]}} — what new onboardings ask for unless HR changes it per candidate. */
+    @PutMapping("/api/onboardings/defaults")
+    public ApiResult<Void> saveDefaults(@RequestBody DefaultsBody body, HttpServletRequest req) {
+        return ApiResult.message(onboarding.saveDefaults(auth.requirePage("onboarding"), body.requiredDocs(), RequestMeta.of(req).ip()));
+    }
+
     @GetMapping("/api/onboardings/{id}")
     public ApiResult<Map<String, Object>> detail(@PathVariable String id) {
         auth.requirePage("onboarding");

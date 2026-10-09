@@ -113,6 +113,7 @@ export function PolicyActions({ p }: { p: PolicyDetail }) {
   return (
     <>
       {p.versions.length > 0 && <a className="btn" href={`/api/policies/${p.id}/acknowledgements/export`} download><Icon n="download" s={14} />Evidence (CSV)</a>}
+      {p.versions.length > 0 && <a className="btn" href={`/api/policies/${p.id}/acknowledgements/export?format=pdf`} download><Icon n="doc" s={14} />Evidence (PDF)</a>}
       {p.status === "PUBLISHED" && p.requiresAck && <button className="btn" disabled={busy} onClick={() => run(() => remindPolicy(p.id))}><Icon n="bell" s={14} />Remind</button>}
       {p.status === "PUBLISHED" && <button className="btn btn-ghost" onClick={() => setAsk("archive")}>Archive</button>}
       {p.version === 0 && <button className="btn btn-ghost" onClick={() => setAsk("delete")} aria-label="Delete draft"><Icon n="trash" s={14} /></button>}

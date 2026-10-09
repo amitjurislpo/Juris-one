@@ -30,9 +30,12 @@ public class SettingsService {
             "tax.policy", """
                 {"fy":"2026-27","regimeChangeUntil":"2027-01-31","proofWindowFrom":"2026-04-01","proofWindowUntil":"2027-01-31","maxProofMb":5}""",
             "company", """
-                {"name":"Juris Consultants","address":"[Registered office address]"}""");
+                {"name":"Juris Consultants","address":"[Registered office address]"}""",
+            "onboarding.policy", """
+                {"requiredDocs":["ID_PROOF","ADDRESS_PROOF","PAN","AADHAAR","SALARY_SLIP"]}""");
 
-    public static final List<String> KEYS = List.of("attendance.policy", "employee.policy", "auth.policy", "payroll.policy", "tax.policy", "company");
+    public static final List<String> KEYS = List.of("attendance.policy", "employee.policy", "auth.policy", "payroll.policy", "tax.policy", "company",
+            "onboarding.policy");
 
     public record AuthPolicy(int maxFailedAttempts, int lockMinutes, int ipWindowMinutes, int ipMaxAttempts, int inviteTtlHours, int resetTtlMinutes) {}
 
@@ -48,6 +51,9 @@ public class SettingsService {
     public record TaxPolicy(String fy, String regimeChangeUntil, String proofWindowFrom, String proofWindowUntil, double maxProofMb) {}
 
     public record Company(String name, String address) {}
+
+    /** Documents a new onboarding asks for unless HR changes the list for that candidate. */
+    public record OnboardingPolicy(List<String> requiredDocs) {}
 
     private final SettingsRepository repo;
     private final ObjectMapper json;
@@ -85,6 +91,13 @@ public class SettingsService {
     public PayrollPolicy payroll() { return get("payroll.policy", PayrollPolicy.class); }
     public TaxPolicy tax() { return get("tax.policy", TaxPolicy.class); }
     public Company company() { return get("company", Company.class); }
+    public OnboardingPolicy onboarding() { return get("onboarding.policy", OnboardingPolicy.class); }
+
+    /** Saves the current business's value for a key (replaces it). */
+    public void save(String key, JsonNode value) {
+        if (!DEFAULTS.containsKey(key)) throw new IllegalArgumentException("Unknown setting " + key);
+        repo.upsert(key, value.toString());
+    }
 
     public JsonNode defaults(String key) {
         try {

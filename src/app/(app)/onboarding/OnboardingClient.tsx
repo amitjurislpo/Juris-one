@@ -6,7 +6,10 @@ import { Icon } from "@/components/Icon";
 import { useToast } from "@/components/shell/Toasts";
 import { ConfirmDialog, Modal } from "@/components/ui/Modal";
 import { getFormOptions, type FormOptions } from "../employees/actions";
-import { addOnboardedEmployee, decideDocument, resendOnboarding, setOnboardingStatus, startOnboarding, updateOnboarding, type PlanInput } from "./actions";
+import {
+  addOnboardedEmployee, decideDocument, getOnboardingDefaults, resendOnboarding, saveOnboardingDefaults, setOnboardingStatus, startOnboarding, updateOnboarding,
+  type PlanInput,
+} from "./actions";
 import { DEFAULT_REQUIRED, DOC_KINDS } from "./status";
 
 const LOCATIONS = [["IN_IST", "India · IST"], ["US_ET", "US East · ET"], ["US_CT", "US Central · CT"], ["US_PT", "US West · PT"]] as const;
@@ -80,7 +83,12 @@ export function StartOnboardingButton() {
   });
   return (
     <>
-      <button className="btn btn-gold btn-lg" onClick={() => { setOpen(true); void load(); }}><Icon n="plus" s={16} />New onboarding</button>
+      <button className="btn btn-gold btn-lg" onClick={() => {
+        setOpen(true);
+        void load();
+        // start from the business's default document list
+        void getOnboardingDefaults().then((r) => { if (r.ok) setP((cur) => ({ ...cur, requiredDocs: r.data!.requiredDocs })); });
+      }}><Icon n="plus" s={16} />New onboarding</button>
       {open && (
         <Modal title="New onboarding" eyebrow="The candidate gets a link valid for 7 days" maxWidth={760} onClose={close}
           footer={<><button className="btn btn-ghost" onClick={close}>Cancel</button><button className="btn btn-gold" disabled={busy} onClick={save}>{busy ? "Sending…" : "Send link"}</button></>}>
@@ -233,6 +241,43 @@ export function AddEmployeeButton({ id, name, plan }: { id: string; name: string
             </div>
             <label className="field">Joining office <span className="hint">optional</span><input value={f.joiningOffice} onChange={on("joiningOffice")} maxLength={120} placeholder="e.g. Noida office" /></label>
             {(err || optErr) && <div className="err" role="alert">{err || optErr}</div>}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/** The business's default list of documents new onboardings ask for. */
+export function DefaultDocumentsButton() {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [docs, setDocs] = useState<string[]>(DEFAULT_REQUIRED);
+  const [err, setErr] = useState("");
+  const [busy, start] = useTransition();
+  const openIt = () => {
+    setErr("");
+    setOpen(true);
+    void getOnboardingDefaults().then((r) => (r.ok ? setDocs(r.data!.requiredDocs) : setErr(r.error)));
+  };
+  const save = () => start(async () => {
+    const r = await saveOnboardingDefaults(docs);
+    if (r.ok) { toast(r.msg!); setOpen(false); } else setErr(r.error);
+  });
+  return (
+    <>
+      <button className="btn" onClick={openIt}><Icon n="doc" s={14} />Default documents</button>
+      {open && (
+        <Modal title="Default documents" eyebrow="What new onboardings ask for" size="sm" onClose={() => setOpen(false)}
+          footer={<><button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button><button className="btn btn-gold" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</button></>}>
+          <div className="col" style={{ gap: 10 }}>
+            <p className="muted" style={{ margin: 0 }}>You can still change the list for each candidate when you start their onboarding.</p>
+            {Object.entries(DOC_KINDS).map(([k, l]) => (
+              <label key={k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="checkbox" checked={docs.includes(k)} onChange={(e) => setDocs(e.target.checked ? [...docs, k] : docs.filter((x) => x !== k))} />{l}
+              </label>
+            ))}
+            {err && <div className="err" role="alert">{err}</div>}
           </div>
         </Modal>
       )}

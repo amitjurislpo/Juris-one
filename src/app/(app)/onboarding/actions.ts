@@ -1,7 +1,7 @@
 "use server";
 
 import type { ActionResult } from "@/lib/action";
-import { apiAction } from "@/lib/backend";
+import { apiAction, apiCall } from "@/lib/backend";
 
 // HR's side of onboarding (Spring Boot /api/onboardings).
 const enc = encodeURIComponent;
@@ -36,4 +36,13 @@ export async function setOnboardingStatus(id: string, status: "CHANGES_REQUESTED
 
 export async function addOnboardedEmployee(id: string, i: AddInput): Promise<ActionResult<{ id: string; code: string }>> {
   return apiAction("POST", `/api/onboardings/${enc(id)}/employee`, i, [...pages(id), "/employees"]);
+}
+
+/** The business's default required documents (and every kind HR can pick). */
+export async function getOnboardingDefaults(): Promise<ActionResult<{ requiredDocs: string[]; kinds: Record<string, string> }>> {
+  return (await apiCall<{ requiredDocs: string[]; kinds: Record<string, string> }>("GET", "/api/onboardings/defaults")).body;
+}
+
+export async function saveOnboardingDefaults(requiredDocs: string[]): Promise<ActionResult> {
+  return apiAction("PUT", "/api/onboardings/defaults", { requiredDocs }, pages());
 }

@@ -151,9 +151,16 @@ public class PolicyController {
         return ApiResult.success(n == 0 ? "Everyone has already accepted it" : "Reminder sent to " + n + " " + (n == 1 ? "person" : "people"), Map.of("count", n));
     }
 
-    /** The legal evidence: every acknowledgement of every version, as recorded (CSV, audited). */
+    /** The legal evidence: every acknowledgement of every version, as recorded (CSV, or {@code ?format=pdf}; audited). */
     @GetMapping("/{id}/acknowledgements/export")
-    public ResponseEntity<byte[]> evidence(@PathVariable String id, HttpServletRequest req) {
+    public ResponseEntity<byte[]> evidence(@PathVariable String id, @org.springframework.web.bind.annotation.RequestParam(name = "format", required = false) String format,
+                                           HttpServletRequest req) {
+        if ("pdf".equals(format)) {
+            PolicyService.PolicyFile f = policies.evidencePdf(manager(), id, RequestMeta.of(req).ip());
+            return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(f.name(), StandardCharsets.UTF_8).build().toString())
+                    .header(HttpHeaders.CACHE_CONTROL, "private, no-store").body(f.bytes());
+        }
         PolicyService.Export e = policies.evidence(manager(), id, RequestMeta.of(req).ip());
         return PeopleController.csv(e.filename(), e.body());
     }
