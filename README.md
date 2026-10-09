@@ -120,15 +120,18 @@ JurisOne is a Next.js server, a Spring Boot API and Postgres 16. Any Linux VPS o
 ```
 backend/                           Spring Boot API (Maven)
   src/main/java/com/jurislpo/jurisone/
+    controller/                    REST controllers (one per area: auth, people, payroll, platform...)
+    service/                       business logic, one service per area (plus mail, audit, jobs, seed)
+    repository/                    data access: SQL queries, one repository per area
+    exception/                     API exceptions, problem+json responses, the global handler
+    common/                        shared types: ApiResult envelope, RequestMeta, list paging/sorting, validation
+    entity/                        JPA entities for every table (schema validated, never generated)
     config/                        .env loading, security chain, Flyway guard, Jackson
-    security/                      session cookie filter, origin check, Auth.requirePage / assertPerm
-    common/                        ApiResult envelope, error handling, list paging/sorting, validation helpers
+    security/                      JWT filter, subscription / policy gates, origin check, Auth.requirePage / assertPerm
+    tenancy/                       TenantContext + the DataSource that applies row-level security per business
     engine/                        pure rules: attendance, leave, payroll, tax, permissions, nav, formatting
     crypto/                        AES-256-GCM PII encryption, argon2id passwords, masking
-    entity/                        JPA entities for every table (schema validated, never generated)
-    auth/ platform/ roles/ org/ people/ attendance/ leave/ payroll/ tax/ dashboard/ jobs/
-                                   one package per area: service (business logic) + controller (REST)
-    cli/                           migrate / seed / jobs commands
+    cli/                           migrate / seed / reset / jobs commands
   src/main/resources/db/migration/ Flyway migrations (V1 = the original schema)
   src/test/java/                   JUnit 5: engine tests + API tests against Testcontainers Postgres
 src/lib/backend.ts                 server-side API client used by pages and server actions
@@ -217,7 +220,7 @@ prisma/schema.prisma               the original data model, kept as a readable r
 - A night shift belongs to the date it started on.
 - Each punch belongs to the shift window that contains it. A window opens 4 hours before shift start and lasts 24 hours.
 
-**One source for every screen.** `attendance/AttendanceService.java` loads the data and runs the engine. Home, My attendance, My team, the register and payroll all use it.
+**One source for every screen.** `service/AttendanceService.java` loads the data and runs the engine. Home, My attendance, My team, the register and payroll all use it.
 
 **Locking.** When a month locks, its days are frozen into `attendance_days` with `locked = true`. From then on, every screen and payroll reads the frozen rows.
 
@@ -313,7 +316,7 @@ Previous-employer income is added, then the standard deduction and any approved 
 
 ### Dashboards and audit log
 
-**Home (`self`).** Greeting with a live clock, the check-in card, KPIs, the 16-week heatmap, the last seven shifts and upcoming holidays. Cards are added by permission (`dashboard/DashboardService.java#homeCards`):
+**Home (`self`).** Greeting with a live clock, the check-in card, KPIs, the 16-week heatmap, the last seven shifts and upcoming holidays. Cards are added by permission (`service/DashboardService.java#homeCards`):
 
 | Card | Shown to |
 |---|---|
@@ -331,7 +334,7 @@ Salary is never shown on Home; an e2e test checks that no ₹ amount appears the
 
 ### Scheduled jobs
 
-`jobs/JobsService.java` contains these jobs:
+`service/JobsService.java` contains these jobs:
 
 | Job | What it does |
 |---|---|

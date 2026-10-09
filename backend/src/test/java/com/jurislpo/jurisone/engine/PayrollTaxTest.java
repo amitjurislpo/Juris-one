@@ -1,5 +1,7 @@
 package com.jurislpo.jurisone.engine;
 
+import com.jurislpo.jurisone.engine.PayrollEngine;
+import com.jurislpo.jurisone.engine.TaxEngine;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jurislpo.jurisone.engine.PayrollEngine.PayInput;

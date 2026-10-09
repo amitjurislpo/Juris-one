@@ -1,8 +1,8 @@
 package com.jurislpo.jurisone.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jurislpo.jurisone.common.Problems;
-import com.jurislpo.jurisone.common.UnauthenticatedException;
+import com.jurislpo.jurisone.exception.Problems;
+import com.jurislpo.jurisone.exception.UnauthenticatedException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;

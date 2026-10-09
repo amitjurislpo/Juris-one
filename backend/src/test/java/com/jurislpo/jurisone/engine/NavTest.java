@@ -1,5 +1,7 @@
 package com.jurislpo.jurisone.engine;
 
+import com.jurislpo.jurisone.engine.Nav;
+import com.jurislpo.jurisone.engine.Permissions;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.HashSet;

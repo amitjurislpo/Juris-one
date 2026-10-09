@@ -1,8 +1,8 @@
 package com.jurislpo.jurisone.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jurislpo.jurisone.common.Problems;
-import com.jurislpo.jurisone.policy.PolicyService;
+import com.jurislpo.jurisone.exception.Problems;
+import com.jurislpo.jurisone.service.PolicyService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

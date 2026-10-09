@@ -1,7 +1,7 @@
 package com.jurislpo.jurisone.security;
 
-import com.jurislpo.jurisone.common.ForbiddenException;
-import com.jurislpo.jurisone.common.UnauthenticatedException;
+import com.jurislpo.jurisone.exception.ForbiddenException;
+import com.jurislpo.jurisone.exception.UnauthenticatedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;

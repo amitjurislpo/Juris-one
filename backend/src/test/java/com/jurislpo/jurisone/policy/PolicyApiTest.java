@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.policy;
 
+import com.jurislpo.jurisone.service.PolicyService;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;

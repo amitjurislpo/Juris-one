@@ -1,5 +1,17 @@
 package com.jurislpo.jurisone.entity;
 
+import com.jurislpo.jurisone.entity.AttendanceDay;
+import com.jurislpo.jurisone.entity.DayStatus;
+import com.jurislpo.jurisone.entity.Department;
+import com.jurislpo.jurisone.entity.EmailOutbox;
+import com.jurislpo.jurisone.entity.EmailStatus;
+import com.jurislpo.jurisone.entity.Employee;
+import com.jurislpo.jurisone.entity.EmployeeStatus;
+import com.jurislpo.jurisone.entity.Region;
+import com.jurislpo.jurisone.entity.Role;
+import com.jurislpo.jurisone.entity.RolePermission;
+import com.jurislpo.jurisone.entity.Setting;
+import com.jurislpo.jurisone.entity.Shift;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;

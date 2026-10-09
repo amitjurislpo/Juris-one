@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.cli;
 
+import com.jurislpo.jurisone.service.SeedService;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;

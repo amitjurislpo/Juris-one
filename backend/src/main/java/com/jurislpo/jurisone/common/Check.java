@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.common;
 
+import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.engine.PeopleRules;
 import java.util.List;
 import java.util.UUID;

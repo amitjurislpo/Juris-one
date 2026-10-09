@@ -1,6 +1,6 @@
 package com.jurislpo.jurisone.security;
 
-import com.jurislpo.jurisone.auth.SessionService;
+import com.jurislpo.jurisone.service.SessionService;
 import com.jurislpo.jurisone.tenancy.TenantContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

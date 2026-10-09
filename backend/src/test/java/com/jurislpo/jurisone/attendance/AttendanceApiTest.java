@@ -13,7 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
 import com.jurislpo.jurisone.TestData;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
-import com.jurislpo.jurisone.jobs.JobsService;
+import com.jurislpo.jurisone.service.JobsService;
 import jakarta.servlet.http.Cookie;
 import java.sql.Timestamp;
 import java.time.Instant;

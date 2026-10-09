@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.auth;
 
+import com.jurislpo.jurisone.service.RateLimiter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;

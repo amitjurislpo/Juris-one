@@ -1,7 +1,8 @@
 package com.jurislpo.jurisone.cli;
 
+import com.jurislpo.jurisone.service.SeedService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jurislpo.jurisone.jobs.JobsService;
+import com.jurislpo.jurisone.service.JobsService;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

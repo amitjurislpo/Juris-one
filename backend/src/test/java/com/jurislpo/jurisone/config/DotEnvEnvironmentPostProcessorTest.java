@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.config;
 
+import com.jurislpo.jurisone.config.DotEnvEnvironmentPostProcessor;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;

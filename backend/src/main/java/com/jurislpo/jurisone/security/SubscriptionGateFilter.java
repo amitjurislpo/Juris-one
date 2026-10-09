@@ -1,8 +1,8 @@
 package com.jurislpo.jurisone.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jurislpo.jurisone.business.SubscriptionService;
-import com.jurislpo.jurisone.common.Problems;
+import com.jurislpo.jurisone.service.SubscriptionService;
+import com.jurislpo.jurisone.exception.Problems;
 import com.jurislpo.jurisone.tenancy.TenantContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

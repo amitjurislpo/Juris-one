@@ -1,5 +1,7 @@
 package com.jurislpo.jurisone.engine;
 
+import com.jurislpo.jurisone.engine.Format;
+import com.jurislpo.jurisone.engine.Shifts;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;

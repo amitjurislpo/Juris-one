@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.payroll;
 
+import com.jurislpo.jurisone.service.PayslipPdf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;

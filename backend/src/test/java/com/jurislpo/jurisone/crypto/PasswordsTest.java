@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.crypto;
 
+import com.jurislpo.jurisone.crypto.Passwords;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;

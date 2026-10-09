@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.engine;
 
+import com.jurislpo.jurisone.engine.Csv;
 import static com.jurislpo.jurisone.engine.PeopleRules.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
