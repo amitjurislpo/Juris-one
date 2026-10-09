@@ -10,6 +10,7 @@ import com.jurislpo.jurisone.config.JurisOneProperties;
 import com.jurislpo.jurisone.crypto.PiiCrypto;
 import com.jurislpo.jurisone.engine.Csv;
 import com.jurislpo.jurisone.engine.Format;
+import com.jurislpo.jurisone.repository.PayrollOpsRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -29,7 +30,6 @@ import java.util.UUID;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -37,7 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class PayrollOpsService {
 
-    private final JdbcTemplate jdbc;
+    private final PayrollOpsRepository repo;
     private final TransactionTemplate tx;
     private final PayrollService payroll;
     private final PayslipPdf pdf;
@@ -50,10 +50,10 @@ public class PayrollOpsService {
     private final String uploadDir;
     private final String appUrl;
 
-    public PayrollOpsService(JdbcTemplate jdbc, TransactionTemplate tx, PayrollService payroll, PayslipPdf pdf, SettingsService settings, AuditService audit,
+    public PayrollOpsService(PayrollOpsRepository repo, TransactionTemplate tx, PayrollService payroll, PayslipPdf pdf, SettingsService settings, AuditService audit,
                              MailService mail, PiiCrypto pii, ObjectMapper json, JurisOneProperties props, @Value("${UPLOAD_DIR:./storage}") String uploadDir,
                              @Value("${APP_URL:http://localhost:3005}") String appUrl) {
-        this.jdbc = jdbc;
+        this.repo = repo;
         this.tx = tx;
         this.payroll = payroll;
         this.pdf = pdf;
@@ -88,10 +88,7 @@ public class PayrollOpsService {
         String month = mo.months().contains(m) ? m : mo.dflt();
         PayrollService.View v = payroll.payrollView(month);
         LocalDate lastDay = YearMonth.parse(month).atEndOfMonth();
-        List<String> missing = v.closed() ? List.of() : jdbc.queryForList("""
-            SELECT full_name FROM employees e WHERE region = 'IN' AND status <> 'EXITED' AND date_of_joining <= ?
-              AND NOT EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?) ORDER BY full_name ASC""",
-                String.class, Date.valueOf(lastDay), Date.valueOf(lastDay));
+        List<String> missing = v.closed() ? List.of() : repo.namesWithoutStructure(lastDay);
         Map<String, Object> run = v.run();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("month", month);
@@ -117,7 +114,7 @@ public class PayrollOpsService {
         }
         if (rs.run() != null) return (UUID) rs.run().get("id");
         UUID id = UUID.randomUUID();
-        jdbc.update("INSERT INTO payroll_runs (id, month, status, stage, created_at) VALUES (?, ?, 'OPEN', 'LOCK_ATTENDANCE', now())", id, month);
+        repo.insertOpenRun(id, month);
         return id;
     }
 
@@ -144,18 +141,14 @@ public class PayrollOpsService {
         String note = Check.str(f.note()).trim();
         if (note.length() > 200) throw new UserException(HttpStatus.BAD_REQUEST, "Too big: expected string to have <=200 characters");
         UUID runId = openRun(month);
-        List<Map<String, Object>> emp = jdbc.queryForList("SELECT full_name, region::text AS region FROM employees WHERE id = ?", employeeId);
+        List<Map<String, Object>> emp = repo.employeeRegion(employeeId);
         if (emp.isEmpty() || !"IN".equals(emp.get(0).get("region"))) throw new UserException("Only India payroll employees can be edited.");
-        List<Map<String, Object>> before = jdbc.queryForList("SELECT lop_days, bonus, other_deduction, note FROM payroll_adjustments WHERE run_id = ? AND employee_id = ?", runId, employeeId);
+        List<Map<String, Object>> before = repo.findAdjustment(runId, employeeId);
         Long bonusP = bonus * 100, otherP = other * 100;
         String noteV = note.isEmpty() ? null : note;
         tx.executeWithoutResult(s -> {
-            jdbc.update("""
-                INSERT INTO payroll_adjustments (run_id, employee_id, lop_days, bonus, other_deduction, note, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, now())
-                ON CONFLICT (run_id, employee_id) DO UPDATE SET lop_days = EXCLUDED.lop_days, bonus = EXCLUDED.bonus, other_deduction = EXCLUDED.other_deduction,
-                  note = EXCLUDED.note, updated_by = EXCLUDED.updated_by, updated_at = now()""",
-                    runId, employeeId, f.lopDays() == null ? null : BigDecimal.valueOf(f.lopDays()), bonusP, otherP, noteV, u.id());
-            jdbc.update("UPDATE payroll_runs SET stage = 'REVIEW', approved_at = NULL, approved_by = NULL WHERE id = ?", runId);
+            repo.upsertAdjustment(runId, employeeId, f.lopDays() == null ? null : BigDecimal.valueOf(f.lopDays()), bonusP, otherP, noteV, u.id());
+            repo.resetRunToReview(runId);
             Map<String, Object> b = null;
             if (!before.isEmpty()) {
                 Map<String, Object> x = before.get(0);
@@ -179,7 +172,7 @@ public class PayrollOpsService {
         String month = ym(monthRaw);
         UUID employeeId = Check.uuid(employeeIdRaw);
         UUID runId = openRun(month);
-        int n = jdbc.update("DELETE FROM payroll_adjustments WHERE run_id = ? AND employee_id = ?", runId, employeeId);
+        int n = repo.deleteAdjustment(runId, employeeId);
         if (n > 0) audit.log(u.id(), "payroll.edit", "payroll_adjustment", month + ":" + employeeId, null, Map.of("reset", true), null);
         return "Back to attendance figures";
     }
@@ -195,9 +188,9 @@ public class PayrollOpsService {
         UUID runId = rs.run() != null ? (UUID) rs.run().get("id") : null;
         if (runId == null) {
             runId = UUID.randomUUID();
-            jdbc.update("INSERT INTO payroll_runs (id, month, status, stage, created_at) VALUES (?, ?, 'OPEN', 'LOCK_ATTENDANCE', now())", runId, month);
+            repo.insertOpenRun(runId, month);
         }
-        jdbc.update("UPDATE payroll_runs SET stage = 'APPROVED', approved_by = ?, approved_at = now() WHERE id = ?", u.id(), runId);
+        repo.approveRun(u.id(), runId);
         audit.log(u.id(), "payroll.approve", "payroll_run", runId.toString(), null, Map.of("month", month), null);
         int n;
         try {
@@ -229,7 +222,7 @@ public class PayrollOpsService {
         try {
             Files.createDirectories(dir);
             for (PayrollService.PayRow r : rows) {
-                Map<String, Object> e = jdbc.queryForMap("SELECT pan_last4, uan_last4, bank_name, bank_account_last4, email, full_name FROM employees WHERE id = ?", r.employeeId());
+                Map<String, Object> e = repo.payslipEmployee(r.employeeId());
                 emps.put(r.employeeId(), e);
                 PayrollService.Snapshot snap = payroll.toSnapshot(r, ym, e, company, payDate);
                 String snapJson = json.writeValueAsString(snap);
@@ -242,23 +235,20 @@ public class PayrollOpsService {
         }
         tx.executeWithoutResult(s -> {
             Instant now = Instant.now();
-            List<Map<String, Object>> existing = jdbc.queryForList("SELECT id, attendance_locked_at, approved_by, approved_at FROM payroll_runs WHERE month = ?", ym);
+            List<Map<String, Object>> existing = repo.runForClose(ym);
             UUID runId;
             if (existing.isEmpty()) {
                 runId = UUID.randomUUID();
-                jdbc.update("INSERT INTO payroll_runs (id, month, status, stage, created_at) VALUES (?, ?, 'OPEN', 'LOCK_ATTENDANCE', now())", runId, ym);
-                existing = jdbc.queryForList("SELECT id, attendance_locked_at, approved_by, approved_at FROM payroll_runs WHERE month = ?", ym);
+                repo.insertOpenRun(runId, ym);
+                existing = repo.runForClose(ym);
             }
             Map<String, Object> run = existing.get(0);
             runId = (UUID) run.get("id");
             // atomic: only an open run can close
-            int n = jdbc.update("""
-                UPDATE payroll_runs SET status = 'CLOSED', stage = 'CLOSED', closed_by = ?, closed_at = ?, pay_date = ?, attendance_locked_at = COALESCE(attendance_locked_at, ?),
-                  computed_at = ?, approved_by = COALESCE(approved_by, ?), approved_at = COALESCE(approved_at, ?) WHERE id = ? AND status = 'OPEN'""",
-                    actorId, Timestamp.from(now), Date.valueOf(payDate), Timestamp.from(now), Timestamp.from(now), actorId, Timestamp.from(now), runId);
+            int n = repo.closeOpenRun(actorId, now, payDate, runId);
             if (n == 0) throw new IllegalStateException("This payroll is already closed.");
             for (File f : files) {
-                jdbc.update("INSERT INTO payslips (run_id, employee_id, snapshot, pdf_path, published_at) VALUES (?, ?, ?::jsonb, ?, now())", runId, f.employeeId(), f.snapshot(), f.pdfPath());
+                repo.insertPayslip(runId, f.employeeId(), f.snapshot(), f.pdfPath());
             }
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("month", ym);
@@ -267,8 +257,7 @@ public class PayrollOpsService {
             audit.log(actorId, "payroll.close", "payroll_run", runId.toString(), null, after, null);
             if (notify) {
                 for (File f : files) {
-                    jdbc.update("INSERT INTO notifications (id, employee_id, text, link, created_at) VALUES (?, ?, ?, '/payslips', now())",
-                            UUID.randomUUID(), f.employeeId(), "Your " + Format.ymLabel(ym) + " payslip is ready");
+                    repo.insertPayslipNotification(f.employeeId(), "Your " + Format.ymLabel(ym) + " payslip is ready");
                 }
             }
         });
@@ -294,12 +283,10 @@ public class PayrollOpsService {
         String dept = ListParams.str(sp, "dept", "All");
         String today = Format.todayIn("Asia/Kolkata").toString();
         boolean byDept = !"All".equals(dept) && dept.matches("^[0-9a-f-]{36}$");
-        List<Map<String, Object>> emps = jdbc.queryForList("SELECT id, code, full_name, designation, date_of_joining FROM employees WHERE region = 'IN' AND status <> 'EXITED'"
-                + (byDept ? " AND department_id = ?::uuid" : ""), byDept ? new Object[] {dept} : new Object[0]);
+        List<Map<String, Object>> emps = repo.structureEmployees(byDept ? dept : null);
         List<StructRow> all = new ArrayList<>();
         for (Map<String, Object> e : emps) {
-            List<Rev> revs = jdbc.query("SELECT effective_from, basic, hra, lta, special, reason::text FROM salary_structures WHERE employee_id = ? ORDER BY effective_from DESC",
-                    (rs, i) -> new Rev(rs.getDate(1).toLocalDate().toString(), rs.getLong(2), rs.getLong(3), rs.getLong(4), rs.getLong(5), rs.getString(6)), e.get("id"));
+            List<Rev> revs = repo.revisions(e.get("id"));
             Rev cur = revs.stream().filter(r -> r.from().compareTo(today) <= 0).findFirst().orElse(revs.isEmpty() ? null : revs.get(revs.size() - 1)); // current, else the upcoming one
             all.add(new StructRow(e.get("id").toString(), (String) e.get("code"), (String) e.get("full_name"), (String) e.get("designation"),
                     ((Date) e.get("date_of_joining")).toLocalDate().toString(), revs, cur, cur == null ? 0 : cur.basic() + cur.hra() + cur.lta() + cur.special()));
@@ -310,12 +297,12 @@ public class PayrollOpsService {
         Map<String, Function<StructRow, ? extends Comparable>> keys = Map.of("name", StructRow::name, "basic", r -> r.cur() == null ? -1L : r.cur().basic(),
                 "g", StructRow::g, "since", r -> r.cur() == null ? "" : r.cur().from());
         rows.sort(ls.comparator(keys));
-        List<String> lastClosed = jdbc.queryForList("SELECT month FROM payroll_runs WHERE status = 'CLOSED' ORDER BY month DESC LIMIT 1", String.class);
+        List<String> lastClosed = repo.lastClosedMonth();
         String minFrom = lastClosed.isEmpty() ? "" : YearMonth.parse(lastClosed.get(0)).plusMonths(1).atDay(1).toString();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("rows", rows);
         out.put("total", all.size());
-        out.put("depts", jdbc.queryForList("SELECT id::text AS id, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC"));
+        out.put("depts", repo.activeDepartments());
         out.put("today", today);
         out.put("minFrom", minFrom);
         return out;
@@ -338,25 +325,23 @@ public class PayrollOpsService {
         String reason = Check.oneOf(f.reason(), List.of("JOINING", "APPRAISAL", "PROMOTION", "CORRECTION"));
         long basic = amount(f.basic(), 1, "Basic is required"), hra = amount(f.hra(), 0, "Too small: expected number to be >=0"),
                 lta = amount(f.lta(), 0, "Too small: expected number to be >=0"), special = amount(f.special(), 0, "Too small: expected number to be >=0");
-        List<Map<String, Object>> es = jdbc.queryForList("SELECT full_name, region::text AS region, date_of_joining, status::text AS status FROM employees WHERE id = ?", employeeId);
+        List<Map<String, Object>> es = repo.structureEmployee(employeeId);
         if (es.isEmpty()) throw new UserException("Employee not found.");
         Map<String, Object> e = es.get(0);
         if (!"IN".equals(e.get("region"))) throw new UserException("Salary structures are for the India payroll only.");
         if ("EXITED".equals(e.get("status"))) throw new UserException("This person is a past employee.");
         if (from.compareTo(((Date) e.get("date_of_joining")).toLocalDate().toString()) < 0) throw new UserException("The structure can't start before the joining date.");
-        List<String> lastClosed = jdbc.queryForList("SELECT month FROM payroll_runs WHERE status = 'CLOSED' ORDER BY month DESC LIMIT 1", String.class);
+        List<String> lastClosed = repo.lastClosedMonth();
         if (!lastClosed.isEmpty() && from.substring(0, 7).compareTo(lastClosed.get(0)) <= 0) {
             throw new UserException("Payroll is closed up to " + Format.ymLabel(lastClosed.get(0)) + ". Start the revision after that and pay any difference as arrears.");
         }
-        Integer clash = jdbc.queryForObject("SELECT count(*) FROM salary_structures WHERE employee_id = ? AND effective_from = ?", Integer.class, employeeId, Date.valueOf(from));
+        Integer clash = repo.countStructuresEffective(employeeId, from);
         if (clash != null && clash > 0) throw new UserException("There's already a revision effective " + Format.fmtDY(LocalDate.parse(from)) + ". History can't be edited — pick another date.");
-        List<Map<String, Object>> prev = jdbc.queryForList("SELECT effective_from, basic, hra, lta, special FROM salary_structures WHERE employee_id = ? AND effective_from < ? ORDER BY effective_from DESC LIMIT 1",
-                employeeId, Date.valueOf(from));
+        List<Map<String, Object>> prev = repo.previousStructure(employeeId, from);
         String name = (String) e.get("full_name");
         tx.executeWithoutResult(s -> {
             UUID id = UUID.randomUUID();
-            jdbc.update("INSERT INTO salary_structures (id, employee_id, effective_from, basic, hra, lta, special, reason, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?::\"StructureReason\", ?, now())",
-                    id, employeeId, Date.valueOf(from), basic * 100, hra * 100, lta * 100, special * 100, reason, u.id());
+            repo.insertStructure(id, employeeId, from, basic * 100, hra * 100, lta * 100, special * 100, reason, u.id());
             Map<String, Object> before = null;
             if (!prev.isEmpty()) {
                 Map<String, Object> p = prev.get(0);
@@ -374,8 +359,7 @@ public class PayrollOpsService {
             after.put("special", special * 100);
             audit.log(u.id(), "salary.structure_change", "salary_structure", id.toString(), before, after, ip);
             // the "salary structure pending" reminder is done
-            jdbc.update("UPDATE notifications SET read_at = now() WHERE read_at IS NULL AND text LIKE ? AND text LIKE '%salary structure pending%'",
-                    name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%");
+            repo.markStructureRemindersRead(name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%");
         });
         return "Salary structure saved for " + name + " · effective " + Format.fmtDY(LocalDate.parse(from));
     }
@@ -386,11 +370,9 @@ public class PayrollOpsService {
     public Map<String, Object> payslipsPage(CurrentUser u) {
         boolean india = "IN".equals(u.region());
         LocalDate today = Format.todayIn("Asia/Kolkata");
-        List<Map<String, Object>> slips = jdbc.queryForList("""
-            SELECT r.month, r.pay_date, p.snapshot::text AS snapshot FROM payslips p JOIN payroll_runs r ON r.id = p.run_id
-            WHERE p.employee_id = ? AND r.status = 'CLOSED' ORDER BY r.month DESC""", u.id());
-        List<String> openRuns = jdbc.queryForList("SELECT month FROM payroll_runs WHERE status = 'OPEN' ORDER BY month DESC", String.class);
-        Integer hasStructure = jdbc.queryForObject("SELECT count(*) FROM salary_structures WHERE employee_id = ?", Integer.class, u.id());
+        List<Map<String, Object>> slips = repo.closedPayslips(u.id());
+        List<String> openRuns = repo.openRunMonths();
+        Integer hasStructure = repo.countStructures(u.id());
         String prev = YearMonth.from(today).minusMonths(1).toString();
         List<String> slipMonths = slips.stream().map(s -> (String) s.get("month")).toList();
         List<String> processing = new ArrayList<>();
@@ -424,9 +406,7 @@ public class PayrollOpsService {
         if (!month.matches("^\\d{4}-\\d{2}$") || !code.matches("^JC-\\d+$")) return null;
         boolean own = code.equals(u.code()) && u.can("self");
         if (!own && !u.can("pay.view")) throw new ForbiddenException();
-        List<Map<String, Object>> rs = jdbc.queryForList("""
-            SELECT p.pdf_path, p.snapshot::text AS snapshot FROM payslips p JOIN payroll_runs r ON r.id = p.run_id JOIN employees e ON e.id = p.employee_id
-            WHERE r.month = ? AND r.status = 'CLOSED' AND e.code = ? LIMIT 1""", month, code);
+        List<Map<String, Object>> rs = repo.closedPayslipFile(month, code);
         if (rs.isEmpty()) return null;
         byte[] bytes;
         try {
@@ -478,7 +458,7 @@ public class PayrollOpsService {
             }
         }
         Map<UUID, Map<String, Object>> emps = new LinkedHashMap<>();
-        for (Line l : lines) emps.put(l.employeeId(), jdbc.queryForMap("SELECT bank_account_enc, bank_ifsc, bank_name, uan_enc, pan_enc FROM employees WHERE id = ?", l.employeeId()));
+        for (Line l : lines) emps.put(l.employeeId(), repo.exportDetails(l.employeeId()));
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("type", type);
         after.put("rows", lines.size());

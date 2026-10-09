@@ -6,11 +6,16 @@ import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Punch;
 import com.jurislpo.jurisone.engine.Format;
-import com.jurislpo.jurisone.engine.Shifts;
 import com.jurislpo.jurisone.entity.DayStatus;
 import com.jurislpo.jurisone.entity.PunchKind;
+import com.jurislpo.jurisone.repository.DashboardRepository;
+import com.jurislpo.jurisone.repository.DashboardRepository.CurrentEmployee;
+import com.jurislpo.jurisone.repository.DashboardRepository.Dept;
+import com.jurislpo.jurisone.repository.DashboardRepository.Holiday;
+import com.jurislpo.jurisone.repository.DashboardRepository.Member;
+import com.jurislpo.jurisone.repository.DashboardRepository.TeamLeave;
+import com.jurislpo.jurisone.repository.DashboardRepository.TeamMember;
 import com.jurislpo.jurisone.security.CurrentUser;
-import java.sql.Date;
 import java.text.Collator;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -25,7 +30,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /** Home, company overview and My team — src/lib/dashboard.ts, src/lib/team-status.ts and the home/overview/team pages. */
@@ -35,13 +39,13 @@ public class DashboardService {
     /** {@code String.prototype.localeCompare} (Node's default locale). */
     static final Comparator<String> LOCALE = Collator.getInstance(Locale.US)::compare;
 
-    private final JdbcTemplate jdbc;
+    private final DashboardRepository repo;
     private final AttendanceService att;
     private final MyAttendanceService my;
     private final PayrollService payroll;
 
-    public DashboardService(JdbcTemplate jdbc, AttendanceService att, MyAttendanceService my, PayrollService payroll) {
-        this.jdbc = jdbc;
+    public DashboardService(DashboardRepository repo, AttendanceService att, MyAttendanceService my, PayrollService payroll) {
+        this.repo = repo;
         this.att = att;
         this.my = my;
         this.payroll = payroll;
@@ -88,8 +92,8 @@ public class DashboardService {
     /** The payroll month Finance is working on (first open month) and the latest closed one. */
     public PayrollState payrollState() {
         String dflt = payroll.payrollMonths(Format.todayIn("Asia/Kolkata")).dflt();
-        List<Map<String, Object>> run = jdbc.queryForList("SELECT status::text AS status, approved_at FROM payroll_runs WHERE month = ?", dflt);
-        List<String> last = jdbc.queryForList("SELECT month FROM payroll_runs WHERE status = 'CLOSED' ORDER BY month DESC LIMIT 1", String.class);
+        List<Map<String, Object>> run = repo.runState(dflt);
+        List<String> last = repo.lastClosedMonth();
         String status = !run.isEmpty() && "CLOSED".equals(run.get(0).get("status")) ? "Closed"
                 : !run.isEmpty() && run.get(0).get("approved_at") != null ? "Approved" : "In review";
         return new PayrollState(dflt, status, last.isEmpty() ? null : last.get(0));
@@ -102,9 +106,9 @@ public class DashboardService {
         String notMine = excludeId == null ? "" : " AND employee_id <> ?";
         Object[] args = excludeId == null ? new Object[0] : new Object[] {excludeId};
         return new Pending(
-                jdbc.queryForObject("SELECT count(*) FROM leave_requests WHERE status = 'PENDING'" + notMine, Long.class, args),
-                jdbc.queryForObject("SELECT count(*) FROM regularization_requests WHERE status = 'PENDING'" + notMine, Long.class, args),
-                jdbc.queryForObject("SELECT count(*) FROM declaration_items WHERE status = 'PENDING'" + notMine, Long.class, args));
+                repo.countPending("leave_requests", notMine, args),
+                repo.countPending("regularization_requests", notMine, args),
+                repo.countPending("declaration_items", notMine, args));
     }
 
     // ───────────────────────── overview ─────────────────────────
@@ -113,21 +117,16 @@ public class DashboardService {
 
     /** Company overview for Admin (REQUIREMENTS §5.12). */
     public Map<String, Object> overviewData() {
-        record Cur(UUID id, String region, boolean portalAccess, UUID departmentId) {}
-        List<Cur> current = jdbc.query("SELECT id, region::text, portal_access, department_id FROM employees WHERE status <> 'EXITED'",
-                (rs, i) -> new Cur((UUID) rs.getObject(1), rs.getString(2), rs.getBoolean(3), (UUID) rs.getObject(4)));
-        record Dept(UUID id, String name) {}
-        List<Dept> depts = jdbc.query("SELECT id, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (rs, i) -> new Dept((UUID) rs.getObject(1), rs.getString(2)));
+        List<CurrentEmployee> current = repo.currentEmployees();
+        List<Dept> depts = repo.activeDepartments();
         Pending pending = pendingCounts(null);
         PayrollState pay = payrollState();
-        Map<UUID, TodayStatus> statuses = todayStatuses(current.stream().map(Cur::id).toList(), Instant.now());
+        Map<UUID, TodayStatus> statuses = todayStatuses(current.stream().map(CurrentEmployee::id).toList(), Instant.now());
         long inNow = statuses.values().stream().filter(s -> s.label().startsWith("In since")).count();
 
         List<PayrollService.PayView> rows = payroll.payrollView(pay.month()).rows();
         LocalDate lastDay = java.time.YearMonth.parse(pay.month()).atEndOfMonth();
-        long noStructure = "Closed".equals(pay.status()) ? 0 : jdbc.queryForObject("""
-            SELECT count(*) FROM employees e WHERE e.region = 'IN' AND e.status <> 'EXITED' AND e.date_of_joining <= ?
-              AND NOT EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?)""", Long.class, Date.valueOf(lastDay), Date.valueOf(lastDay));
+        long noStructure = "Closed".equals(pay.status()) ? 0 : repo.countIndiaWithoutStructure(lastDay);
 
         List<DeptCount> byDept = new ArrayList<>(depts.stream().map(d -> new DeptCount(d.name(), (int) current.stream().filter(e -> d.id().equals(e.departmentId())).count()))
                 .filter(d -> d.n() > 0).toList());
@@ -169,19 +168,11 @@ public class DashboardService {
         boolean approver = u.can("appr.leave") || (u.can("appr.reg") && !finance);
         boolean showMyLeave = !finance && !u.can("appr.reg") && !u.hasReports();
 
-        List<MyLeave> myLeaves = showMyLeave ? jdbc.query("""
-            SELECT l.id::text, t.name, l.from_date, l.to_date, l.days, l.status::text FROM leave_requests l JOIN leave_types t ON t.code = l.leave_type
-            WHERE l.employee_id = ? ORDER BY l.applied_at DESC LIMIT 3""",
-                (rs, i) -> new MyLeave(rs.getString(1), rs.getString(2), rs.getDate(3).toLocalDate().toString(), rs.getDate(4).toLocalDate().toString(),
-                        rs.getBigDecimal(5).doubleValue(), rs.getString(6)), u.id()) : List.of();
-        record Member(UUID id, String name, String title) {}
-        List<Member> team = u.hasReports() ? jdbc.query("SELECT id, full_name, designation FROM employees WHERE reporting_manager_id = ? AND status <> 'EXITED' ORDER BY full_name ASC",
-                (rs, i) -> new Member((UUID) rs.getObject(1), rs.getString(2), rs.getString(3)), u.id()) : List.of();
+        List<MyLeave> myLeaves = showMyLeave ? repo.recentLeaves(u.id()) : List.of();
+        List<Member> team = u.hasReports() ? repo.directReports(u.id()) : List.of();
         Pending pending = approver || finance ? pendingCounts(u.id()) : null;
         PayrollState pay = finance || "IN".equals(u.region()) ? payrollState() : null;
-        List<String> slip = "IN".equals(u.region()) ? jdbc.queryForList("""
-            SELECT r.month FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE p.employee_id = ? AND r.status = 'CLOSED' ORDER BY r.month DESC LIMIT 1""",
-                String.class, u.id()) : List.of();
+        List<String> slip = "IN".equals(u.region()) ? repo.lastClosedPayslipMonth(u.id()) : List.of();
         Map<UUID, TodayStatus> statuses = team.isEmpty() ? Map.of() : todayStatuses(team.stream().map(Member::id).toList(), Instant.now());
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -256,7 +247,7 @@ public class DashboardService {
         List<LogLine> log = sorted.stream().map(p -> new LogLine(AttendanceService.fmtTime(p.at(), tz), p.kind() == PunchKind.IN ? "Checked in" : "Checked out",
                 "WEB".equals(p.source()) ? "Web" : "MOBILE".equals(p.source()) ? "Mobile" : "Regularization")).toList();
 
-        Double leaveAvail = jdbc.queryForObject("SELECT COALESCE(sum(delta), 0)::float8 FROM leave_ledger WHERE employee_id = ? AND leave_type IN ('CL', 'EL')", Double.class, u.id());
+        Double leaveAvail = repo.leaveAvailable(u.id());
 
         out.put("tracked", true);
         out.put("wd", wd.toString());
@@ -285,28 +276,16 @@ public class DashboardService {
     /** Anyone with active direct reports. Read-only — approvals stay with HR (REQUIREMENTS §5.13). */
     public Map<String, Object> team(CurrentUser u, Map<String, String> sp) {
         ListParams ls = ListParams.of(sp, TEAM_SORTS, "name");
-        record M(UUID id, String code, String fullName, String designation, String region, String shift) {}
-        List<M> team = jdbc.query("""
-            SELECT e.id, e.code, e.full_name, e.designation, e.region::text, s.code AS s_code, s.start_local, s.end_local
-            FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.reporting_manager_id = ? AND e.status <> 'EXITED'""",
-                (rs, i) -> new M((UUID) rs.getObject(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5),
-                        Shifts.label(rs.getString(6), rs.getString(7), rs.getString(8))), u.id());
-        Map<UUID, TodayStatus> status = todayStatuses(team.stream().map(M::id).toList(), Instant.now());
+        List<TeamMember> team = repo.teamMembers(u.id());
+        Map<UUID, TodayStatus> status = todayStatuses(team.stream().map(TeamMember::id).toList(), Instant.now());
 
         // Who's away · this week (Mon–Fri) in the manager's zone
         LocalDate t = Format.todayIn(u.timeZone());
         LocalDate mon = t.minusDays((AttendanceEngine.dowOf(t) + 6) % 7);
         List<LocalDate> days = new ArrayList<>();
         for (int i = 0; i < 5; i++) days.add(mon.plusDays(i));
-        record L(UUID employeeId, LocalDate from, LocalDate to, String status) {}
-        List<L> leaves = team.isEmpty() ? List.of() : jdbc.query("""
-            SELECT employee_id, from_date, to_date, status::text FROM leave_requests
-            WHERE employee_id = ANY (?) AND status IN ('APPROVED', 'PENDING') AND from_date <= ? AND to_date >= ?""",
-                (rs, i) -> new L((UUID) rs.getObject(1), rs.getDate(2).toLocalDate(), rs.getDate(3).toLocalDate(), rs.getString(4)),
-                team.stream().map(M::id).toArray(UUID[]::new), Date.valueOf(days.get(4)), Date.valueOf(days.get(0)));
-        record H(LocalDate date, String region) {}
-        List<H> holidays = jdbc.query("SELECT date, region::text FROM holidays WHERE date >= ? AND date <= ?",
-                (rs, i) -> new H(rs.getDate(1).toLocalDate(), rs.getString(2)), Date.valueOf(days.get(0)), Date.valueOf(days.get(4)));
+        List<TeamLeave> leaves = team.isEmpty() ? List.of() : repo.leavesOverlapping(team.stream().map(TeamMember::id).toArray(UUID[]::new), days.get(0), days.get(4));
+        List<Holiday> holidays = repo.holidays(days.get(0), days.get(4));
 
         String q = ls.q().toLowerCase();
         List<TeamRow> all = team.stream().map(m -> new TeamRow(m.id().toString(), m.code(), m.fullName(), m.designation(), m.shift(), status.get(m.id()))).toList();
@@ -317,7 +296,7 @@ public class DashboardService {
 
         List<Away> away = team.stream().map(m -> new Away(m.id().toString(), m.fullName(), days.stream().map(d -> {
             if (holidays.stream().anyMatch(h -> h.date().equals(d) && ("ALL".equals(h.region()) || h.region().equals(m.region())))) return "hol";
-            L l = leaves.stream().filter(x -> x.employeeId().equals(m.id()) && !x.from().isAfter(d) && !x.to().isBefore(d)).findFirst().orElse(null);
+            TeamLeave l = leaves.stream().filter(x -> x.employeeId().equals(m.id()) && !x.from().isAfter(d) && !x.to().isBefore(d)).findFirst().orElse(null);
             return l == null ? "" : "APPROVED".equals(l.status()) ? "lv" : "pend";
         }).toList())).toList();
 

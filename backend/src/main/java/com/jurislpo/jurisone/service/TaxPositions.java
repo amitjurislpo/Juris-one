@@ -2,31 +2,30 @@ package com.jurislpo.jurisone.service;
 
 import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.engine.Format;
+import com.jurislpo.jurisone.repository.TaxPositionsRepository;
 import com.jurislpo.jurisone.service.PayrollService.PayRow;
 import com.jurislpo.jurisone.service.TaxService.DeclMode;
 import com.jurislpo.jurisone.service.TaxService.MonthFigures;
 import com.jurislpo.jurisone.service.TaxService.Projection;
 import java.time.YearMonth;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /** Tax positions for the open payroll month and the Tax page rows — src/lib/tax/position.ts + rows.ts. */
 @Service
 public class TaxPositions {
 
-    private final JdbcTemplate jdbc;
+    private final TaxPositionsRepository repo;
     private final PayrollService payroll;
     private final TaxService tax;
     private final SettingsService settings;
 
-    public TaxPositions(JdbcTemplate jdbc, PayrollService payroll, TaxService tax, SettingsService settings) {
-        this.jdbc = jdbc;
+    public TaxPositions(TaxPositionsRepository repo, PayrollService payroll, TaxService tax, SettingsService settings) {
+        this.repo = repo;
         this.payroll = payroll;
         this.tax = tax;
         this.settings = settings;
@@ -35,7 +34,7 @@ public class TaxPositions {
     /** The payroll month tax is projected for: the first month after the last closed run. */
     public String openPayrollMonth() {
         String today = Format.todayIn("Asia/Kolkata").toString().substring(0, 7);
-        List<String> last = jdbc.queryForList("SELECT month FROM payroll_runs WHERE status = 'CLOSED' ORDER BY month DESC LIMIT 1", String.class);
+        List<String> last = repo.lastClosedMonth();
         if (last.isEmpty()) return YearMonth.parse(today).minusMonths(1).toString();
         String next = YearMonth.parse(last.get(0)).plusMonths(1).toString();
         return next.compareTo(today) <= 0 ? next : today;
@@ -69,9 +68,7 @@ public class TaxPositions {
         String reg = ListParams.pick(sp, "reg", List.of("All", "NEW", "OLD"), "All");
         String fy = settings.tax().fy();
         Positions pos = taxPositions(null);
-        Map<UUID, Integer> pending = new HashMap<>();
-        jdbc.query("SELECT employee_id, count(*) FROM declaration_items WHERE fy = ? AND status = 'PENDING' GROUP BY employee_id",
-                rs -> { pending.put((UUID) rs.getObject(1), rs.getInt(2)); }, fy);
+        Map<UUID, Integer> pending = repo.pendingDeclarationCounts(fy);
         List<Row> all = new ArrayList<>();
         for (PayRow r : pos.rows()) {
             Projection t = r.tax();

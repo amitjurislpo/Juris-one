@@ -4,7 +4,6 @@ import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.engine.AttendanceEngine.DayInput;
 import com.jurislpo.jurisone.engine.AttendanceEngine.DayResult;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Leave;
-import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Policy;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Punch;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Reg;
@@ -12,10 +11,13 @@ import com.jurislpo.jurisone.engine.AttendanceEngine.ShiftDef;
 import com.jurislpo.jurisone.engine.AttendanceLock;
 import com.jurislpo.jurisone.engine.LeaveRules;
 import com.jurislpo.jurisone.entity.DayStatus;
-import com.jurislpo.jurisone.entity.PunchKind;
+import com.jurislpo.jurisone.repository.AttendanceRepository;
+import com.jurislpo.jurisone.repository.AttendanceRepository.Hol;
+import com.jurislpo.jurisone.repository.AttendanceRepository.LeaveRow;
+import com.jurislpo.jurisone.repository.AttendanceRepository.PunchRow;
+import com.jurislpo.jurisone.repository.AttendanceRepository.RegRow;
 import com.jurislpo.jurisone.service.SettingsService.AttendancePolicy;
 import java.math.BigDecimal;
-import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -30,7 +32,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -65,11 +66,11 @@ public class AttendanceService {
     /** The policy with the engine's shape plus lock settings. */
     public record Pol(Policy engine, LocalDate trackingStart, double shiftTargetHours, int lockDayOfNextMonth, String lockTime, AttendancePolicy raw) {}
 
-    private final JdbcTemplate jdbc;
+    private final AttendanceRepository repo;
     private final SettingsService settings;
 
-    public AttendanceService(JdbcTemplate jdbc, SettingsService settings) {
-        this.jdbc = jdbc;
+    public AttendanceService(AttendanceRepository repo, SettingsService settings) {
+        this.repo = repo;
         this.settings = settings;
     }
 
@@ -87,26 +88,13 @@ public class AttendanceService {
         return AttendanceLock.isMonthLocked(ym, p.lockDayOfNextMonth(), p.lockTime(), now);
     }
 
-    static final String TRACKED = "EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = e.role_id AND rp.permission_key = 'self')";
-
     /**
      * Tracked employees matching {@code where} (SQL on alias {@code e}), ordered by name.
      * @param where e.g. {@code "e.id = ?"}; may be empty
      */
     public List<AttEmployee> loadAttEmployees(String where, Object... args) {
         int grace = settings.attendance().graceMinutes(); // the business's grace period applies to every shift
-        String sql = """
-            SELECT e.id, e.code, e.full_name, e.designation, d.name AS dept, e.department_id, e.time_zone, e.region::text AS region,
-                   e.date_of_joining, e.exit_date, s.code AS s_code, s.name AS s_name, s.start_local, s.end_local, s.grace_minutes
-            FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN shifts s ON s.id = e.shift_id
-            WHERE""" + " " + TRACKED + (where == null || where.isBlank() ? "" : " AND (" + where + ")") + " ORDER BY e.full_name ASC";
-        return jdbc.query(sql, (rs, i) -> new AttEmployee(
-                (UUID) rs.getObject("id"), rs.getString("code"), rs.getString("full_name"), rs.getString("designation"),
-                rs.getString("dept") == null ? "—" : rs.getString("dept"), (UUID) rs.getObject("department_id"), rs.getString("time_zone"),
-                rs.getString("region"), rs.getDate("date_of_joining").toLocalDate(), rs.getDate("exit_date") == null ? null : rs.getDate("exit_date").toLocalDate(),
-                rs.getString("s_code") == null ? new Shift(DEFAULT_SHIFT.code(), DEFAULT_SHIFT.name(), DEFAULT_SHIFT.startLocal(), DEFAULT_SHIFT.endLocal(), grace)
-                        : new Shift(rs.getString("s_code"), rs.getString("s_name"), rs.getString("start_local"), rs.getString("end_local"), grace)),
-                args);
+        return repo.findAttEmployees(where, DEFAULT_SHIFT, grace, args);
     }
 
     public LocalDate currentWorkDate(AttEmployee e, Instant now) {
@@ -120,38 +108,11 @@ public class AttendanceService {
         Pol policy = policy();
         UUID[] idArr = emps.stream().map(AttEmployee::id).toArray(UUID[]::new);
 
-        record LeaveRow(UUID id, UUID employeeId, String code, String name, boolean paid, LocalDate from, LocalDate to, LeavePart part, BigDecimal days, BigDecimal lop) {}
-        List<LeaveRow> leaves = jdbc.query("""
-            SELECT l.id, l.employee_id, l.leave_type, t.name, t.paid, l.from_date, l.to_date, l.part::text AS part, l.days, l.lop_days
-            FROM leave_requests l JOIN leave_types t ON t.code = l.leave_type
-            WHERE l.employee_id = ANY (?) AND l.status = 'APPROVED' AND l.from_date <= ? AND l.to_date >= ?""",
-                (rs, i) -> new LeaveRow((UUID) rs.getObject("id"), (UUID) rs.getObject("employee_id"), rs.getString("leave_type"), rs.getString("name"),
-                        rs.getBoolean("paid"), rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(), LeavePart.valueOf(rs.getString("part")),
-                        rs.getBigDecimal("days"), rs.getBigDecimal("lop_days")),
-                idArr, Date.valueOf(to), Date.valueOf(from));
-        record RegRow(UUID employeeId, LocalDate date, String kind) {}
-        List<RegRow> regs = jdbc.query("""
-            SELECT employee_id, work_date, kind::text AS kind FROM regularization_requests
-            WHERE employee_id = ANY (?) AND status = 'APPROVED' AND work_date >= ? AND work_date <= ?""",
-                (rs, i) -> new RegRow((UUID) rs.getObject(1), rs.getDate(2).toLocalDate(), rs.getString(3)), idArr, Date.valueOf(from), Date.valueOf(to));
-        record PunchRow(UUID employeeId, Instant at, PunchKind kind, String source) {}
-        List<PunchRow> punches = jdbc.query("""
-            SELECT employee_id, at, kind::text AS kind, source::text AS source FROM punches
-            WHERE employee_id = ANY (?) AND at >= ? AND at < ? ORDER BY at ASC""",
-                (rs, i) -> new PunchRow((UUID) rs.getObject(1), rs.getTimestamp(2).toInstant(), PunchKind.valueOf(rs.getString(3)), rs.getString(4)),
-                idArr, Timestamp.from(from.atStartOfDay(ZoneId.of("UTC")).toInstant().minusSeconds(36 * 3600)),
-                Timestamp.from(to.atStartOfDay(ZoneId.of("UTC")).toInstant().plusSeconds(60 * 3600)));
-        Map<String, Map<String, Object>> locked = new HashMap<>();
-        jdbc.query("""
-            SELECT employee_id, work_date, status::text AS status, label, first_in, last_out, worked_minutes, late, late_waived, missed_checkout, regularized,
-                   lop_days, leave_days FROM attendance_days WHERE employee_id = ANY (?) AND locked AND work_date >= ? AND work_date <= ?""",
-                rs -> {
-                    Map<String, Object> m = new HashMap<>();
-                    for (String c : List.of("status", "label", "first_in", "last_out", "worked_minutes", "late", "late_waived", "missed_checkout", "regularized", "lop_days", "leave_days")) {
-                        m.put(c, rs.getObject(c));
-                    }
-                    locked.put(rs.getObject("employee_id") + "|" + rs.getDate("work_date").toLocalDate(), m);
-                }, idArr, Date.valueOf(from), Date.valueOf(to));
+        List<LeaveRow> leaves = repo.approvedLeaves(idArr, from, to);
+        List<RegRow> regs = repo.approvedRegularizations(idArr, from, to);
+        List<PunchRow> punches = repo.punches(idArr, from.atStartOfDay(ZoneId.of("UTC")).toInstant().minusSeconds(36 * 3600),
+                to.atStartOfDay(ZoneId.of("UTC")).toInstant().plusSeconds(60 * 3600));
+        Map<String, Map<String, Object>> locked = repo.lockedDays(idArr, from, to);
 
         // Holidays across every leave range too: a leave's paid days are allocated from its first working day.
         LocalDate hFrom = from, hTo = to;
@@ -159,9 +120,7 @@ public class AttendanceService {
             if (l.from().isBefore(hFrom)) hFrom = l.from();
             if (l.to().isAfter(hTo)) hTo = l.to();
         }
-        record Hol(LocalDate date, String name, String region) {}
-        List<Hol> holidays = jdbc.query("SELECT date, name, region::text FROM holidays WHERE date >= ? AND date <= ?",
-                (rs, i) -> new Hol(rs.getDate(1).toLocalDate(), rs.getString(2), rs.getString(3)), Date.valueOf(hFrom), Date.valueOf(hTo));
+        List<Hol> holidays = repo.holidays(hFrom, hTo);
 
         Map<UUID, AttEmployee> byId = new HashMap<>();
         for (AttEmployee e : emps) byId.put(e.id(), e);
@@ -236,8 +195,7 @@ public class AttendanceService {
         Set<String> isLocked = new HashSet<>();
         if (!emps.isEmpty()) {
             UUID[] idArr = emps.stream().map(AttEmployee::id).toArray(UUID[]::new);
-            jdbc.query("SELECT employee_id, work_date FROM attendance_days WHERE employee_id = ANY (?) AND locked AND work_date >= ? AND work_date <= ?",
-                    rs -> { isLocked.add(rs.getObject(1) + "|" + rs.getDate(2).toLocalDate()); }, idArr, Date.valueOf(from), Date.valueOf(to));
+            isLocked = repo.lockedDayKeys(idArr, from, to);
         }
         int written = 0;
         for (Map.Entry<UUID, List<DayView>> en : all.entrySet()) {
@@ -245,24 +203,11 @@ public class AttendanceService {
                 DayResult d = v.r;
                 if (d.future || (d.live && !lock)) continue;
                 if (isLocked.contains(en.getKey() + "|" + d.date)) continue;
-                jdbc.update("""
-                    INSERT INTO attendance_days (employee_id, work_date, status, label, first_in, last_out, worked_minutes, late, late_waived, regularized,
-                      missed_checkout, lop_days, leave_days, locked, updated_at)
-                    VALUES (?, ?, ?::"DayStatus", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
-                    ON CONFLICT (employee_id, work_date) DO UPDATE SET status = EXCLUDED.status, label = EXCLUDED.label, first_in = EXCLUDED.first_in,
-                      last_out = EXCLUDED.last_out, worked_minutes = EXCLUDED.worked_minutes, late = EXCLUDED.late, late_waived = EXCLUDED.late_waived,
-                      regularized = EXCLUDED.regularized, missed_checkout = EXCLUDED.missed_checkout, lop_days = EXCLUDED.lop_days,
-                      leave_days = EXCLUDED.leave_days, locked = EXCLUDED.locked, updated_at = now()""",
-                        en.getKey(), Date.valueOf(d.date), d.status.name(), d.label, ts(d.firstIn), ts(d.lastOut), d.workedMinutes, d.late || d.lateWaived,
-                        d.lateWaived, d.regularized, d.missedCheckout, BigDecimal.valueOf(d.lopDays), BigDecimal.valueOf(d.leaveDays), lock);
+                repo.upsertDay(en.getKey(), d, lock);
                 written++;
             }
         }
         return written;
-    }
-
-    private static Timestamp ts(Instant i) {
-        return i == null ? null : Timestamp.from(i);
     }
 
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("h:mm a", Locale.US);
