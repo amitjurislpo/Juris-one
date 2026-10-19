@@ -1,17 +1,21 @@
 import { Icon } from "@/components/Icon";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { getT } from "@/lib/i18n/server";
 
 /** Login layout from the prototype: form column + animated art panel. */
-export function AuthFrame({ children }: { children: React.ReactNode }) {
+export async function AuthFrame({ children }: { children: React.ReactNode }) {
+  const t = await getT();
   return (
     <div className="login">
       <section className="login-form-wrap">
         <div className="brandmark">
           <span className="monogram">J</span>JurisOne
+          <span style={{ marginLeft: "auto" }}><LanguageSwitcher /></span>
         </div>
         {children}
         <div className="faint" style={{ fontSize: 12.5, display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <span>© {new Date().getFullYear()} JurisOne</span>
-          <span>Privacy · Help desk</span>
+          <span>{t("Privacy")} · {t("Help desk")}</span>
         </div>
       </section>
       <section className="login-art" aria-hidden="true">
@@ -19,9 +23,9 @@ export function AuthFrame({ children }: { children: React.ReactNode }) {
         <div className="gridlines"></div>
         <div className="grain"></div>
         <div className="copy">
-          <span className="pill-glass"><i className="dot live" style={{ color: "#7CFFB2" }}></i>Attendance · Leave · Payroll · Tax</span>
-          <h1 className="display">Your workday,<br />beautifully in sync.</h1>
-          <p>One portal for your whole team — check in, plan time off, download payslips and declare investments.</p>
+          <span className="pill-glass"><i className="dot live" style={{ color: "#7CFFB2" }}></i>{t("Attendance · Leave · Payroll · Tax")}</span>
+          <h1 className="display">{t("Your workday,")}<br />{t("beautifully in sync.")}</h1>
+          <p>{t("One portal for your whole team — check in, plan time off, download payslips and declare investments.")}</p>
         </div>
         <div className="mock">
           <div className="glass a">
@@ -46,7 +50,7 @@ export function AuthFrame({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </div>
-        <div className="foot"><span>Role-based access</span><span>·</span><span>Salary stays with Finance</span><span>·</span><span>Works on any device</span></div>
+        <div className="foot"><span>{t("Role-based access")}</span><span>·</span><span>{t("Salary stays with Finance")}</span><span>·</span><span>{t("Works on any device")}</span></div>
       </section>
     </div>
   );

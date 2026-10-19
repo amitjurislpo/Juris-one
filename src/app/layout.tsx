@@ -1,10 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
-import { Bodoni_Moda, Geist, Geist_Mono } from "next/font/google";
+import { Bodoni_Moda, Geist, Geist_Mono, Noto_Sans_Devanagari } from "next/font/google";
+import { I18nProvider } from "@/lib/i18n/client";
+import { getLang } from "@/lib/i18n/server";
 import "./globals.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", weight: ["400", "500", "600", "700"] });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", weight: ["400", "500", "600"] });
+// Hindi text (Geist has no Devanagari glyphs).
+const devanagari = Noto_Sans_Devanagari({ subsets: ["devanagari"], variable: "--font-devanagari", weight: ["400", "500", "600", "700"] });
 // Fallback for the Balkind display face (commercial licence pending — REQUIREMENTS §9.6).
 const bodoni = Bodoni_Moda({ subsets: ["latin"], variable: "--font-bodoni", weight: ["400", "500"] });
 
@@ -18,11 +22,12 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const theme = (await cookies()).get("jo_theme")?.value === "dark" ? "dark" : "light";
+  const lang = await getLang();
   return (
-    <html lang="en" data-theme={theme} className={`${geist.variable} ${geistMono.variable} ${bodoni.variable}`}>
+    <html lang={lang} data-theme={theme} className={`${geist.variable} ${geistMono.variable} ${bodoni.variable} ${devanagari.variable}`}>
       <body>
         <div className="ambient" aria-hidden="true"><i></i><i></i><i></i></div>
-        {children}
+        <I18nProvider lang={lang}>{children}</I18nProvider>
       </body>
     </html>
   );

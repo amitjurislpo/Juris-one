@@ -588,3 +588,8 @@ main.content:focus{outline:none}
 .phone-cc-list li.on{background:var(--hover)}
 .phone-cc-list li[aria-selected="true"]{font-weight:600}
 .phone-cc-list.up{top:auto;bottom:44px}
+
+/* Language switcher + Hindi (Devanagari) text */
+.lang-switch { height: 34px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--line2, var(--line)); background: var(--surface); color: var(--text, inherit); font: inherit; font-size: 13px; cursor: pointer; }
+:root[lang="hi"] body, :root[lang="hi"] button, :root[lang="hi"] input, :root[lang="hi"] select, :root[lang="hi"] textarea { font-family: var(--font-geist), var(--font-devanagari), system-ui, sans-serif; }
+:root[lang="hi"] .display { font-family: var(--font-devanagari), var(--font-bodoni), serif; letter-spacing: 0; }

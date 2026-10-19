@@ -9,6 +9,7 @@ import { Icon } from "@/components/Icon";
 import { addDays, dowOf, type Status } from "@/lib/attendance/engine";
 import { requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
+import { getT } from "@/lib/i18n/server";
 import { daysBetween, DOW, fmtD, fmtDL, fmtH, MON3, MONTHS } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Home" };
@@ -23,6 +24,7 @@ type Home =
 
 export default async function HomePage() {
   const u = await requirePage("home");
+  const t = await getT();
   const [home, box] = await Promise.all([apiData<Home>("/api/home"), apiData<InboxPage>("/api/notifications?limit=5")]);
   const now = new Date();
 
@@ -76,8 +78,8 @@ export default async function HomePage() {
       <div className="page-h enter">
         <Greeting first={u.name.split(" ")[0]} timeZone={u.timeZone} initialIso={now.toISOString()} />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link className="btn" href="/attendance"><Icon n="clock" s={15} />My attendance</Link>
-          <Link className="btn btn-gold" href="/leave?apply=1"><Icon n="plus" s={15} />Apply leave</Link>
+          <Link className="btn" href="/attendance"><Icon n="clock" s={15} />{t("My attendance")}</Link>
+          <Link className="btn btn-gold" href="/leave?apply=1"><Icon n="plus" s={15} />{t("Apply leave")}</Link>
         </div>
       </div>
 
@@ -85,17 +87,17 @@ export default async function HomePage() {
         <TimeCard on={on} openSince={home.openSince} closedMinutes={closed} shiftText={shiftText} ticks={ticks} targetHours={policy.shiftTargetHours} log={log} />
 
         <div className="span-5" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16 }}>
-          <div className="card kpi lift enter" style={{ ["--i" as string]: 2 }}><span className="spot"></span><span className="ico" style={{ background: "var(--okbg)", color: "var(--ok)" }}><Icon n="check" s={16} /></span><span className="l">Present in {MONTHS[Number(wd.slice(5, 7)) - 1]}</span><span className="v"><span className="num">{present}</span><span className="faint" style={{ fontSize: 16, fontWeight: 500 }}> / {working.length}</span></span><span className="s">working days so far</span></div>
-          <div className="card kpi lift enter" style={{ ["--i" as string]: 3 }}><span className="spot"></span><span className="ico" style={{ background: "var(--accentsoft)", color: "var(--accent)" }}><Icon n="clock" s={16} /></span><span className="l">Average day</span><span className="v"><span className="num">{avgH.toFixed(1)}</span>h</span>{spark && <svg className="spark" width="100%" height="30" viewBox="0 0 120 30" preserveAspectRatio="none" aria-hidden="true"><path d={spark} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path></svg>}</div>
-          <div className="card kpi lift enter" style={{ ["--i" as string]: 4 }}><span className="spot"></span><span className="ico" style={{ background: "var(--infobg)", color: "var(--info)" }}><Icon n="cal" s={16} /></span><span className="l">Leave available</span><span className="v num">{leaveAvail.toFixed(leaveAvail % 1 ? 2 : 0)}</span><span className="s">casual + earned days</span></div>
-          <div className="card kpi lift enter" style={{ ["--i" as string]: 5 }}><span className="spot"></span><span className="ico" style={{ background: "var(--warnbg)", color: "var(--warn)" }}><Icon n="sparkle" s={16} /></span><span className="l">Next holiday</span><span className="v">{nextIn === null ? "—" : <><span className="num">{nextIn}</span><span className="faint" style={{ fontSize: 16, fontWeight: 500 }}> days</span></>}</span><span className="s">{hols[0]?.name ?? "No upcoming holidays"}</span></div>
+          <div className="card kpi lift enter" style={{ ["--i" as string]: 2 }}><span className="spot"></span><span className="ico" style={{ background: "var(--okbg)", color: "var(--ok)" }}><Icon n="check" s={16} /></span><span className="l">{t("Present in")} {MONTHS[Number(wd.slice(5, 7)) - 1]}</span><span className="v"><span className="num">{present}</span><span className="faint" style={{ fontSize: 16, fontWeight: 500 }}> / {working.length}</span></span><span className="s">{t("working days so far")}</span></div>
+          <div className="card kpi lift enter" style={{ ["--i" as string]: 3 }}><span className="spot"></span><span className="ico" style={{ background: "var(--accentsoft)", color: "var(--accent)" }}><Icon n="clock" s={16} /></span><span className="l">{t("Average day")}</span><span className="v"><span className="num">{avgH.toFixed(1)}</span>h</span>{spark && <svg className="spark" width="100%" height="30" viewBox="0 0 120 30" preserveAspectRatio="none" aria-hidden="true"><path d={spark} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"></path></svg>}</div>
+          <div className="card kpi lift enter" style={{ ["--i" as string]: 4 }}><span className="spot"></span><span className="ico" style={{ background: "var(--infobg)", color: "var(--info)" }}><Icon n="cal" s={16} /></span><span className="l">{t("Leave available")}</span><span className="v num">{leaveAvail.toFixed(leaveAvail % 1 ? 2 : 0)}</span><span className="s">{t("casual + earned days")}</span></div>
+          <div className="card kpi lift enter" style={{ ["--i" as string]: 5 }}><span className="spot"></span><span className="ico" style={{ background: "var(--warnbg)", color: "var(--warn)" }}><Icon n="sparkle" s={16} /></span><span className="l">{t("Next holiday")}</span><span className="v">{nextIn === null ? "—" : <><span className="num">{nextIn}</span><span className="faint" style={{ fontSize: 16, fontWeight: 500 }}> {t("days")}</span></>}</span><span className="s">{hols[0]?.name ?? t("No upcoming holidays")}</span></div>
         </div>
 
         <section className="card pad span-8 enter" style={{ ["--i" as string]: 6 }}>
           <span className="spot"></span>
           <div className="card-h">
-            <div><h3>Attendance activity</h3><span className="faint" style={{ fontSize: 12.5 }}>Last 16 weeks · {heatPresent} days present</span></div>
-            <div className="legend">Less<i style={{ background: "var(--heat0)" }}></i><i style={{ background: "var(--heat1)" }}></i><i style={{ background: "var(--heat2)" }}></i><i style={{ background: "var(--heat3)" }}></i><i style={{ background: "var(--heat4)" }}></i>More</div>
+            <div><h3>{t("Attendance activity")}</h3><span className="faint" style={{ fontSize: 12.5 }}>{t("Last 16 weeks")} · {heatPresent} {t("days present")}</span></div>
+            <div className="legend">{t("Less")}<i style={{ background: "var(--heat0)" }}></i><i style={{ background: "var(--heat1)" }}></i><i style={{ background: "var(--heat2)" }}></i><i style={{ background: "var(--heat3)" }}></i><i style={{ background: "var(--heat4)" }}></i>{t("More")}</div>
           </div>
           <div className="heat-wrap">
             <div className="heat-days"><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span><span></span></div>
@@ -104,10 +106,10 @@ export default async function HomePage() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 14 }} className="legend">
-            <span><i style={{ display: "inline-block", verticalAlign: "middle", boxShadow: "inset 0 0 0 1.5px var(--heat2)" }}></i> Holiday</span>
-            <span><i style={{ display: "inline-block", verticalAlign: "middle", background: "var(--badbg)", boxShadow: "inset 0 0 0 1.5px var(--bad)" }}></i> Loss of pay</span>
-            <span><i style={{ display: "inline-block", verticalAlign: "middle", background: "var(--infobg)", boxShadow: "inset 0 0 0 1.5px var(--info)" }}></i> Leave</span>
-            <span><i style={{ display: "inline-block", verticalAlign: "middle", boxShadow: "inset 0 0 0 1px var(--line3)" }}></i> Before joining</span>
+            <span><i style={{ display: "inline-block", verticalAlign: "middle", boxShadow: "inset 0 0 0 1.5px var(--heat2)" }}></i> {t("Holiday")}</span>
+            <span><i style={{ display: "inline-block", verticalAlign: "middle", background: "var(--badbg)", boxShadow: "inset 0 0 0 1.5px var(--bad)" }}></i> {t("Loss of pay")}</span>
+            <span><i style={{ display: "inline-block", verticalAlign: "middle", background: "var(--infobg)", boxShadow: "inset 0 0 0 1.5px var(--info)" }}></i> {t("Leave")}</span>
+            <span><i style={{ display: "inline-block", verticalAlign: "middle", boxShadow: "inset 0 0 0 1px var(--line3)" }}></i> {t("Before joining")}</span>
           </div>
         </section>
 
