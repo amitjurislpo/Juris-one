@@ -27,7 +27,7 @@ public class AuditViewService {
     static {
         GROUPS.put("auth", List.of("auth."));
         GROUPS.put("people", List.of("employee."));
-        GROUPS.put("roles", List.of("role.", "policy."));
+        GROUPS.put("roles", List.of("role.", "policy.", "asset.", "announcement."));
         GROUPS.put("time", List.of("leave.", "regularization.", "attendance."));
         GROUPS.put("org", List.of("department.", "holiday."));
         GROUPS.put("payroll", List.of("salary.", "payroll."));

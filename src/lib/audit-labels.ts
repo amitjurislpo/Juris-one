@@ -2,7 +2,7 @@
 export const AUDIT_GROUPS = {
   auth: { label: "Sign-in & accounts", prefixes: ["auth."] },
   people: { label: "Employees & access", prefixes: ["employee."] },
-  roles: { label: "Roles & policies", prefixes: ["role.", "policy."] },
+  roles: { label: "Roles, policies & company", prefixes: ["role.", "policy.", "asset.", "announcement."] },
   time: { label: "Leave & attendance", prefixes: ["leave.", "regularization.", "attendance."] },
   org: { label: "Departments & holidays", prefixes: ["department.", "holiday."] },
   payroll: { label: "Salary & payroll", prefixes: ["salary.", "payroll."] },
