@@ -32,7 +32,8 @@ public class AuditViewService {
         GROUPS.put("org", List.of("department.", "holiday."));
         GROUPS.put("exit", List.of("exit."));
         GROUPS.put("payroll", List.of("salary.", "payroll.", "fnf."));
-        GROUPS.put("tax", List.of("tax.", "declaration.", "proof."));
+        GROUPS.put("tax", List.of("tax.", "declaration.", "proof.", "form16."));
+        GROUPS.put("letters", List.of("letter.", "letter_template."));
     }
 
     /** Salary / tax payloads are only shown to viewers who hold a salary permission (HR never sees pay). */

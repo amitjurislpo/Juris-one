@@ -32,7 +32,7 @@ public class BusinessSetupService {
                     java.util.stream.Stream.of(Permissions.BUSINESS_MANAGE)).toList(),
                     List.of("hrm", "hre", "fm", "fe", "employee")),
             new RoleTemplate("hrm", "HR Manager", false, List.of("self", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle",
-                    "dept.manage", "holidays.manage", "policies.manage", "assets.manage", "announcements.manage", "exit.manage"), List.of("hre", "employee")),
+                    "dept.manage", "holidays.manage", "policies.manage", "assets.manage", "announcements.manage", "exit.manage", "letters.manage"), List.of("hre", "employee")),
             new RoleTemplate("hre", "HR Executive", false, List.of("self", "dir", "att.all", "appr.leave", "appr.reg", "people.view"), List.of()),
             new RoleTemplate("fm", "Finance Manager", false, List.of("self", "dir", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage",
                     "pay.view", "pay.close", "struct.manage", "tax.view", "proofs.verify"), List.of("fe")),
@@ -109,6 +109,7 @@ public class BusinessSetupService {
         for (String[] d : new String[][] {{"Human Resources", "People operations, hiring and policies"}, {"Finance", "Payroll, tax and accounts"}}) {
             repo.insertDepartmentIfMissing(UUID.randomUUID(), d[0], d[1], createdBy);
         }
+        repo.seedLetterTemplates(TenantContext.current());
         return ids;
     }
 

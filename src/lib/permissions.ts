@@ -10,6 +10,7 @@ export const PERMISSIONS = [
   ["access.toggle", "Enable / disable portal access"],
   ["dept.manage", "Create departments"],
   ["holidays.manage", "Manage holiday calendar"],
+  ["letters.manage", "Issue HR letters & edit letter templates"],
   ["pay.view", "View & edit payroll"],
   ["pay.close", "Close payroll & publish payslips"],
   ["struct.manage", "Salary structures"],
@@ -29,7 +30,7 @@ export const PERMISSION_LABEL = Object.fromEntries(PERMISSIONS) as Record<Permis
 
 export const PERMISSION_GROUPS: [string, Permission[]][] = [
   ["Self-service", ["self", "dir"]],
-  ["People operations", ["att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "holidays.manage", "exit.manage"]],
+  ["People operations", ["att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "holidays.manage", "exit.manage", "letters.manage"]],
   ["Finance", ["pay.view", "pay.close", "struct.manage", "tax.view", "proofs.verify"]],
   ["Administration", ["policies.manage", "assets.manage", "announcements.manage", "roles.manage"]],
 ];
