@@ -30,9 +30,15 @@ spring:
       write-dates-as-timestamps: false
 
 jurisone:
+  password-login:
+    # Sign-in is by emailed code only. Password sign-in stays off (the endpoint answers 400) unless this is true.
+    enabled: ${PASSWORD_LOGIN_ENABLED:false}
   otp:
     # Sign-in code. Fixed to 000000 until the identity provider is connected; set OTP_FIXED_CODE= (empty) for random codes.
     fixed-code: ${OTP_FIXED_CODE:000000}
+    # code requests per 15 minutes (the end-to-end tests raise them)
+    requests-per-ip: ${OTP_REQUESTS_PER_IP:10}
+    requests-per-email: ${OTP_REQUESTS_PER_EMAIL:5}
   frontend-origin: ${FRONTEND_ORIGIN:${APP_URL:http://localhost:3005}}
   # Absence marking, monthly lock, status changes, leave accrual/expiry/year end: every 10 minutes in this process.
   # "false" = run them from cron instead.

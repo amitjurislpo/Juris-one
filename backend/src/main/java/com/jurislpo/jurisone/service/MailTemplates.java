@@ -103,4 +103,14 @@ public final class MailTemplates {
                         + "<p style=\"font-size:28px;letter-spacing:6px;font-weight:600\">" + esc(code) + "</p>"
                         + "<p style=\"color:#5D5F6D;font-size:13px\">If you didn't try to sign in, ignore this email.</p>"));
     }
+
+    /** Sent instead of a code when the account can't sign in, so the person learns why no code arrives. */
+    public static Content noCode(String name, String reason) {
+        return new Content(
+                "Your JurisOne sign-in request",
+                "Hi " + name + ",\n\nSomeone asked for a sign-in code for this email, but no code was sent. " + reason
+                        + "\n\nIf this wasn't you, you can ignore this email.",
+                shell("No sign-in code sent", "<p>Hi " + esc(name) + ", a sign-in code was requested for this email, but none was sent.</p><p>" + esc(reason) + "</p>"
+                        + "<p style=\"color:#5D5F6D;font-size:13px\">If this wasn't you, ignore this email.</p>"));
+    }
 }

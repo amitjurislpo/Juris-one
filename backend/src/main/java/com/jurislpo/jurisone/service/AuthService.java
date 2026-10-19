@@ -33,6 +33,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class AuthService {
 
     public static final String BAD_LOGIN = "That email and password don't match.";
+    public static final String MSG_OTP_ONLY = "Password sign-in is turned off. Sign in with the code sent to your email.";
     public static final String BAD_OTP = "That code is wrong or has expired. Request a new one.";
     public static final String MSG_DISABLED = "Your portal access is disabled. Please contact HR.";
     public static final String MSG_EXITED = "This account belongs to a past employee and can no longer sign in.";
@@ -47,10 +48,20 @@ public class AuthService {
     private final SettingsService settings;
     private final AuditService audit;
     private final OtpService otps;
+    private final boolean passwordLoginEnabled;
+    private final int otpPerIp, otpPerEmail;
+    private final MailService mail;
 
     public AuthService(AuthRepository repo, TransactionTemplate tx, Passwords passwords, RateLimiter limiter, SessionService sessions,
-                       AuthTokenService tokens, SettingsService settings, AuditService audit, OtpService otps) {
+                       AuthTokenService tokens, SettingsService settings, AuditService audit, OtpService otps,
+                       @org.springframework.beans.factory.annotation.Value("${jurisone.password-login.enabled:false}") boolean passwordLoginEnabled,
+                       @org.springframework.beans.factory.annotation.Value("${jurisone.otp.requests-per-ip:10}") int otpPerIp,
+                       @org.springframework.beans.factory.annotation.Value("${jurisone.otp.requests-per-email:5}") int otpPerEmail, MailService mail) {
+        this.otpPerIp = otpPerIp;
+        this.otpPerEmail = otpPerEmail;
+        this.mail = mail;
         this.otps = otps;
+        this.passwordLoginEnabled = passwordLoginEnabled;
         this.repo = repo;
         this.tx = tx;
         this.passwords = passwords;
@@ -101,6 +112,7 @@ public class AuthService {
     }
 
     public LoginResult login(String identifierRaw, String password, boolean remember, String next, RequestMeta meta) {
+        if (!passwordLoginEnabled) throw new UserException(HttpStatus.BAD_REQUEST, MSG_OTP_ONLY);
         String identifier = identifierRaw == null ? "" : identifierRaw.trim();
         if (identifier.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter your email.");
         if (identifier.length() > 200) throw new UserException(HttpStatus.BAD_REQUEST, "Some details are invalid.");
@@ -208,13 +220,18 @@ public class AuthService {
         if (email.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter your email.");
         if (email.length() > 200 || !email.contains("@")) throw new UserException(HttpStatus.BAD_REQUEST, "Enter a valid email.");
         String ip = meta.ip() != null ? meta.ip() : "unknown";
-        RateLimiter.Result byIp = limiter.rateLimit("otp-ip:" + ip, 10, 15 * 60_000L);
-        RateLimiter.Result byMail = limiter.rateLimit("otp-mail:" + email, 5, 15 * 60_000L);
+        RateLimiter.Result byIp = limiter.rateLimit("otp-ip:" + ip, otpPerIp, 15 * 60_000L);
+        RateLimiter.Result byMail = limiter.rateLimit("otp-mail:" + email, otpPerEmail, 15 * 60_000L);
         if (byIp.limited() || byMail.limited()) {
             throw new UserException(HttpStatus.TOO_MANY_REQUESTS, "Too many code requests. Try again in " + minutes(Math.max(byIp.retryInMs(), byMail.retryInMs())) + " minute(s).");
         }
         Employee emp = findByIdentifier(email);
         if (canReceiveOtp(emp)) otps.issue(email, emp.getFullName(), meta.ip());
+        else if (emp != null) { // the person is told by email why no code comes (the page still answers the same for everyone)
+            history(emp, email, false, emp.getStatus() == EmployeeStatus.EXITED ? "exited" : !Boolean.TRUE.equals(emp.getPortalAccess()) ? "access_disabled" : "business_suspended", meta);
+            mail.send(email, MailTemplates.noCode(emp.getFullName(), emp.getStatus() == EmployeeStatus.EXITED ? MSG_EXITED
+                    : !Boolean.TRUE.equals(emp.getPortalAccess()) ? MSG_DISABLED : MSG_SUSPENDED));
+        }
         return "If that account exists and is active, a 6-digit code is on its way to the email.";
     }
 

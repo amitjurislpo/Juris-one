@@ -38,16 +38,22 @@ export async function emailOf(codeOrEmail: string) {
   return r.email;
 }
 
-export async function login(page: Page, id: string, pw?: string) {
+/** In the e2e environment every emailed sign-in code is this fixed value (OTP_FIXED_CODE, see scripts/e2e-env.mjs). */
+export const OTP = "000000";
+
+/** Asks for a sign-in code for this employee and types it. Filling the first box with all six digits submits the form. */
+export async function loginWithCode(page: Page, id: string, code: string) {
   const email = await emailOf(id);
-  const password = pw ?? (id.toUpperCase() === OWNER ? OWNER_PW : DEMO_PW);
   // wait for hydration — a click can otherwise beat React to the form
   await page.goto("/login", { waitUntil: "networkidle" });
-  // the form starts in email-code mode: switch to the password form first
-  await page.getByRole("button", { name: "Use password instead" }).click();
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Send code" }).click();
+  await page.getByLabel("Digit 1 of 6").fill(code);
+}
+
+/** Signs in with the emailed code (sign-in is by code only). */
+export async function login(page: Page, id: string) {
+  await loginWithCode(page, id, OTP);
 }
 
 export async function expectLanded(page: Page, path: string) {

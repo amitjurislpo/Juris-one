@@ -70,7 +70,7 @@ Four environments, each with **its own file, ports, database, secrets, email and
 | Env | File | Web / API / DB ports | Database | Sign-in code | Demo data |
 |---|---|---|---|---|---|
 | `dev` | `.env.dev` | 3005 / 8080 / 5436 | `jurisone` | fixed `000000` | optional |
-| `sqe` | `.env.sqe` | 3015 / 8090 / 5446 | `jurisone_sqe` | fixed `000000` | yes |
+| `sqe` | `.env.sqe` | 3015 / 8090 / 5446 | `jurisone_sqe` | random, emailed | yes |
 | `uat` | `.env.uat` | 3025 / 8100 / 5456 | `jurisone_uat` | random, emailed | no |
 | `prd` | `.env.prd` | 3000 / 8200 / 5466 | `jurisone_prd` | random, emailed | no |
 
@@ -80,7 +80,8 @@ The real files are git-ignored; commit only the `.env.<env>.example` templates. 
 - Other environments: `npm run db:up:sqe`, `npm run backend:sqe`, `npm run dev:sqe` / `start:sqe` (same for `uat`, `prd`; `backend:up:<env>` runs the API in Docker). Anything else: `node scripts/with-env.mjs <env> <command>`, e.g. `node scripts/with-env.mjs uat npm run db:seed`.
 - Each environment gets its own Docker containers and data volume (`COMPOSE_PROJECT_NAME`), so they can run side by side.
 - The backend also loads `.env.<APP_ENV>` itself and activates the Spring profile `application-<env>.yml` (log levels, error detail).
-- **Guard:** `uat` and `prd` refuse to start with a fixed sign-in code, demo data, no SMTP, an `http://` `APP_URL` or a secret still written as a `<placeholder>`.
+- **Sign-in is by emailed code only** (no password option). Only `dev` may use the fixed code `000000` (`OTP_FIXED_CODE`); `sqe`, `uat` and `prd` send real codes, so they need `SMTP_*`. The identity provider (IAM JCG) replaces this later. The password endpoint is off unless `PASSWORD_LOGIN_ENABLED=true`.
+- **Guard:** `sqe`, `uat` and `prd` refuse to start with a fixed sign-in code or without SMTP; `uat` and `prd` also with demo data, an `http://` `APP_URL` or a secret still written as a `<placeholder>`.
 - The old single `.env` is still read if `.env.<env>` is missing, but `.env.dev` is now the development file.
 
 ## Deploying

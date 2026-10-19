@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-/** uat and prd must not start with development shortcuts or unfilled placeholders; dev and sqe are free. */
+/** Only dev may use the fixed sign-in code; sqe/uat/prd need email; uat and prd are also checked for demo data, http and placeholders. */
 class EnvironmentGuardTest {
 
     static Map<String, String> good(String env) {
@@ -35,15 +35,26 @@ class EnvironmentGuardTest {
     }
 
     @Test
-    void devAndSqeAreNotChecked() {
-        for (String env : List.of("dev", "sqe")) {
-            Map<String, String> m = new HashMap<>();
-            m.put("APP_ENV", env);
-            m.put("jurisone.otp.fixed-code", "000000");
-            m.put("SEED_DEMO", "true");
-            m.put("APP_URL", "http://localhost:3005");
-            assertThat(problems(m)).as(env).isEmpty();
-        }
+    void devMayUseTheFixedCodeAndDemoData() {
+        Map<String, String> m = new HashMap<>();
+        m.put("APP_ENV", "dev");
+        m.put("jurisone.otp.fixed-code", "000000");
+        m.put("SEED_DEMO", "true");
+        m.put("APP_URL", "http://localhost:3005");
+        assertThat(problems(m)).isEmpty();
+    }
+
+    @Test
+    void sqeNeedsRealCodesByEmailButMayKeepDemoDataAndHttp() {
+        Map<String, String> m = new HashMap<>();
+        m.put("APP_ENV", "sqe");
+        m.put("SEED_DEMO", "true");
+        m.put("APP_URL", "http://sqe.internal:3015");
+        m.put("SMTP_HOST", "smtp.example.com");
+        assertThat(problems(m)).isEmpty();
+        m.put("jurisone.otp.fixed-code", "000000");
+        m.put("SMTP_HOST", "");
+        assertThat(problems(m)).hasSize(2).anyMatch(p -> p.contains("OTP_FIXED_CODE")).anyMatch(p -> p.contains("SMTP_HOST"));
     }
 
     @Test

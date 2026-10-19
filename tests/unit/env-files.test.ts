@@ -45,13 +45,19 @@ describe("environment files", () => {
     expect(all.sqe.APP_URL).toContain(`:${all.sqe.WEB_PORT}`);
   });
 
-  it("allows the fixed sign-in code and demo data only in dev and sqe", () => {
-    for (const e of ["dev", "sqe"]) expect(all[e].OTP_FIXED_CODE, e).toBe("000000");
-    for (const e of ["uat", "prd"]) {
+  it("allows the fixed sign-in code only in dev; the others send real codes by email", () => {
+    expect(all.dev.OTP_FIXED_CODE).toBe("000000");
+    for (const e of ["sqe", "uat", "prd"]) {
       expect(all[e].OTP_FIXED_CODE, e).toBe("");
+      expect(all[e].SMTP_HOST, e).not.toBe("");
+    }
+  });
+
+  it("allows demo data only in dev and sqe, and requires https in uat and prd", () => {
+    expect(all.sqe.SEED_DEMO).toBe("true");
+    for (const e of ["uat", "prd"]) {
       expect(all[e].SEED_DEMO, e).toBe("false");
       expect(all[e].APP_URL, e).toMatch(/^https:\/\//);
-      expect(all[e].SMTP_HOST, e).not.toBe("");
     }
   });
 

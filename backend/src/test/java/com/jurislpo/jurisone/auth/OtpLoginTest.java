@@ -115,6 +115,20 @@ class OtpLoginTest extends IntegrationTest {
         jdbc.update("UPDATE employees SET portal_access = false WHERE email = ?", email);
         mvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM login_otps WHERE email = ?", Integer.class, email)).isZero();
+        // the person is told why no code comes
+        assertThat(jdbc.queryForObject("SELECT text FROM email_outbox WHERE \"to\" = ? AND subject = 'Your JurisOne sign-in request'", String.class, email))
+                .contains(AuthService.MSG_DISABLED);
+        mvc.perform(api("/api/auth/session", json(email, "000000"))).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void anExitedAccountIsToldItCanNoLongerSignIn() throws Exception {
+        String email = newEmployee();
+        jdbc.update("UPDATE employees SET status = 'EXITED' WHERE email = ?", email);
+        mvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM login_otps WHERE email = ?", Integer.class, email)).isZero();
+        assertThat(jdbc.queryForObject("SELECT text FROM email_outbox WHERE \"to\" = ? AND subject = 'Your JurisOne sign-in request'", String.class, email))
+                .contains(AuthService.MSG_EXITED);
     }
 
     @Test

@@ -26,7 +26,7 @@ async function lastLink(to: string, kind: "onboard" | "invite") {
 }
 
 async function asOwner(page: Page) {
-  await login(page, OWNER_EMAIL, OWNER_PW);
+  await login(page, OWNER_EMAIL);
   await expectLanded(page, "/overview");
 }
 
@@ -34,7 +34,7 @@ test.describe.serial("a business on JurisOne, end to end", () => {
   let businessPath = "";
 
   test("the super admin creates a business with a plan and its sub admin, and grants Juris Track", async ({ page }) => {
-    await login(page, ADMIN_EMAIL, ADMIN_PW);
+    await login(page, ADMIN_EMAIL);
     await expectLanded(page, "/platform");
     await page.getByRole("button", { name: "New business" }).click();
     const d = page.getByRole("dialog", { name: "New business" });
@@ -130,7 +130,7 @@ test.describe.serial("a business on JurisOne, end to end", () => {
     await hire.getByLabel("Confirm password").fill(HIRE_PW);
     await hire.getByRole("button", { name: "Activate account" }).click();
     await expect(hire).toHaveURL(/\/login/);
-    await login(hire, WORK_EMAIL, HIRE_PW);
+    await login(hire, WORK_EMAIL);
     await expect(hire).toHaveURL(/\/acknowledge$/, { timeout: 15_000 });
     const popup = hire.getByRole("dialog", { name: "Code of conduct" });
     await expect(popup.getByText("Be on time.")).toBeVisible();
@@ -155,7 +155,7 @@ test.describe.serial("a business on JurisOne, end to end", () => {
   });
 
   test("a cancelled subscription pauses the business; sign-in and the export still work", async ({ page, browser }) => {
-    await login(page, ADMIN_EMAIL, ADMIN_PW);
+    await login(page, ADMIN_EMAIL);
     await expectLanded(page, "/platform");
     await page.goto(businessPath);
     await page.getByRole("button", { name: /^Cancel Standard/ }).click();
@@ -164,7 +164,7 @@ test.describe.serial("a business on JurisOne, end to end", () => {
 
     const ctx = await browser.newContext();
     const owner = await ctx.newPage();
-    await login(owner, OWNER_EMAIL, OWNER_PW);
+    await login(owner, OWNER_EMAIL);
     await expect(owner).toHaveURL(/\/paused$/, { timeout: 15_000 });
     await expect(owner.getByRole("heading", { name: "JurisOne is paused" })).toBeVisible();
     const download = owner.waitForEvent("download");

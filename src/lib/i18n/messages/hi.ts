@@ -1793,4 +1793,13 @@ export const hi: Record<string, string> = {
   "Your JurisOne subscription ends in 1 day": "आपकी ज्यूरिसवन सदस्यता 1 दिन में समाप्त हो रही है",
   "Your JurisOne subscription ends in {n} days": "आपकी ज्यूरिसवन सदस्यता {n} दिन में समाप्त हो रही है",
   "After that, everyone can still sign in but JurisOne is paused. Contact the JurisOne team to renew.": "उसके बाद भी सभी साइन इन कर सकेंगे, लेकिन ज्यूरिसवन रुका रहेगा। नवीनीकरण के लिए ज्यूरिसवन टीम से संपर्क करें।",
+
+  // email-code sign-in
+  "Check your email": "अपना ईमेल देखें",
+  "Wrong email?": "ग़लत ईमेल?",
+  "Change email": "ईमेल बदलें",
+  "Digit {n} of 6": "6 में से अंक {n}",
+  "Development: the code is": "डेवलपमेंट: कोड है",
+  "Didn't get it?": "कोड नहीं मिला?",
+  "Resend code in {s}s": "{s} सेकंड में कोड दोबारा भेजें",
 };

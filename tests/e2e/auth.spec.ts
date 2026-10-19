@@ -1,18 +1,15 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { hashPassword } from "../../src/lib/password";
-import { ADMIN_EMAIL, ADMIN_PW, DEMO_PW, emailOf, expectLanded, login, OWNER, sql } from "./helpers";
+import { ADMIN_EMAIL, emailOf, expectLanded, login, loginWithCode, OWNER, sql } from "./helpers";
 
 test.describe("authentication", () => {
   test.afterAll(async () => {
     await sql(`UPDATE users SET failed_attempts = 0, locked_until = NULL`);
     await sql(`UPDATE employees SET portal_access = true WHERE code = 'JC-072'`);
-    // the reset test changes JC-090's password — put the demo one back
-    await sql(`UPDATE users SET password_hash = $1 FROM employees e WHERE e.id = users.employee_id AND e.code = 'JC-090'`, [await hashPassword(DEMO_PW)]);
   });
 
   test("super admin lands on the platform console and runs only the platform company's own staff", async ({ page }) => {
-    await login(page, ADMIN_EMAIL, ADMIN_PW);
+    await login(page, ADMIN_EMAIL);
     await expectLanded(page, "/platform");
     const menu = page.getByRole("complementary", { name: "Main menu" });
     await expect(menu.getByRole("link", { name: "Businesses" })).toBeVisible();
@@ -39,34 +36,44 @@ test.describe("authentication", () => {
     await expect(page.getByRole("link", { name: "Payroll" })).toHaveCount(0);
   });
 
-  test("wrong password is rejected without revealing which part", async ({ page }) => {
-    await login(page, "JC-049", "not-the-password");
-    await expect(page.locator(".err")).toHaveText("That email and password don't match.");
-    await expect(page.getByLabel("Email")).toHaveValue("naman.tyagi@jurislpo.com");
+  test("a wrong code is rejected without revealing anything", async ({ page }) => {
+    await loginWithCode(page, "JC-049", "111111");
+    await expect(page.locator(".err")).toHaveText("That code is wrong or has expired. Request a new one.");
+    await expect(page).toHaveURL(/\/login/);
   });
 
-  test("disabled access is blocked", async ({ page }) => {
+  test("disabled access gets no code, and is told why by email", async ({ page }) => {
     await login(page, "JC-081");
-    await expect(page.locator(".err")).toHaveText("Your portal access is disabled. Please contact HR.");
+    await expect(page.locator(".err")).toBeVisible(); // no code exists for this account
+    const mails = await sql<{ text: string }>(`SELECT text FROM email_outbox WHERE "to" = $1 AND subject = 'Your JurisOne sign-in request'`, [await emailOf("JC-081")]);
+    expect(mails.length).toBeGreaterThan(0);
+    expect(mails[0].text).toContain("Your portal access is disabled. Please contact HR.");
   });
 
-  test("past employee is blocked", async ({ page }) => {
+  test("past employee gets no code, and is told why by email", async ({ page }) => {
     await login(page, "JC-030");
-    await expect(page.locator(".err")).toHaveText("This account belongs to a past employee and can no longer sign in.");
+    await expect(page.locator(".err")).toBeVisible();
+    const mails = await sql<{ text: string }>(`SELECT text FROM email_outbox WHERE "to" = $1 AND subject = 'Your JurisOne sign-in request'`, [await emailOf("JC-030")]);
+    expect(mails[0].text).toContain("past employee");
   });
 
-  test("account locks after 5 failures", async ({ page }) => {
-    for (let i = 0; i < 5; i++) {
-      await login(page, "JC-058", "bad-password-" + i);
-      await expect(page.locator(".err")).toBeVisible();
+  test("five wrong codes burn the code; a fresh code works", async ({ page }) => {
+    const badTries = async () => Number((await sql<{ n: string }>(
+      `SELECT count(*)::text AS n FROM login_history h JOIN employees e ON e.id = h.employee_id WHERE e.code = 'JC-058' AND NOT h.success AND h.reason = 'bad_otp'`,
+    ))[0].n);
+    await loginWithCode(page, "JC-058", "111111");
+    await expect.poll(badTries).toBe(1);
+    for (let i = 2; i <= 5; i++) {
+      await page.getByLabel("Digit 1 of 6").fill("222222");
+      await expect.poll(badTries).toBe(i); // one refused try at a time
     }
-    await expect(page.locator(".err")).toContainText("locked");
-    await login(page, "JC-058", DEMO_PW); // right password, still locked
-    await expect(page.locator(".err")).toContainText("locked");
-    const rows = await sql<{ n: string }>(
-      `SELECT count(*)::text AS n FROM login_history h JOIN employees e ON e.id = h.employee_id WHERE e.code = 'JC-058' AND NOT h.success`,
-    );
-    expect(Number(rows[0].n)).toBeGreaterThanOrEqual(6);
+    await page.getByLabel("Digit 1 of 6").fill("000000"); // the right code, but the code is burnt after five wrong tries
+    await expect.poll(badTries).toBe(6);
+    await expect(page.locator(".err")).toContainText("wrong or has expired");
+    await page.getByRole("button", { name: "Back" }).first().click();
+    await page.getByRole("button", { name: "Send code" }).click();
+    await page.getByLabel("Digit 1 of 6").fill("000000");
+    await expectLanded(page, "/home");
   });
 
   test("disabling access ends an active session immediately", async ({ page }) => {
@@ -104,8 +111,6 @@ test.describe("authentication", () => {
     await page.getByLabel("Confirm password").fill("Fresh@Pass2026");
     await page.getByRole("button", { name: "Update password" }).click();
     await expect(page).toHaveURL(/\/login\?reset=1/);
-    await login(page, "JC-090", "Fresh@Pass2026");
-    await expectLanded(page, "/home");
     await page.goto(`/reset/${token}`);
     await expect(page.getByRole("heading", { name: "Link expired" })).toBeVisible();
   });

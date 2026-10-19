@@ -8,9 +8,10 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 /**
- * Refuses to start a shared environment (uat, prd) with development shortcuts or unfilled placeholders: a fixed
- * sign-in code, demo data, missing email delivery, an http:// public URL, or a secret still written as {@code <...>}.
- * dev and sqe are not checked. The environment name is {@code APP_ENV} (dev | sqe | uat | prd; default dev).
+ * Refuses to start a shared environment with development shortcuts or unfilled placeholders. Only dev may use the fixed
+ * sign-in code; sqe, uat and prd must send real codes by email (SMTP set). uat and prd are also checked for demo data,
+ * an http:// public URL and secrets still written as {@code <...>}. The environment name is {@code APP_ENV}
+ * (dev | sqe | uat | prd; default dev).
  */
 @Component
 public class EnvironmentGuard {
@@ -41,10 +42,11 @@ public class EnvironmentGuard {
             out.add("APP_ENV must be one of " + ENVIRONMENTS + ", not \"" + name + "\"");
             return out;
         }
+        if ("dev".equals(name)) return out;
+        if (!blankTo(get.apply("jurisone.otp.fixed-code"), "").isBlank()) out.add("OTP_FIXED_CODE must be empty (a fixed sign-in code is for dev only)");
+        if (blankTo(get.apply("SMTP_HOST"), "").isBlank()) out.add("SMTP_HOST must be set (sign-in codes are emailed)");
         if (!STRICT.contains(name)) return out;
-        if (!blankTo(get.apply("jurisone.otp.fixed-code"), "").isBlank()) out.add("OTP_FIXED_CODE must be empty (a fixed sign-in code is for dev and sqe only)");
         if ("true".equalsIgnoreCase(blankTo(get.apply("SEED_DEMO"), "false"))) out.add("SEED_DEMO must be false (no demo data outside dev and sqe)");
-        if (blankTo(get.apply("SMTP_HOST"), "").isBlank()) out.add("SMTP_HOST must be set (sign-in codes and invites are emailed)");
         if (!blankTo(get.apply("APP_URL"), "").startsWith("https://")) out.add("APP_URL must be an https:// URL");
         for (String key : SECRETS) {
             String v = blankTo(get.apply(key), "");

@@ -12,7 +12,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
  */
 @SpringBootTest(properties = {"JOBS_ENABLED=false", "PII_ENCRYPTION_KEY=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=", "SMTP_HOST=", "APP_URL=http://localhost:3005",
         "UPLOAD_DIR=backend/target/test-storage",
-        "JWT_SECRET=test-only-jwt-secret-0123456789abcdef0123456789", "jurisone.refresh-reuse-grace-seconds=0"})
+        "JWT_SECRET=test-only-jwt-secret-0123456789abcdef0123456789", "jurisone.refresh-reuse-grace-seconds=0", "jurisone.password-login.enabled=true"})
 @AutoConfigureMockMvc
 public abstract class IntegrationTest {
 

@@ -17,10 +17,12 @@ export default async function LoginPage(props: PageProps<"/login">) {
       : q.activated
         ? "Your account is ready. Sign in with your new password."
         : undefined;
+  // only the dev environment shows the fixed code (every other environment sends real codes by email)
+  const devCode = process.env.APP_ENV === "dev" ? process.env.OTP_FIXED_CODE || undefined : undefined;
   const next = typeof q.next === "string" ? q.next : undefined;
   return (
     <AuthFrame>
-      <LoginForm notice={notice} next={next} />
+      <LoginForm notice={notice} next={next} devCode={devCode} />
     </AuthFrame>
   );
 }

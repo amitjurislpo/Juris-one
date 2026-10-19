@@ -61,6 +61,10 @@ async function backend() {
     UPLOAD_DIR: "./storage/e2e",
     SEED_DEMO: "true",
     SMTP_HOST: "",
+    // sign-in is by emailed code; in the e2e environment every code is 000000 and requests are not throttled
+    OTP_FIXED_CODE: "000000",
+    OTP_REQUESTS_PER_IP: "100000",
+    OTP_REQUESTS_PER_EMAIL: "100000",
   };
   // the dev-only reset command empties the e2e database, migrates it and seeds the demo business
   run("java", ["-jar", copy, "reset"], { cwd: root, env });
