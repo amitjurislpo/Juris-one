@@ -189,3 +189,23 @@ export interface PolicyDetail {
     bodySha256: string; fileSha256: string | null; acknowledgements: number }[];
   people: { code: string; name: string; department: string | null; acknowledgedAt: string | null; lastVersion: number | null }[];
 }
+
+/** One asset of the register (GET /api/assets); holder* is set while it is assigned. */
+export interface AssetRow {
+  id: string; tag: string; type: string; make: string | null; model: string | null; serial: string | null; purchaseDate: string | null;
+  status: "AVAILABLE" | "ASSIGNED" | "IN_REPAIR" | "RETIRED"; notes: string | null;
+  holderId: string | null; holderCode: string | null; holderName: string | null; heldSince: string | null;
+}
+
+/** One time an asset was held by an employee (returnedOn null = still held). */
+export interface AssetAssignment {
+  id: string; assetId: string; tag: string; type: string; make: string | null; model: string | null; serial: string | null;
+  employeeId: string; employeeCode: string; employeeName: string;
+  assignedOn: string; assignNotes: string | null; assignedBy: string | null;
+  returnedOn: string | null; returnCondition: "GOOD" | "FAIR" | "DAMAGED" | "LOST" | null; returnNotes: string | null; returnedBy: string | null;
+}
+
+export interface Announcement {
+  id: string; title: string; body: string; audience: "ALL" | "IN" | "US"; pinned: boolean; expiresOn: string | null;
+  status: "PUBLISHED" | "UNPUBLISHED"; author: string | null; createdAt: string; active: boolean;
+}
