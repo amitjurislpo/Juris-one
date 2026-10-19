@@ -18,6 +18,7 @@ export const PERMISSIONS = [
   ["policies.manage", "Publish company policies & see acknowledgements"],
   ["assets.manage", "Manage the asset register & assign assets"],
   ["announcements.manage", "Post announcements"],
+  ["exit.manage", "Manage employee exits (notice, clearance)"],
   ["roles.manage", "Roles, permissions & policies"],
 ] as const;
 
@@ -28,7 +29,7 @@ export const PERMISSION_LABEL = Object.fromEntries(PERMISSIONS) as Record<Permis
 
 export const PERMISSION_GROUPS: [string, Permission[]][] = [
   ["Self-service", ["self", "dir"]],
-  ["People operations", ["att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "holidays.manage"]],
+  ["People operations", ["att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "holidays.manage", "exit.manage"]],
   ["Finance", ["pay.view", "pay.close", "struct.manage", "tax.view", "proofs.verify"]],
   ["Administration", ["policies.manage", "assets.manage", "announcements.manage", "roles.manage"]],
 ];

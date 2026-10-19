@@ -39,4 +39,6 @@ export const DEFAULT_SETTINGS = {
   },
   // documents a new onboarding asks for (per business; HR can change it per candidate)
   "onboarding.policy": { requiredDocs: ["ID_PROOF", "ADDRESS_PROOF", "PAN", "AADHAAR", "SALARY_SLIP"] as string[] },
+  // exits & full and final settlement: notice owed, leave types paid out at exit, gratuity (off by default; 15/26 x last basic x years, from minYears)
+  "exit.policy": { noticeDays: 30, encashableLeaveTypes: ["EL"] as string[], gratuityEnabled: false, gratuityMinYears: 5, gratuityCapRupees: 2000000 },
 } as const;

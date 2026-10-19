@@ -5,7 +5,8 @@ export const AUDIT_GROUPS = {
   roles: { label: "Roles, policies & company", prefixes: ["role.", "policy.", "asset.", "announcement."] },
   time: { label: "Leave & attendance", prefixes: ["leave.", "regularization.", "attendance."] },
   org: { label: "Departments & holidays", prefixes: ["department.", "holiday."] },
-  payroll: { label: "Salary & payroll", prefixes: ["salary.", "payroll."] },
+  payroll: { label: "Salary & payroll", prefixes: ["salary.", "payroll.", "fnf."] },
+  exit: { label: "Exits", prefixes: ["exit."] },
   tax: { label: "Tax & proofs", prefixes: ["tax.", "declaration.", "proof."] },
 } as const;
 export type AuditGroup = keyof typeof AUDIT_GROUPS;

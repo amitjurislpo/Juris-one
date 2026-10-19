@@ -13,7 +13,7 @@ public final class Permissions {
             PEOPLE_VIEW = "people.view", PEOPLE_ADD = "people.add", ACCESS_TOGGLE = "access.toggle", DEPT_MANAGE = "dept.manage",
             HOLIDAYS_MANAGE = "holidays.manage", PAY_VIEW = "pay.view", PAY_CLOSE = "pay.close", STRUCT_MANAGE = "struct.manage",
             TAX_VIEW = "tax.view", PROOFS_VERIFY = "proofs.verify", POLICIES_MANAGE = "policies.manage", ASSETS_MANAGE = "assets.manage",
-            ANNOUNCEMENTS_MANAGE = "announcements.manage", ROLES_MANAGE = "roles.manage";
+            ANNOUNCEMENTS_MANAGE = "announcements.manage", EXIT_MANAGE = "exit.manage", ROLES_MANAGE = "roles.manage";
 
     /**
      * The platform super admin's permission (businesses, plans, subscriptions). It is not part of the business catalogue
@@ -47,6 +47,7 @@ public final class Permissions {
         m.put(POLICIES_MANAGE, "Publish company policies & see acknowledgements");
         m.put(ASSETS_MANAGE, "Manage the asset register & assign assets");
         m.put(ANNOUNCEMENTS_MANAGE, "Post announcements");
+        m.put(EXIT_MANAGE, "Manage employee exits (notice, clearance)");
         m.put(ROLES_MANAGE, "Roles, permissions & policies");
         LABELS = java.util.Collections.unmodifiableMap(m);
     }
@@ -57,7 +58,7 @@ public final class Permissions {
 
     public static final List<Group> GROUPS = List.of(
             new Group("Self-service", List.of(SELF, DIR)),
-            new Group("People operations", List.of(ATT_ALL, APPR_LEAVE, APPR_REG, PEOPLE_VIEW, PEOPLE_ADD, ACCESS_TOGGLE, DEPT_MANAGE, HOLIDAYS_MANAGE)),
+            new Group("People operations", List.of(ATT_ALL, APPR_LEAVE, APPR_REG, PEOPLE_VIEW, PEOPLE_ADD, ACCESS_TOGGLE, DEPT_MANAGE, HOLIDAYS_MANAGE, EXIT_MANAGE)),
             new Group("Finance", List.of(PAY_VIEW, PAY_CLOSE, STRUCT_MANAGE, TAX_VIEW, PROOFS_VERIFY)),
             new Group("Administration", List.of(POLICIES_MANAGE, ASSETS_MANAGE, ANNOUNCEMENTS_MANAGE, ROLES_MANAGE)));
 
