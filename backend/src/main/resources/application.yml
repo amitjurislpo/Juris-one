@@ -30,6 +30,9 @@ spring:
       write-dates-as-timestamps: false
 
 jurisone:
+  otp:
+    # Sign-in code. Fixed to 000000 until the identity provider is connected; set OTP_FIXED_CODE= (empty) for random codes.
+    fixed-code: ${OTP_FIXED_CODE:000000}
   frontend-origin: ${FRONTEND_ORIGIN:${APP_URL:http://localhost:3005}}
   # Absence marking, monthly lock, status changes, leave accrual/expiry/year end: every 10 minutes in this process.
   # "false" = run them from cron instead.

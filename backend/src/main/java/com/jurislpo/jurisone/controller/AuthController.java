@@ -31,7 +31,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    public record LoginRequest(String identifier, String password, Boolean remember, String next) {}
+    public record LoginRequest(String identifier, String password, String otp, Boolean remember, String next) {}
+
+    public record OtpRequest(String email) {}
 
     public record ForgotRequest(String identifier) {}
 
@@ -57,8 +59,19 @@ public class AuthController {
      */
     @PostMapping("/session")
     public ResponseEntity<ApiResult<Map<String, String>>> login(@RequestBody LoginRequest body, HttpServletRequest req) {
-        AuthService.LoginResult r = auth.login(body.identifier(), body.password(), Boolean.TRUE.equals(body.remember()), body.next(), RequestMeta.of(req));
+        RequestMeta meta = RequestMeta.of(req);
+        boolean remember = Boolean.TRUE.equals(body.remember());
+        AuthService.LoginResult r = body.otp() != null && !body.otp().isBlank()
+                ? auth.loginWithOtp(body.identifier(), body.otp(), remember, body.next(), meta)
+                : auth.login(body.identifier(), body.password(), remember, body.next(), meta);
         return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.SET_COOKIE, setCookies(r.cookies())).body(ApiResult.success(Map.of("redirect", r.redirect())));
+    }
+
+    /** Email a 6-digit sign-in code (always the same answer, so it doesn't reveal who has an account). */
+    @PostMapping("/otp-requests")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Void> requestOtp(@RequestBody OtpRequest body, HttpServletRequest req) {
+        return ApiResult.message(auth.requestOtp(body.email(), RequestMeta.of(req)));
     }
 
     /**

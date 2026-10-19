@@ -93,4 +93,14 @@ public final class MailTemplates {
                         + button(link, "Choose a new password")
                         + "<p style=\"color:#5D5F6D;font-size:13px\">If you didn't ask for this, ignore this email — your password stays the same.</p>"));
     }
+
+    public static Content otp(String name, String code, int minutes) {
+        return new Content(
+                "Your JurisOne sign-in code: " + code,
+                "Hi " + name + ",\n\nYour sign-in code is " + code + ". It works once and expires in " + minutes + " minutes."
+                        + "\n\nIf you didn't try to sign in, you can ignore this email.",
+                shell("Your sign-in code", "<p>Hi " + esc(name) + ", use this code to sign in. It works once and expires in " + minutes + " minutes.</p>"
+                        + "<p style=\"font-size:28px;letter-spacing:6px;font-weight:600\">" + esc(code) + "</p>"
+                        + "<p style=\"color:#5D5F6D;font-size:13px\">If you didn't try to sign in, ignore this email.</p>"));
+    }
 }
