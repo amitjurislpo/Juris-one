@@ -189,3 +189,32 @@ export interface PolicyDetail {
     bodySha256: string; fileSha256: string | null; acknowledgements: number }[];
   people: { code: string; name: string; department: string | null; acknowledgedAt: string | null; lastVersion: number | null }[];
 }
+
+/** An employee's own published Form 16 (paise). */
+export interface Form16Mine {
+  id: string; fy: string; publishedAt: string; grossTotalIncome: number; taxableIncome: number; totalTax: number; tdsTotal: number; sha256: string;
+}
+
+/** Finance's Form 16 overview for one financial year. */
+export interface Form16Overview {
+  fy: string; fys: string[]; ready: boolean; canPublish: boolean; missing: string[];
+  months: { ym: string; label: string; closed: boolean }[];
+  deductor: { name: string; address: string | null; gstin: string | null; tan: string | null; pan: string | null };
+  rows: { employeeId: string; code: string; name: string; payslips: number; formId: string | null; publishedAt: string | null; sha256: string | null }[];
+}
+
+export type LetterType = "OFFER" | "APPOINTMENT" | "EXPERIENCE" | "RELIEVING" | "EMPLOYMENT_VERIFICATION";
+
+export interface LetterTemplateRow {
+  id: string; type: LetterType; name: string; subject: string; needsSalary: boolean; active: boolean; version: number; updatedAt: string;
+}
+
+export interface LetterTemplateDetail extends LetterTemplateRow { body: string }
+
+export interface LetterField { name: string; label: string; salary: boolean }
+
+/** An issued letter (list rows have no text). */
+export interface IssuedLetter {
+  id: string; reference: string; type: LetterType; templateName: string; subject: string; employeeId: string; employeeCode: string; employeeName: string;
+  issuedBy: string; issuedAt: string; needsSalary: boolean; canOpen: boolean;
+}

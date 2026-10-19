@@ -50,7 +50,8 @@ public class SettingsService {
 
     public record TaxPolicy(String fy, String regimeChangeUntil, String proofWindowFrom, String proofWindowUntil, double maxProofMb) {}
 
-    public record Company(String name, String address) {}
+    /** {@code tan} / {@code pan}: the deductor's tax numbers for Form 16 (optional; absent until Finance sets them). */
+    public record Company(String name, String address, String tan, String pan) {}
 
     /** Documents a new onboarding asks for unless HR changes the list for that candidate. */
     public record OnboardingPolicy(List<String> requiredDocs) {}

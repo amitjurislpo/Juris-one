@@ -89,6 +89,16 @@ public class TaxService {
 
     public record Decl(Declared declared, int pendingCount) {}
 
+    /** The regime the employee chose for the year and the income / TDS from a previous employer, in paise; null = no tax profile. */
+    public record ProfileFigures(String regime, long prevIncome, long prevTds) {}
+
+    public ProfileFigures profile(UUID employeeId, String fy) {
+        List<Map<String, Object>> prof = repo.profileRegime(employeeId, fy);
+        if (prof.isEmpty()) return null;
+        Map<String, Object> p = prof.get(0);
+        return new ProfileFigures((String) p.get("regime"), ((Number) p.get("prev_employer_income")).longValue(), ((Number) p.get("prev_employer_tds")).longValue());
+    }
+
     /** Declared amounts (₹). TDS uses "approved" only; "submitted" adds pending (Finance preview); "all" adds drafts (employee comparison). */
     public Decl declarations(UUID employeeId, String fy, DeclMode mode) {
         List<Map<String, Object>> items = repo.declarationItems(employeeId, fy);
