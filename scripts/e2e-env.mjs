@@ -2,12 +2,14 @@
 //   node scripts/e2e-env.mjs backend   → database "<db>_e2e" reset + demo seed, API on :8081
 //   node scripts/e2e-env.mjs frontend  → Next.js built into .next-e2e (pointing at :8081), served on :3006
 // Playwright starts both (playwright.config.ts). Uploaded files go to storage/e2e; no email is sent (no SMTP).
-import "dotenv/config";
 import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { loadEnv } from "./env.mjs";
+
+loadEnv(); // the dev environment (.env.dev) unless APP_ENV says otherwise; the e2e database is "<db>_e2e"
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const win = process.platform === "win32";

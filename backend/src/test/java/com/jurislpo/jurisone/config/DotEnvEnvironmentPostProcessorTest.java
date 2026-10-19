@@ -36,4 +36,17 @@ class DotEnvEnvironmentPostProcessorTest {
                 .containsEntry("C", "single")
                 .containsEntry("EMPTY", "");
     }
+
+    @Test
+    void dropsACommentAfterAQuotedValueButKeepsQuotesInsideIt(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve(".env.sqe");
+        Files.writeString(f, String.join("\n",
+                "PROJECT=\"jurisone-sqe\"   # separate containers per environment",
+                "PW=\"a\"b#c\"",
+                "PORT=3015   # web"));
+        assertThat(DotEnvEnvironmentPostProcessor.parse(f))
+                .containsEntry("PROJECT", "jurisone-sqe")
+                .containsEntry("PW", "a\"b#c")
+                .containsEntry("PORT", "3015");
+    }
 }

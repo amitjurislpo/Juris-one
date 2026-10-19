@@ -1,8 +1,11 @@
-# Credentials come from .env (POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB) — never hard-code them here.
+# One stack per environment, configured by that environment's file (never hard-code credentials here):
+#   docker compose --env-file .env.<dev|sqe|uat|prd> up -d db        (or: npm run db:up / db:up:sqe / db:up:uat / db:up:prd)
+# COMPOSE_PROJECT_NAME, the ports and the credentials all come from the env file, so each environment gets its own
+# containers and data volume and they can run side by side.
 services:
   db:
     image: postgres:16-alpine
-    container_name: jurisone-db
+    container_name: ${COMPOSE_PROJECT_NAME:-jurisone}-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
@@ -10,7 +13,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       TZ: UTC
     ports:
-      - "5436:5432"
+      - "${DB_PORT:-5436}:5432"
     volumes:
       - jurisone_pg:/var/lib/postgresql/data
     healthcheck:
@@ -19,22 +22,23 @@ services:
       timeout: 5s
       retries: 10
 
-  # Spring Boot API on :8080. The Next.js app (:3005) proxies /api/* to it (BACKEND_URL).
+  # Spring Boot API (BACKEND_PORT on the host, 8080 inside). The Next.js app (WEB_PORT) proxies /api/* to it (BACKEND_URL).
   backend:
     build: ./backend
-    container_name: jurisone-backend
+    container_name: ${COMPOSE_PROJECT_NAME:-jurisone}-backend
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
-    env_file: .env
+    env_file: ${ENV_FILE:-.env.dev}
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       FRONTEND_ORIGIN: ${APP_URL:-http://localhost:3005}
+      SPRING_PROFILES_ACTIVE: ${APP_ENV:-dev}
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:8080"
     volumes:
       - ./storage:/app/data/storage   # payslip PDFs and investment proofs
 

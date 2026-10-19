@@ -31,8 +31,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files: the real ones (.env, .env.dev/.sqe/.uat/.prd) hold secrets and are never committed; the *.example templates are
 .env*
+!.env.example
+!.env.*.example
 
 # vercel
 .vercel

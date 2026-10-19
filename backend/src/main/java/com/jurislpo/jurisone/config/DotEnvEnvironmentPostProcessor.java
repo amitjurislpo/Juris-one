@@ -16,7 +16,8 @@ import org.springframework.core.env.MapPropertySource;
 /**
  * Makes the backend use the same configuration as the Next.js app:
  * <ul>
- *   <li>loads the project's {@code .env} (found in the working directory or its parent) as the
+ *   <li>loads the environment's file {@code .env.<APP_ENV>} (dev, sqe, uat or prd; default dev; falls back to a plain
+ *       {@code .env}), found in the working directory or its parent, as the
  *       lowest-priority property source — real environment variables always win;</li>
  *   <li>derives {@code spring.datasource.*} from the Prisma-style {@code DATABASE_URL}
  *       unless {@code SPRING_DATASOURCE_URL} is set explicitly (e.g. in docker-compose);</li>
@@ -28,9 +29,13 @@ public class DotEnvEnvironmentPostProcessor implements EnvironmentPostProcessor 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment env, SpringApplication app) {
         Path cwd = Path.of("").toAbsolutePath();
+        // .env.<APP_ENV> (dev | sqe | uat | prd; default dev), else the legacy single .env
+        String appEnv = env.getProperty("APP_ENV", "dev").trim().toLowerCase();
         Path envFile = null;
-        for (Path dir : new Path[] {cwd, cwd.getParent()}) {
-            if (dir != null && Files.isRegularFile(dir.resolve(".env"))) { envFile = dir.resolve(".env"); break; }
+        for (String name : new String[] {".env." + appEnv, ".env"}) {
+            for (Path dir : new Path[] {cwd, cwd.getParent()}) {
+                if (envFile == null && dir != null && Files.isRegularFile(dir.resolve(name))) envFile = dir.resolve(name);
+            }
         }
         Map<String, Object> props = new LinkedHashMap<>();
         if (envFile != null) props.putAll(parse(envFile));
@@ -82,8 +87,12 @@ public class DotEnvEnvironmentPostProcessor implements EnvironmentPostProcessor 
                 if (eq <= 0) continue;
                 String key = line.substring(0, eq).strip();
                 String val = line.substring(eq + 1).strip();
-                if (val.length() >= 2 && (val.startsWith("\"") && val.endsWith("\"") || val.startsWith("'") && val.endsWith("'"))) {
-                    val = val.substring(1, val.length() - 1);
+                char q = val.isEmpty() ? 0 : val.charAt(0);
+                boolean quoted = q == '"' || q == '\'';
+                // the value is everything up to the last quote when the line ends with one, else up to the first closing quote
+                int close = !quoted ? -1 : val.length() >= 2 && val.charAt(val.length() - 1) == q ? val.length() - 1 : val.indexOf(q, 1);
+                if (close > 0) {
+                    val = val.substring(1, close); // quoted value; anything after the closing quote (a comment) is dropped
                 } else {
                     int hash = val.indexOf(" #");
                     if (hash >= 0) val = val.substring(0, hash).strip();

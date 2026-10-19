@@ -1,0 +1,4 @@
+# uat: user acceptance testing, production-like. Normal logs.
+logging:
+  level:
+    com.jurislpo.jurisone: INFO

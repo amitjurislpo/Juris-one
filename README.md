@@ -23,7 +23,7 @@ Prerequisites: Node 20.9+ (tested on 24), JDK 17+ and Docker Desktop. Maven come
 
 ```bash
 npm install
-cp .env.example .env        # then fill in every <placeholder> (commands to generate keys are in the file)
+cp .env.dev.example .env.dev   # then fill in every <placeholder> (commands to generate keys are in the file)
 npm run db:up               # Postgres 16 on localhost:5436
 npm run db:migrate          # create / update the schema (Flyway)
 npm run db:seed             # shared tables and the super admin (SEED_DEMO=true adds a demo business)
@@ -63,12 +63,32 @@ The seed never overwrites a password that is already set.
 | `npm run jobs` | Run the scheduled jobs once (for cron) |
 | `scripts/backup.sh` / `scripts/restore.sh` | Postgres backup (keeps 14 days) / restore — see *Deploying* |
 
+## Environments
+
+Four environments, each with **its own file, ports, database, secrets, email and storage** (nothing is shared):
+
+| Env | File | Web / API / DB ports | Database | Sign-in code | Demo data |
+|---|---|---|---|---|---|
+| `dev` | `.env.dev` | 3005 / 8080 / 5436 | `jurisone` | fixed `000000` | optional |
+| `sqe` | `.env.sqe` | 3015 / 8090 / 5446 | `jurisone_sqe` | fixed `000000` | yes |
+| `uat` | `.env.uat` | 3025 / 8100 / 5456 | `jurisone_uat` | random, emailed | no |
+| `prd` | `.env.prd` | 3000 / 8200 / 5466 | `jurisone_prd` | random, emailed | no |
+
+The real files are git-ignored; commit only the `.env.<env>.example` templates. Create one with `cp .env.sqe.example .env.sqe` and fill the `<placeholders>` (use a different `JWT_SECRET` and `PII_ENCRYPTION_KEY` in every environment).
+
+- Pick the environment with `APP_ENV` (default `dev`). `npm run dev`, `build`, `start`, `db:*`, `backend:dev` and `jobs` use `.env.dev`.
+- Other environments: `npm run db:up:sqe`, `npm run backend:sqe`, `npm run dev:sqe` / `start:sqe` (same for `uat`, `prd`; `backend:up:<env>` runs the API in Docker). Anything else: `node scripts/with-env.mjs <env> <command>`, e.g. `node scripts/with-env.mjs uat npm run db:seed`.
+- Each environment gets its own Docker containers and data volume (`COMPOSE_PROJECT_NAME`), so they can run side by side.
+- The backend also loads `.env.<APP_ENV>` itself and activates the Spring profile `application-<env>.yml` (log levels, error detail).
+- **Guard:** `uat` and `prd` refuse to start with a fixed sign-in code, demo data, no SMTP, an `http://` `APP_URL` or a secret still written as a `<placeholder>`.
+- The old single `.env` is still read if `.env.<env>` is missing, but `.env.dev` is now the development file.
+
 ## Deploying
 
 JurisOne is a Next.js server, a Spring Boot API and Postgres 16. Any Linux VPS or VM works (REQUIREMENTS §9.4 leaves hosting open).
 
 1. **Postgres 16.** A managed instance, or `docker compose up -d db` with a strong `POSTGRES_PASSWORD` and the port not exposed publicly.
-2. **Environment.** Copy `.env.example` to `.env` (both apps read it) and set:
+2. **Environment.** Copy `.env.prd.example` to `.env.prd` (both apps read it; see *Environments* below) and set:
    - `DATABASE_URL`, `APP_URL` (the public https URL — the API only accepts requests from this origin)
    - `PII_ENCRYPTION_KEY` — generate once and keep it in your password manager. Losing it makes PII unreadable.
    - `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` — change the password after the first sign-in.

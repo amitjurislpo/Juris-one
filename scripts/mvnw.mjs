@@ -3,6 +3,9 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { loadEnv } from "./env.mjs";
+
+loadEnv(); // the backend reads .env.<APP_ENV> itself too; this also sets SPRING_PROFILES_ACTIVE
 
 const backend = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "backend");
 const win = process.platform === "win32";
