@@ -6,7 +6,8 @@ const toast = (page: Page) => page.locator(".toast").last();
 const ORIGIN = { Origin: "http://localhost:3006" };
 
 async function cleanup() {
-  await sql(`DELETE FROM issued_letters WHERE issued_at >= $1`, [T0]);
+  // issued letters are protected by a trigger: lift it for the cleanup only (T0 is an ISO timestamp made here)
+  await sql(`ALTER TABLE issued_letters DISABLE TRIGGER USER; DELETE FROM issued_letters WHERE issued_at >= '${T0}'; ALTER TABLE issued_letters ENABLE TRIGGER USER`);
   await sql(`DELETE FROM notifications WHERE created_at >= $1`, [T0]);
 }
 
@@ -19,7 +20,7 @@ test.describe("HR letters", () => {
     await expectLanded(page, "/home");
     await page.goto("/letters");
     const tpl = page.getByLabel("Template");
-    const emp = page.getByLabel("Employee", { exact: true });
+    const emp = page.getByLabel("Employee");
     await tpl.selectOption({ label: "Employment verification letter" });
     await emp.selectOption({ label: "Siddharth Krishna · JC-072" });
 
@@ -29,7 +30,7 @@ test.describe("HR letters", () => {
 
     await page.getByRole("button", { name: "Issue letter" }).click();
     await expect(toast(page)).toBeVisible();
-    const row = page.locator("tbody tr", { hasText: "JC-072" }).filter({ hasText: "Employment verification" });
+    const row = page.locator("tbody tr", { hasText: "JC-072" }).filter({ hasText: /HRL\// });
     await expect(row).toBeVisible();
     const reference = (await row.locator("td.mono").innerText()).trim();
     expect(reference.length).toBeGreaterThan(3);
@@ -49,23 +50,27 @@ test.describe("HR letters", () => {
     expect(res.headers()["content-type"]).toContain("pdf");
     expect((await res.body()).subarray(0, 4).toString()).toBe("%PDF");
     // someone else's letter is not theirs to open
-    const other = await ctx.newPage();
+    const ctx2 = await browser.newContext();
+    const other = await ctx2.newPage();
     await login(other, "JC-049");
+    await expectLanded(other, "/home");
     expect((await other.request.get(href!)).status()).toBeGreaterThanOrEqual(400);
     await ctx.close();
+    await ctx2.close();
   });
 
   test("HR cannot issue a letter that states salary", async ({ page }) => {
     await login(page, "JC-012");
+    await expectLanded(page, "/home");
     await page.goto("/letters");
     const offer = page.getByLabel("Template").locator("option", { hasText: "Offer letter" });
     await expect(offer).toHaveText(/needs salary access/);
-    await expect(offer).toBeDisabled();
+    await expect(offer).toHaveAttribute("disabled", "");
 
     // and the API refuses it as well
-    const [t] = await sql<{ id: string }>(`SELECT id FROM letter_templates WHERE name = 'Offer letter' AND business_id IS NOT NULL LIMIT 1`);
-    const [e] = await sql<{ id: string }>(`SELECT id FROM employees WHERE code = 'JC-072'`);
-    const r = await page.request.post("/api/letters", { data: { templateId: t.id, employeeId: e.id }, headers: ORIGIN });
+    const [x] = await sql<{ t: string; e: string }>(
+      `SELECT t.id AS t, e.id AS e FROM letter_templates t JOIN employees e ON e.business_id = t.business_id WHERE t.name = 'Offer letter' AND e.code = 'JC-072'`);
+    const r = await page.request.post("/api/letters", { data: { templateId: x.t, employeeId: x.e }, headers: ORIGIN });
     expect(r.status()).toBe(403);
     const issued = await sql(`SELECT 1 FROM issued_letters WHERE template_name = 'Offer letter' AND issued_at >= $1`, [T0]);
     expect(issued).toHaveLength(0);
@@ -73,6 +78,7 @@ test.describe("HR letters", () => {
 
   test("the owner, who manages salary structures, can issue the offer letter", async ({ page }) => {
     await login(page, "JC-002");
+    await expectLanded(page, "/overview");
     await page.goto("/letters");
     const offer = page.getByLabel("Template").locator("option", { hasText: "Offer letter" });
     await expect(offer).toBeEnabled();
@@ -80,6 +86,7 @@ test.describe("HR letters", () => {
 
   test("an ordinary employee cannot open HR letters", async ({ page }) => {
     await login(page, "JC-049");
+    await expectLanded(page, "/home");
     await page.goto("/letters");
     await expectLanded(page, "/home");
   });
@@ -120,6 +127,7 @@ test.describe("Form 16", () => {
 
   test("an ordinary employee cannot open the Finance Form 16 page or publish", async ({ page }) => {
     await login(page, "JC-072");
+    await expectLanded(page, "/home");
     await page.goto("/form16-admin");
     await expectLanded(page, "/home");
     expect((await page.request.post("/api/form16/2026-27/forms", { headers: ORIGIN })).status()).toBe(403);

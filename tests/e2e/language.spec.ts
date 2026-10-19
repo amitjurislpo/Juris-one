@@ -19,7 +19,7 @@ test.describe("language", () => {
   test("app shell: the sidebar follows the language and the choice survives reload and navigation", async ({ page }) => {
     await login(page, "JC-072");
     await expectLanded(page, "/home");
-    const menu = page.getByRole("complementary", { name: "Main menu" });
+    const menu = page.getByRole("complementary"); // its accessible name is translated too
     await expect(menu.getByRole("link", { name: "Home", exact: true })).toBeVisible();
     await page.getByLabel("Language").selectOption({ label: "हिन्दी" });
     await expect(menu.getByRole("link", { name: "होम", exact: true })).toBeVisible();

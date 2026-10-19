@@ -64,7 +64,7 @@ test.describe("assets & announcements", () => {
     // return flow
     await row.getByRole("button", { name: "Take back" }).click();
     const back = page.getByRole("dialog", { name: `Take back ${TAG}` });
-    await back.getByLabel("Condition", { exact: true }).selectOption("GOOD");
+    await back.locator("select").selectOption("GOOD");
     await back.getByRole("button", { name: "Mark returned" }).click();
     await expect(row.locator(".chip")).toHaveText("Available");
 

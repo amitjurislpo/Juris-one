@@ -118,7 +118,7 @@ test.describe("attendance", () => {
     await login(page, "JC-049"); // India
     await expectLanded(page, "/home");
     await page.goto("/attendance");
-    await expect(page.getByText("Dussehra")).toBeVisible();
+    await expect(page.getByText("Dussehra").first()).toBeVisible(); // today is Dussehra: calendar cell + holiday card
     await expect(page.getByText("Thanksgiving Day")).toHaveCount(0);
   });
 

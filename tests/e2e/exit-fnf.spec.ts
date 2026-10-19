@@ -12,7 +12,8 @@ async function cleanup() {
   const ids = (await sql<{ id: string }>(`SELECT x.id FROM employee_exits x JOIN employees e ON e.id = x.employee_id WHERE e.code = $1`, [EMP])).map((r) => r.id);
   for (const id of ids) {
     await sql(`DELETE FROM leave_ledger WHERE ref_id = $1`, [id]);
-    await sql(`DELETE FROM fnf_settlements WHERE exit_id = $1`, [id]);
+    // an approved settlement is protected by a trigger: lift it for the cleanup only (id comes from the database)
+    await sql(`ALTER TABLE fnf_settlements DISABLE TRIGGER USER; DELETE FROM fnf_settlements WHERE exit_id = '${id}'; ALTER TABLE fnf_settlements ENABLE TRIGGER USER`);
     await sql(`DELETE FROM exit_clearance_items WHERE exit_id = $1`, [id]);
     await sql(`DELETE FROM employee_exits WHERE id = $1`, [id]);
   }
@@ -138,6 +139,7 @@ test.describe("exit & full-and-final settlement", () => {
 
   test("the employee sees the exit as settled, with no amounts; HR still sees none", async ({ page, browser }) => {
     await login(page, EMP);
+    await expectLanded(page, "/home");
     await page.goto("/my-exit");
     await expect(page.locator(".card-h .chip").first()).toHaveText("Settled");
     expect(await page.locator("main").innerText()).not.toMatch(/₹/);
@@ -146,6 +148,7 @@ test.describe("exit & full-and-final settlement", () => {
     const ctx = await browser.newContext();
     const hr = await ctx.newPage();
     await login(hr, "JC-012");
+    await expectLanded(hr, "/home");
     await hr.goto(exitPath);
     await expect(hr.locator(".chip", { hasText: "Settled" }).first()).toBeVisible();
     expect(await hr.locator("main").innerText()).not.toMatch(/₹|Net payable/);
