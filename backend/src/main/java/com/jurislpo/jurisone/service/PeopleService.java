@@ -187,8 +187,17 @@ public class PeopleService {
         if (exitDate == null || !exitDate.matches("^\\d{4}-\\d{2}-\\d{2}$")) throw new UserException("Pick the last working day.");
         Target t = actors.target(id);
         if (t == null || !PeopleRules.canEditEmployee(actors.actor(u), t)) throw new UserException("You can't change this person's record.");
-        if (t.status() == EmployeeStatus.EXITED) throw new UserException("Already a past employee.");
+        return finalizeExit(u.id(), id, exitDate, ip);
+    }
+
+    /**
+     * The exit itself, shared by "Mark as past employee" and the end of the exit process: the employee becomes a past
+     * employee on {@code exitDate}, portal access is removed, department headship is cleared and sessions are revoked.
+     * The caller has already checked who may do it.
+     */
+    public String finalizeExit(UUID actorId, UUID id, String exitDate, String ip) {
         Map<String, Object> e = repo.findForExit(id);
+        if (e == null || "EXITED".equals(String.valueOf(e.get("status")))) throw new UserException("Already a past employee.");
         if (exitDate.compareTo(((Date) e.get("date_of_joining")).toLocalDate().toString()) < 0) {
             throw new UserException("The last working day can't be before the joining date.");
         }
@@ -207,7 +216,7 @@ public class PeopleService {
             after.put("status", "EXITED");
             after.put("exitDate", exitDate);
             after.put("portalAccess", false);
-            audit.log(u.id(), "employee.exit", "employee", id.toString(), before, after, ip);
+            audit.log(actorId, "employee.exit", "employee", id.toString(), before, after, ip);
         });
         return e.get("full_name") + " marked as a past employee · access removed";
     }

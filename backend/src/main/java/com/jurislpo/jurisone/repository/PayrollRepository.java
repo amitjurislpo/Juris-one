@@ -29,14 +29,16 @@ public class PayrollRepository {
 
     /**
      * India employees on payroll for the month: a structure on its last day and employed some day of it, by name.
-     * {@code args} are (last, first, last[, ids]) matching {@code idFilter}.
+     * {@code args} are (last, first, last, month[, ids]) matching {@code idFilter}. Not included: employees whose approved full &
+     * final settlement is for {@code month} or an earlier one (their salary was paid through it).
      */
     public List<Map<String, Object>> payrollEmployees(String idFilter, Object[] args) {
         return jdbc.queryForList("""
             SELECT e.id, e.code, e.full_name, e.designation, e.date_of_joining, e.exit_date, d.name AS dept
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id
             WHERE e.region = 'IN' AND e.date_of_joining <= ? AND (e.exit_date IS NULL OR e.exit_date >= ?)
-              AND EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?)""" + idFilter + " ORDER BY e.full_name ASC",
+              AND EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?)
+              AND NOT EXISTS (SELECT 1 FROM fnf_settlements f WHERE f.employee_id = e.id AND f.status = 'APPROVED' AND f.month <= ?)""" + idFilter + " ORDER BY e.full_name ASC",
                 args);
     }
 

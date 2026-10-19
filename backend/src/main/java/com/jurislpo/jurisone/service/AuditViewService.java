@@ -30,7 +30,8 @@ public class AuditViewService {
         GROUPS.put("roles", List.of("role.", "policy."));
         GROUPS.put("time", List.of("leave.", "regularization.", "attendance."));
         GROUPS.put("org", List.of("department.", "holiday."));
-        GROUPS.put("payroll", List.of("salary.", "payroll."));
+        GROUPS.put("exit", List.of("exit."));
+        GROUPS.put("payroll", List.of("salary.", "payroll.", "fnf."));
         GROUPS.put("tax", List.of("tax.", "declaration.", "proof."));
     }
 

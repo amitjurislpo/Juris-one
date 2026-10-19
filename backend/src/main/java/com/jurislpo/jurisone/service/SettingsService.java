@@ -32,10 +32,12 @@ public class SettingsService {
             "company", """
                 {"name":"Juris Consultants","address":"[Registered office address]"}""",
             "onboarding.policy", """
-                {"requiredDocs":["ID_PROOF","ADDRESS_PROOF","PAN","AADHAAR","SALARY_SLIP"]}""");
+                {"requiredDocs":["ID_PROOF","ADDRESS_PROOF","PAN","AADHAAR","SALARY_SLIP"]}""",
+            "exit.policy", """
+                {"noticeDays":30,"encashableLeaveTypes":["EL"],"gratuityEnabled":false,"gratuityMinYears":5,"gratuityCapRupees":2000000}""");
 
     public static final List<String> KEYS = List.of("attendance.policy", "employee.policy", "auth.policy", "payroll.policy", "tax.policy", "company",
-            "onboarding.policy");
+            "onboarding.policy", "exit.policy");
 
     public record AuthPolicy(int maxFailedAttempts, int lockMinutes, int ipWindowMinutes, int ipMaxAttempts, int inviteTtlHours, int resetTtlMinutes) {}
 
@@ -54,6 +56,12 @@ public class SettingsService {
 
     /** Documents a new onboarding asks for unless HR changes the list for that candidate. */
     public record OnboardingPolicy(List<String> requiredDocs) {}
+
+    /**
+     * Exits and full & final settlement: the notice every leaver owes (days), the leave types whose remaining balance is
+     * paid out, and the gratuity switch (off by default), its minimum service in years and its ceiling in rupees.
+     */
+    public record ExitPolicy(int noticeDays, List<String> encashableLeaveTypes, boolean gratuityEnabled, int gratuityMinYears, double gratuityCapRupees) {}
 
     private final SettingsRepository repo;
     private final ObjectMapper json;
@@ -92,6 +100,7 @@ public class SettingsService {
     public TaxPolicy tax() { return get("tax.policy", TaxPolicy.class); }
     public Company company() { return get("company", Company.class); }
     public OnboardingPolicy onboarding() { return get("onboarding.policy", OnboardingPolicy.class); }
+    public ExitPolicy exit() { return get("exit.policy", ExitPolicy.class); }
 
     /** Saves the current business's value for a key (replaces it). */
     public void save(String key, JsonNode value) {

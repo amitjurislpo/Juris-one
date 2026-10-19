@@ -86,6 +86,15 @@ public class PayrollService {
 
     /** Live computation for an open run (optionally for some employees only). */
     public List<PayRow> computeRun(String ym, List<UUID> ids) {
+        return computeRun(ym, ids, Map.of());
+    }
+
+    /**
+     * As {@link #computeRun(String, List)}, but {@code exitDates} gives a last working day for employees who have not been
+     * marked exited yet (the full & final settlement is computed before that happens). Employees whose full & final
+     * settlement is approved for this month or an earlier one are not on payroll: they were paid through it.
+     */
+    public List<PayRow> computeRun(String ym, List<UUID> ids, Map<UUID, LocalDate> exitDates) {
         YearMonth m = YearMonth.parse(ym);
         LocalDate first = m.atDay(1), last = m.atEndOfMonth();
         List<Map<String, Object>> runs = repo.runIds(ym);
@@ -98,7 +107,7 @@ public class PayrollService {
         SettingsService.PayrollPolicy pay = settings.payroll();
         AttendanceService.Pol policy = att.policy();
         String idFilter = ids == null ? "" : " AND e.id = ANY (?)";
-        List<Object> args = new ArrayList<>(List.of(Date.valueOf(last), Date.valueOf(first), Date.valueOf(last)));
+        List<Object> args = new ArrayList<>(List.of(Date.valueOf(last), Date.valueOf(first), Date.valueOf(last), ym));
         if (ids != null) args.add(ids.toArray(UUID[]::new));
         // India employees on payroll that month (structure on the last day, employed some day of it)
         List<Map<String, Object>> emps = repo.payrollEmployees(idFilter, args.toArray());
@@ -112,7 +121,7 @@ public class PayrollService {
         for (Map<String, Object> e : emps) {
             UUID id = (UUID) e.get("id");
             LocalDate doj = ((Date) e.get("date_of_joining")).toLocalDate();
-            LocalDate exit = e.get("exit_date") == null ? null : ((Date) e.get("exit_date")).toLocalDate();
+            LocalDate exit = exitDates.containsKey(id) ? exitDates.get(id) : e.get("exit_date") == null ? null : ((Date) e.get("exit_date")).toLocalDate();
             int elig = PayrollEngine.eligibleDays(m, doj, exit);
             if (elig == 0) continue;
             Map<String, Object> st = repo.structureOn(id, last);
