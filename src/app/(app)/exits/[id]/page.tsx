@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
 import { fmtDY } from "@/lib/format";
+import { getT } from "@/lib/i18n/server";
 import { DEPT_LABEL, EXIT_KIND, EXIT_STATUS, isOpen, type ExitStatus } from "../status";
 import { AddItemButton, ClearanceRow, ExitActions, NoticeButton, SettlementPanel, type SettlementView } from "./ExitDetailClient";
 
@@ -20,6 +21,7 @@ interface Detail {
 /** One exit: details and notice (HR), the clearance checklist, and the settlement (Finance and the owner only). */
 export default async function ExitPage(props: PageProps<"/exits/[id]">) {
   const u = await requirePage("exits");
+  const t = await getT();
   const { id } = await props.params;
   const d = await apiData<Detail>(`/api/exits/${encodeURIComponent(id)}`);
   const st = EXIT_STATUS[d.status];
@@ -31,32 +33,32 @@ export default async function ExitPage(props: PageProps<"/exits/[id]">) {
 
   return (
     <div className="col">
-      <PageHeader eyebrow={<><Link href="/exits" className="linkish">Exits</Link> / {d.employeeCode}</>} title={d.employeeName}
-        sub={<><span className={`chip ${st.cls}`}>{st.text}</span>{" "}{d.designation}{d.department ? ` · ${d.department}` : ""} · joined {fmtDY(d.dateOfJoining)}</>}>
+      <PageHeader eyebrow={<><Link href="/exits" className="linkish">{t("Exits")}</Link> / {d.employeeCode}</>} title={d.employeeName}
+        sub={<><span className={`chip ${st.cls}`}>{t(st.text)}</span>{" "}{d.designation}{d.department ? ` · ${d.department}` : ""} · {t("joined {date}", { date: fmtDY(d.dateOfJoining) })}</>}>
         {d.canManage && isOpen(d.status) && ["RESIGNED", "INITIATED", "NOTICE"].includes(d.status) && <NoticeButton id={d.id} lastWorkingDay={d.lastWorkingDay ?? d.requestedLastDay ?? ""} noticeDays={d.noticeDays} policyDays={d.noticePolicyDays} />}
         {d.canManage && <ExitActions id={d.id} status={d.status} name={d.employeeName} hasLastDay={!!d.lastWorkingDay} />}
       </PageHeader>
 
       <div className="grid2 enter" style={{ ["--i" as string]: 1, alignItems: "start" }}>
         <section className="card" style={{ padding: 18 }}>
-          <div className="card-h"><h3>{EXIT_KIND[d.kind] ?? d.kind}</h3></div>
-          <div className="kv"><span className="muted">Reason</span><b style={{ textAlign: "right", whiteSpace: "pre-wrap" }}>{d.reason || "—"}</b></div>
-          {d.requestedLastDay && <div className="kv"><span className="muted">Requested last day</span><b>{fmtDY(d.requestedLastDay)}</b></div>}
-          <div className="kv"><span className="muted">Last working day</span><b>{d.lastWorkingDay ? fmtDY(d.lastWorkingDay) : "Not set"}</b></div>
-          <div className="kv"><span className="muted">Notice starts</span><b>{d.noticeStartDate ? fmtDY(d.noticeStartDate) : "—"}</b></div>
-          <div className="kv"><span className="muted">Notice period</span><b>{d.noticeDays} days{d.noticeDays < d.noticePolicyDays ? ` (policy ${d.noticePolicyDays})` : ""}</b></div>
-          {d.noticeReason && <div className="kv"><span className="muted">Shortened because</span><b style={{ textAlign: "right" }}>{d.noticeReason}</b></div>}
-          {d.hrComment && <div className="kv"><span className="muted">HR note</span><b style={{ textAlign: "right" }}>{d.hrComment}</b></div>}
-          {d.initiatedBy && d.kind !== "RESIGNATION" && <div className="kv"><span className="muted">Started by</span><b>{d.initiatedBy}</b></div>}
-          {d.endedReason && <div className="kv"><span className="muted">Ended because</span><b style={{ textAlign: "right" }}>{d.endedReason}</b></div>}
+          <div className="card-h"><h3>{EXIT_KIND[d.kind] ? t(EXIT_KIND[d.kind]) : d.kind}</h3></div>
+          <div className="kv"><span className="muted">{t("Reason")}</span><b style={{ textAlign: "right", whiteSpace: "pre-wrap" }}>{d.reason || "—"}</b></div>
+          {d.requestedLastDay && <div className="kv"><span className="muted">{t("Requested last day")}</span><b>{fmtDY(d.requestedLastDay)}</b></div>}
+          <div className="kv"><span className="muted">{t("Last working day")}</span><b>{d.lastWorkingDay ? fmtDY(d.lastWorkingDay) : t("Not set")}</b></div>
+          <div className="kv"><span className="muted">{t("Notice starts")}</span><b>{d.noticeStartDate ? fmtDY(d.noticeStartDate) : "—"}</b></div>
+          <div className="kv"><span className="muted">{t("Notice period")}</span><b>{t("{n} days", { n: d.noticeDays })}{d.noticeDays < d.noticePolicyDays ? ` (${t("policy {n}", { n: d.noticePolicyDays })})` : ""}</b></div>
+          {d.noticeReason && <div className="kv"><span className="muted">{t("Shortened because")}</span><b style={{ textAlign: "right" }}>{d.noticeReason}</b></div>}
+          {d.hrComment && <div className="kv"><span className="muted">{t("HR note")}</span><b style={{ textAlign: "right" }}>{d.hrComment}</b></div>}
+          {d.initiatedBy && d.kind !== "RESIGNATION" && <div className="kv"><span className="muted">{t("Started by")}</span><b>{d.initiatedBy}</b></div>}
+          {d.endedReason && <div className="kv"><span className="muted">{t("Ended because")}</span><b style={{ textAlign: "right" }}>{d.endedReason}</b></div>}
         </section>
 
         <section className="card" style={{ padding: 18 }}>
-          <div className="card-h"><h3>Clearance</h3><small className="muted">{d.clearance.done}/{d.clearance.total} cleared</small>{d.canManage && isOpen(d.status) && d.status !== "SETTLED" && <AddItemButton id={d.id} />}</div>
+          <div className="card-h"><h3>{t("Clearance")}</h3><small className="muted">{t("{done}/{total} cleared", { done: d.clearance.done, total: d.clearance.total })}</small>{d.canManage && isOpen(d.status) && d.status !== "SETTLED" && <AddItemButton id={d.id} />}</div>
           {d.clearanceItems.map((c) => (
-            <ClearanceRow key={c.id} exitId={d.id} item={{ ...c, deptLabel: DEPT_LABEL[c.dept] ?? c.dept }} editable={clearing && (d.canManage || (canClearFinance && c.dept === "FINANCE"))} />
+            <ClearanceRow key={c.id} exitId={d.id} item={{ ...c, deptLabel: DEPT_LABEL[c.dept] ? t(DEPT_LABEL[c.dept]) : c.dept }} editable={clearing && (d.canManage || (canClearFinance && c.dept === "FINANCE"))} />
           ))}
-          {!clearing && isOpen(d.status) && d.status !== "FNF_PENDING" && d.status !== "SETTLED" && <p className="faint" style={{ fontSize: 12, margin: "10px 0 0" }}>Items can be cleared once the exit is accepted.</p>}
+          {!clearing && isOpen(d.status) && d.status !== "FNF_PENDING" && d.status !== "SETTLED" && <p className="faint" style={{ fontSize: 12, margin: "10px 0 0" }}>{t("Items can be cleared once the exit is accepted.")}</p>}
         </section>
       </div>
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/Icon";
+import { useT } from "@/lib/i18n/client";
 import { useQuery } from "./useQuery";
 
 /** Prototype `.tsearch` — debounced, writes ?q= */
@@ -82,16 +83,17 @@ export function SortTh({ k, children, right, dflt, dfltDir = "asc", className }:
 }
 
 export function Pager({ page, take, total }: { page: number; take: number; total: number }) {
+  const t = useT();
   const { set } = useQuery();
   if (total <= take) return null;
   const last = Math.ceil(total / take);
   const from = (page - 1) * take + 1;
   return (
     <div className="pager">
-      <span className="mono">{from}–{Math.min(total, page * take)} of {total}</span>
+      <span className="mono">{t("{from}–{to} of {total}", { from, to: Math.min(total, page * take), total })}</span>
       <span style={{ display: "flex", gap: 6 }}>
-        <button className="btn btn-sm" type="button" disabled={page <= 1} onClick={() => set({ page: String(page - 1) })}><Icon n="chevL" s={14} />Previous</button>
-        <button className="btn btn-sm" type="button" disabled={page >= last} onClick={() => set({ page: String(page + 1) })}>Next<Icon n="chevR" s={14} /></button>
+        <button className="btn btn-sm" type="button" disabled={page <= 1} onClick={() => set({ page: String(page - 1) })}><Icon n="chevL" s={14} />{t("Previous")}</button>
+        <button className="btn btn-sm" type="button" disabled={page >= last} onClick={() => set({ page: String(page + 1) })}>{t("Next")}<Icon n="chevR" s={14} /></button>
       </span>
     </div>
   );
@@ -103,11 +105,12 @@ export function Pending({ children }: { children: React.ReactNode }) {
   return <div style={{ opacity: pending ? 0.55 : 1, transition: "opacity .15s" }} aria-busy={pending}>{children}</div>;
 }
 
-export function ClearFilters({ label = "Clear filters" }: { label?: string }) {
+export function ClearFilters({ label }: { label?: string }) {
+  const t = useT();
   const { params, set } = useQuery();
   return (
     <button className="btn btn-sm" type="button" onClick={() => set(Object.fromEntries([...params.keys()].map((k) => [k, null])))}>
-      {label}
+      {label ?? t("Clear filters")}
     </button>
   );
 }

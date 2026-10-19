@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { Icon } from "@/components/Icon";
 import { PhoneInput } from "@/components/ui/PhoneInput";
 import { fmtDY } from "@/lib/format";
+import { useT } from "@/lib/i18n/client";
 import { removeCandidateDocument, saveCandidateForm, submitOnboarding, type CandidateForm } from "../actions";
 
 export interface CandidateDoc { id: string; kind: string; label: string; fileName: string; status: "PENDING" | "VERIFIED" | "REJECTED"; comment: string | null }
@@ -18,6 +19,7 @@ const DOC_CHIP = { PENDING: { cls: "neutral", text: "Uploaded" }, VERIFIED: { cl
 
 /** The candidate's guided form: details, documents, submit. */
 export function CandidateClient({ token, v }: { token: string; v: CandidateView }) {
+  const t = useT();
   const router = useRouter();
   const [f, setF] = useState<CandidateForm>(v.form);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -27,14 +29,14 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
   const ro = !v.editable;
   const set = (k: keyof CandidateForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => { setF({ ...f, [k]: e.target.value }); setMsg(null); };
   const field = (k: keyof CandidateForm, label: string, opts: { type?: string; ph?: string; req?: boolean; max?: number } = {}) => (
-    <label className="field">{label}{opts.req ? " *" : ""}
-      <input type={opts.type ?? "text"} value={f[k]} onChange={set(k)} placeholder={opts.ph} maxLength={opts.max ?? 120} disabled={ro} />
+    <label className="field">{t(label)}{opts.req ? " *" : ""}
+      <input type={opts.type ?? "text"} value={f[k]} onChange={set(k)} placeholder={opts.ph ? t(opts.ph) : undefined} maxLength={opts.max ?? 120} disabled={ro} />
     </label>
   );
   const save = (then?: () => Promise<void>) => start(async () => {
     const r = await saveCandidateForm(token, f);
     if (!r.ok) { setMsg({ ok: false, text: r.error }); return; }
-    if (then) await then(); else setMsg({ ok: true, text: "Saved. You can come back to this link until it expires." });
+    if (then) await then(); else setMsg({ ok: true, text: t("Saved. You can come back to this link until it expires.") });
   });
   const submit = () => save(async () => {
     const r = await submitOnboarding(token);
@@ -50,7 +52,7 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
     try {
       const res = await fetch(`/api/onboarding/${encodeURIComponent(token)}/documents`, { method: "POST", body: fd });
       const j = await res.json().catch(() => ({}));
-      setMsg({ ok: res.ok, text: res.ok ? j.msg ?? "Uploaded" : j.detail ?? "Upload failed" });
+      setMsg({ ok: res.ok, text: res.ok ? j.msg ?? t("Uploaded") : j.detail ?? t("Upload failed") });
       router.refresh();
     } finally { setUploading(false); }
   };
@@ -64,37 +66,39 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
     <div className="col" style={{ gap: 18 }}>
       <header>
         <span className="eyebrow">{v.businessName}</span>
-        <h1 className="display" style={{ fontSize: 34, margin: "4px 0 6px" }}>Welcome, {f.firstName || v.candidateName.split(" ")[0]}</h1>
+        <h1 className="display" style={{ fontSize: 34, margin: "4px 0 6px" }}>{t("Welcome, {name}", { name: f.firstName || v.candidateName.split(" ")[0] })}</h1>
         <p className="muted" style={{ margin: 0 }}>
-          {v.designation ? `You're joining as ${v.designation}` : "You're joining the team"}{v.joiningDate ? ` on ${fmtDY(v.joiningDate)}` : ""}.
-          {" "}Fill in your details and upload your documents; HR will review them. Your link works until {fmtDY(v.linkExpiresAt.slice(0, 10))}.
+          {v.designation
+            ? (v.joiningDate ? t("You're joining as {role} on {date}.", { role: v.designation, date: fmtDY(v.joiningDate) }) : t("You're joining as {role}.", { role: v.designation }))
+            : (v.joiningDate ? t("You're joining the team on {date}.", { date: fmtDY(v.joiningDate) }) : t("You're joining the team."))}
+          {" "}{t("Fill in your details and upload your documents; HR will review them. Your link works until {date}.", { date: fmtDY(v.linkExpiresAt.slice(0, 10)) })}
         </p>
       </header>
 
-      {v.hrComment && <div className="card" role="alert" style={{ padding: 16, background: "var(--warnbg)", borderColor: "transparent" }}><b>HR asked for changes:</b> {v.hrComment}</div>}
-      {ro && <div className="card" style={{ padding: 16, background: "var(--okbg)", borderColor: "transparent" }}><b>Submitted.</b> HR is reviewing your details and will contact you if anything else is needed.</div>}
+      {v.hrComment && <div className="card" role="alert" style={{ padding: 16, background: "var(--warnbg)", borderColor: "transparent" }}><b>{t("HR asked for changes:")}</b> {v.hrComment}</div>}
+      {ro && <div className="card" style={{ padding: 16, background: "var(--okbg)", borderColor: "transparent" }}><b>{t("Submitted.")}</b> {t("HR is reviewing your details and will contact you if anything else is needed.")}</div>}
 
       <section className="card" style={{ padding: 20 }}>
-        <div className="card-h"><h3>1 · About you</h3></div>
+        <div className="card-h"><h3>{t("1 · About you")}</h3></div>
         <div className="col" style={{ gap: 12 }}>
           <div className="grid3">{field("firstName", "First name", { req: true, max: 60 })}{field("middleName", "Middle name", { max: 60 })}{field("lastName", "Last name", { req: true, max: 60 })}</div>
           <div className="grid3">
             {field("fatherName", "Father's name", { req: true })}
             {field("dateOfBirth", "Date of birth", { type: "date", req: true })}
-            <label className="field">Gender
-              <select value={f.gender} onChange={set("gender")} disabled={ro}><option value="">Prefer not to say</option><option>Female</option><option>Male</option><option>Other</option></select>
+            <label className="field">{t("Gender")}
+              <select value={f.gender} onChange={set("gender")} disabled={ro}><option value="">{t("Prefer not to say")}</option><option value="Female">{t("Female")}</option><option value="Male">{t("Male")}</option><option value="Other">{t("Other")}</option></select>
             </label>
           </div>
-          <div className="field">Mobile number *
+          <div className="field">{t("Mobile number *")}
             <PhoneInput label="Mobile number" code={f.phoneCountry || "+91"} number={f.phone} disabled={ro} onChange={(c, n) => { setF({ ...f, phoneCountry: c, phone: n }); setMsg(null); }} />
           </div>
-          <label className="field">Current address *<textarea value={f.currentAddress} onChange={set("currentAddress")} rows={2} maxLength={500} disabled={ro} /></label>
-          <label className="field">Permanent address <span className="hint">if different</span><textarea value={f.permanentAddress} onChange={set("permanentAddress")} rows={2} maxLength={500} disabled={ro} /></label>
+          <label className="field">{t("Current address *")}<textarea value={f.currentAddress} onChange={set("currentAddress")} rows={2} maxLength={500} disabled={ro} /></label>
+          <label className="field">{t("Permanent address")} <span className="hint">{t("if different")}</span><textarea value={f.permanentAddress} onChange={set("permanentAddress")} rows={2} maxLength={500} disabled={ro} /></label>
         </div>
       </section>
 
       <section className="card" style={{ padding: 20 }}>
-        <div className="card-h"><h3>2 · Identity &amp; bank</h3><small className="muted">Stored encrypted</small></div>
+        <div className="card-h"><h3>{t("2 · Identity & bank")}</h3><small className="muted">{t("Stored encrypted")}</small></div>
         <div className="col" style={{ gap: 12 }}>
           {v.india && <div className="grid3">{field("pan", "PAN (optional)", { ph: "ABCDE1234F", max: 10 })}{field("aadhaar", "Aadhaar (optional)", { ph: "12 digits", max: 14 })}{field("uan", "UAN", { ph: "if you have PF already", max: 12 })}</div>}
           <div className="grid3">{field("bankName", "Bank", { req: true, max: 80 })}{field("bankAccount", "Account number", { req: true, max: 18 })}{v.india ? field("ifsc", "IFSC", { req: true, ph: "HDFC0001234", max: 11 }) : <span />}</div>
@@ -102,11 +106,11 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
       </section>
 
       <section className="card" style={{ padding: 20 }}>
-        <div className="card-h"><h3>3 · Previous job &amp; emergency contact</h3></div>
+        <div className="card-h"><h3>{t("3 · Previous job & emergency contact")}</h3></div>
         <div className="col" style={{ gap: 12 }}>
           <div className="grid2">{field("previousEmployer", "Previous employer")}{field("previousDesignation", "Your designation there")}</div>
           <div className="grid2">{field("emergencyName", "Emergency contact", { req: true })}{field("emergencyRelation", "Relationship", { max: 40 })}</div>
-          <div className="field">Their phone *
+          <div className="field">{t("Their phone *")}
             <PhoneInput label="Emergency contact phone" code={f.emergencyPhoneCountry || "+91"} number={f.emergencyPhone} disabled={ro}
               onChange={(c, n) => { setF({ ...f, emergencyPhoneCountry: c, emergencyPhone: n }); setMsg(null); }} />
           </div>
@@ -114,7 +118,7 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
       </section>
 
       <section className="card" style={{ padding: 20 }}>
-        <div className="card-h"><h3>4 · Documents</h3><small className="muted">PDF, JPG or PNG · up to 10 MB each</small></div>
+        <div className="card-h"><h3>{t("4 · Documents")}</h3><small className="muted">{t("PDF, JPG or PNG · up to 10 MB each")}</small></div>
         <ul style={{ listStyle: "none", padding: 0, margin: "0 0 12px", display: "flex", flexDirection: "column", gap: 6 }}>
           {v.checklist.map((c) => (
             <li key={c.kind} style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -129,8 +133,8 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
                 {v.documents.map((d) => (
                   <tr key={d.id}>
                     <td><b>{d.label}</b><br /><a className="linkish" href={`/api/onboarding/${encodeURIComponent(token)}/documents/${d.id}/file`} target="_blank" rel="noopener">{d.fileName}</a></td>
-                    <td><span className={`chip ${DOC_CHIP[d.status].cls}`}>{DOC_CHIP[d.status].text}</span>{d.comment && <><br /><small className="muted">{d.comment}</small></>}</td>
-                    <td className="r">{!ro && d.status !== "VERIFIED" && <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => remove(d.id)} aria-label={`Remove ${d.fileName}`}><Icon n="trash" s={14} /></button>}</td>
+                    <td><span className={`chip ${DOC_CHIP[d.status].cls}`}>{t(DOC_CHIP[d.status].text)}</span>{d.comment && <><br /><small className="muted">{d.comment}</small></>}</td>
+                    <td className="r">{!ro && d.status !== "VERIFIED" && <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => remove(d.id)} aria-label={t("Remove {name}", { name: d.fileName })}><Icon n="trash" s={14} /></button>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -139,11 +143,11 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
         )}
         {!ro && (
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <label className="field" style={{ minWidth: 260, flex: 1 }}>Document type
+            <label className="field" style={{ minWidth: 260, flex: 1 }}>{t("Document type")}
               <select value={kind} onChange={(e) => setKind(e.target.value)}>{Object.entries(v.kinds).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
             </label>
             <label className="btn" style={{ cursor: uploading ? "wait" : "pointer" }}>
-              <Icon n="upload" s={14} />{uploading ? "Uploading…" : "Choose file"}
+              <Icon n="upload" s={14} />{uploading ? t("Uploading…") : t("Choose file")}
               <input type="file" accept="application/pdf,image/png,image/jpeg" hidden disabled={uploading} onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file); e.target.value = ""; }} />
             </label>
           </div>
@@ -153,8 +157,8 @@ export function CandidateClient({ token, v }: { token: string; v: CandidateView 
       {msg && <div className={msg.ok ? "card" : "err"} role={msg.ok ? "status" : "alert"} style={msg.ok ? { padding: 12, background: "var(--okbg)", borderColor: "transparent" } : undefined}>{msg.text}</div>}
       {!ro && (
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-          <button className="btn" disabled={busy} onClick={() => save()}>{busy ? "Saving…" : "Save for later"}</button>
-          <button className="btn btn-gold" disabled={busy} onClick={submit}><Icon n="check" s={15} />Submit to HR</button>
+          <button className="btn" disabled={busy} onClick={() => save()}>{busy ? t("Saving…") : t("Save for later")}</button>
+          <button className="btn btn-gold" disabled={busy} onClick={submit}><Icon n="check" s={15} />{t("Submit to HR")}</button>
         </div>
       )}
     </div>

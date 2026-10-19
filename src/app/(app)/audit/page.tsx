@@ -5,6 +5,7 @@ import { actionLabel, AUDIT_GROUPS, type AuditGroup, type AuditRow as Row } from
 import { requirePage } from "@/lib/auth";
 import { apiData, qs } from "@/lib/backend";
 import { fmtDateTime } from "@/lib/format";
+import { getT } from "@/lib/i18n/server";
 import { PAGE_TITLES } from "@/lib/nav";
 import { AuditRow } from "./AuditClient";
 
@@ -14,19 +15,20 @@ const TONE: Record<string, string> = { auth: "neutral", employee: "info", role: 
 
 export default async function AuditPage(props: PageProps<"/audit">) {
   const u = await requirePage("audit");
+  const t = await getT();
   const sp = await props.searchParams;
   const { page, take, total, rows, actors } = await apiData<{ page: number; take: number; total: number; rows: Row[]; actors: { v: string; l: string }[] }>(`/api/audit${qs(sp)}`);
   const filtered = Object.keys(sp).some((k) => !["page", "sort", "dir"].includes(k));
 
   return (
     <div className="col">
-      <PageHeader eyebrow="Administration" title="Audit" em="log" sub="Who changed what, and when — sign-ins, access, people, roles, approvals, payroll and tax. Click an entry to see before → after." />
+      <PageHeader eyebrow={t("Administration")} title={t("Audit")} em={t("log")} sub={t("Who changed what, and when — sign-ins, access, people, roles, approvals, payroll and tax. Click an entry to see before → after.")} />
       <div className="toolbar enter" style={{ ["--i" as string]: 1 }}>
-        <SearchBox placeholder="Search person, action or record ID" label="Search the audit log" />
-        <SelectFilter name="ev" label="Event" dflt="All" options={[{ v: "All", l: "All events" }, ...(Object.keys(AUDIT_GROUPS) as AuditGroup[]).map((k) => ({ v: k, l: AUDIT_GROUPS[k].label }))]} />
-        <SelectFilter name="actor" label="By" dflt="" options={[{ v: "", l: "Anyone" }, ...actors]} />
-        <SelectFilter name="days" label="Period" dflt="30" options={[{ v: "7", l: "Last 7 days" }, { v: "30", l: "Last 30 days" }, { v: "90", l: "Last 90 days" }, { v: "365", l: "Last 12 months" }, { v: "All", l: "All time" }]} />
-        <span className="tcount">{total} {total === 1 ? "entry" : "entries"}</span>
+        <SearchBox placeholder={t("Search person, action or record ID")} label={t("Search the audit log")} />
+        <SelectFilter name="ev" label={t("Event")} dflt="All" options={[{ v: "All", l: t("All events") }, ...(Object.keys(AUDIT_GROUPS) as AuditGroup[]).map((k) => ({ v: k, l: t(AUDIT_GROUPS[k].label) }))]} />
+        <SelectFilter name="actor" label={t("By")} dflt="" options={[{ v: "", l: t("Anyone") }, ...actors]} />
+        <SelectFilter name="days" label={t("Period")} dflt="30" options={[{ v: "7", l: t("Last 7 days") }, { v: "30", l: t("Last 30 days") }, { v: "90", l: t("Last 90 days") }, { v: "365", l: t("Last 12 months") }, { v: "All", l: t("All time") }]} />
+        <span className="tcount">{t(total === 1 ? "{n} entry" : "{n} entries", { n: total })}</span>
       </div>
       <section className="card enter" style={{ ["--i" as string]: 2 }}>
         <Pending>
@@ -34,11 +36,11 @@ export default async function AuditPage(props: PageProps<"/audit">) {
             <table className="t">
               <thead>
                 <tr>
-                  <SortTh k="at" dflt="at" dfltDir="desc">When</SortTh>
-                  <SortTh k="actor" dflt="at" dfltDir="desc">Who</SortTh>
-                  <SortTh k="action" dflt="at" dfltDir="desc">What</SortTh>
-                  <th>Record</th>
-                  <th className="hide-sm">IP</th>
+                  <SortTh k="at" dflt="at" dfltDir="desc">{t("When")}</SortTh>
+                  <SortTh k="actor" dflt="at" dfltDir="desc">{t("Who")}</SortTh>
+                  <SortTh k="action" dflt="at" dfltDir="desc">{t("What")}</SortTh>
+                  <th>{t("Record")}</th>
+                  <th className="hide-sm">{t("IP")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -59,7 +61,7 @@ export default async function AuditPage(props: PageProps<"/audit">) {
             </table>
           </div>
           {!rows.length && (
-            <div className="empty"><b>No entries</b><span className="muted">{filtered ? "Try a different search, event or period." : "Sensitive changes will be recorded here."}</span>{filtered && <ClearFilters />}</div>
+            <div className="empty"><b>{t("No entries")}</b><span className="muted">{filtered ? t("Try a different search, event or period.") : t("Sensitive changes will be recorded here.")}</span>{filtered && <ClearFilters />}</div>
           )}
           <Pager page={page} take={take} total={total} />
         </Pending>

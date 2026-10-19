@@ -5,11 +5,13 @@ import { useState, useTransition } from "react";
 import { Icon } from "@/components/Icon";
 import { useToast } from "@/components/shell/Toasts";
 import { Modal } from "@/components/ui/Modal";
+import { useT } from "@/lib/i18n/client";
 import { getFormOptions, type FormOptions } from "../employees/actions";
 import { getExitPolicy, saveExitPolicy, startExit, type ExitPolicyView } from "./actions";
 
 /** HR starts an exit for someone (termination or other), optionally with the last day and a shorter notice. */
 export function StartExitButton() {
+  const t = useT();
   const toast = useToast();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -30,24 +32,24 @@ export function StartExitButton() {
   });
   return (
     <>
-      <button className="btn btn-gold btn-lg" onClick={() => void openIt()}><Icon n="plus" s={16} />Start an exit</button>
+      <button className="btn btn-gold btn-lg" onClick={() => void openIt()}><Icon n="plus" s={16} />{t("Start an exit")}</button>
       {open && (
-        <Modal title="Start an exit" eyebrow="For a termination, or a resignation you are recording for the employee" maxWidth={640} onClose={close}
-          footer={<><button className="btn btn-ghost" onClick={close}>Cancel</button><button className="btn btn-gold" disabled={busy || !f.employeeId || f.reason.trim().length < 3} onClick={save}>{busy ? "Starting…" : "Start exit"}</button></>}>
+        <Modal title={t("Start an exit")} eyebrow={t("For a termination, or a resignation you are recording for the employee")} maxWidth={640} onClose={close}
+          footer={<><button className="btn btn-ghost" onClick={close}>{t("Cancel")}</button><button className="btn btn-gold" disabled={busy || !f.employeeId || f.reason.trim().length < 3} onClick={save}>{busy ? t("Starting…") : t("Start exit")}</button></>}>
           <div className="col" style={{ gap: 14 }}>
             <div className="grid2">
-              <label className="field">Employee *
+              <label className="field">{t("Employee *")}
                 <select value={f.employeeId} onChange={on("employeeId")}><option value="">—</option>{opt?.managers.map((m) => <option key={m.id} value={m.id}>{m.name} — {m.title}</option>)}</select>
               </label>
-              <label className="field">Type *
-                <select value={f.kind} onChange={on("kind")}><option value="TERMINATION">Termination</option><option value="RESIGNATION">Resignation (recorded by HR)</option><option value="OTHER">Other</option></select>
+              <label className="field">{t("Type *")}
+                <select value={f.kind} onChange={on("kind")}><option value="TERMINATION">{t("Termination")}</option><option value="RESIGNATION">{t("Resignation (recorded by HR)")}</option><option value="OTHER">{t("Other")}</option></select>
               </label>
             </div>
-            <label className="field">Reason *<textarea value={f.reason} onChange={on("reason")} rows={3} maxLength={1000} /></label>
+            <label className="field">{t("Reason *")}<textarea value={f.reason} onChange={on("reason")} rows={3} maxLength={1000} /></label>
             <div className="grid3">
-              <label className="field">Last working day <span className="hint">can be set later</span><input type="date" value={f.lastWorkingDay} onChange={on("lastWorkingDay")} /></label>
-              <label className="field">Notice days <span className="hint">blank = policy</span><input type="number" min={0} max={365} value={f.noticeDays} onChange={on("noticeDays")} /></label>
-              <label className="field">Why shorter / waived<input value={f.noticeReason} onChange={on("noticeReason")} maxLength={500} /></label>
+              <label className="field">{t("Last working day")} <span className="hint">{t("can be set later")}</span><input type="date" value={f.lastWorkingDay} onChange={on("lastWorkingDay")} /></label>
+              <label className="field">{t("Notice days")} <span className="hint">{t("blank = policy")}</span><input type="number" min={0} max={365} value={f.noticeDays} onChange={on("noticeDays")} /></label>
+              <label className="field">{t("Why shorter / waived")}<input value={f.noticeReason} onChange={on("noticeReason")} maxLength={500} /></label>
             </div>
             {err && <div className="err" role="alert">{err}</div>}
           </div>
@@ -59,6 +61,7 @@ export function StartExitButton() {
 
 /** The business's exit policy: notice, leave types paid out, gratuity. */
 export function ExitPolicyButton() {
+  const t = useT();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [p, setP] = useState<ExitPolicyView | null>(null);
@@ -75,36 +78,36 @@ export function ExitPolicyButton() {
   });
   return (
     <>
-      <button className="btn" onClick={() => void openIt()}><Icon n="sliders" s={14} />Exit policy</button>
+      <button className="btn" onClick={() => void openIt()}><Icon n="sliders" s={14} />{t("Exit policy")}</button>
       {open && (
-        <Modal title="Exit policy" eyebrow="Applies to new exits and to settlements not yet approved" size="sm" onClose={() => setOpen(false)}
-          footer={<><button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancel</button><button className="btn btn-gold" disabled={busy || !p} onClick={save}>{busy ? "Saving…" : "Save"}</button></>}>
+        <Modal title={t("Exit policy")} eyebrow={t("Applies to new exits and to settlements not yet approved")} size="sm" onClose={() => setOpen(false)}
+          footer={<><button className="btn btn-ghost" onClick={() => setOpen(false)}>{t("Cancel")}</button><button className="btn btn-gold" disabled={busy || !p} onClick={save}>{busy ? t("Saving…") : t("Save")}</button></>}>
           {p ? (
             <div className="col" style={{ gap: 14 }}>
-              <label className="field">Notice period (days)<input type="number" min={0} max={365} value={p.noticeDays} onChange={(e) => { setP({ ...p, noticeDays: Number(e.target.value) }); setErr(""); }} /></label>
-              <div className="field">Leave types paid out at exit
+              <label className="field">{t("Notice period (days)")}<input type="number" min={0} max={365} value={p.noticeDays} onChange={(e) => { setP({ ...p, noticeDays: Number(e.target.value) }); setErr(""); }} /></label>
+              <div className="field">{t("Leave types paid out at exit")}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px" }}>
-                  {p.leaveTypes.map((t) => (
-                    <label key={t.code} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400 }}>
-                      <input type="checkbox" checked={p.encashableLeaveTypes.includes(t.code)}
-                        onChange={(e) => setP({ ...p, encashableLeaveTypes: e.target.checked ? [...p.encashableLeaveTypes, t.code] : p.encashableLeaveTypes.filter((x) => x !== t.code) })} />{t.name}
+                  {p.leaveTypes.map((lt) => (
+                    <label key={lt.code} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400 }}>
+                      <input type="checkbox" checked={p.encashableLeaveTypes.includes(lt.code)}
+                        onChange={(e) => setP({ ...p, encashableLeaveTypes: e.target.checked ? [...p.encashableLeaveTypes, lt.code] : p.encashableLeaveTypes.filter((x) => x !== lt.code) })} />{lt.name}
                     </label>
                   ))}
                 </div>
               </div>
               <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <input type="checkbox" checked={p.gratuityEnabled} onChange={(e) => setP({ ...p, gratuityEnabled: e.target.checked })} />
-                Pay gratuity <span className="muted">(15/26 × last Basic × completed years)</span>
+                {t("Pay gratuity")} <span className="muted">{t("(15/26 × last Basic × completed years)")}</span>
               </label>
               {p.gratuityEnabled && (
                 <div className="grid2">
-                  <label className="field">Minimum years of service<input type="number" min={1} max={50} value={p.gratuityMinYears} onChange={(e) => setP({ ...p, gratuityMinYears: Number(e.target.value) })} /></label>
-                  <label className="field">Ceiling (₹)<input type="number" min={0} value={p.gratuityCapRupees} onChange={(e) => setP({ ...p, gratuityCapRupees: Number(e.target.value) })} /></label>
+                  <label className="field">{t("Minimum years of service")}<input type="number" min={1} max={50} value={p.gratuityMinYears} onChange={(e) => setP({ ...p, gratuityMinYears: Number(e.target.value) })} /></label>
+                  <label className="field">{t("Ceiling (₹)")}<input type="number" min={0} value={p.gratuityCapRupees} onChange={(e) => setP({ ...p, gratuityCapRupees: Number(e.target.value) })} /></label>
                 </div>
               )}
               {err && <div className="err" role="alert">{err}</div>}
             </div>
-          ) : <p className="muted">{err || "Loading…"}</p>}
+          ) : <p className="muted">{err || t("Loading…")}</p>}
         </Modal>
       )}
     </>

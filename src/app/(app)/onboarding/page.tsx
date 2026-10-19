@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Icon } from "@/components/Icon";
 import { PageHeader } from "@/components/PageHeader";
+import { getT } from "@/lib/i18n/server";
 import { requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
 import { fmtDY } from "@/lib/format";
@@ -18,19 +19,20 @@ interface Row {
 /** HR: candidates being onboarded by link, open ones first. */
 export default async function OnboardingPage() {
   await requirePage("onboarding");
+  const t = await getT();
   const rows = await apiData<Row[]>("/api/onboardings");
 
   return (
     <div className="col">
-      <PageHeader eyebrow="People ops" title={<>On<em>boarding</em></>}
-        sub="Send a new hire a link on their personal email. They fill in their details and upload documents; you verify them and add the employee.">
+      <PageHeader eyebrow={t("People ops")} title={<>{t("On")}<em>{t("boarding")}</em></>}
+        sub={t("Send a new hire a link on their personal email. They fill in their details and upload documents; you verify them and add the employee.")}>
         <DefaultDocumentsButton />
         <StartOnboardingButton />
       </PageHeader>
       <section className="card enter" style={{ ["--i" as string]: 1 }}>
         <div className="table-wrap">
           <table className="t">
-            <thead><tr><th>Candidate</th><th className="hide-sm">Job</th><th>Joining</th><th>Documents</th><th>Status</th><th className="hide-sm">Last change</th></tr></thead>
+            <thead><tr><th>{t("Candidate")}</th><th className="hide-sm">{t("Job")}</th><th>{t("Joining")}</th><th>{t("Documents")}</th><th>{t("Status")}</th><th className="hide-sm">{t("Last change")}</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
@@ -42,15 +44,15 @@ export default async function OnboardingPage() {
                   </td>
                   <td className="hide-sm">{r.designation ?? "—"}<br /><small className="muted">{r.department ?? ""}</small></td>
                   <td>{r.joiningDate ? fmtDY(r.joiningDate) : <span className="muted">—</span>}</td>
-                  <td className="num">{r.verified}/{r.documents} verified</td>
-                  <td><span className={`chip ${ONBOARDING_STATUS[r.status].cls}`}>{ONBOARDING_STATUS[r.status].text}</span>{r.employeeCode && <small className="muted mono"> {r.employeeCode}</small>}</td>
+                  <td className="num">{t("{verified}/{total} verified", { verified: r.verified, total: r.documents })}</td>
+                  <td><span className={`chip ${ONBOARDING_STATUS[r.status].cls}`}>{t(ONBOARDING_STATUS[r.status].text)}</span>{r.employeeCode && <small className="muted mono"> {r.employeeCode}</small>}</td>
                   <td className="muted hide-sm">{fmtDY(r.updatedAt.slice(0, 10))}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        {!rows.length && <div className="empty"><b className="display">No onboardings yet</b><span className="muted">Start one with “New onboarding”.</span></div>}
+        {!rows.length && <div className="empty"><b className="display">{t("No onboardings yet")}</b><span className="muted">{t("Start one with “New onboarding”.")}</span></div>}
       </section>
     </div>
   );

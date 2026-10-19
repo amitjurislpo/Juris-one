@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
 import { ClearFilters, Pending, SegFilter, SortTh } from "@/components/table/Table";
+import { getT } from "@/lib/i18n/server";
 import { requirePage } from "@/lib/auth";
 import { apiData, qs } from "@/lib/backend";
 import { fmtD, fmtDL, MON3 } from "@/lib/format";
@@ -29,6 +30,7 @@ function Ring({ value, max, color, i }: { value: number; max: number; color: str
 
 export default async function LeavePage(props: PageProps<"/leave">) {
   await requirePage("leave");
+  const t = await getT();
   const sp = await props.searchParams;
   const d = await apiData<{
     tab: "requests" | "holidays"; st: (typeof STATUS)[number]; today: string; year: string; canApply: boolean; lopYear: number;
@@ -42,15 +44,15 @@ export default async function LeavePage(props: PageProps<"/leave">) {
   const bal = (c: string) => bals.find((b) => b.code === c);
   const avail = (c: string) => { const b = bal(c); return b ? Math.round((b.balance - b.pending) * 100) / 100 : 0; };
   const rings: [string, number, number, string, string][] = [
-    ["Casual leave", avail("CL"), bal("CL")?.annual || 12, "#6E56CF", "Accrues 1 a month"],
-    ["Earned leave", avail("EL"), bal("EL")?.annual || 18, "#17834F", "Carry up to 30 · encashable"],
-    ["Comp-off", avail("CO"), 5, "#0A6BC2", "For holiday work · 60 days"],
-    ["Loss of pay", lopYear, 5, "#CF3A40", `Taken in ${year}`],
+    [t("Casual leave"), avail("CL"), bal("CL")?.annual || 12, "#6E56CF", t("Accrues 1 a month")],
+    [t("Earned leave"), avail("EL"), bal("EL")?.annual || 18, "#17834F", t("Carry up to 30 · encashable")],
+    [t("Comp-off"), avail("CO"), 5, "#0A6BC2", t("For holiday work · 60 days")],
+    [t("Loss of pay"), lopYear, 5, "#CF3A40", t("Taken in {year}", { year })],
   ];
 
   return (
     <div className="col" style={{ gap: 24 }}>
-      <PageHeader eyebrow={`Leave · ${year}`} title="Time away," em="well planned" sub="Apply in three steps — leave type, dates, and an optional reason.">
+      <PageHeader eyebrow={t("Leave · {year}", { year })} title={t("Time away,")} em={t("well planned")} sub={t("Apply in three steps — leave type, dates, and an optional reason.")}>
         {d.canApply && <ApplyButton types={types} today={today} holidays={holidayMap} weeklyOffs={d.weeklyOffs} autoOpen={sp.apply === "1"} />}
       </PageHeader>
       <div className="kpis">
@@ -62,37 +64,37 @@ export default async function LeavePage(props: PageProps<"/leave">) {
           </div>
         ))}
       </div>
-      <SegFilter name="tab" dflt="requests" label="Leave section" options={[{ v: "requests", l: "My requests" }, { v: "holidays", l: "Holiday calendar" }]} />
+      <SegFilter name="tab" dflt="requests" label={t("Leave section")} options={[{ v: "requests", l: t("My requests") }, { v: "holidays", l: t("Holiday calendar") }]} />
       {tab === "requests" ? (
         <>
           <div className="toolbar enter" style={{ ["--i" as string]: 6 }}>
-            <SegFilter name="st" dflt="All" label="Status" options={STATUS.map((s) => ({ v: s, l: s === "All" ? "All" : SLABEL[s] }))} />
-            <span className="tcount">{reqs.length} requests</span>
+            <SegFilter name="st" dflt="All" label={t("Status")} options={STATUS.map((s) => ({ v: s, l: s === "All" ? t("All") : t(SLABEL[s]) }))} />
+            <span className="tcount">{t("{n} requests", { n: reqs.length })}</span>
           </div>
           <section className="card enter" style={{ ["--i" as string]: 6 }}>
             <Pending>
               <div className="table-wrap">
                 <table className="t">
                   <thead><tr>
-                    <SortTh k="type" dflt="applied" dfltDir="desc">Type</SortTh>
-                    <SortTh k="from" dflt="applied" dfltDir="desc">Dates</SortTh>
-                    <SortTh k="days" dflt="applied" dfltDir="desc">Days</SortTh>
-                    <SortTh k="applied" dflt="applied" dfltDir="desc">Applied</SortTh>
-                    <th>Reason</th>
-                    <SortTh k="status" dflt="applied" dfltDir="desc">Status</SortTh>
-                    <th><span className="sr-only">Actions</span></th>
+                    <SortTh k="type" dflt="applied" dfltDir="desc">{t("Type")}</SortTh>
+                    <SortTh k="from" dflt="applied" dfltDir="desc">{t("Dates")}</SortTh>
+                    <SortTh k="days" dflt="applied" dfltDir="desc">{t("Days")}</SortTh>
+                    <SortTh k="applied" dflt="applied" dfltDir="desc">{t("Applied")}</SortTh>
+                    <th>{t("Reason")}</th>
+                    <SortTh k="status" dflt="applied" dfltDir="desc">{t("Status")}</SortTh>
+                    <th><span className="sr-only">{t("Actions")}</span></th>
                   </tr></thead>
                   <tbody>
                     {reqs.map((l, i) => {
-                      const f = l.from, t = l.to;
+                      const f = l.from, to = l.to;
                       return (
                         <tr key={l.id} style={{ animationDelay: `${i * 50}ms` }}>
-                          <td><b>{l.typeName}</b></td>
-                          <td>{fmtD(f)}{t !== f ? ` – ${fmtD(t)}` : ""}<div className="faint" style={{ fontSize: 12 }}>{PART[l.part]}{l.lopDays > 0 && l.leaveType !== "LOP" ? ` · ${l.lopDays}d unpaid` : ""}</div></td>
+                          <td><b>{t(l.typeName)}</b></td>
+                          <td>{fmtD(f)}{to !== f ? ` – ${fmtD(to)}` : ""}<div className="faint" style={{ fontSize: 12 }}>{t(PART[l.part])}{l.lopDays > 0 && l.leaveType !== "LOP" ? ` · ${t("{n}d unpaid", { n: l.lopDays })}` : ""}</div></td>
                           <td className="num">{l.days}</td>
                           <td className="muted">{fmtD(l.applied)}</td>
                           <td className="muted" style={{ maxWidth: 240 }}>{l.reason || "—"}</td>
-                          <td><span className={`chip ${SCHIP[l.status]}`}>{SLABEL[l.status]}</span>{l.decidedBy && <div className="faint" style={{ fontSize: 11.5, marginTop: 3 }}>by {l.decidedBy}</div>}</td>
+                          <td><span className={`chip ${SCHIP[l.status]}`}>{t(SLABEL[l.status])}</span>{l.decidedBy && <div className="faint" style={{ fontSize: 11.5, marginTop: 3 }}>{t("by {name}", { name: l.decidedBy })}</div>}</td>
                           <td className="r">{l.status === "PENDING" && <CancelLeave id={l.id} />}</td>
                         </tr>
                       );
@@ -100,7 +102,7 @@ export default async function LeavePage(props: PageProps<"/leave">) {
                   </tbody>
                 </table>
               </div>
-              {!reqs.length && <div className="empty"><b>No requests</b><span className="muted">{st === "All" ? "You haven't applied for leave yet." : "Nothing with this status."}</span>{st !== "All" && <ClearFilters />}</div>}
+              {!reqs.length && <div className="empty"><b>{t("No requests")}</b><span className="muted">{st === "All" ? t("You haven't applied for leave yet.") : t("Nothing with this status.")}</span>{st !== "All" && <ClearFilters />}</div>}
             </Pending>
           </section>
         </>
@@ -113,11 +115,11 @@ export default async function LeavePage(props: PageProps<"/leave">) {
               <div className="card pad lift" key={h.id} style={{ opacity: past ? 0.5 : 1, animation: `enter .6s ${i * 50}ms both`, display: "flex", gap: 14, alignItems: "center" }}>
                 <span className="spot" aria-hidden="true"></span>
                 <span className="hol-date"><b>{Number(k.slice(8))}</b><small>{MON3[Number(k.slice(5, 7)) - 1].toUpperCase()}</small></span>
-                <div><b>{h.name}</b><div className="faint" style={{ fontSize: 12.5 }}>{fmtDL(k)}{past ? " · passed" : ""}</div></div>
+                <div><b>{h.name}</b><div className="faint" style={{ fontSize: 12.5 }}>{past ? t("{date} · passed", { date: fmtDL(k) }) : fmtDL(k)}</div></div>
               </div>
             );
           })}
-          {!hols.length && <div className="empty"><b>No holidays yet</b><span className="muted">HR hasn&apos;t published this year&apos;s calendar.</span></div>}
+          {!hols.length && <div className="empty"><b>{t("No holidays yet")}</b><span className="muted">{t("HR hasn't published this year's calendar.")}</span></div>}
         </section>
       )}
     </div>

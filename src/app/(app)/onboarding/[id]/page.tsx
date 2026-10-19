@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
+import { getT } from "@/lib/i18n/server";
 import { requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
 import { fmtDateTime, fmtDY } from "@/lib/format";
@@ -31,6 +32,7 @@ const FIELDS: [string, string][] = [
 /** HR's review of one onboarding: the candidate's answers (identity numbers masked), documents, decisions and "Add employee". */
 export default async function OnboardingReviewPage(props: PageProps<"/onboarding/[id]">) {
   const u = await requirePage("onboarding");
+  const t = await getT();
   const { id } = await props.params;
   const d = await apiData<Detail>(`/api/onboardings/${encodeURIComponent(id)}`);
   const st = ONBOARDING_STATUS[d.status];
@@ -41,52 +43,52 @@ export default async function OnboardingReviewPage(props: PageProps<"/onboarding
 
   return (
     <div className="col">
-      <PageHeader eyebrow={<><Link href="/onboarding" className="linkish">Onboarding</Link> / {d.personalEmail}</>} title={d.candidateName}
-        sub={<><span className={`chip ${st.cls}`}>{st.text}</span>{" "}
-          {d.designation ?? "No designation yet"}{d.joiningDate ? ` · joining ${fmtDY(d.joiningDate)}` : ""}
-          {d.linkExpiresAt && !closed ? ` · link valid until ${fmtDY(d.linkExpiresAt.slice(0, 10))}` : ""}
-          {d.employeeCode && d.employeeId ? <> · added as <Link className="linkish" href={`/employees?q=${d.employeeCode}`}>{d.employeeCode}</Link> — turn on portal access in Employees to send their invite</> : null}</>}>
+      <PageHeader eyebrow={<><Link href="/onboarding" className="linkish">{t("Onboarding")}</Link> / {d.personalEmail}</>} title={d.candidateName}
+        sub={<><span className={`chip ${st.cls}`}>{t(st.text)}</span>{" "}
+          {d.designation ?? t("No designation yet")}{d.joiningDate ? ` · ${t("joining {date}", { date: fmtDY(d.joiningDate) })}` : ""}
+          {d.linkExpiresAt && !closed ? ` · ${t("link valid until {date}", { date: fmtDY(d.linkExpiresAt.slice(0, 10)) })}` : ""}
+          {d.employeeCode && d.employeeId ? <> · {t("added as")} <Link className="linkish" href={`/employees?q=${d.employeeCode}`}>{d.employeeCode}</Link> — {t("turn on portal access in Employees to send their invite")}</> : null}</>}>
         {!closed && <EditPlanButton id={d.id} plan={plan} />}
         <OnboardingActions id={d.id} status={d.status} name={d.candidateName} />
         {d.status === "VERIFIED" && <AddEmployeeButton id={d.id} name={d.candidateName} plan={plan} />}
       </PageHeader>
 
       {d.hrComment && d.status === "CHANGES_REQUESTED" && (
-        <div className="card enter" style={{ padding: 14, background: "var(--warnbg)", borderColor: "transparent" }}><b>Sent back:</b> {d.hrComment}</div>
+        <div className="card enter" style={{ padding: 14, background: "var(--warnbg)", borderColor: "transparent" }}><b>{t("Sent back:")}</b> {d.hrComment}</div>
       )}
 
       <div className="grid2 enter" style={{ ["--i" as string]: 1, alignItems: "start" }}>
         <section className="card" style={{ padding: 18 }}>
-          <div className="card-h"><h3>Candidate&apos;s details</h3><small className="muted">{d.submittedAt ? `Submitted ${fmtDateTime(new Date(d.submittedAt), u.timeZone)}` : "Not submitted yet"}</small></div>
+          <div className="card-h"><h3>{t("Candidate's details")}</h3><small className="muted">{d.submittedAt ? t("Submitted {when}", { when: fmtDateTime(new Date(d.submittedAt), u.timeZone) }) : t("Not submitted yet")}</small></div>
           {FIELDS.map(([k, l]) => (
-            <div key={k} className="kv"><span className="muted">{l}</span><b style={{ textAlign: "right", whiteSpace: "pre-wrap" }}>{d.form[k] || "—"}</b></div>
+            <div key={k} className="kv"><span className="muted">{t(l)}</span><b style={{ textAlign: "right", whiteSpace: "pre-wrap" }}>{d.form[k] || "—"}</b></div>
           ))}
-          <p className="faint" style={{ fontSize: 12, margin: "10px 0 0" }}>Identity and bank numbers are shown masked; check them against the documents.</p>
+          <p className="faint" style={{ fontSize: 12, margin: "10px 0 0" }}>{t("Identity and bank numbers are shown masked; check them against the documents.")}</p>
         </section>
 
         <section className="card" style={{ padding: 18 }}>
-          <div className="card-h"><h3>Required documents</h3></div>
+          <div className="card-h"><h3>{t("Required documents")}</h3></div>
           {d.checklist.map((c) => (
             <div key={c.kind} className="kv">
-              <span>{c.label}</span>
-              <span className={`chip ${c.verified >= c.needed ? "ok" : c.uploaded >= c.needed ? "warn" : "neutral"}`}>{c.verified}/{c.needed} verified{c.uploaded > c.verified ? ` · ${c.uploaded - c.verified} to check` : ""}</span>
+              <span>{t(c.label)}</span>
+              <span className={`chip ${c.verified >= c.needed ? "ok" : c.uploaded >= c.needed ? "warn" : "neutral"}`}>{t("{verified}/{needed} verified", { verified: c.verified, needed: c.needed })}{c.uploaded > c.verified ? ` · ${t("{n} to check", { n: c.uploaded - c.verified })}` : ""}</span>
             </div>
           ))}
-          {!d.checklist.length && <p className="muted">No documents required.</p>}
+          {!d.checklist.length && <p className="muted">{t("No documents required.")}</p>}
         </section>
       </div>
 
       <section className="card enter" style={{ ["--i" as string]: 2 }}>
-        <div className="card-h" style={{ padding: "16px 18px 0" }}><h3>Uploaded documents</h3></div>
+        <div className="card-h" style={{ padding: "16px 18px 0" }}><h3>{t("Uploaded documents")}</h3></div>
         <div className="table-wrap">
           <table className="t">
-            <thead><tr><th>Document</th><th>File</th><th>Status</th><th className="hide-sm">Uploaded</th><th></th></tr></thead>
+            <thead><tr><th>{t("Document")}</th><th>{t("File")}</th><th>{t("Status")}</th><th className="hide-sm">{t("Uploaded")}</th><th></th></tr></thead>
             <tbody>
               {d.documents.map((x) => (
                 <tr key={x.id}>
-                  <td><b>{x.label}</b></td>
+                  <td><b>{t(x.label)}</b></td>
                   <td><a className="linkish" href={`/api/onboardings/${d.id}/documents/${x.id}/file`} target="_blank" rel="noopener">{x.fileName}</a> <small className="muted">{Math.max(1, Math.round(x.size / 1024))} KB</small></td>
-                  <td><span className={`chip ${DOC[x.status].cls}`}>{DOC[x.status].text}</span>{x.comment && <><br /><small className="muted">{x.comment}</small></>}{x.verifiedBy && <><br /><small className="faint">by {x.verifiedBy}</small></>}</td>
+                  <td><span className={`chip ${DOC[x.status].cls}`}>{t(DOC[x.status].text)}</span>{x.comment && <><br /><small className="muted">{x.comment}</small></>}{x.verifiedBy && <><br /><small className="faint">{t("by {name}", { name: x.verifiedBy })}</small></>}</td>
                   <td className="muted hide-sm">{fmtDateTime(new Date(x.uploadedAt), u.timeZone)}</td>
                   <td className="r">{decidable && <DocumentDecision id={d.id} docId={x.id} name={x.fileName} status={x.status} />}</td>
                 </tr>
@@ -94,7 +96,7 @@ export default async function OnboardingReviewPage(props: PageProps<"/onboarding
             </tbody>
           </table>
         </div>
-        {!d.documents.length && <div className="empty"><span className="muted">Nothing uploaded yet.</span></div>}
+        {!d.documents.length && <div className="empty"><span className="muted">{t("Nothing uploaded yet.")}</span></div>}
       </section>
     </div>
   );

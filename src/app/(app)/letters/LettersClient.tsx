@@ -6,6 +6,7 @@ import { Icon } from "@/components/Icon";
 import { useToast } from "@/components/shell/Toasts";
 import { Modal } from "@/components/ui/Modal";
 import type { LetterField, LetterTemplateRow, LetterType } from "@/lib/api-types";
+import { useT } from "@/lib/i18n/client";
 import { createTemplate, issueLetter, previewLetter, templateDetail, updateTemplate } from "./actions";
 
 export const TYPE_LABEL: Record<LetterType, string> = {
@@ -16,6 +17,7 @@ export interface EmployeeChoice { id: string; code: string; name: string; design
 
 /** Pick a template and an employee, preview the text, issue it. */
 export function IssueLetter({ templates, employees, canSalary }: { templates: LetterTemplateRow[]; employees: EmployeeChoice[]; canSalary: boolean }) {
+  const t = useT();
   const toast = useToast();
   const router = useRouter();
   const [f, setF] = useState({ templateId: "", employeeId: "", lastWorkingDate: "" });
@@ -37,30 +39,30 @@ export function IssueLetter({ templates, employees, canSalary }: { templates: Le
 
   return (
     <section className="card enter" style={{ ["--i" as string]: 1, padding: 18 }}>
-      <div className="card-h"><h3>Issue a letter</h3></div>
+      <div className="card-h"><h3>{t("Issue a letter")}</h3></div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <label className="field" style={{ minWidth: 240 }}>Template
+        <label className="field" style={{ minWidth: 240 }}>{t("Template")}
           <select value={f.templateId} onChange={(e) => change({ templateId: e.target.value })}>
-            <option value="">Choose…</option>
-            {usable.map((t) => <option key={t.id} value={t.id} disabled={t.needsSalary && !canSalary}>{t.name}{t.needsSalary ? (canSalary ? " (states salary)" : " (needs salary access)") : ""}</option>)}
+            <option value="">{t("Choose…")}</option>
+            {usable.map((tp) => <option key={tp.id} value={tp.id} disabled={tp.needsSalary && !canSalary}>{tp.name}{tp.needsSalary ? ` ${canSalary ? t("(states salary)") : t("(needs salary access)")}` : ""}</option>)}
           </select>
         </label>
-        <label className="field" style={{ minWidth: 240 }}>Employee
+        <label className="field" style={{ minWidth: 240 }}>{t("Employee")}
           <select value={f.employeeId} onChange={(e) => change({ employeeId: e.target.value })}>
-            <option value="">Choose…</option>
-            {employees.map((e) => <option key={e.id} value={e.id}>{e.name} · {e.code}{e.status === "EXITED" ? " (exited)" : ""}</option>)}
+            <option value="">{t("Choose…")}</option>
+            {employees.map((e) => <option key={e.id} value={e.id}>{e.name} · {e.code}{e.status === "EXITED" ? ` ${t("(exited)")}` : ""}</option>)}
           </select>
         </label>
-        <label className="field">Last working day <span className="hint">only if the letter uses it</span>
+        <label className="field">{t("Last working day")} <span className="hint">{t("only if the letter uses it")}</span>
           <input type="date" value={f.lastWorkingDate} onChange={(e) => change({ lastWorkingDate: e.target.value })} />
         </label>
-        <button className="btn" disabled={!ready || busy} onClick={show}><Icon n="eye" s={14} />Preview</button>
-        <button className="btn btn-gold" disabled={!ready || busy} onClick={issue}><Icon n="upload" s={14} />Issue letter</button>
+        <button className="btn" disabled={!ready || busy} onClick={show}><Icon n="eye" s={14} />{t("Preview")}</button>
+        <button className="btn btn-gold" disabled={!ready || busy} onClick={issue}><Icon n="upload" s={14} />{t("Issue letter")}</button>
       </div>
       {err && <div className="err" role="alert" style={{ marginTop: 12 }}>{err}</div>}
       {preview && (
         <div style={{ marginTop: 16, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
-          <span className="eyebrow">Preview, nothing is saved yet</span>
+          <span className="eyebrow">{t("Preview, nothing is saved yet")}</span>
           <h3 style={{ margin: "6px 0 10px" }}>{preview.subject}</h3>
           <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{preview.text}</div>
         </div>
@@ -71,6 +73,7 @@ export function IssueLetter({ templates, employees, canSalary }: { templates: Le
 
 /** Create or edit a template; merge fields are inserted at the cursor. */
 export function TemplateEditor({ id, fields, onClose }: { id: string | null; fields: LetterField[]; onClose: () => void }) {
+  const t = useT();
   const toast = useToast();
   const router = useRouter();
   const [f, setF] = useState<{ type: LetterType; name: string; subject: string; body: string; active: boolean }>({ type: "EXPERIENCE", name: "", subject: "", body: "", active: true });
@@ -103,32 +106,32 @@ export function TemplateEditor({ id, fields, onClose }: { id: string | null; fie
   });
 
   return (
-    <Modal title={id ? "Edit template" : "New template"} eyebrow="HR letters" maxWidth={820} onClose={onClose}
-      footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-gold" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save template"}</button></>}>
+    <Modal title={id ? t("Edit template") : t("New template")} eyebrow={t("HR letters")} maxWidth={820} onClose={onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose}>{t("Cancel")}</button><button className="btn btn-gold" disabled={busy} onClick={save}>{busy ? t("Saving…") : t("Save template")}</button></>}>
       <div className="col" style={{ gap: 14 }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           {!id && (
-            <label className="field">Type
+            <label className="field">{t("Type")}
               <select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value as LetterType })}>
-                {(Object.keys(TYPE_LABEL) as LetterType[]).map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
+                {(Object.keys(TYPE_LABEL) as LetterType[]).map((k) => <option key={k} value={k}>{t(TYPE_LABEL[k])}</option>)}
               </select>
             </label>
           )}
-          <label className="field" style={{ flex: 1, minWidth: 200 }}>Name<input value={f.name} maxLength={100} onChange={(e) => { setF({ ...f, name: e.target.value }); setErr(""); }} /></label>
-          <label className="field" style={{ flex: 2, minWidth: 240 }}>Subject line<input value={f.subject} maxLength={200} onChange={(e) => { setF({ ...f, subject: e.target.value }); setErr(""); }} /></label>
+          <label className="field" style={{ flex: 1, minWidth: 200 }}>{t("Name")}<input value={f.name} maxLength={100} onChange={(e) => { setF({ ...f, name: e.target.value }); setErr(""); }} /></label>
+          <label className="field" style={{ flex: 2, minWidth: 240 }}>{t("Subject line")}<input value={f.subject} maxLength={200} onChange={(e) => { setF({ ...f, subject: e.target.value }); setErr(""); }} /></label>
         </div>
-        <label className="field">Letter text <span className="hint">plain text; a blank line starts a new paragraph</span>
+        <label className="field">{t("Letter text")} <span className="hint">{t("plain text; a blank line starts a new paragraph")}</span>
           <textarea ref={area} rows={14} value={f.body} onChange={(e) => { setF({ ...f, body: e.target.value }); setErr(""); }} style={{ fontFamily: "inherit", lineHeight: 1.55, height: "auto", padding: 12 }} />
         </label>
         <div>
-          <span className="eyebrow">Merge fields, click to insert</span>
+          <span className="eyebrow">{t("Merge fields, click to insert")}</span>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
             {fields.map((x) => <button key={x.name} type="button" className={`chip ${x.salary ? "warn" : "neutral"} nodot`} title={x.label} style={{ cursor: "pointer" }} onClick={() => insert(x.name)}>{`{{${x.name}}}`}</button>)}
           </div>
-          <p className="faint" style={{ fontSize: 12, marginTop: 8 }}>Fields in amber state a salary. A template that uses one can only be issued by someone who manages salary structures, never by HR.</p>
+          <p className="faint" style={{ fontSize: 12, marginTop: 8 }}>{t("Fields in amber state a salary. A template that uses one can only be issued by someone who manages salary structures, never by HR.")}</p>
         </div>
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} />Available for issuing
+          <input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} />{t("Available for issuing")}
         </label>
         {err && <div className="err" role="alert">{err}</div>}
       </div>
@@ -137,27 +140,28 @@ export function TemplateEditor({ id, fields, onClose }: { id: string | null; fie
 }
 
 export function TemplatesTable({ templates, fields }: { templates: LetterTemplateRow[]; fields: LetterField[] }) {
+  const t = useT();
   const [editing, setEditing] = useState<string | null | undefined>(undefined); // undefined = closed, null = new
   return (
     <section className="card enter" style={{ ["--i" as string]: 2 }}>
       <div className="card-h" style={{ padding: "16px 18px 0" }}>
-        <h3>Templates</h3>
-        <button className="btn btn-sm" onClick={() => setEditing(null)}><Icon n="plus" s={14} />New template</button>
+        <h3>{t("Templates")}</h3>
+        <button className="btn btn-sm" onClick={() => setEditing(null)}><Icon n="plus" s={14} />{t("New template")}</button>
       </div>
       <div className="table-wrap">
         <table className="t">
-          <thead><tr><th>Template</th><th className="hide-sm">Type</th><th>Status</th><th className="hide-sm">Version</th><th></th></tr></thead>
+          <thead><tr><th>{t("Template")}</th><th className="hide-sm">{t("Type")}</th><th>{t("Status")}</th><th className="hide-sm">{t("Version")}</th><th></th></tr></thead>
           <tbody>
-            {templates.map((t) => (
-              <tr key={t.id}>
-                <td><b>{t.name}</b><br /><small className="muted">{t.subject}</small></td>
-                <td className="muted hide-sm">{TYPE_LABEL[t.type]}</td>
+            {templates.map((tp) => (
+              <tr key={tp.id}>
+                <td><b>{tp.name}</b><br /><small className="muted">{tp.subject}</small></td>
+                <td className="muted hide-sm">{t(TYPE_LABEL[tp.type])}</td>
                 <td>
-                  {t.active ? <span className="chip ok">On</span> : <span className="chip neutral">Off</span>}
-                  {t.needsSalary && <span className="chip warn nodot" style={{ marginLeft: 6 }}>States salary</span>}
+                  {tp.active ? <span className="chip ok">{t("On")}</span> : <span className="chip neutral">{t("Off")}</span>}
+                  {tp.needsSalary && <span className="chip warn nodot" style={{ marginLeft: 6 }}>{t("States salary")}</span>}
                 </td>
-                <td className="num hide-sm">v{t.version}</td>
-                <td className="r"><button className="btn btn-sm" onClick={() => setEditing(t.id)}>Edit</button></td>
+                <td className="num hide-sm">v{tp.version}</td>
+                <td className="r"><button className="btn btn-sm" onClick={() => setEditing(tp.id)}>{t("Edit")}</button></td>
               </tr>
             ))}
           </tbody>

@@ -4,6 +4,7 @@ import { Icon } from "@/components/Icon";
 import { PageHeader } from "@/components/PageHeader";
 import { Pending, SearchBox, SelectFilter } from "@/components/table/Table";
 import { requirePage } from "@/lib/auth";
+import { getT } from "@/lib/i18n/server";
 import { apiData, qs } from "@/lib/backend";
 import { fmtDY, ymLabel } from "@/lib/format";
 import type { PayView } from "@/lib/api-types";
@@ -13,6 +14,7 @@ export const metadata: Metadata = { title: "Payroll" };
 
 export default async function PayrollPage(props: PageProps<"/payroll">) {
   await requirePage("payroll");
+  const t = await getT();
   const sp = await props.searchParams;
   const d = await apiData<{
     month: string; months: string[]; closed: boolean; attendanceLocked: boolean; approved: boolean; closedOn: string | null; missing: string[];
@@ -21,22 +23,22 @@ export default async function PayrollPage(props: PageProps<"/payroll">) {
   const { month, months, closed, attendanceLocked, approved, rows, view } = d;
   const missing = d.missing.map((fullName) => ({ fullName }));
   const stages = [
-    { l: "Lock attendance", done: attendanceLocked },
-    { l: "Compute", done: attendanceLocked },
-    { l: "Review & edit", done: approved },
-    { l: "Approve", done: approved },
-    { l: "Close & publish", done: closed },
+    { l: t("Lock attendance"), done: attendanceLocked },
+    { l: t("Compute"), done: attendanceLocked },
+    { l: t("Review & edit"), done: approved },
+    { l: t("Approve"), done: approved },
+    { l: t("Close & publish"), done: closed },
   ];
   const nowIdx = stages.findIndex((s) => !s.done);
   const tot = { n: rows.length, earned: rows.reduce((a, r) => a + r.earned, 0), lop: rows.reduce((a, r) => a + r.lop, 0), tds: rows.reduce((a, r) => a + r.tds, 0), net: rows.reduce((a, r) => a + r.net, 0) };
 
   return (
     <div className="col">
-      <PageHeader eyebrow="Finance · Payroll" title={ymLabel(month).split(" ")[0]} em="payroll" sub="Salary comes from each employee's current salary structure. Edit LOP, bonus or deductions before closing.">
+      <PageHeader eyebrow={t("Finance · Payroll")} title={ymLabel(month).split(" ")[0]} em={t("payroll")} sub={t("Salary comes from each employee's current salary structure. Edit LOP, bonus or deductions before closing.")}>
         <MonthSeg months={months} value={month} />
         {d.canClose || closed
           ? <CloseButton month={month} closed={closed} locked={attendanceLocked} count={rows.length} />
-          : <span className="chip warn nodot" title="Only the Finance Manager can close payroll">Closing needs Finance Manager</span>}
+          : <span className="chip warn nodot" title={t("Only the Finance Manager can close payroll")}>{t("Closing needs Finance Manager")}</span>}
       </PageHeader>
 
       <section className="card pad enter" style={{ ["--i" as string]: 1 }}>
@@ -50,7 +52,7 @@ export default async function PayrollPage(props: PageProps<"/payroll">) {
           ))}
         </div>
         <p className="faint" style={{ margin: "14px 0 0", fontSize: 12.5 }}>
-          {closed ? `Closed on ${fmtDY(d.closedOn!)} · payslips are visible to employees.` : attendanceLocked ? "Closing publishes payslips to every employee for this month." : `Attendance for ${ymLabel(month)} locks on the 1st of next month at 10:00 AM — figures can still change until then.`}
+          {closed ? t("Closed on {date} · payslips are visible to employees.", { date: fmtDY(d.closedOn!) }) : attendanceLocked ? t("Closing publishes payslips to every employee for this month.") : t("Attendance for {month} locks on the 1st of next month at 10:00 AM — figures can still change until then.", { month: ymLabel(month) })}
         </p>
       </section>
 
@@ -58,22 +60,22 @@ export default async function PayrollPage(props: PageProps<"/payroll">) {
         <section className="card pad enter" style={{ ["--i" as string]: 2, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
           <span className="spot"></span>
           <span className="kpi-ico" style={{ background: "var(--warnbg)", color: "var(--warn)" }}><Icon n="info" s={18} /></span>
-          <div style={{ flex: 1 }}><b>{missing.length} employee(s) without a salary structure</b><div className="muted" style={{ fontSize: 13 }}>{missing.map((e) => e.fullName).join(", ")} — set it up once and it applies every month.</div></div>
-          {d.canStructures && <Link className="btn" href="/structures?set=Missing">Set up structure</Link>}
+          <div style={{ flex: 1 }}><b>{t("{n} employee(s) without a salary structure", { n: missing.length })}</b><div className="muted" style={{ fontSize: 13 }}>{t("{names} — set it up once and it applies every month.", { names: missing.map((e) => e.fullName).join(", ") })}</div></div>
+          {d.canStructures && <Link className="btn" href="/structures?set=Missing">{t("Set up structure")}</Link>}
         </section>
       )}
 
       <PayrollKpis tot={tot} />
 
       <div className="toolbar enter" style={{ ["--i" as string]: 8 }}>
-        <SearchBox placeholder="Search name, ID or department" label="Search payroll" />
-        <SelectFilter name="show" label="Show" dflt="All" options={[{ v: "All", l: "Everyone" }, { v: "LOP", l: "With loss of pay" }, { v: "Edited", l: "Edited this month" }, { v: "NEW", l: "New regime" }, { v: "OLD", l: "Old regime" }]} />
-        <span className="tcount">{view.length} of {rows.length}</span>
+        <SearchBox placeholder={t("Search name, ID or department")} label={t("Search payroll")} />
+        <SelectFilter name="show" label={t("Show")} dflt="All" options={[{ v: "All", l: t("Everyone") }, { v: "LOP", l: t("With loss of pay") }, { v: "Edited", l: t("Edited this month") }, { v: "NEW", l: t("New regime") }, { v: "OLD", l: t("Old regime") }]} />
+        <span className="tcount">{t("{a} of {b}", { a: view.length, b: rows.length })}</span>
         <details className="menu-anchor" style={{ position: "relative" }}>
-          <summary className="btn" style={{ listStyle: "none" }}><Icon n="download" s={15} />Export</summary>
+          <summary className="btn" style={{ listStyle: "none" }}><Icon n="download" s={15} />{t("Export")}</summary>
           <div className="menu" style={{ minWidth: 220 }}>
-            {[["bank", "Bank transfer file"], ["ecr", "PF ECR"], ["pt", "Professional tax summary"], ["tds", "TDS summary"], ["register", "Payroll register"]].map(([t, l]) => (
-              <a key={t} href={`/api/payroll/export?m=${month}&type=${t}`} download>{l}</a>
+            {[["bank", t("Bank transfer file")], ["ecr", t("PF ECR")], ["pt", t("Professional tax summary")], ["tds", t("TDS summary")], ["register", t("Payroll register")]].map(([k, l]) => (
+              <a key={k} href={`/api/payroll/export?m=${month}&type=${k}`} download>{l}</a>
             ))}
           </div>
         </details>

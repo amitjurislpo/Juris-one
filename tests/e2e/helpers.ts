@@ -43,6 +43,8 @@ export async function login(page: Page, id: string, pw?: string) {
   const password = pw ?? (id.toUpperCase() === OWNER ? OWNER_PW : DEMO_PW);
   // wait for hydration — a click can otherwise beat React to the form
   await page.goto("/login", { waitUntil: "networkidle" });
+  // the form starts in email-code mode: switch to the password form first
+  await page.getByRole("button", { name: "Use password instead" }).click();
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();

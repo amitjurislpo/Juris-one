@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { apiGet } from "@/lib/backend";
 import type { ShellNote, SubscriptionCurrent } from "@/lib/api-types";
 import { fmtDY } from "@/lib/format";
+import { getT } from "@/lib/i18n/server";
 import { BUSINESS_MANAGE, type NavGroup } from "@/lib/nav";
 
 interface ShellData {
@@ -22,6 +23,7 @@ interface ShellData {
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const u = await requireUser();
+  const t = await getT();
   const [data, jar] = await Promise.all([apiGet<ShellData>("/api/shell"), cookies()]);
   if (!data) redirect("/login");
   // the owner is warned on every page during the last week of the subscription
@@ -42,10 +44,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {ending && (
         <div className="card" role="status" style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", marginBottom: 20, background: "var(--warnbg)", borderColor: "transparent", color: "var(--warn)" }}>
           <b style={{ flex: 1 }}>
-            {s.daysLeft === 0 ? "Your JurisOne subscription ends today" : `Your JurisOne subscription ends in ${s.daysLeft} day${s.daysLeft === 1 ? "" : "s"}`} ({fmtDY(s.endsOn!)}).
-            {" "}After that, everyone can still sign in but JurisOne is paused. Contact the JurisOne team to renew.
+            {s.daysLeft === 0 ? t("Your JurisOne subscription ends today") : s.daysLeft === 1 ? t("Your JurisOne subscription ends in 1 day") : t("Your JurisOne subscription ends in {n} days", { n: s.daysLeft ?? 0 })} ({fmtDY(s.endsOn!)}).
+            {" "}{t("After that, everyone can still sign in but JurisOne is paused. Contact the JurisOne team to renew.")}
           </b>
-          <Link className="btn btn-sm" href="/subscription">Subscription</Link>
+          <Link className="btn btn-sm" href="/subscription">{t("Subscription")}</Link>
         </div>
       )}
       {children}

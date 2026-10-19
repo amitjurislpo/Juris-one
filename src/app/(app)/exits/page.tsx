@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { can, requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
 import { fmtDY } from "@/lib/format";
+import { getT } from "@/lib/i18n/server";
 import { ExitPolicyButton, StartExitButton } from "./ExitsClient";
 import { EXIT_KIND, EXIT_STATUS, type ExitStatus } from "./status";
 
@@ -20,36 +21,37 @@ const TABS = [["open", "In progress"], ["ended", "Ended"], ["all", "All"]] as co
 /** HR and Finance: employees who are leaving, with their notice, clearance and settlement. No amounts here. */
 export default async function ExitsPage(props: PageProps<"/exits">) {
   const u = await requirePage("exits");
+  const t = await getT();
   const sp = await props.searchParams;
   const tab = TABS.some(([k]) => k === sp.status) ? (sp.status as string) : "open";
   const q = typeof sp.q === "string" ? sp.q : "";
   const params = new URLSearchParams({ ...(tab === "all" ? {} : { status: tab }), ...(q ? { q } : {}) });
   const rows = await apiData<Row[]>(`/api/exits?${params}`);
   const manage = can(u, "exit.manage");
-  const href = (t: string) => `/exits?${new URLSearchParams({ status: t, ...(q ? { q } : {}) })}`;
+  const href = (s: string) => `/exits?${new URLSearchParams({ status: s, ...(q ? { q } : {}) })}`;
 
   return (
     <div className="col">
-      <PageHeader eyebrow="People ops" title="Employee" em="exits"
-        sub="Resignations and terminations: notice period, clearance, then the full and final settlement. HR runs the process; Finance prepares and approves the settlement.">
+      <PageHeader eyebrow={t("People ops")} title={t("Employee")} em={t("exits")}
+        sub={t("Resignations and terminations: notice period, clearance, then the full and final settlement. HR runs the process; Finance prepares and approves the settlement.")}>
         {manage && <ExitPolicyButton />}
         {manage && <StartExitButton />}
       </PageHeader>
       <div className="toolbar enter" style={{ ["--i" as string]: 1 }}>
-        <div className="seg" role="tablist" aria-label="Show">
-          {TABS.map(([k, l]) => <Link key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} href={href(k)}>{l}</Link>)}
+        <div className="seg" role="tablist" aria-label={t("Show")}>
+          {TABS.map(([k, l]) => <Link key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} href={href(k)}>{t(l)}</Link>)}
         </div>
         <form action="/exits" className="search">
           <Icon n="search" s={15} />
-          <input name="q" defaultValue={q} placeholder="Search name or ID" aria-label="Search" />
+          <input name="q" defaultValue={q} placeholder={t("Search name or ID")} aria-label={t("Search")} />
           {tab !== "open" && <input type="hidden" name="status" value={tab} />}
         </form>
-        <span className="tcount">{rows.length} exit{rows.length === 1 ? "" : "s"}</span>
+        <span className="tcount">{rows.length === 1 ? t("1 exit") : t("{n} exits", { n: rows.length })}</span>
       </div>
       <section className="card enter" style={{ ["--i" as string]: 2 }}>
         <div className="table-wrap">
           <table className="t">
-            <thead><tr><th>Employee</th><th className="hide-sm">Type</th><th>Status</th><th>Last working day</th><th className="hide-sm">Clearance</th><th className="hide-sm">Settlement</th></tr></thead>
+            <thead><tr><th>{t("Employee")}</th><th className="hide-sm">{t("Type")}</th><th>{t("Status")}</th><th>{t("Last working day")}</th><th className="hide-sm">{t("Clearance")}</th><th className="hide-sm">{t("Settlement")}</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
@@ -59,17 +61,17 @@ export default async function ExitsPage(props: PageProps<"/exits">) {
                       <div><b>{r.employeeName}</b><small>{r.employeeCode} · {r.department ?? r.designation}</small></div>
                     </Link>
                   </td>
-                  <td className="hide-sm">{EXIT_KIND[r.kind] ?? r.kind}</td>
-                  <td><span className={`chip ${EXIT_STATUS[r.status].cls}`}>{EXIT_STATUS[r.status].text}</span></td>
-                  <td>{r.lastWorkingDay ? fmtDY(r.lastWorkingDay) : <span className="muted">Not set</span>}</td>
+                  <td className="hide-sm">{EXIT_KIND[r.kind] ? t(EXIT_KIND[r.kind]) : r.kind}</td>
+                  <td><span className={`chip ${EXIT_STATUS[r.status].cls}`}>{t(EXIT_STATUS[r.status].text)}</span></td>
+                  <td>{r.lastWorkingDay ? fmtDY(r.lastWorkingDay) : <span className="muted">{t("Not set")}</span>}</td>
                   <td className="num hide-sm">{r.clearance.done}/{r.clearance.total}</td>
-                  <td className="hide-sm">{r.settlementStatus === "APPROVED" ? <span className="chip ok">Approved</span> : r.settlementStatus === "DRAFT" ? <span className="chip warn">Draft</span> : <span className="muted">—</span>}</td>
+                  <td className="hide-sm">{r.settlementStatus === "APPROVED" ? <span className="chip ok">{t("Approved")}</span> : r.settlementStatus === "DRAFT" ? <span className="chip warn">{t("Draft")}</span> : <span className="muted">—</span>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        {!rows.length && <div className="empty"><b className="display">No exits {tab === "open" ? "in progress" : "found"}</b><span className="muted">An exit starts when an employee resigns{manage ? " or when you start one with “Start an exit”" : ""}.</span></div>}
+        {!rows.length && <div className="empty"><b className="display">{tab === "open" ? t("No exits in progress") : t("No exits found")}</b><span className="muted">{manage ? t("An exit starts when an employee resigns or when you start one with “Start an exit”.") : t("An exit starts when an employee resigns.")}</span></div>}
       </section>
     </div>
   );

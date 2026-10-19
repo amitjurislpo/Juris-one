@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
 import { fmtDY } from "@/lib/format";
+import { getT } from "@/lib/i18n/server";
 import { NewPolicyButton } from "./PoliciesClient";
 
 export const metadata: Metadata = { title: "Company policies" };
@@ -21,30 +22,31 @@ const STATUS: Record<Row["status"], { cls: string; text: string }> = {
 /** HR / the owner: write and publish policies; see how many people have accepted each one. */
 export default async function PoliciesPage() {
   await requirePage("policies");
+  const t = await getT();
   const rows = await apiData<Row[]>("/api/policies");
 
   return (
     <div className="col">
-      <PageHeader eyebrow="Administration" title={<>Company <em>policies</em></>}
-        sub="Publish a policy and everyone (except owners) must read and accept it before using JurisOne. Each change is a new version; every acceptance is kept as a permanent record.">
+      <PageHeader eyebrow={t("Administration")} title={<>{t("Company")} <em>{t("policies")}</em></>}
+        sub={t("Publish a policy and everyone (except owners) must read and accept it before using JurisOne. Each change is a new version; every acceptance is kept as a permanent record.")}>
         <NewPolicyButton />
       </PageHeader>
       <section className="card enter" style={{ ["--i" as string]: 1 }}>
         <div className="table-wrap">
           <table className="t">
-            <thead><tr><th>Policy</th><th>Status</th><th>Version</th><th>Accepted</th><th className="hide-sm">Last change</th></tr></thead>
+            <thead><tr><th>{t("Policy")}</th><th>{t("Status")}</th><th>{t("Version")}</th><th>{t("Accepted")}</th><th className="hide-sm">{t("Last change")}</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
                   <td>
                     <Link href={`/policies/${r.id}`} className="person" style={{ textDecoration: "none", color: "inherit" }}>
                       <span className="kpi-ico" style={{ width: 34, height: 34, background: "var(--accentsoft)", color: "var(--accent)" }}><Icon n="book" s={16} /></span>
-                      <div><b>{r.title}</b><small>{r.requiresAck ? "Must be accepted" : "For information"}</small></div>
+                      <div><b>{r.title}</b><small>{r.requiresAck ? t("Must be accepted") : t("For information")}</small></div>
                     </Link>
                   </td>
                   <td>
-                    <span className={`chip ${STATUS[r.status].cls}`}>{STATUS[r.status].text}</span>
-                    {r.status !== "DRAFT" && r.hasChanges && <span className="chip warn nodot" style={{ marginLeft: 6 }}>Unpublished changes</span>}
+                    <span className={`chip ${STATUS[r.status].cls}`}>{t(STATUS[r.status].text)}</span>
+                    {r.status !== "DRAFT" && r.hasChanges && <span className="chip warn nodot" style={{ marginLeft: 6 }}>{t("Unpublished changes")}</span>}
                   </td>
                   <td className="num">{r.version ? `v${r.version}` : "—"}</td>
                   <td>{r.status === "PUBLISHED" && r.requiresAck ? <span className="num">{r.acknowledged} / {r.required}</span> : <span className="muted">—</span>}</td>
@@ -54,7 +56,7 @@ export default async function PoliciesPage() {
             </tbody>
           </table>
         </div>
-        {!rows.length && <div className="empty"><b className="display">No policies yet</b><span className="muted">Write your first policy — a code of conduct, leave or IT policy.</span></div>}
+        {!rows.length && <div className="empty"><b className="display">{t("No policies yet")}</b><span className="muted">{t("Write your first policy — a code of conduct, leave or IT policy.")}</span></div>}
       </section>
     </div>
   );

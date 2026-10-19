@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/PageHeader";
 import { Pending, SearchBox, SortTh } from "@/components/table/Table";
 import { Icon } from "@/components/Icon";
+import { getT } from "@/lib/i18n/server";
 import { requirePage } from "@/lib/auth";
 import { apiData, qs } from "@/lib/backend";
 import { fmtDY } from "@/lib/format";
@@ -14,16 +15,17 @@ interface Row { id: string; name: string; note: string; head: string; n: number;
 
 export default async function DepartmentsPage(props: PageProps<"/departments">) {
   const u = await requirePage("departments");
+  const t = await getT();
   const { rows, heads } = await apiData<{ rows: Row[]; heads: { id: string; name: string; title: string }[] }>(`/api/departments${qs(await props.searchParams)}`);
 
   return (
     <div className="col">
-      <PageHeader eyebrow="People operations" title={<>Depart<em>ments</em></>} sub="Create departments first — new employees are added into one of these.">
+      <PageHeader eyebrow={t("People operations")} title={<>{t("Depart")}<em>{t("ments")}</em></>} sub={t("Create departments first — new employees are added into one of these.")}>
         <NewDepartmentButton by={u.name} heads={heads} />
       </PageHeader>
       <div className="toolbar enter" style={{ ["--i" as string]: 1 }}>
-        <SearchBox placeholder="Search department, head or creator" label="Search departments" />
-        <span className="tcount">{rows.length} department{rows.length === 1 ? "" : "s"}</span>
+        <SearchBox placeholder={t("Search department, head or creator")} label={t("Search departments")} />
+        <span className="tcount">{rows.length === 1 ? t("{n} department", { n: rows.length }) : t("{n} departments", { n: rows.length })}</span>
       </div>
       <section className="card enter" style={{ ["--i" as string]: 2 }}>
         <Pending>
@@ -31,12 +33,12 @@ export default async function DepartmentsPage(props: PageProps<"/departments">) 
             <table className="t">
               <thead>
                 <tr>
-                  <SortTh k="name" dflt="name">Department</SortTh>
-                  <SortTh k="head" dflt="name">Head</SortTh>
-                  <SortTh k="n" dflt="name" right>People</SortTh>
-                  <SortTh k="by" dflt="name">Created by</SortTh>
-                  <SortTh k="on" dflt="name">Created on</SortTh>
-                  <th><span className="sr-only">Actions</span></th>
+                  <SortTh k="name" dflt="name">{t("Department")}</SortTh>
+                  <SortTh k="head" dflt="name">{t("Head")}</SortTh>
+                  <SortTh k="n" dflt="name" right>{t("People")}</SortTh>
+                  <SortTh k="by" dflt="name">{t("Created by")}</SortTh>
+                  <SortTh k="on" dflt="name">{t("Created on")}</SortTh>
+                  <th><span className="sr-only">{t("Actions")}</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -58,7 +60,7 @@ export default async function DepartmentsPage(props: PageProps<"/departments">) 
               </tbody>
             </table>
           </div>
-          {!rows.length && <div className="empty"><b>No departments match</b><span className="muted">Try a different search.</span></div>}
+          {!rows.length && <div className="empty"><b>{t("No departments match")}</b><span className="muted">{t("Try a different search.")}</span></div>}
         </Pending>
       </section>
     </div>
