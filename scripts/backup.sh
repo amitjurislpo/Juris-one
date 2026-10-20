@@ -8,7 +8,8 @@
 # Copy the dumps, ./storage (payslip PDFs, proofs) and PII_ENCRYPTION_KEY off the server too.
 set -eu
 
-ENV_FILE=".env.${APP_ENV:-dev}"; [ -f "$ENV_FILE" ] && set -a && . "./$ENV_FILE" && set +a
+# DATABASE_URL (postgresql://user:password@host:port/db) comes from the environment; for dev, run it through the helper:
+#   node scripts/with-env.mjs dev ./scripts/backup.sh
 : "${DATABASE_URL:?DATABASE_URL is not set}"
 URL=$(printf '%s' "$DATABASE_URL" | sed 's/[?&]schema=[^&]*//')
 DIR=${BACKUP_DIR:-./storage/backups}

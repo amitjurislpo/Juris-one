@@ -5,7 +5,8 @@
 set -eu
 
 FILE=${1:?usage: scripts/restore.sh <dump file>}
-ENV_FILE=".env.${APP_ENV:-dev}"; [ -f "$ENV_FILE" ] && set -a && . "./$ENV_FILE" && set +a
+# DATABASE_URL (postgresql://user:password@host:port/db) comes from the environment; for dev, run it through the helper:
+#   node scripts/with-env.mjs dev ./scripts/restore.sh <dump file>
 : "${DATABASE_URL:?DATABASE_URL is not set}"
 URL=$(printf '%s' "$DATABASE_URL" | sed 's/[?&]schema=[^&]*//')
 

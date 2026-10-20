@@ -12,15 +12,15 @@ class EnvironmentGuardTest {
 
     static Map<String, String> good(String env) {
         Map<String, String> m = new HashMap<>();
-        m.put("APP_ENV", env);
+        m.put("jurisone.env", env);
         m.put("jurisone.otp.fixed-code", "");
-        m.put("SEED_DEMO", "false");
-        m.put("SMTP_HOST", "smtp.example.com");
-        m.put("APP_URL", "https://people.example.com");
-        m.put("JWT_SECRET", "x".repeat(40));
-        m.put("PII_ENCRYPTION_KEY", "k".repeat(44));
-        m.put("SUPER_ADMIN_PASSWORD", "s3cret-pass");
-        m.put("DATABASE_URL", "postgresql://u:p@db:5432/x");
+        m.put("jurisone.seed.demo", "false");
+        m.put("jurisone.mail.host", "smtp.example.com");
+        m.put("jurisone.app-url", "https://people.example.com");
+        m.put("jurisone.security.jwt-secret", "x".repeat(40));
+        m.put("jurisone.security.pii-encryption-key", "k".repeat(44));
+        m.put("jurisone.seed.super-admin-password", "s3cret-pass");
+        m.put("spring.datasource.password", "db-password");
         return m;
     }
 
@@ -37,24 +37,24 @@ class EnvironmentGuardTest {
     @Test
     void devMayUseTheFixedCodeAndDemoData() {
         Map<String, String> m = new HashMap<>();
-        m.put("APP_ENV", "dev");
+        m.put("jurisone.env", "dev");
         m.put("jurisone.otp.fixed-code", "000000");
-        m.put("SEED_DEMO", "true");
-        m.put("APP_URL", "http://localhost:3005");
+        m.put("jurisone.seed.demo", "true");
+        m.put("jurisone.app-url", "http://localhost:3005");
         assertThat(problems(m)).isEmpty();
     }
 
     @Test
     void sqeNeedsRealCodesByEmailButMayKeepDemoDataAndHttp() {
         Map<String, String> m = new HashMap<>();
-        m.put("APP_ENV", "sqe");
-        m.put("SEED_DEMO", "true");
-        m.put("APP_URL", "http://sqe.internal:3015");
-        m.put("SMTP_HOST", "smtp.example.com");
+        m.put("jurisone.env", "sqe");
+        m.put("jurisone.seed.demo", "true");
+        m.put("jurisone.app-url", "http://sqe.internal:3015");
+        m.put("jurisone.mail.host", "smtp.example.com");
         assertThat(problems(m)).isEmpty();
         m.put("jurisone.otp.fixed-code", "000000");
-        m.put("SMTP_HOST", "");
-        assertThat(problems(m)).hasSize(2).anyMatch(p -> p.contains("OTP_FIXED_CODE")).anyMatch(p -> p.contains("SMTP_HOST"));
+        m.put("jurisone.mail.host", "");
+        assertThat(problems(m)).hasSize(2).anyMatch(p -> p.contains("jurisone.otp.fixed-code")).anyMatch(p -> p.contains("jurisone.mail.host"));
     }
 
     @Test
@@ -65,7 +65,7 @@ class EnvironmentGuardTest {
     @Test
     void anUnknownEnvironmentIsRejected() {
         Map<String, String> m = good("staging");
-        assertThat(problems(m)).singleElement().asString().contains("APP_ENV must be one of");
+        assertThat(problems(m)).singleElement().asString().contains("jurisone.env must be one of");
     }
 
     @Test
@@ -73,24 +73,24 @@ class EnvironmentGuardTest {
         for (String env : List.of("uat", "prd")) {
             Map<String, String> m = good(env);
             m.put("jurisone.otp.fixed-code", "000000");
-            assertThat(problems(m)).as(env).singleElement().asString().contains("OTP_FIXED_CODE");
+            assertThat(problems(m)).as(env).singleElement().asString().contains("jurisone.otp.fixed-code");
         }
     }
 
     @Test
     void demoDataMissingEmailAndHttpAreRefused() {
         Map<String, String> m = good("prd");
-        m.put("SEED_DEMO", "true");
-        m.put("SMTP_HOST", "");
-        m.put("APP_URL", "http://people.example.com");
+        m.put("jurisone.seed.demo", "true");
+        m.put("jurisone.mail.host", "");
+        m.put("jurisone.app-url", "http://people.example.com");
         assertThat(problems(m)).hasSize(3);
     }
 
     @Test
     void placeholderAndEmptySecretsAreRefused() {
         Map<String, String> m = good("prd");
-        m.put("JWT_SECRET", "<generate: openssl rand -base64 48>");
-        m.remove("PII_ENCRYPTION_KEY");
-        assertThat(problems(m)).hasSize(2).anyMatch(p -> p.startsWith("JWT_SECRET")).anyMatch(p -> p.startsWith("PII_ENCRYPTION_KEY"));
+        m.put("jurisone.security.jwt-secret", "<generate: openssl rand -base64 48>");
+        m.remove("jurisone.security.pii-encryption-key");
+        assertThat(problems(m)).hasSize(2).anyMatch(p -> p.startsWith("jurisone.security.jwt-secret")).anyMatch(p -> p.startsWith("jurisone.security.pii-encryption-key"));
     }
 }

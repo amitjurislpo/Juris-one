@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Signed-in devices. A {@code sessions} row is one sign-in (12 h, or {@code SESSION_TTL_DAYS} with "keep me signed in");
+ * Signed-in devices. A {@code sessions} row is one sign-in (12 h, or {@code jurisone.security.session-ttl-days} with "keep me signed in");
  * it is the refresh-token family. The browser holds two HTTP-only cookies:
  * {@code jo_at} — the 5-minute JWT access token — and {@code jo_rt} — an opaque refresh token that rotates on every use.
  */
@@ -46,8 +46,8 @@ public class SessionService {
     private final boolean secureCookie;
     private final Duration reuseGrace;
 
-    public SessionService(SessionRepository repo, JwtService jwt, @Value("${SESSION_TTL_DAYS:30}") int ttlDays,
-                          @Value("${COOKIE_SECURE:${APP_URL:http://localhost:3005}}") String secure,
+    public SessionService(SessionRepository repo, JwtService jwt, @Value("${jurisone.security.session-ttl-days:30}") int ttlDays,
+                          @Value("${jurisone.security.cookie-secure:${jurisone.app-url:http://localhost:3005}}") String secure,
                           @Value("${jurisone.refresh-reuse-grace-seconds:30}") long reuseGraceSeconds) {
         this.repo = repo;
         this.jwt = jwt;

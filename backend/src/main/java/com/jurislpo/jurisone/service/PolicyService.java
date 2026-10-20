@@ -49,7 +49,7 @@ public class PolicyService {
     private final String uploadDir;
 
     public PolicyService(PolicyRepository repo, NotificationService notifications, AuditService audit, JurisOneProperties props,
-                         @Value("${UPLOAD_DIR:./storage}") String uploadDir) {
+                         @Value("${jurisone.upload-dir:./storage}") String uploadDir) {
         this.repo = repo;
         this.notifications = notifications;
         this.audit = audit;

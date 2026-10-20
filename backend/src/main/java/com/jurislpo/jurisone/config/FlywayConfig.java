@@ -24,10 +24,10 @@ public class FlywayConfig {
             JdbcTemplate jdbc = new JdbcTemplate(dataSource);
             if ("true".equals(env.getProperty("jurisone.reset"))) {
                 // `reset` command (development only): drop everything in the schema, then migrate from scratch
-                String appUrl = env.getProperty("APP_URL", "http://localhost:3005");
+                String appUrl = env.getProperty("jurisone.app-url", "http://localhost:3005");
                 boolean local = appUrl.matches("^https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?(/.*)?$");
-                if (!local && !"true".equals(env.getProperty("ALLOW_DB_RESET"))) {
-                    throw new IllegalStateException("Refusing to reset a database for " + appUrl + ". Set ALLOW_DB_RESET=true if you really mean it.");
+                if (!local && !"true".equals(env.getProperty("jurisone.allow-db-reset"))) {
+                    throw new IllegalStateException("Refusing to reset a database for " + appUrl + ". Set jurisone.allow-db-reset=true if you really mean it.");
                 }
                 flyway.clean();
             }

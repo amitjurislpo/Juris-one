@@ -51,8 +51,8 @@ public class PayrollOpsService {
     private final String appUrl;
 
     public PayrollOpsService(PayrollOpsRepository repo, TransactionTemplate tx, PayrollService payroll, PayslipPdf pdf, SettingsService settings, AuditService audit,
-                             MailService mail, PiiCrypto pii, ObjectMapper json, JurisOneProperties props, @Value("${UPLOAD_DIR:./storage}") String uploadDir,
-                             @Value("${APP_URL:http://localhost:3005}") String appUrl) {
+                             MailService mail, PiiCrypto pii, ObjectMapper json, JurisOneProperties props, @Value("${jurisone.upload-dir:./storage}") String uploadDir,
+                             @Value("${jurisone.app-url:http://localhost:3005}") String appUrl) {
         this.repo = repo;
         this.tx = tx;
         this.payroll = payroll;

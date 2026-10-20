@@ -1,19 +1,20 @@
-# One stack per environment, configured by that environment's file (never hard-code credentials here):
-#   docker compose --env-file .env.<dev|sqe|uat|prd> up -d db        (or: npm run db:up / db:up:sqe / db:up:uat / db:up:prd)
-# COMPOSE_PROJECT_NAME, the ports and the credentials all come from the env file, so each environment gets its own
-# containers and data volume and they can run side by side.
+# One stack per environment. Run it through the helper, which fills in ports, database and project name from that
+# environment's backend/src/main/resources/application-<env>.properties (and the secrets from your environment variables):
+#   node scripts/with-env.mjs <dev|sqe|uat|prd> docker compose up -d db
+#   (or: npm run db:up / db:up:sqe / db:up:uat / db:up:prd, backend:up / backend:up:<env>)
+# Each environment gets its own containers and data volume (COMPOSE_PROJECT_NAME), so they can run side by side.
 services:
   db:
     image: postgres:16-alpine
     container_name: ${COMPOSE_PROJECT_NAME:-jurisone}-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?run through scripts/with-env.mjs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set DB_PASSWORD in the environment (sqe, uat, prd)}
+      POSTGRES_DB: ${POSTGRES_DB:?run through scripts/with-env.mjs}
       TZ: UTC
     ports:
-      - "${DB_PORT:-5436}:5432"
+      - "127.0.0.1:${DB_PORT:-5436}:5432"
     volumes:
       - jurisone_pg:/var/lib/postgresql/data
     healthcheck:
@@ -23,6 +24,7 @@ services:
       retries: 10
 
   # Spring Boot API (BACKEND_PORT on the host, 8080 inside). The web app (juris-one-frontend) proxies /api/* to it.
+  # Settings come from the jar's application-<env>.properties; only the database address and the secrets are given here.
   backend:
     build: ./backend
     container_name: ${COMPOSE_PROJECT_NAME:-jurisone}-backend
@@ -30,13 +32,20 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    env_file: ${ENV_FILE:-.env.dev}
     environment:
+      SPRING_PROFILES_ACTIVE: ${APP_ENV:?run through scripts/with-env.mjs}
+      SERVER_PORT: 8080
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      FRONTEND_ORIGIN: ${APP_URL:-http://localhost:3005}
-      SPRING_PROFILES_ACTIVE: ${APP_ENV:-dev}
+      # secrets of sqe / uat / prd (dev has its own values in application-dev.properties)
+      PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}
+      SEED_OWNER_PASSWORD: ${SEED_OWNER_PASSWORD:-}
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     volumes:

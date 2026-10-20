@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { loadEnv } from "./env.mjs";
 
-loadEnv(); // the dev environment (.env.dev) unless APP_ENV says otherwise; the e2e database is "<db>_e2e"
+loadEnv(); // the dev environment (application-dev.properties) unless APP_ENV says otherwise; the e2e database is "<db>_e2e"
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const win = process.platform === "win32";
@@ -54,17 +54,20 @@ async function backend() {
   copyFileSync(jar, copy);
   const env = {
     ...process.env,
-    DATABASE_URL: url.toString(),
-    BACKEND_PORT: String(E2E.api),
-    APP_URL: `http://localhost:${E2E.web}`,
-    FRONTEND_ORIGIN: `http://localhost:${E2E.web}`,
-    UPLOAD_DIR: "./storage/e2e",
-    SEED_DEMO: "true",
-    SMTP_HOST: "",
+    SPRING_PROFILES_ACTIVE: "dev",
+    SPRING_DATASOURCE_URL: `jdbc:postgresql://${url.host}${url.pathname}?currentSchema=public`,
+    SPRING_DATASOURCE_USERNAME: decodeURIComponent(url.username),
+    SPRING_DATASOURCE_PASSWORD: decodeURIComponent(url.password),
+    SERVER_PORT: String(E2E.api),
+    JURISONE_APP_URL: `http://localhost:${E2E.web}`,
+    JURISONE_FRONTEND_ORIGIN: `http://localhost:${E2E.web}`,
+    JURISONE_UPLOAD_DIR: "./storage/e2e",
+    JURISONE_SEED_DEMO: "true",
+    JURISONE_MAIL_HOST: "",
     // sign-in is by emailed code; in the e2e environment every code is 000000 and requests are not throttled
-    OTP_FIXED_CODE: "000000",
-    OTP_REQUESTS_PER_IP: "100000",
-    OTP_REQUESTS_PER_EMAIL: "100000",
+    JURISONE_OTP_FIXED_CODE: "000000",
+    JURISONE_OTP_REQUESTS_PER_IP: "100000",
+    JURISONE_OTP_REQUESTS_PER_EMAIL: "100000",
   };
   // the dev-only reset command empties the e2e database, migrates it and seeds the demo business
   run("java", ["-jar", copy, "reset"], { cwd: root, env });

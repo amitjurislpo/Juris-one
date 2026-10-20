@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { loadEnv } from "./env.mjs";
 
-loadEnv(); // the backend reads .env.<APP_ENV> itself too; this also sets SPRING_PROFILES_ACTIVE
+loadEnv(); // selects the environment (APP_ENV, default dev): sets SPRING_PROFILES_ACTIVE for the API
 
 const backend = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "backend");
 const win = process.platform === "win32";

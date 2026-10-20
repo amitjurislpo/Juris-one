@@ -114,7 +114,7 @@ public class OnboardingService {
 
     public OnboardingService(OnboardingRepository repo, PiiCrypto pii, ObjectMapper json, MailService mail, NotificationService notifications, AuditService audit,
                              PeopleService people, SubscriptionService subscriptions, SettingsService settings, JurisOneProperties props,
-                             @Value("${UPLOAD_DIR:./storage}") String uploadDir, @Value("${APP_URL:http://localhost:3005}") String appUrl) {
+                             @Value("${jurisone.upload-dir:./storage}") String uploadDir, @Value("${jurisone.app-url:http://localhost:3005}") String appUrl) {
         this.repo = repo;
         this.pii = pii;
         this.json = json;

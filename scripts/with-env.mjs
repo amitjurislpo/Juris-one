@@ -1,4 +1,4 @@
-// Runs a command with one environment's variables:  node scripts/with-env.mjs <dev|sqe|uat|prd> <command...>
+// Runs a command with one environment selected (settings from application-<env>.properties):  node scripts/with-env.mjs <dev|sqe|uat|prd> <command...>
 //   node scripts/with-env.mjs sqe npm run db:migrate      node scripts/with-env.mjs uat npm run backend:uat
 // Use "-" instead of the name to take it from APP_ENV (default dev).
 import { spawnSync } from "node:child_process";

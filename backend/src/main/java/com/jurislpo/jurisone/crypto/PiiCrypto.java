@@ -25,7 +25,7 @@ public class PiiCrypto {
 
     private final String rawKey;
 
-    public PiiCrypto(@Value("${PII_ENCRYPTION_KEY:}") String rawKey) {
+    public PiiCrypto(@Value("${jurisone.security.pii-encryption-key:}") String rawKey) {
         this.rawKey = rawKey;
     }
 

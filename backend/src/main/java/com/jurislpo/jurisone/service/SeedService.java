@@ -33,11 +33,11 @@ import org.springframework.stereotype.Service;
 
 /**
  * Seed — idempotent (safe to re-run).
- *   Platform: shifts, leave types, FY 2026-27 tax tables and the super admin (SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD;
+ *   Platform: shifts, leave types, FY 2026-27 tax tables and the super admin (jurisone.seed.super-admin-email / super-admin-password;
  *             an existing password is never changed). Businesses are created by the super admin.
- *   Demo (SEED_DEMO=true, development and tests only): a "Juris Consultants" business with the prototype's people,
+ *   Demo (jurisone.seed.demo=true, development and tests only): a "Juris Consultants" business with the prototype's people,
  *             holidays, salary structures, declarations, punches, requests and closed Apr–Aug 2026 payroll. Its owner
- *             (JC-002) signs in with SEED_OWNER_PASSWORD, everyone else with SEED_DEMO_PASSWORD.
+ *             (JC-002) signs in with jurisone.seed.owner-password, everyone else with jurisone.seed.demo-password.
  */
 @Service
 public class SeedService {
@@ -58,7 +58,7 @@ public class SeedService {
 
     public SeedService(SeedRepository repo, PiiCrypto pii, Passwords passwords, PayrollOpsService payrollOps, JobsService jobs, BusinessSetupService setup,
                        com.jurislpo.jurisone.service.PlatformCompanyService platformCompany, Environment env, JurisOneProperties props,
-                       @Value("${UPLOAD_DIR:./storage}") String uploadDir) {
+                       @Value("${jurisone.upload-dir:./storage}") String uploadDir) {
         this.platformCompany = platformCompany;
         this.repo = repo;
         this.pii = pii;
@@ -180,7 +180,7 @@ public class SeedService {
             new Person("JC-090", "Emily Carter", "Client Success Associate", "Client Services", "JC-091", "2025-05-19", "employee", "ACTIVE", "US_DAY", "America/New_York", null));
 
     String adminEmail() {
-        String e = env.getProperty("SUPER_ADMIN_EMAIL", "");
+        String e = env.getProperty("jurisone.seed.super-admin-email", "");
         return (e.isEmpty() ? "admin@jurislpo.com" : e).toLowerCase();
     }
 
@@ -364,8 +364,8 @@ public class SeedService {
     }
 
     public void run() throws IOException {
-        String adminPw = env.getProperty("SUPER_ADMIN_PASSWORD", "");
-        if (adminPw.isBlank()) throw new IllegalStateException("Set SUPER_ADMIN_PASSWORD (in .env or the environment) before seeding.");
+        String adminPw = env.getProperty("jurisone.seed.super-admin-password", "");
+        if (adminPw.isBlank()) throw new IllegalStateException("Set jurisone.seed.super-admin-password (application-<env>.properties or the environment) before seeding.");
 
         // platform: shared shifts, leave types and tax tables, and the super admin (no business)
         UUID platformRole = seedPlatformRole();
@@ -377,7 +377,7 @@ public class SeedService {
         seedPlans();
 
         // demo business (development and tests only): the prototype company, with Sana as its owner (sub admin)
-        boolean demo = "true".equals(env.getProperty("SEED_DEMO", "false"));
+        boolean demo = "true".equals(env.getProperty("jurisone.seed.demo", "false"));
         if (demo) {
             List<UUID> found = repo.findDemoBusinessIds();
             UUID business = found.isEmpty()
@@ -399,7 +399,7 @@ public class SeedService {
 
         long[] counts = {count("businesses"), count("employees"), count("roles"), count("departments"), count("holidays")};
         log.info("Seed complete — businesses {}, employees {}, roles {}, departments {}, holidays {}", counts[0], counts[1], counts[2], counts[3], counts[4]);
-        log.info("Super admin: {}{}", adminEmail(), demo ? " · demo business \"Juris Consultants\": owner JC-002 (SEED_OWNER_PASSWORD), others (SEED_DEMO_PASSWORD)" : "");
+        log.info("Super admin: {}{}", adminEmail(), demo ? " · demo business \"Juris Consultants\": owner JC-002 (jurisone.seed.owner-password), others (jurisone.seed.demo-password)" : "");
     }
 
     /**
@@ -446,8 +446,8 @@ public class SeedService {
             String[][] heads = {{"Human Resources", "JC-012"}, {"Finance", "JC-004"}, {"Technology", "JC-035"}, {"Litigation Support", "JC-035"}, {"Client Services", "JC-091"}};
             for (String[] h : heads) repo.updateDepartmentHead(h[0], codeToId.get(h[1]));
 
-            String demoPw = env.getProperty("SEED_DEMO_PASSWORD", "");
-            String ownerPw = env.getProperty("SEED_OWNER_PASSWORD", "");
+            String demoPw = env.getProperty("jurisone.seed.demo-password", "");
+            String ownerPw = env.getProperty("jurisone.seed.owner-password", "");
             for (Person p : PEOPLE) {
                 String pw = "owner".equals(p.role()) ? ownerPw : demoPw;
                 setPassword(codeToId.get(p.code()), pw.isEmpty() ? null : pw, false);

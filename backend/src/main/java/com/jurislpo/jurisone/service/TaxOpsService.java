@@ -43,7 +43,7 @@ public class TaxOpsService {
     private final String uploadDir;
 
     public TaxOpsService(TaxOpsRepository repo, TransactionTemplate tx, TaxPositions positions, SettingsService settings, AuditService audit, NotificationService notify,
-                         JurisOneProperties props, @Value("${UPLOAD_DIR:./storage}") String uploadDir) {
+                         JurisOneProperties props, @Value("${jurisone.upload-dir:./storage}") String uploadDir) {
         this.repo = repo;
         this.tx = tx;
         this.positions = positions;

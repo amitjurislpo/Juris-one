@@ -1,4 +1,0 @@
-# sqe: system quality / integration testing. Normal logs.
-logging:
-  level:
-    com.jurislpo.jurisone: INFO

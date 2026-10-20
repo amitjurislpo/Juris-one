@@ -27,10 +27,9 @@ Prerequisites: Node 20.9+ (tested on 24), JDK 17+ and Docker Desktop. Maven come
 
 ```bash
 npm install
-cp backend/src/main/resources/dev.env.template .env.dev   # then fill in every <placeholder> (commands to generate keys are in the file)
 npm run db:up               # Postgres 16 on localhost:5436
 npm run db:migrate          # create / update the schema (Flyway)
-npm run db:seed             # shared tables and the super admin (SEED_DEMO=true adds a demo business)
+npm run db:seed             # shared tables and the super admin (jurisone.seed.demo=true adds a demo business)
 npm run backend:dev         # API on http://localhost:8080 (leave it running)
 ```
 
@@ -42,9 +41,9 @@ Everyone signs in with their **email** (employee IDs repeat from one business to
 
 | Who | Email | Password |
 |---|---|---|
-| Super admin (platform) | `SUPER_ADMIN_EMAIL` | `SUPER_ADMIN_PASSWORD` (both from your `.env`) |
-| Demo business owner — sub admin (only with `SEED_DEMO=true`) | `sana.kapoor@jurislpo.com` (JC-002) | `SEED_OWNER_PASSWORD` |
-| Demo business employees (only with `SEED_DEMO=true`) | `firstname.lastname@jurislpo.com` (JC-004 … JC-091) | `SEED_DEMO_PASSWORD` |
+| Super admin (platform) | `jurisone.seed.super-admin-email` | `jurisone.seed.super-admin-password` (in `application-<env>.properties`) |
+| Demo business owner — sub admin (only with `jurisone.seed.demo=true`) | `sana.kapoor@jurislpo.com` (JC-002) | `jurisone.seed.owner-password` |
+| Demo business employees (only with `jurisone.seed.demo=true`) | `firstname.lastname@jurislpo.com` (JC-004 … JC-091) | `jurisone.seed.demo-password` |
 
 The seed never overwrites a password that is already set.
 
@@ -59,69 +58,72 @@ The seed never overwrites a password that is already set.
 | `npm run backend:up` | Build and start the API in docker-compose |
 | `npm run db:up` | Start Postgres in docker-compose |
 | `npm run db:migrate` | Apply pending Flyway migrations and exit |
-| `npm run db:seed` | Idempotent seed: shared tables (shifts, leave types, tax) and the super admin. `SEED_DEMO=true` also creates the demo business. |
-| `npm run db:reset` | **Development only:** empties the database, migrates, seeds and clears stored payslips / proofs. Refuses unless `APP_URL` is localhost or `ALLOW_DB_RESET=true`. |
+| `npm run db:seed` | Idempotent seed: shared tables (shifts, leave types, tax) and the super admin. `jurisone.seed.demo=true` also creates the demo business. |
+| `npm run db:reset` | **Development only:** empties the database, migrates, seeds and clears stored payslips / proofs. Refuses unless `jurisone.app-url` is localhost or `jurisone.allow-db-reset=true`. |
 | `npm run jobs` | Run the scheduled jobs once (for cron) |
 | `scripts/backup.sh` / `scripts/restore.sh` | Postgres backup (keeps 14 days) / restore — see *Deploying* |
 
 ## Environments
 
-Four environments, each with **its own file, ports, database, secrets, email and storage** (nothing is shared):
+Four environments. **Each one is a single file**, `backend/src/main/resources/application-<env>.properties`, on top of the shared
+`application.properties`: ports, database, public URL, email, storage and secrets (nothing is shared between environments).
 
 | Env | File | Web / API / DB ports | Database | Sign-in code | Demo data |
 |---|---|---|---|---|---|
-| `dev` | `.env.dev` | 3005 / 8080 / 5436 | `jurisone` | fixed `000000` | optional |
-| `sqe` | `.env.sqe` | 3015 / 8090 / 5446 | `jurisone_sqe` | random, emailed | yes |
-| `uat` | `.env.uat` | 3025 / 8100 / 5456 | `jurisone_uat` | random, emailed | no |
-| `prd` | `.env.prd` | 3000 / 8200 / 5466 | `jurisone_prd` | random, emailed | no |
+| `dev` | `application-dev.properties` | 3005 / 8080 / 5436 | `jurisone` | fixed `000000` | optional |
+| `sqe` | `application-sqe.properties` | 3015 / 8090 / 5446 | `jurisone_sqe` | random, emailed | yes |
+| `uat` | `application-uat.properties` | 3025 / 8100 / 5456 | `jurisone_uat` | random, emailed | no |
+| `prd` | `application-prd.properties` | 3000 / 8200 / 5466 | `jurisone_prd` | random, emailed | no |
 
-The real files are git-ignored; commit only the templates in `backend/src/main/resources/<env>.env.template`. Create one with `cp backend/src/main/resources/sqe.env.template .env.sqe` and fill the `<placeholders>` (use a different `JWT_SECRET` and `PII_ENCRYPTION_KEY` in every environment).
-
-- Pick the environment with `APP_ENV` (default `dev`). `db:*`, `backend:dev` and `jobs` use `.env.dev`.
-- Other environments: `npm run db:up:sqe`, `npm run backend:sqe` (same for `uat`, `prd`; `backend:up:<env>` runs the API in Docker). Anything else: `node scripts/with-env.mjs <env> <command>`, e.g. `node scripts/with-env.mjs uat npm run db:seed`.
+- **Secrets.** `dev` has local-only values written in its file (nothing in it is a real secret). `sqe`, `uat` and `prd` never have secrets in
+  git: their files contain `${PLACEHOLDERS}` that you provide as **environment variables on the server**: `DB_PASSWORD`,
+  `PII_ENCRYPTION_KEY` (`openssl rand -base64 32`), `JWT_SECRET` (`openssl rand -base64 48`), `SUPER_ADMIN_PASSWORD`, `SMTP_USER`,
+  `SMTP_PASS` (and `SEED_OWNER_PASSWORD` / `SEED_DEMO_PASSWORD` for sqe). Use a different PII key and JWT secret in every environment.
+  Any setting can also be overridden by an environment variable, e.g. `JURISONE_MAIL_HOST=smtp.corp.example`.
+- Pick the environment with `APP_ENV` (default `dev`); it selects the Spring profile. `db:*`, `backend:dev` and `jobs` use `dev`.
+- Other environments: `npm run db:up:sqe`, `npm run backend:sqe` (same for `uat`, `prd`; `backend:up:<env>` runs the API in Docker). Anything else: `node scripts/with-env.mjs <env> <command>`, e.g. `node scripts/with-env.mjs uat npm run db:seed`. The helper reads the ports, database and project name for docker-compose from the environment's file.
 - Each environment gets its own Docker containers and data volume (`COMPOSE_PROJECT_NAME`), so they can run side by side.
-- The backend also loads `.env.<APP_ENV>` itself and activates the Spring profile `application-<env>.yml` (log levels, error detail).
-- **Sign-in is by emailed code only** (no password option). Only `dev` may use the fixed code `000000` (`OTP_FIXED_CODE`); `sqe`, `uat` and `prd` send real codes, so they need `SMTP_*`. The identity provider (IAM JCG) replaces this later. The password endpoint is off unless `PASSWORD_LOGIN_ENABLED=true`.
-- **Guard:** `sqe`, `uat` and `prd` refuse to start with a fixed sign-in code or without SMTP; `uat` and `prd` also with demo data, an `http://` `APP_URL` or a secret still written as a `<placeholder>`.
-- The old single `.env` is still read if `.env.<env>` is missing, but `.env.dev` is now the development file.
+- **Sign-in is by emailed code only** (no password option). Only `dev` may use the fixed code `000000` (`jurisone.otp.fixed-code`); `sqe`, `uat` and `prd` send real codes, so they need `jurisone.mail.*`. The identity provider (IAM JCG) replaces this later. The password endpoint is off unless `jurisone.password-login.enabled=true`.
+- **Guard:** `sqe`, `uat` and `prd` refuse to start with a fixed sign-in code or without a mail host; `uat` and `prd` also with demo data, an `http://` `jurisone.app-url` or a secret that is empty or still a `<placeholder>`.
 
 ## Deploying
 
 JurisOne is a web app (static files from `juris-one-frontend`), a Spring Boot API and Postgres 16. Any Linux VPS or VM works (REQUIREMENTS §9.4 leaves hosting open).
 
-1. **Postgres 16.** A managed instance, or `docker compose up -d db` with a strong `POSTGRES_PASSWORD` and the port not exposed publicly.
-2. **Environment.** Copy `backend/src/main/resources/prd.env.template` to `.env.prd` (the API reads it; see *Environments* below) and set:
-   - `DATABASE_URL`, `APP_URL` (the public https URL — the API only accepts requests from this origin)
+1. **Postgres 16.** A managed instance, or `node scripts/with-env.mjs prd docker compose up -d db` (needs `DB_PASSWORD`; the port is bound to localhost only).
+2. **Environment.** Edit `backend/src/main/resources/application-prd.properties` for your site (`jurisone.app-url` — the public https URL, the only origin the API accepts —, the database address, `jurisone.mail.host`, the super admin's email) and set the secrets as environment variables of the API process (systemd `Environment=` / a secret manager):
+   - `DB_PASSWORD`
    - `PII_ENCRYPTION_KEY` — generate once and keep it in your password manager. Losing it makes PII unreadable.
-   - `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` — change the password after the first sign-in.
-   - `SEED_DEMO=false` and an empty `SEED_DEMO_PASSWORD` for a real company (no demo people).
-   - `SMTP_*` so invites, resets and decisions are emailed.
+   - `JWT_SECRET`, `SUPER_ADMIN_PASSWORD` — change the super admin password after the first sign-in.
+   - `SMTP_USER`, `SMTP_PASS` so invites, resets and decisions are emailed.
+   - Demo data is off in `prd` (`jurisone.seed.demo=false`), so no demo people are created.
 3. **API.** Either in Docker:
    ```bash
-   docker compose up -d --build backend      # migrates the schema on start
-   docker compose run --rm backend seed      # roles, policies, tax tables, super admin (idempotent)
+   npm run backend:up:prd                    # migrates the schema on start (set the secrets as environment variables first)
+   node scripts/with-env.mjs prd docker compose run --rm backend seed   # roles, policies, tax tables, super admin (idempotent)
    ```
    or on the host (JDK 17+):
    ```bash
    cd backend && ./mvnw -B -DskipTests package && cd ..
+   export SPRING_PROFILES_ACTIVE=prd                       # plus the secrets above
    java -jar backend/target/jurisone-backend-*.jar seed    # once; migrates, seeds and exits
-   java -jar backend/target/jurisone-backend-*.jar         # port 8080; keep it running with systemd
+   java -jar backend/target/jurisone-backend-*.jar         # port 8200 (server.port); keep it running with systemd
    ```
 4. **Frontend.** Build and host the `juris-one-frontend` repo (`npm ci`, `npm run build` → static files in `dist/`). Serve them from a web server on the same origin as the API and send `/api/*` to the API (an nginx example is in that repo's README).
-5. **HTTPS.** Put Caddy or nginx in front, terminate TLS there, serve the web app and proxy `/api/` to `localhost:8080`. Keep port 8080 itself private. Session cookies are `Secure` in production, so the app must be served over https.
-6. **Jobs.** Leave `JOBS_ENABLED=true` for a single API instance. With several instances either keep it on (an advisory lock lets only one run) or set it to `false` everywhere and run `npm run jobs` (or `java -jar … jobs`) from cron every 10 minutes.
-7. **Files.** `UPLOAD_DIR` (default `./storage`) holds payslip PDFs and investment proofs. Put it on persistent disk and include it in backups. In Docker it is the `./storage` volume.
+5. **HTTPS.** Put Caddy or nginx in front, terminate TLS there, serve the web app and proxy `/api/` to the API (`server.port`, 8200 in prd). Keep that port itself private. Session cookies are `Secure` in production, so the app must be served over https.
+6. **Jobs.** Leave `jurisone.jobs-enabled=true` for a single API instance. With several instances either keep it on (an advisory lock lets only one run) or set it to `false` everywhere and run `npm run jobs` (or `java -jar … jobs`) from cron every 10 minutes.
+7. **Files.** `jurisone.upload-dir` (default `./storage`) holds payslip PDFs and investment proofs. Put it on persistent disk and include it in backups. In Docker it is the `./storage` volume.
 
 ### Backups (daily)
 
 ```bash
 # crontab -e   (02:15 every night; keeps 14 days in storage/backups)
-15 2 * * *  cd /srv/jurisone && ./scripts/backup.sh >> storage/backups/backup.log 2>&1
+15 2 * * *  cd /srv/jurisone && DATABASE_URL='postgresql://user:password@host:5466/jurisone_prd' ./scripts/backup.sh >> storage/backups/backup.log 2>&1
 ```
 
 - Needs `pg_dump` 16+ on the server, or set `PG_DOCKER=jurisone-db` to run it inside the compose container.
 - Copy `storage/backups/` and `storage/` to off-site storage (S3, Azure Blob, another host).
-- Restore with `./scripts/restore.sh <file.dump>` (stop the app first; it asks for confirmation).
+- Restore with `DATABASE_URL=… ./scripts/restore.sh <file.dump>` (stop the app first; it asks for confirmation). In dev: `node scripts/with-env.mjs dev ./scripts/backup.sh`.
 - Test a restore into a scratch database every few months.
 
 ### Upgrading and rolling back
@@ -142,7 +144,7 @@ backend/                           Spring Boot API (Maven)
     exception/                     API exceptions, problem+json responses, the global handler
     common/                        shared types: ApiResult envelope, RequestMeta, list paging/sorting, validation
     entity/                        JPA entities for every table (schema validated, never generated)
-    config/                        .env loading, security chain, Flyway guard, Jackson
+    config/                        security chain, Flyway guard, Jackson, environment guard
     security/                      JWT filter, subscription / policy gates, origin check, Auth.requirePage / assertPerm
     tenancy/                       TenantContext + the DataSource that applies row-level security per business
     engine/                        pure rules: attendance, leave, payroll, tax, permissions, nav, formatting
@@ -189,7 +191,7 @@ backend/                           Spring Boot API (Maven)
 
 **Passwords, tokens and sessions:**
 - Passwords are hashed with argon2id (m=19456, t=2, p=1).
-- Access tokens are JWTs (HS256, `JWT_SECRET`) that expire after 5 minutes; every request also re-checks the session and the employee, so revocation is immediate.
+- Access tokens are JWTs (HS256, `jurisone.security.jwt-secret`) that expire after 5 minutes; every request also re-checks the session and the employee, so revocation is immediate.
 - Refresh tokens are 256-bit random values that rotate on every use; only their SHA-256 is stored, and replaying an old one revokes the session.
 
 **Login protection:**
@@ -198,11 +200,11 @@ backend/                           Spring Boot API (Maven)
 - Every login attempt is stored in `login_history`.
 
 **PII:**
-- PAN, Aadhaar, UAN, phone, address and bank account are encrypted at rest with `PII_ENCRYPTION_KEY`.
+- PAN, Aadhaar, UAN, phone, address and bank account are encrypted at rest with `jurisone.security.pii-encryption-key`.
 - Only the last 4 characters are stored in clear, for masked display.
 - **Back the key up. Losing it makes that data unrecoverable.**
 
-**CSRF and CORS:** every API write must come from `APP_URL` (Origin check), and CORS allows only that origin.
+**CSRF and CORS:** every API write must come from `jurisone.app-url` (Origin check), and CORS allows only that origin.
 
 **Errors:** every API error is `application/problem+json` (RFC 7807): `status`, `title`, `detail` (the message shown to the user), `instance` and a stable `code` (`VALIDATION_FAILED`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `BUSINESS_RULE`, …), plus `errors` with field messages for validation.
 
@@ -357,16 +359,16 @@ Salary is never shown on Home; an e2e test checks that no ₹ amount appears the
 | Subscription warnings | Tells each business's owners (bell + email) 7 days and 1 day before the subscription ends, and once it has ended. Each warning is sent once. |
 
 **How they run:**
-- **In the API (default):** with `JOBS_ENABLED=true` they run every 10 minutes.
-- **From cron:** set `JOBS_ENABLED=false` and run `npm run jobs`.
+- **In the API (default):** with `jurisone.jobs-enabled=true` they run every 10 minutes.
+- **From cron:** set `jurisone.jobs-enabled=false` and run `npm run jobs`.
 
 **Safe to repeat.** A Postgres advisory lock stops two API instances from running the jobs at the same time. The `job_runs` table records each month that has been locked, so running a job again doesn't redo work.
 
 ### Email
 
-**Without SMTP (dev):** leave `SMTP_HOST` empty. Emails are written to the `email_outbox` table and printed in the API log, so you can copy invite and reset links from there.
+**Without SMTP (dev):** leave `jurisone.mail.host` empty. Emails are written to the `email_outbox` table and printed in the API log, so you can copy invite and reset links from there.
 
-**With SMTP:** set the `SMTP_*` variables.
+**With SMTP:** set the `jurisone.mail.*` settings (`SMTP_USER` / `SMTP_PASS` as environment variables).
 
 ### Fonts
 

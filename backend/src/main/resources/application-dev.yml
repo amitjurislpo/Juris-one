@@ -1,4 +1,0 @@
-# dev: local development. Verbose logs.
-logging:
-  level:
-    com.jurislpo.jurisone: DEBUG

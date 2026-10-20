@@ -30,7 +30,7 @@ public class PlatformCompanyService {
     private final BusinessSetupService setup;
     private final String name;
 
-    public PlatformCompanyService(PlatformCompanyRepository repo, BusinessSetupService setup, @Value("${PLATFORM_COMPANY_NAME:${APP_NAME:JurisOne}}") String name) {
+    public PlatformCompanyService(PlatformCompanyRepository repo, BusinessSetupService setup, @Value("${jurisone.platform-company-name:JurisOne}") String name) {
         this.repo = repo;
         this.setup = setup;
         this.name = name == null || name.isBlank() ? "JurisOne" : name.trim();

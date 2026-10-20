@@ -44,7 +44,7 @@ public class JwtService {
     private final NimbusJwtEncoder encoder;
     private final NimbusJwtDecoder decoder;
 
-    public JwtService(@Value("${JWT_SECRET:}") String secret) {
+    public JwtService(@Value("${jurisone.security.jwt-secret:}") String secret) {
         if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
             throw new IllegalStateException("JWT_SECRET must be set to at least 32 bytes (e.g. openssl rand -base64 48)");
         }

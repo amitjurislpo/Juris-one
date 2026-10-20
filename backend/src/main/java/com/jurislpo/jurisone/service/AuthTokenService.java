@@ -26,7 +26,7 @@ public class AuthTokenService {
     private final String appUrl;
 
     public AuthTokenService(AuthTokenRepository repo, TransactionTemplate tx, SettingsService settings, MailService mail,
-                            @Value("${APP_URL:http://localhost:3005}") String appUrl) {
+                            @Value("${jurisone.app-url:http://localhost:3005}") String appUrl) {
         this.repo = repo;
         this.tx = tx;
         this.settings = settings;

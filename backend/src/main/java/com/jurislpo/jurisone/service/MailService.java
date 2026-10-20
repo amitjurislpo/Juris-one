@@ -30,8 +30,8 @@ public class MailService {
     private final int port;
 
     public MailService(TransactionTemplate tx, MailRepository repo,
-                       @Value("${SMTP_HOST:}") String host, @Value("${SMTP_PORT:587}") int port, @Value("${SMTP_USER:}") String user,
-                       @Value("${SMTP_PASS:}") String pass, @Value("${MAIL_FROM:JurisOne <no-reply@jurislpo.com>}") String from) {
+                       @Value("${jurisone.mail.host:}") String host, @Value("${jurisone.mail.port:587}") int port, @Value("${jurisone.mail.user:}") String user,
+                       @Value("${jurisone.mail.pass:}") String pass, @Value("${jurisone.mail.from:JurisOne <no-reply@jurislpo.com>}") String from) {
         this.tx = tx;
         this.repo = repo;
         this.host = host;
