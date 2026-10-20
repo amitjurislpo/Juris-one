@@ -78,14 +78,13 @@ class NavTest {
     }
 
     @Test
-    @DisplayName("shows Form 16 and My letters to everyone with self; Finance's Form 16 page and HR letters only to their owners")
-    void form16AndLetters() {
-        assertThat(visible(EMPLOYEE, false)).contains("form16", "my-letters").doesNotContain("form16-admin", "letters");
-        assertThat(visible(FIN_EXEC, false)).contains("form16-admin");
+    @DisplayName("shows My letters to everyone with self; HR letters only to those who manage them")
+    void letters() {
+        assertThat(visible(EMPLOYEE, false)).contains("my-letters").doesNotContain("letters");
         Set<String> hr = new HashSet<>(HR_MANAGER);
         hr.add("letters.manage");
-        assertThat(visible(hr, false)).contains("letters").doesNotContain("form16-admin");
-        assertThat(visible(ADMIN, false)).contains("letters", "form16-admin");
+        assertThat(visible(hr, false)).contains("letters");
+        assertThat(visible(ADMIN, false)).contains("letters");
         assertThat(Permissions.SALARY).doesNotContain(Permissions.LETTERS_MANAGE);
     }
 }

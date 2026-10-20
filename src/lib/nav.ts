@@ -1,10 +1,10 @@
 import type { Permission } from "./permissions";
 
 export type NavId =
-  | "platform" | "plans" | "juris-track" | "notifications" | "profile" | "home" | "overview" | "attendance" | "leave" | "my-exit" | "exits" | "payslips" | "declare" | "directory" | "team"
+  | "platform" | "plans" | "juris-track" | "notifications" | "profile" | "home" | "overview" | "attendance" | "leave" | "payslips" | "declare" | "directory" | "team"
   | "register" | "approvals" | "employees" | "onboarding" | "departments" | "holidays"
   | "payroll" | "structures" | "tax" | "proofs" | "roles" | "policies" | "settings" | "audit" | "subscription" | "my-policies"
-  | "my-assets" | "announcements" | "assets" | "manage-announcements" | "form16" | "my-letters" | "letters" | "form16-admin";
+  | "my-assets" | "announcements" | "assets" | "manage-announcements" | "my-letters" | "letters";
 
 export type NavGroup = "Platform" | "My workspace" | "Workspace" | "Team" | "People ops" | "Finance" | "Administration";
 
@@ -39,10 +39,8 @@ export const NAV: NavItem[] = [
   { id: "profile", label: "My profile", icon: "user", perm: ["self", "dir", "roles.manage"] },
   { id: "attendance", label: "My attendance", icon: "clock", perm: ["self"] },
   { id: "leave", label: "Leave & holidays", icon: "cal", perm: ["self"] },
-  { id: "my-exit", label: "My exit", icon: "logout", perm: ["self"] },
   { id: "payslips", label: "Payslips", icon: "doc", perm: ["self"] },
   { id: "declare", label: "Tax declarations", icon: "shield", perm: ["self"] },
-  { id: "form16", label: "Form 16", icon: "receipt", perm: ["self"] },
   { id: "my-letters", label: "My letters", icon: "doc", perm: ["self"] },
   { id: "directory", label: "Directory", icon: "book", perm: ["dir"] },
   { id: "my-policies", label: "My policies", icon: "shield", perm: ["self", "dir", "roles.manage"] },
@@ -54,7 +52,6 @@ export const NAV: NavItem[] = [
   { id: "approvals", label: "Approvals", icon: "check", perm: ["appr.leave", "appr.reg"], group: "People ops" },
   { id: "employees", label: "Employees", icon: "users", perm: ["people.view"], group: "People ops" },
   { id: "onboarding", label: "Onboarding", icon: "inbox", perm: ["people.add"], group: "People ops" },
-  { id: "exits", label: "Exits", icon: "logout", perm: ["exit.manage", "pay.view"], group: "People ops" },
   { id: "departments", label: "Departments", icon: "building", perm: ["dept.manage"], group: "People ops" },
   { id: "holidays", label: "Holiday calendar", icon: "sun", perm: ["holidays.manage"], group: "People ops" },
   { id: "assets", label: "Assets", icon: "layers", perm: ["assets.manage"], group: "People ops" },
@@ -63,7 +60,6 @@ export const NAV: NavItem[] = [
   { id: "payroll", label: "Payroll", icon: "wallet", perm: ["pay.view"], group: "Finance" },
   { id: "structures", label: "Salary structures", icon: "layers", perm: ["struct.manage"], group: "Finance" },
   { id: "tax", label: "Tax & TDS", icon: "receipt", perm: ["tax.view"], group: "Finance" },
-  { id: "form16-admin", label: "Form 16 & 24Q", icon: "receipt", perm: ["tax.view"], group: "Finance" },
   { id: "proofs", label: "Investment proofs", icon: "inbox", perm: ["proofs.verify"], group: "Finance" },
   { id: "roles", label: "Roles & permissions", icon: "key", perm: ["roles.manage"], group: "Administration" },
   { id: "policies", label: "Company policies", icon: "book", perm: ["policies.manage"], group: "Administration" },

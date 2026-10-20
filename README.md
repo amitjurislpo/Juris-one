@@ -308,22 +308,6 @@ Previous-employer income is added, then the standard deduction and any approved 
 - TDS summary: decrypts PANs, so it needs `pay.view` and `tax.view`.
 - Every export is audited.
 
-### Exits and full & final settlement
-
-**The process.** An employee resigns on *My exit* (reason + requested last day) or HR (`exit.manage`: HR managers and owners) starts a termination on *Exits*. Statuses: `RESIGNED` / `INITIATED` → `NOTICE` (HR agrees the last working day) → `CLEARANCE` (checklist: manager, IT/assets, Finance, HR — each cleared with remarks) → `FNF_PENDING` → `SETTLED` (settlement approved) → `CLOSED` (the existing *mark as past employee*: access removed, sessions revoked). An employee can withdraw a resignation until clearance starts; HR can cancel until the settlement is approved. A wrong state is a 409; an unmet rule (open items, no draft, last day not reached) is a 422. Notice is per business (*Exit policy*, default 30 days); HR can shorten or waive it for one person with a reason.
-
-**Who sees amounts.** Exit cases never carry money. The settlement (`/api/exits/{id}/settlement`) is for `pay.view` / `pay.close` / `struct.manage` and the owner; HR gets a 403. Finance (`pay.view`) drafts, `pay.close` approves; approval freezes a snapshot (and a database trigger refuses any update or delete), takes the encashed days off the leave ledger, and a PDF statement is rendered from the snapshot.
-
-**The maths** (`engine/FnfEngine.java`, pure and unit-tested; REQUIREMENTS §9.2 was open, these are the assumptions):
-- Salary for the last month is `PayrollEngine.computePay` with eligible days = max(DOJ, 1st) → last working day and the attendance LOP (including any LOP override in that month's open payroll run). Regular payroll no longer includes the employee once the settlement is approved. If that month's payroll is already closed, its salary is not paid again and only the other items are settled.
-- Per-day rate = monthly gross ÷ days in the last working day's month (the day count payroll uses for LOP), rounded to the rupee.
-- Leave encashment = remaining ledger balance of the encashable leave types × per-day rate. Encashable types are a business setting (default `EL`).
-- Notice recovery = (required notice − days served) × per-day rate, where days served = last working day − the day notice started; nothing when waived or served.
-- Gratuity (per-business switch, **off** by default): 15/26 × last monthly Basic × completed years, only from the minimum service (default 5 years; the last day counts as served, so 1 Oct 2021 → 30 Sep 2026 is 5 years and 4y 11m is not eligible), capped (default ₹20 lakh). It is treated as tax-exempt within the cap.
-- Finance adds bonus / other additions and deductions (additions are taxable). TDS on the final month is the rest of the year's tax — `TaxEngine` on income so far plus this settlement, nothing projected after the last day, less TDS already deducted — all in this one month. Leave encashment is taxed as salary (no retirement exemption).
-- Net = earnings − PF − PT − notice recovery − deductions − TDS. It can be negative (the employee owes the company); the statement then says *Recoverable*.
-- The settlement can only be prepared once the last working day has passed, and only for India payroll employees.
-
 ### Tax declarations and proofs
 
 **Choosing a regime.**

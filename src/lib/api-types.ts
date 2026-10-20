@@ -210,19 +210,6 @@ export interface Announcement {
   status: "PUBLISHED" | "UNPUBLISHED"; author: string | null; createdAt: string; active: boolean;
 }
 
-/** An employee's own published Form 16 (paise). */
-export interface Form16Mine {
-  id: string; fy: string; publishedAt: string; grossTotalIncome: number; taxableIncome: number; totalTax: number; tdsTotal: number; sha256: string;
-}
-
-/** Finance's Form 16 overview for one financial year. */
-export interface Form16Overview {
-  fy: string; fys: string[]; ready: boolean; canPublish: boolean; missing: string[];
-  months: { ym: string; label: string; closed: boolean }[];
-  deductor: { name: string; address: string | null; gstin: string | null; tan: string | null; pan: string | null };
-  rows: { employeeId: string; code: string; name: string; payslips: number; formId: string | null; publishedAt: string | null; sha256: string | null }[];
-}
-
 export type LetterType = "OFFER" | "APPOINTMENT" | "EXPERIENCE" | "RELIEVING" | "EMPLOYMENT_VERIFICATION";
 
 export interface LetterTemplateRow {

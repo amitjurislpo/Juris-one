@@ -41,16 +41,10 @@ describe("navigation access", () => {
     expect(v).not.toContain("register");
   });
 
-  it("shows Form 16 and My letters to everyone with self; Finance's Form 16 page and HR letters only to their owners", () => {
-    expect(visible(EMPLOYEE)).toContain("form16");
+  it("shows My letters to everyone with self; HR letters only to those who manage them", () => {
     expect(visible(EMPLOYEE)).toContain("my-letters");
-    expect(visible(EMPLOYEE)).not.toContain("form16-admin");
     expect(visible(EMPLOYEE)).not.toContain("letters");
-    expect(visible(FIN_EXEC)).toContain("form16-admin");
-    // HR (even with letters.manage) never gets the Finance Form 16 page
-    const hrWithLetters = set(...HR_MANAGER, "letters.manage");
-    expect(visible(hrWithLetters)).toContain("letters");
-    expect(visible(hrWithLetters)).not.toContain("form16-admin");
-    expect(visible(ADMIN)).toEqual(expect.arrayContaining(["letters", "form16-admin"]));
+    expect(visible(set(...HR_MANAGER, "letters.manage"))).toContain("letters");
+    expect(visible(ADMIN)).toContain("letters");
   });
 });
