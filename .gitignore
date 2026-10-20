@@ -41,3 +41,6 @@ yarn-error.log*
 # local tooling
 /.vscode/
 /.claude/worktrees/
+
+# IDE settings
+.idea/
