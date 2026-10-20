@@ -26,17 +26,14 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files: the real ones (.env, .env.dev/.sqe/.uat/.prd) hold secrets and are never committed; the *.example templates are
+# env files: the real ones (.env.dev/.sqe/.uat/.prd) hold secrets and are never committed; the templates live in backend/src/main/resources/env/
 .env*
-!.env.example
-!.env.*.example
 
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
-!.env.example
 
 # app
 /storage/

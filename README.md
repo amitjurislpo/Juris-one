@@ -27,7 +27,7 @@ Prerequisites: Node 20.9+ (tested on 24), JDK 17+ and Docker Desktop. Maven come
 
 ```bash
 npm install
-cp .env.dev.example .env.dev   # then fill in every <placeholder> (commands to generate keys are in the file)
+cp backend/src/main/resources/env/dev.env.template .env.dev   # then fill in every <placeholder> (commands to generate keys are in the file)
 npm run db:up               # Postgres 16 on localhost:5436
 npm run db:migrate          # create / update the schema (Flyway)
 npm run db:seed             # shared tables and the super admin (SEED_DEMO=true adds a demo business)
@@ -75,7 +75,7 @@ Four environments, each with **its own file, ports, database, secrets, email and
 | `uat` | `.env.uat` | 3025 / 8100 / 5456 | `jurisone_uat` | random, emailed | no |
 | `prd` | `.env.prd` | 3000 / 8200 / 5466 | `jurisone_prd` | random, emailed | no |
 
-The real files are git-ignored; commit only the `.env.<env>.example` templates. Create one with `cp .env.sqe.example .env.sqe` and fill the `<placeholders>` (use a different `JWT_SECRET` and `PII_ENCRYPTION_KEY` in every environment).
+The real files are git-ignored; commit only the templates in `backend/src/main/resources/env/<env>.env.template`. Create one with `cp backend/src/main/resources/env/sqe.env.template .env.sqe` and fill the `<placeholders>` (use a different `JWT_SECRET` and `PII_ENCRYPTION_KEY` in every environment).
 
 - Pick the environment with `APP_ENV` (default `dev`). `db:*`, `backend:dev` and `jobs` use `.env.dev`.
 - Other environments: `npm run db:up:sqe`, `npm run backend:sqe` (same for `uat`, `prd`; `backend:up:<env>` runs the API in Docker). Anything else: `node scripts/with-env.mjs <env> <command>`, e.g. `node scripts/with-env.mjs uat npm run db:seed`.
@@ -90,7 +90,7 @@ The real files are git-ignored; commit only the `.env.<env>.example` templates. 
 JurisOne is a web app (static files from `juris-one-frontend`), a Spring Boot API and Postgres 16. Any Linux VPS or VM works (REQUIREMENTS §9.4 leaves hosting open).
 
 1. **Postgres 16.** A managed instance, or `docker compose up -d db` with a strong `POSTGRES_PASSWORD` and the port not exposed publicly.
-2. **Environment.** Copy `.env.prd.example` to `.env.prd` (both apps read it; see *Environments* below) and set:
+2. **Environment.** Copy `backend/src/main/resources/env/prd.env.template` to `.env.prd` (the API reads it; see *Environments* below) and set:
    - `DATABASE_URL`, `APP_URL` (the public https URL — the API only accepts requests from this origin)
    - `PII_ENCRYPTION_KEY` — generate once and keep it in your password manager. Losing it makes PII unreadable.
    - `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` — change the password after the first sign-in.
@@ -206,7 +206,7 @@ backend/                           Spring Boot API (Maven)
 
 **Errors:** every API error is `application/problem+json` (RFC 7807): `status`, `title`, `detail` (the message shown to the user), `instance` and a stable `code` (`VALIDATION_FAILED`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `BUSINESS_RULE`, …), plus `errors` with field messages for validation.
 
-**Secrets:** no password, key or secret is stored in the code, README or `.env.example`; everything comes from the environment.
+**Secrets:** no password, key or secret is stored in the code, README or the env templates; everything comes from the environment.
 
 **Audit:** sensitive changes are written to `audit_log` (who, what, when, before → after).
 

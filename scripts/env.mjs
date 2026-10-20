@@ -23,7 +23,7 @@ export function loadEnv(name) {
   const env = resolveEnvName(name);
   const file = path.join(root, `.env.${env}`);
   if (!existsSync(file)) {
-    console.error(`Missing ${path.basename(file)}. Copy ${path.basename(file)}.example to ${path.basename(file)} and fill it in.`);
+    console.error(`Missing ${path.basename(file)}. Copy backend/src/main/resources/env/${env}.env.template to ${path.basename(file)} and fill it in.`);
     process.exit(1);
   }
   for (const [k, v] of Object.entries(parse(readFileSync(file)))) if (process.env[k] === undefined) process.env[k] = v;
