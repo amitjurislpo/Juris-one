@@ -1,5 +1,6 @@
 import "server-only";
 import { cookies, headers } from "next/headers";
+import { getT } from "@/lib/i18n/server";
 
 /**
  * Server-side client for the Spring Boot API (backend/). Pages and server actions call it on the browser's
@@ -50,6 +51,10 @@ export async function apiCall<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DEL
   } catch {
     parsed = { ok: false, error: "Something went wrong. Please try again." };
   }
+  // the API speaks English; show its fixed messages in the reader's language (unknown or dynamic ones stay English)
+  const t = await getT();
+  if (!parsed.ok) parsed = { ...parsed, error: t(parsed.error) };
+  else if (parsed.msg) parsed = { ...parsed, msg: t(parsed.msg) };
   return { status: res.status, body: parsed, setCookies: res.headers.getSetCookie() };
 }
 

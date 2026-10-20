@@ -13,6 +13,9 @@ export function isoInZone(at: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
 }
 
+/** The calendar date of a UTC timestamp string as seen in `timeZone`. */
+export const isoDateIn = (ts: string, timeZone: string) => isoInZone(new Date(ts), timeZone);
+
 export const todayIn = (timeZone: string) => isoInZone(new Date(), timeZone);
 
 /** `@db.Date` value → ISO date string. */

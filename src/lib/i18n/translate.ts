@@ -1,7 +1,8 @@
 import { DEFAULT_LANG, type Lang } from "./config";
 import { hi } from "./messages/hi";
+import { hiApi } from "./messages/hi-api";
 
-const DICTIONARIES: Record<Lang, Record<string, string>> = { en: {}, hi };
+const DICTIONARIES: Record<Lang, Record<string, string>> = { en: {}, hi: { ...hiApi, ...hi } };
 
 export type Vars = Record<string, string | number>;
 

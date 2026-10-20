@@ -4,14 +4,14 @@ import { PageHeader } from "@/components/PageHeader";
 import type { Form16Mine } from "@/lib/api-types";
 import { requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
-import { fmtDY, inr } from "@/lib/format";
+import { fmtDY, inr, isoDateIn } from "@/lib/format";
 import { getT } from "@/lib/i18n/server";
 
 export const metadata: Metadata = { title: "Form 16" };
 
 /** The signed-in employee's Form 16 certificates, one per financial year, published by Finance once the year's payroll is closed. */
 export default async function Form16Page() {
-  await requirePage("form16");
+  const u = await requirePage("form16");
   const t = await getT();
   const rows = await apiData<Form16Mine[]>("/api/form16/mine");
 
@@ -28,7 +28,7 @@ export default async function Form16Page() {
               <span className="faint" style={{ fontSize: 12.5 }}>
                 {t("Taxable income {income} · tax {tax} · TDS deducted {tds}", { income: inr(r.taxableIncome), tax: inr(r.totalTax), tds: inr(r.tdsTotal) })}
               </span>
-              <span className="faint" style={{ fontSize: 11.5 }}>{t("Published {date}", { date: fmtDY(r.publishedAt.slice(0, 10)) })} · {t("fingerprint")} <span className="mono">{r.sha256.slice(0, 16)}</span></span>
+              <span className="faint" style={{ fontSize: 11.5 }}>{t("Published {date}", { date: fmtDY(isoDateIn(r.publishedAt, u.timeZone)) })} · {t("fingerprint")} <span className="mono">{r.sha256.slice(0, 16)}</span></span>
             </span>
             <a className="btn btn-sm btn-gold" href={`/api/form16/forms/${r.id}/pdf`} download><Icon n="download" s={14} />{t("PDF")}</a>
           </div>

@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import type { IssuedLetter, LetterField, LetterTemplateRow } from "@/lib/api-types";
 import { can, requirePage } from "@/lib/auth";
 import { apiData } from "@/lib/backend";
-import { fmtDY } from "@/lib/format";
+import { fmtDY, isoDateIn } from "@/lib/format";
 import { getT } from "@/lib/i18n/server";
 import { IssueLetter, TemplatesTable, TYPE_LABEL, type EmployeeChoice } from "./LettersClient";
 
@@ -39,7 +39,7 @@ export default async function LettersPage() {
                   <td className="mono" style={{ fontSize: 12.5 }}>{l.reference}</td>
                   <td><b>{l.employeeName}</b> <span className="muted mono" style={{ fontSize: 12 }}>{l.employeeCode}</span></td>
                   <td className="muted hide-sm">{t(TYPE_LABEL[l.type])}{l.needsSalary && <span className="chip warn nodot" style={{ marginLeft: 6 }}>{t("States salary")}</span>}</td>
-                  <td className="muted hide-sm">{fmtDY(l.issuedAt.slice(0, 10))} · {l.issuedBy}</td>
+                  <td className="muted hide-sm">{fmtDY(isoDateIn(l.issuedAt, u.timeZone))} · {l.issuedBy}</td>
                   <td className="r">
                     {l.canOpen ? <a className="btn btn-sm" href={`/api/letters/${l.id}/pdf`} download><Icon n="download" s={14} />{t("PDF")}</a>
                       : <span className="faint" style={{ fontSize: 12 }}>{t("Salary letter")}</span>}
