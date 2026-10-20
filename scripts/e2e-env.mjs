@@ -1,9 +1,9 @@
 // The end-to-end test environment, separate from development data:
 //   node scripts/e2e-env.mjs backend   → database "<db>_e2e" reset + demo seed, API on :8081
-//   node scripts/e2e-env.mjs frontend  → Next.js built into .next-e2e (pointing at :8081), served on :3006
-// Playwright starts both (playwright.config.ts). Uploaded files go to storage/e2e; no email is sent (no SMTP).
+// The frontend repo (juris-one-frontend) starts this for its Playwright tests and serves the SPA on :3006 itself.
+// Uploaded files go to storage/e2e; no email is sent (no SMTP).
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -74,35 +74,9 @@ async function backend() {
   server.on("exit", (code) => process.exit(code ?? 0));
 }
 
-function frontend() {
-  const dist = ".next-e2e";
-  const env = { ...process.env, BACKEND_URL: `http://127.0.0.1:${E2E.api}`, NEXT_DIST_DIR: dist, APP_URL: `http://localhost:${E2E.web}` };
-  // rebuild when any app source is newer than the last e2e build
-  const newest = (dir) => readdirSync(dir, { withFileTypes: true }).reduce((m, e) => {
-    const p = path.join(dir, e.name);
-    return Math.max(m, e.isDirectory() ? newest(p) : statSync(p).mtimeMs);
-  }, 0);
-  const id = path.join(root, dist, "BUILD_ID");
-  const sources = Math.max(newest(path.join(root, "src")), statSync(path.join(root, "next.config.ts")).mtimeMs);
-  const built = existsSync(id) && statSync(id).mtimeMs > sources;
-  if (!built || process.env.E2E_BUILD === "1") {
-    // next build adds the e2e build's type folders to tsconfig.json: put the file back afterwards
-    const tsconfig = path.join(root, "tsconfig.json");
-    const before = readFileSync(tsconfig, "utf8");
-    try {
-      run("npx", ["next", "build"], { cwd: root, env });
-    } finally {
-      writeFileSync(tsconfig, before);
-    }
-  }
-  const web = spawn("npx", ["next", "start", "-p", String(E2E.web)], { cwd: root, env, stdio: "inherit", shell: win });
-  web.on("exit", (code) => process.exit(code ?? 0));
-}
-
 const what = process.argv[2];
 if (what === "backend") await backend();
-else if (what === "frontend") frontend();
 else {
-  console.error("usage: node scripts/e2e-env.mjs backend|frontend");
+  console.error("usage: node scripts/e2e-env.mjs backend");
   process.exit(2);
 }

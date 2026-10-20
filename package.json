@@ -3,13 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/with-env.mjs - next dev",
-    "build": "node scripts/with-env.mjs - next build",
-    "start": "node scripts/with-env.mjs - next start",
-    "lint": "eslint",
-    "typecheck": "next typegen && tsc --noEmit",
-    "test": "vitest run",
-    "test:e2e": "playwright test",
     "db:up": "docker compose --env-file .env.dev up -d db",
     "db:migrate": "node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=migrate",
     "db:seed": "node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=seed",
@@ -18,49 +11,21 @@
     "backend:test": "node scripts/mvnw.mjs -B test",
     "backend:up": "docker compose --env-file .env.dev up -d --build backend",
     "jobs": "node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=jobs",
-    "start:sqe": "node scripts/with-env.mjs sqe next start",
     "backend:sqe": "node scripts/with-env.mjs sqe node scripts/mvnw.mjs -q spring-boot:run",
     "db:up:sqe": "docker compose --env-file .env.sqe up -d db",
     "backend:up:sqe": "docker compose --env-file .env.sqe up -d --build backend",
     "db:migrate:sqe": "node scripts/with-env.mjs sqe node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=migrate",
-    "start:uat": "node scripts/with-env.mjs uat next start",
     "backend:uat": "node scripts/with-env.mjs uat node scripts/mvnw.mjs -q spring-boot:run",
     "db:up:uat": "docker compose --env-file .env.uat up -d db",
     "backend:up:uat": "docker compose --env-file .env.uat up -d --build backend",
     "db:migrate:uat": "node scripts/with-env.mjs uat node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=migrate",
-    "start:prd": "node scripts/with-env.mjs prd next start",
     "backend:prd": "node scripts/with-env.mjs prd node scripts/mvnw.mjs -q spring-boot:run",
     "db:up:prd": "docker compose --env-file .env.prd up -d db",
     "backend:up:prd": "docker compose --env-file .env.prd up -d --build backend",
-    "db:migrate:prd": "node scripts/with-env.mjs prd node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=migrate",
-    "dev:sqe": "node scripts/with-env.mjs sqe next dev",
-    "dev:uat": "node scripts/with-env.mjs uat next dev"
-  },
-  "dependencies": {
-    "@date-fns/tz": "^1.5.0",
-    "country-flag-icons": "^1.6.20",
-    "next": "16.3.8",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "server-only": "^0.0.1",
-    "zod": "^4.6.5"
+    "db:migrate:prd": "node scripts/with-env.mjs prd node scripts/mvnw.mjs -q spring-boot:run -Dspring-boot.run.arguments=migrate"
   },
   "devDependencies": {
-    "@node-rs/argon2": "^2.2.1",
-    "@playwright/test": "^1.63.0",
-    "@types/node": "^24.19.1",
-    "@types/pg": "^8.23.1",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
     "dotenv": "^18.0.5",
-    "eslint": "^9",
-    "eslint-config-next": "16.3.8",
-    "pg": "^8.23.1",
-    "typescript": "^5",
-    "vitest": "^5.0.3"
-  },
-  "allowScripts": {
-    "esbuild@0.28.2": true,
-    "unrs-resolver@1.12.2": true
+    "pg": "^8.23.1"
   }
 }

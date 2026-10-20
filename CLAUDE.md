@@ -1,16 +1,12 @@
-@AGENTS.md
-
-# JurisOne — project notes
+# JurisOne — backend notes
 
 - Source of truth: `references/REQUIREMENTS.md` (rules) and `references/Juris-People-Design-8.html` (design). Requirements win on conflict.
-- Built in phases 0–6 (see `references/CLAUDE_CODE_PROMPT.md`). After each phase: migrate, seed, lint, typecheck, unit + e2e tests, summarise, then wait for the user's "continue".
-- App runs on http://localhost:3005 (Next.js); the Spring Boot API (`backend/`, Java 17, Maven Wrapper) on http://localhost:8080; Postgres (docker-compose) on host port 5436 (5432/5433 are used by other projects).
-- Next.js is the UI only: pages and server actions call the API through `src/lib/backend.ts`, and `/api/*` is rewritten to the API (`next.config.ts`). There is no Prisma/DB code in `src/` any more; `prisma/schema.prisma` is kept only as a readable reference.
+- This repo is the **backend** (Spring Boot API in `backend/`, Java 17, Maven Wrapper; Postgres via docker-compose). The web app lives in its own repo, `juris-one-frontend` (React + Vite, https://github.com/amitjurislpo/juris-one-frontend). It proxies `/api/*` to this API, so the API and the app share one origin in every environment.
+- API on http://localhost:8080; the app on http://localhost:3005 (`APP_URL` / `FRONTEND_ORIGIN` must match it: the API's Origin check and CORS allow only that origin); Postgres on host port 5436 (5432/5433 are used by other projects). `prisma/schema.prisma` is kept only as a readable reference.
 - Schema changes: add a Flyway migration `backend/src/main/resources/db/migration/V<n>__name.sql` plus its reverse in `db/rollback/U<n>__name.sql`; JPA runs with `ddl-auto=validate`. `npm run db:migrate` / `db:seed` / `jobs` run the backend's one-shot commands.
 - Multi-business (SAAS_PLAN.md): every business-owned table has `business_id` + row-level security; `TenantContext` (set from the signed-in user) is applied to each DB connection by `TenantDataSource`. New business-owned tables need `business_id DEFAULT jurisone_tenant_id()` and a `tenant_isolation` policy; switch `TenantContext` only outside a transaction. Sign-in is by email only.
-- Every page: `requirePage(navId)`; every API endpoint: `auth.assertPerm(...)` / `auth.requirePage(...)` in the controller. HR must never receive salary/tax fields.
+- Every API endpoint: `auth.assertPerm(...)` / `auth.requirePage(...)` in the controller. HR must never receive salary/tax fields.
 - REST: nouns in paths, ids in the path, GET never writes, POST creates (201), PUT sets, PATCH partial, DELETE removes; success bodies are `{ ok, msg?, data? }`, errors are `application/problem+json` with a `code` (see `references/MIGRATION_PLAN.md` §14).
-- Money = integer paise; dates = ISO strings / `date`; timestamps UTC. The API returns raw values; the pages format them with `src/lib/format.ts`.
-- Backend tests: `npm run backend:test` (JUnit 5 + Testcontainers; Docker must be running). E2E: `npm run test:e2e` runs in its own environment (`scripts/e2e-env.mjs`: database `<db>_e2e` reset + demo seed + one jobs run, API :8081 from a copied jar, app build `.next-e2e` on :3006) — dev data is never touched; `E2E_BUILD=1` rebuilds the jar and the app.
-- `globals.css` is the prototype CSS verbatim; put app-only CSS in the "JurisOne additions" block at the end.
+- Money = integer paise; dates = ISO strings / `date`; timestamps UTC. The API returns raw values; the app formats them.
+- Backend tests: `npm run backend:test` (JUnit 5 + Testcontainers; Docker must be running). The browser (Playwright) tests live in the frontend repo; they start this API through `node scripts/e2e-env.mjs backend` (database `<db>_e2e` reset + demo seed + one jobs run, API :8081 from a copied jar) — dev data is never touched; `E2E_BUILD=1` rebuilds the jar.
 - npm 11 blocks install scripts: approve new native packages with `npm install-scripts approve <pkg>`.

@@ -1,5 +1,9 @@
 # JurisOne
 
+> **The web app moved.** This repository is the backend (Spring Boot API, database, scheduled jobs). The user interface is a React app in its own
+> repository, [juris-one-frontend](https://github.com/amitjurislpo/juris-one-frontend); it serves the pages and proxies `/api/*` to this API.
+> The parts of this README that describe pages, `npm run dev`, Next.js or the browser tests now live there.
+
 HRMS and payroll portal for Juris Consultants. It covers attendance, leave, people records, payroll, TDS and payslips.
 
 - **Rules:** [references/REQUIREMENTS.md](references/REQUIREMENTS.md) is the source of truth.
