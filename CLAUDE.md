@@ -1,3 +1,5 @@
+@INSTRUCTIONS.md
+
 # JurisOne — backend notes
 
 - Source of truth: `references/REQUIREMENTS.md` (rules) and `references/Juris-People-Design-8.html` (design). Requirements win on conflict.
