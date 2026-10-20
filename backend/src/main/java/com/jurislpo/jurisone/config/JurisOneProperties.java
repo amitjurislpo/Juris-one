@@ -6,18 +6,18 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * App settings (application.properties and application-&lt;env&gt;.properties; secrets of sqe/uat/prd come from environment variables).
  *
- * @param projectDir   base directory for relative file paths stored in the DB (the repo root in dev)
+ * @param storageDir   where payslip PDFs, investment proofs, policy PDFs and onboarding documents are stored, outside the
+ *                     project (dev: Documents/JurisOne). The paths kept in the database are relative to it.
  * @param frontendOrigin the only origin allowed by CORS (the web app)
  * @param jobsEnabled  run the scheduled jobs in this process
  */
 @ConfigurationProperties(prefix = "jurisone")
-public record JurisOneProperties(String projectDir, String frontendOrigin, boolean jobsEnabled) {
+public record JurisOneProperties(String storageDir, String frontendOrigin, boolean jobsEnabled) {
 
-    /** Without an explicit {@code jurisone.project-dir} (JURISONE_PROJECT_DIR) it is the repository root: the working directory, or its parent when run from backend/. */
+    /** Without an explicit {@code jurisone.storage-dir} the files go to the user's Documents/JurisOne folder. */
     public JurisOneProperties {
-        if (projectDir == null || projectDir.isBlank()) {
-            Path cwd = Path.of("").toAbsolutePath();
-            projectDir = (cwd.endsWith("backend") && cwd.getParent() != null ? cwd.getParent() : cwd).toString();
+        if (storageDir == null || storageDir.isBlank()) {
+            storageDir = Path.of(System.getProperty("user.home"), "Documents", "JurisOne").toString();
         }
     }
 }

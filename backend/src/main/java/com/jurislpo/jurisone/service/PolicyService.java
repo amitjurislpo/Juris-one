@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,16 +44,13 @@ public class PolicyService {
     private final PolicyRepository repo;
     private final NotificationService notifications;
     private final AuditService audit;
-    private final Path projectDir;
-    private final String uploadDir;
+    private final Path storageDir;
 
-    public PolicyService(PolicyRepository repo, NotificationService notifications, AuditService audit, JurisOneProperties props,
-                         @Value("${jurisone.upload-dir:./storage}") String uploadDir) {
+    public PolicyService(PolicyRepository repo, NotificationService notifications, AuditService audit, JurisOneProperties props) {
         this.repo = repo;
         this.notifications = notifications;
         this.audit = audit;
-        this.projectDir = Path.of(props.projectDir() == null ? "." : props.projectDir()).toAbsolutePath().normalize();
-        this.uploadDir = uploadDir;
+        this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
     }
 
     public static String sha256(byte[] b) {
@@ -227,7 +223,7 @@ public class PolicyService {
         if (bytes.length < PDF.length || !java.util.Arrays.equals(java.util.Arrays.copyOf(bytes, PDF.length), PDF)) {
             throw new UserException(HttpStatus.BAD_REQUEST, "Attach a PDF file.");
         }
-        Path dir = projectDir.resolve(uploadDir).normalize().resolve("policies").resolve(TenantContext.current().toString());
+        Path dir = storageDir.resolve("policies").resolve(TenantContext.current().toString());
         Path abs = dir.resolve(UUID.randomUUID() + ".pdf");
         try {
             Files.createDirectories(dir);
@@ -239,7 +235,7 @@ public class PolicyService {
         name = name.substring(0, Math.min(120, name.length()));
         if (name.isBlank()) name = "policy.pdf";
         if (!name.toLowerCase(java.util.Locale.ROOT).endsWith(".pdf")) name += ".pdf";
-        repo.setFile(id, projectDir.relativize(abs).toString().replace('\\', '/'), name, sha256(bytes));
+        repo.setFile(id, storageDir.relativize(abs).toString().replace('\\', '/'), name, sha256(bytes));
         audit.log(u.id(), "policy.attach", "policy", id.toString(), null, Map.of("file", name), ip);
         return name;
     }
@@ -356,8 +352,8 @@ public class PolicyService {
             rows = repo.findVersionFile(id, version, manager);
         }
         if (rows.isEmpty() || rows.get(0).get("file_path") == null) return null;
-        Path abs = projectDir.resolve((String) rows.get(0).get("file_path")).normalize();
-        if (!abs.startsWith(projectDir)) return null;
+        Path abs = storageDir.resolve((String) rows.get(0).get("file_path")).normalize();
+        if (!abs.startsWith(storageDir)) return null;
         try {
             return new PolicyFile((String) rows.get(0).get("file_name"), Files.readAllBytes(abs));
         } catch (IOException e) {

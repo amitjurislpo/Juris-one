@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -39,19 +38,17 @@ public class TaxOpsService {
     private final SettingsService settings;
     private final AuditService audit;
     private final NotificationService notify;
-    private final Path projectDir;
-    private final String uploadDir;
+    private final Path storageDir;
 
     public TaxOpsService(TaxOpsRepository repo, TransactionTemplate tx, TaxPositions positions, SettingsService settings, AuditService audit, NotificationService notify,
-                         JurisOneProperties props, @Value("${jurisone.upload-dir:./storage}") String uploadDir) {
+                         JurisOneProperties props) {
         this.repo = repo;
         this.tx = tx;
         this.positions = positions;
         this.settings = settings;
         this.audit = audit;
         this.notify = notify;
-        this.projectDir = Path.of(props.projectDir() == null ? "." : props.projectDir()).toAbsolutePath().normalize();
-        this.uploadDir = uploadDir;
+        this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
     }
 
     static LocalDate today() {
@@ -223,7 +220,7 @@ public class TaxOpsService {
         List<Map<String, Object>> cur = repo.itemStatus(u.id(), policy.fy(), itemKey);
         String status = cur.isEmpty() ? null : (String) cur.get(0).get("status");
         if ("PENDING".equals(status)) throw new UserException(HttpStatus.BAD_REQUEST, "Waiting for Finance — replace it after they decide.");
-        Path dir = projectDir.resolve(uploadDir).normalize().resolve("proofs").resolve(u.id().toString());
+        Path dir = storageDir.resolve("proofs").resolve(u.id().toString());
         Path abs = dir.resolve(UUID.randomUUID() + "." + kind.ext());
         try {
             Files.createDirectories(dir);
@@ -234,7 +231,7 @@ public class TaxOpsService {
         String name = safeName(fileName == null ? "" : fileName);
         name = name.substring(0, Math.min(120, name.length()));
         if (name.isEmpty()) name = "proof." + kind.ext();
-        String rel = projectDir.relativize(abs).toString();
+        String rel = storageDir.relativize(abs).toString();
         boolean reopen = "APPROVED".equals(status) || "REJECTED".equals(status);
         repo.upsertItemProof(UUID.randomUUID(), u.id(), policy.fy(), TaxCatalogue.ITEM_SECTION.get(itemKey), itemKey, rel, name, reopen);
         return name;
@@ -266,8 +263,8 @@ public class TaxOpsService {
         if (rs.isEmpty() || rs.get(0).get("proof_path") == null) return null;
         Map<String, Object> item = rs.get(0);
         if (!u.id().equals(item.get("employee_id")) && !u.can("proofs.verify")) throw new ForbiddenException();
-        Path abs = projectDir.resolve(((String) item.get("proof_path")).replace('\\', '/')).normalize();
-        if (!abs.startsWith(projectDir)) return null;
+        Path abs = storageDir.resolve(((String) item.get("proof_path")).replace('\\', '/')).normalize();
+        if (!abs.startsWith(storageDir)) return null;
         byte[] bytes;
         try {
             bytes = Files.readAllBytes(abs);

@@ -27,7 +27,6 @@ import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
@@ -51,14 +50,12 @@ public class SeedService {
     private final JobsService jobs;
     private final BusinessSetupService setup;
     private final Environment env;
-    private final Path projectDir;
-    private final String uploadDir;
+    private final Path storageDir;
 
     private final com.jurislpo.jurisone.service.PlatformCompanyService platformCompany;
 
     public SeedService(SeedRepository repo, PiiCrypto pii, Passwords passwords, PayrollOpsService payrollOps, JobsService jobs, BusinessSetupService setup,
-                       com.jurislpo.jurisone.service.PlatformCompanyService platformCompany, Environment env, JurisOneProperties props,
-                       @Value("${jurisone.upload-dir:./storage}") String uploadDir) {
+                       com.jurislpo.jurisone.service.PlatformCompanyService platformCompany, Environment env, JurisOneProperties props) {
         this.platformCompany = platformCompany;
         this.repo = repo;
         this.pii = pii;
@@ -67,8 +64,7 @@ public class SeedService {
         this.jobs = jobs;
         this.setup = setup;
         this.env = env;
-        this.projectDir = Path.of(props.projectDir() == null ? "." : props.projectDir()).toAbsolutePath().normalize();
-        this.uploadDir = uploadDir;
+        this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
     }
 
     static Date d(String iso) {
@@ -303,14 +299,14 @@ public class SeedService {
     void seedProofFiles() throws IOException {
         List<Map<String, Object>> items = repo.findItemsMissingProofFile();
         for (Map<String, Object> it : items) {
-            Path dir = projectDir.resolve(uploadDir).normalize().resolve("proofs").resolve(it.get("employee_id").toString());
+            Path dir = storageDir.resolve("proofs").resolve(it.get("employee_id").toString());
             Files.createDirectories(dir);
             Path abs = dir.resolve(it.get("item_key") + "-demo.pdf");
             long amount = ((Number) it.get("amount")).longValue();
             String body = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\n% Demo proof: " + it.get("item_key") + ", "
                     + num(amount / 100.0) + " INR\ntrailer<</Root 1 0 R>>\n%%EOF\n";
             Files.writeString(abs, body, StandardCharsets.UTF_8);
-            repo.updateProofPath(it.get("id"), projectDir.relativize(abs).toString());
+            repo.updateProofPath(it.get("id"), storageDir.relativize(abs).toString());
         }
         if (!items.isEmpty()) log.info("Demo proof files: {}", items.size());
     }
@@ -517,7 +513,7 @@ public class SeedService {
     /** Deletes stored payslip PDFs and proof files (after a database reset they belong to nothing). */
     public void clearStoredFiles() throws IOException {
         for (String sub : List.of("payslips", "proofs")) {
-            Path dir = projectDir.resolve(uploadDir).normalize().resolve(sub);
+            Path dir = storageDir.resolve(sub);
             if (!Files.exists(dir)) continue;
             try (java.util.stream.Stream<Path> walk = Files.walk(dir)) {
                 for (Path f : walk.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(f);

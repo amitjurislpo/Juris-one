@@ -34,7 +34,6 @@ yarn-error.log*
 *.tsbuildinfo
 
 # app
-/storage/
 /test-results/
 /playwright-report/
 

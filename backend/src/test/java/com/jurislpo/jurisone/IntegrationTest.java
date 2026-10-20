@@ -11,7 +11,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * schema from Flyway V1. Tests create the rows they need.
  */
 @SpringBootTest(properties = {"jurisone.jobs-enabled=false", "jurisone.security.pii-encryption-key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=", "jurisone.mail.host=", "jurisone.app-url=http://localhost:3005",
-        "jurisone.upload-dir=backend/target/test-storage",
+        "jurisone.storage-dir=target/test-storage",
         "jurisone.security.jwt-secret=test-only-jwt-secret-0123456789abcdef0123456789", "jurisone.refresh-reuse-grace-seconds=0", "jurisone.password-login.enabled=true"})
 @AutoConfigureMockMvc
 public abstract class IntegrationTest {

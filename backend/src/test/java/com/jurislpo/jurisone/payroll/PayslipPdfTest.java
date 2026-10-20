@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.config.JacksonConfig;
-import com.jurislpo.jurisone.config.JurisOneProperties;
 import java.util.Map;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -30,10 +29,14 @@ class PayslipPdfTest {
     @Test
     void rendersTheSnapshot() throws Exception {
         JsonNode s = new ObjectMapper().readTree(SNAPSHOT);
-        byte[] pdf = new PayslipPdf(new JurisOneProperties("..", "http://localhost:3005", false)).render(s);
+        byte[] pdf = new PayslipPdf().render(s);
         try (PDDocument doc = Loader.loadPDF(pdf)) {
             String text = new PDFTextStripper().getText(doc);
             assertThat(doc.getNumberOfPages()).isEqualTo(1);
+            // the company logo is drawn (it used to be skipped silently when its file was missing)
+            int images = 0;
+            for (var name : doc.getPage(0).getResources().getXObjectNames()) if (doc.getPage(0).getResources().isImageXObject(name)) images++;
+            assertThat(images).isEqualTo(1);
             assertThat(doc.getDocumentInformation().getTitle()).isEqualTo("Payslip JC-074 September 2026");
             assertThat(text).contains("PAYSLIP", "September 2026", "Amit Jaspal", "XXXXXX234F", "HDFC XXXX1234", "8 Sep 2026", "1 Oct 2026",
                     "Rs. 93,074", "Rs. 1,10,000", "Rs. 14,926", "Rupees Ninety Three Thousand Seventy Four only", "TDS is based on the new regime.");

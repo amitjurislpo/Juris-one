@@ -108,13 +108,11 @@ public class OnboardingService {
     private final PeopleService people;
     private final SubscriptionService subscriptions;
     private final SettingsService settings;
-    private final Path projectDir;
-    private final String uploadDir;
+    private final Path storageDir;
     private final String appUrl;
 
     public OnboardingService(OnboardingRepository repo, PiiCrypto pii, ObjectMapper json, MailService mail, NotificationService notifications, AuditService audit,
-                             PeopleService people, SubscriptionService subscriptions, SettingsService settings, JurisOneProperties props,
-                             @Value("${jurisone.upload-dir:./storage}") String uploadDir, @Value("${jurisone.app-url:http://localhost:3005}") String appUrl) {
+                             PeopleService people, SubscriptionService subscriptions, SettingsService settings, JurisOneProperties props, @Value("${jurisone.app-url:http://localhost:3005}") String appUrl) {
         this.repo = repo;
         this.pii = pii;
         this.json = json;
@@ -124,8 +122,7 @@ public class OnboardingService {
         this.people = people;
         this.subscriptions = subscriptions;
         this.settings = settings;
-        this.projectDir = Path.of(props.projectDir() == null ? "." : props.projectDir()).toAbsolutePath().normalize();
-        this.uploadDir = uploadDir;
+        this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
         this.appUrl = appUrl.replaceAll("/$", "");
     }
 
@@ -478,8 +475,8 @@ public class OnboardingService {
     public record FileOut(String name, String mime, byte[] bytes) {}
 
     FileOut read(Map<String, Object> d) {
-        Path abs = projectDir.resolve((String) d.get("file_path")).normalize();
-        if (!abs.startsWith(projectDir)) return null;
+        Path abs = storageDir.resolve((String) d.get("file_path")).normalize();
+        if (!abs.startsWith(storageDir)) return null;
         try {
             return new FileOut((String) d.get("file_name"), (String) d.get("mime"), Files.readAllBytes(abs));
         } catch (IOException e) {
@@ -621,7 +618,7 @@ public class OnboardingService {
         return TenantContext.call(l.business(), () -> {
             int count = repo.countDocuments(l.id());
             if (count >= MAX_DOCS) throw new UserException("You can upload up to " + MAX_DOCS + " documents. Remove one first.");
-            Path dir = projectDir.resolve(uploadDir).normalize().resolve("onboarding").resolve(l.business().toString()).resolve(l.id().toString());
+            Path dir = storageDir.resolve("onboarding").resolve(l.business().toString()).resolve(l.id().toString());
             Path abs = dir.resolve(UUID.randomUUID() + "." + k.ext());
             try {
                 Files.createDirectories(dir);
@@ -633,7 +630,7 @@ public class OnboardingService {
             name = name.substring(0, Math.min(120, name.length()));
             if (name.isBlank()) name = "document." + k.ext();
             UUID doc = UUID.randomUUID();
-            repo.insertDocument(doc, l.id(), kind, projectDir.relativize(abs).toString().replace('\\', '/'), name, k.mime(), bytes.length,
+            repo.insertDocument(doc, l.id(), kind, storageDir.relativize(abs).toString().replace('\\', '/'), name, k.mime(), bytes.length,
                     com.jurislpo.jurisone.service.PolicyService.sha256(bytes));
             repo.markInProgress(l.id());
             return Map.of("id", doc.toString(), "name", name);

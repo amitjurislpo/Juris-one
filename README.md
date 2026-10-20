@@ -23,15 +23,17 @@ The browser only talks to the web app's origin, which forwards `/api/*` to the A
 
 ## Quick start (development)
 
-Prerequisites: Node 20.9+ (tested on 24), JDK 17+ and Docker Desktop. Maven comes with the wrapper.
+Prerequisites: JDK 17+ and Docker Desktop. Maven comes with the wrapper (`backend/mvnw`, `backend\mvnw.cmd` on Windows).
 
 ```bash
-npm install
-npm run db:up               # Postgres 16 on localhost:5436
-npm run db:migrate          # create / update the schema (Flyway)
-npm run db:seed             # shared tables and the super admin (jurisone.seed.demo=true adds a demo business)
-npm run backend:dev         # API on http://localhost:8080 (leave it running)
+docker compose up -d db                                            # Postgres 16 on 127.0.0.1:5436
+cd backend
+./mvnw spring-boot:run -Dspring-boot.run.arguments=migrate         # create / update the schema (Flyway)
+./mvnw spring-boot:run -Dspring-boot.run.arguments=seed            # shared tables and the super admin (jurisone.seed.demo=true adds a demo business)
+./mvnw spring-boot:run                                             # API on http://localhost:8080 (leave it running)
 ```
+
+(PowerShell: `cd backend; .\mvnw.cmd spring-boot:run`. The default Spring profile is `dev`.)
 
 Then start the web app from the `juris-one-frontend` repo (`npm install`, `npm run dev` → http://localhost:3005); see its README.
 
@@ -49,18 +51,20 @@ The seed never overwrites a password that is already set.
 
 **Change the super admin password after the first sign-in in any shared environment.**
 
-## Scripts
+## Commands
 
-| Script | What it does |
+Run these in `backend/` with the Maven Wrapper (`./mvnw`, or `.\mvnw.cmd` on Windows):
+
+| Command | What it does |
 |---|---|
-| `npm run backend:dev` | Spring Boot API on port 8080 |
-| `npm run backend:test` | Backend unit + API tests (JUnit 5; Testcontainers starts its own Postgres, so Docker must be running) |
-| `npm run backend:up` | Build and start the API in docker-compose |
-| `npm run db:up` | Start Postgres in docker-compose |
-| `npm run db:migrate` | Apply pending Flyway migrations and exit |
-| `npm run db:seed` | Idempotent seed: shared tables (shifts, leave types, tax) and the super admin. `jurisone.seed.demo=true` also creates the demo business. |
-| `npm run db:reset` | **Development only:** empties the database, migrates, seeds and clears stored payslips / proofs. Refuses unless `jurisone.app-url` is localhost or `jurisone.allow-db-reset=true`. |
-| `npm run jobs` | Run the scheduled jobs once (for cron) |
+| `./mvnw spring-boot:run` | Spring Boot API (profile `dev`; add `-Dspring-boot.run.profiles=sqe` for another environment) |
+| `./mvnw test` | Backend unit + API tests (JUnit 5; Testcontainers starts its own Postgres, so Docker must be running) |
+| `./mvnw -DskipTests package` | Build the jar `target/jurisone-backend-*.jar` |
+| `./mvnw spring-boot:run -Dspring-boot.run.arguments=migrate` | Apply pending Flyway migrations and exit |
+| `./mvnw spring-boot:run -Dspring-boot.run.arguments=seed` | Idempotent seed: shared tables (shifts, leave types, tax) and the super admin. `jurisone.seed.demo=true` also creates the demo business. |
+| `./mvnw spring-boot:run -Dspring-boot.run.arguments=reset` | **Development only:** empties the database, migrates, seeds and clears stored payslips / proofs. Refuses unless `jurisone.app-url` is localhost or `jurisone.allow-db-reset=true`. |
+| `./mvnw spring-boot:run -Dspring-boot.run.arguments=jobs` | Run the scheduled jobs once (for cron; with a jar: `java -jar ... jobs`) |
+| `docker compose up -d db` / `docker compose up -d --build backend` | Postgres / the API in Docker |
 | `scripts/backup.sh` / `scripts/restore.sh` | Postgres backup (keeps 14 days) / restore — see *Deploying* |
 
 ## Environments
@@ -80,9 +84,8 @@ Four environments. **Each one is a single file**, `backend/src/main/resources/ap
   `PII_ENCRYPTION_KEY` (`openssl rand -base64 32`), `JWT_SECRET` (`openssl rand -base64 48`), `SUPER_ADMIN_PASSWORD`, `SMTP_USER`,
   `SMTP_PASS` (and `SEED_OWNER_PASSWORD` / `SEED_DEMO_PASSWORD` for sqe). Use a different PII key and JWT secret in every environment.
   Any setting can also be overridden by an environment variable, e.g. `JURISONE_MAIL_HOST=smtp.corp.example`.
-- Pick the environment with `APP_ENV` (default `dev`); it selects the Spring profile. `db:*`, `backend:dev` and `jobs` use `dev`.
-- Other environments: `npm run db:up:sqe`, `npm run backend:sqe` (same for `uat`, `prd`; `backend:up:<env>` runs the API in Docker). Anything else: `node scripts/with-env.mjs <env> <command>`, e.g. `node scripts/with-env.mjs uat npm run db:seed`. The helper reads the ports, database and project name for docker-compose from the environment's file.
-- Each environment gets its own Docker containers and data volume (`COMPOSE_PROJECT_NAME`), so they can run side by side.
+- Pick the environment with the Spring profile: `SPRING_PROFILES_ACTIVE=sqe` or `-Dspring-boot.run.profiles=sqe` (default `dev`).
+- Docker: the database and the API run per environment by setting variables for `docker compose` (see the top of `docker-compose.yml`): `COMPOSE_PROJECT_NAME`, `APP_ENV`, `DB_PORT`, `BACKEND_PORT`, `POSTGRES_DB`, `POSTGRES_PASSWORD` and the secrets above. Each project name gets its own containers and volumes, so environments run side by side.
 - **Sign-in is by emailed code only** (no password option). Only `dev` may use the fixed code `000000` (`jurisone.otp.fixed-code`); `sqe`, `uat` and `prd` send real codes, so they need `jurisone.mail.*`. The identity provider (IAM JCG) replaces this later. The password endpoint is off unless `jurisone.password-login.enabled=true`.
 - **Guard:** `sqe`, `uat` and `prd` refuse to start with a fixed sign-in code or without a mail host; `uat` and `prd` also with demo data, an `http://` `jurisone.app-url` or a secret that is empty or still a `<placeholder>`.
 
@@ -90,7 +93,7 @@ Four environments. **Each one is a single file**, `backend/src/main/resources/ap
 
 JurisOne is a web app (static files from `juris-one-frontend`), a Spring Boot API and Postgres 16. Any Linux VPS or VM works (REQUIREMENTS §9.4 leaves hosting open).
 
-1. **Postgres 16.** A managed instance, or `node scripts/with-env.mjs prd docker compose up -d db` (needs `DB_PASSWORD`; the port is bound to localhost only).
+1. **Postgres 16.** A managed instance, or the compose service with the variables for prd (`COMPOSE_PROJECT_NAME=jurisone-prd DB_PORT=5466 POSTGRES_DB=jurisone_prd POSTGRES_PASSWORD=… docker compose up -d db`; the port is bound to localhost only).
 2. **Environment.** Edit `backend/src/main/resources/application-prd.properties` for your site (`jurisone.app-url` — the public https URL, the only origin the API accepts —, the database address, `jurisone.mail.host`, the super admin's email) and set the secrets as environment variables of the API process (systemd `Environment=` / a secret manager):
    - `DB_PASSWORD`
    - `PII_ENCRYPTION_KEY` — generate once and keep it in your password manager. Losing it makes PII unreadable.
@@ -99,8 +102,9 @@ JurisOne is a web app (static files from `juris-one-frontend`), a Spring Boot AP
    - Demo data is off in `prd` (`jurisone.seed.demo=false`), so no demo people are created.
 3. **API.** Either in Docker:
    ```bash
-   npm run backend:up:prd                    # migrates the schema on start (set the secrets as environment variables first)
-   node scripts/with-env.mjs prd docker compose run --rm backend seed   # roles, policies, tax tables, super admin (idempotent)
+   # with the prd variables and secrets set (see Environments):
+   docker compose up -d --build backend      # migrates the schema on start
+   docker compose run --rm backend seed      # roles, policies, tax tables, super admin (idempotent)
    ```
    or on the host (JDK 17+):
    ```bash
@@ -111,19 +115,19 @@ JurisOne is a web app (static files from `juris-one-frontend`), a Spring Boot AP
    ```
 4. **Frontend.** Build and host the `juris-one-frontend` repo (`npm ci`, `npm run build` → static files in `dist/`). Serve them from a web server on the same origin as the API and send `/api/*` to the API (an nginx example is in that repo's README).
 5. **HTTPS.** Put Caddy or nginx in front, terminate TLS there, serve the web app and proxy `/api/` to the API (`server.port`, 8200 in prd). Keep that port itself private. Session cookies are `Secure` in production, so the app must be served over https.
-6. **Jobs.** Leave `jurisone.jobs-enabled=true` for a single API instance. With several instances either keep it on (an advisory lock lets only one run) or set it to `false` everywhere and run `npm run jobs` (or `java -jar … jobs`) from cron every 10 minutes.
-7. **Files.** `jurisone.upload-dir` (default `./storage`) holds payslip PDFs and investment proofs. Put it on persistent disk and include it in backups. In Docker it is the `./storage` volume.
+6. **Jobs.** Leave `jurisone.jobs-enabled=true` for a single API instance. With several instances either keep it on (an advisory lock lets only one run) or set it to `false` everywhere and run `java -jar … jobs` from cron every 10 minutes.
+7. **Files.** `jurisone.storage-dir` (prd: `${STORAGE_DIR:/var/lib/jurisone/prd}`; dev: your `Documents/JurisOne`) holds payslip PDFs, investment proofs, policy PDFs and onboarding documents, **outside the project**. Put it on persistent disk and include it in backups. In Docker it is the `jurisone_files` volume (`/app/data/files`).
 
 ### Backups (daily)
 
 ```bash
-# crontab -e   (02:15 every night; keeps 14 days in storage/backups)
-15 2 * * *  cd /srv/jurisone && DATABASE_URL='postgresql://user:password@host:5466/jurisone_prd' ./scripts/backup.sh >> storage/backups/backup.log 2>&1
+# crontab -e   (02:15 every night; keeps 14 days in $BACKUP_DIR, default ~/Documents/JurisOne/backups)
+15 2 * * *  DATABASE_URL='postgresql://user:password@host:5466/jurisone_prd' /srv/jurisone/scripts/backup.sh >> /var/log/jurisone-backup.log 2>&1
 ```
 
 - Needs `pg_dump` 16+ on the server, or set `PG_DOCKER=jurisone-db` to run it inside the compose container.
-- Copy `storage/backups/` and `storage/` to off-site storage (S3, Azure Blob, another host).
-- Restore with `DATABASE_URL=… ./scripts/restore.sh <file.dump>` (stop the app first; it asks for confirmation). In dev: `node scripts/with-env.mjs dev ./scripts/backup.sh`.
+- Copy the backups folder and the files folder (`jurisone.storage-dir`) to off-site storage (S3, Azure Blob, another host).
+- Restore with `DATABASE_URL=… ./scripts/restore.sh <file.dump>` (stop the app first; it asks for confirmation). In dev: `DATABASE_URL=postgresql://jurisone:jurisone_dev_pw@localhost:5436/jurisone ./scripts/backup.sh`.
 - Test a restore into a scratch database every few months.
 
 ### Upgrading and rolling back
@@ -291,7 +295,7 @@ Approval is blocked once the month is locked. After that, Finance adjusts LOP in
 
 Previous-employer income is added, then the standard deduction and any approved old-regime deductions are subtracted. TDS already paid is taken off, and the rest is spread over the remaining months.
 
-**Closing.** *Approve & close* needs `pay.close`, and attendance must be locked. Closing snapshots every payslip as immutable JSON plus a PDF in `storage/payslips/<month>/`. Later changes never touch a closed payslip.
+**Closing.** *Approve & close* needs `pay.close`, and attendance must be locked. Closing snapshots every payslip as immutable JSON plus a PDF in `<storage-dir>/payslips/…`. Later changes never touch a closed payslip.
 
 **Exports.**
 - Payroll register, PT summary and PF ECR.
@@ -324,7 +328,7 @@ Previous-employer income is added, then the standard deduction and any approved 
 - Finance enters previous-employer income and TDS (Form 12B) there.
 - Export to CSV.
 
-**Storage.** Proof files are stored under `storage/proofs/<employee>/`. Only the employee and Finance can open them.
+**Storage.** Proof files are stored under `<storage-dir>/proofs/<employee>/`. Only the employee and Finance can open them.
 
 ### Dashboards and audit log
 
@@ -360,7 +364,7 @@ Salary is never shown on Home; an e2e test checks that no ₹ amount appears the
 
 **How they run:**
 - **In the API (default):** with `jurisone.jobs-enabled=true` they run every 10 minutes.
-- **From cron:** set `jurisone.jobs-enabled=false` and run `npm run jobs`.
+- **From cron:** set `jurisone.jobs-enabled=false` and run the `jobs` command from cron (`java -jar … jobs`).
 
 **Safe to repeat.** A Postgres advisory lock stops two API instances from running the jobs at the same time. The `job_runs` table records each month that has been locked, so running a job again doesn't redo work.
 

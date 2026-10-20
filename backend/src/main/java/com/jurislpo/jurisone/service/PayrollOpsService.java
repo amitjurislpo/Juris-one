@@ -46,12 +46,11 @@ public class PayrollOpsService {
     private final MailService mail;
     private final PiiCrypto pii;
     private final ObjectMapper json;
-    private final Path projectDir;
-    private final String uploadDir;
+    private final Path storageDir;
     private final String appUrl;
 
     public PayrollOpsService(PayrollOpsRepository repo, TransactionTemplate tx, PayrollService payroll, PayslipPdf pdf, SettingsService settings, AuditService audit,
-                             MailService mail, PiiCrypto pii, ObjectMapper json, JurisOneProperties props, @Value("${jurisone.upload-dir:./storage}") String uploadDir,
+                             MailService mail, PiiCrypto pii, ObjectMapper json, JurisOneProperties props,
                              @Value("${jurisone.app-url:http://localhost:3005}") String appUrl) {
         this.repo = repo;
         this.tx = tx;
@@ -62,8 +61,7 @@ public class PayrollOpsService {
         this.mail = mail;
         this.pii = pii;
         this.json = json;
-        this.projectDir = Path.of(props.projectDir() == null ? "." : props.projectDir()).toAbsolutePath().normalize();
-        this.uploadDir = uploadDir;
+        this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
         this.appUrl = appUrl.replaceAll("/$", "");
     }
 
@@ -74,8 +72,8 @@ public class PayrollOpsService {
 
     /** A DB-stored relative path (may use Windows separators) → absolute file under the project directory. */
     public Path resolveStored(String stored) {
-        Path p = projectDir.resolve(stored.replace('\\', '/')).normalize();
-        if (!p.startsWith(projectDir)) throw new IllegalArgumentException("bad path");
+        Path p = storageDir.resolve(stored.replace('\\', '/')).normalize();
+        if (!p.startsWith(storageDir)) throw new IllegalArgumentException("bad path");
         return p;
     }
 
@@ -215,7 +213,7 @@ public class PayrollOpsService {
         // employee IDs repeat across businesses, so each business has its own folder
         java.util.UUID business = com.jurislpo.jurisone.tenancy.TenantContext.current();
         if (business == null) throw new IllegalStateException("Payroll closes inside a business.");
-        Path dir = projectDir.resolve(uploadDir).normalize().resolve("payslips").resolve(business.toString()).resolve(ym);
+        Path dir = storageDir.resolve("payslips").resolve(business.toString()).resolve(ym);
         record File(UUID employeeId, String pdfPath, String snapshot, long net) {}
         List<File> files = new ArrayList<>();
         Map<UUID, Map<String, Object>> emps = new LinkedHashMap<>();
@@ -228,7 +226,7 @@ public class PayrollOpsService {
                 String snapJson = json.writeValueAsString(snap);
                 Path p = dir.resolve(r.code() + ".pdf");
                 Files.write(p, pdf.render(json.readTree(snapJson)));
-                files.add(new File(r.employeeId(), projectDir.relativize(p).toString(), snapJson, snap.net()));
+                files.add(new File(r.employeeId(), storageDir.relativize(p).toString(), snapJson, snap.net()));
             }
         } catch (IOException e) {
             throw new IllegalStateException("Could not write payslips: " + e.getMessage(), e);

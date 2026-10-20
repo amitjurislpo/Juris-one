@@ -21,14 +21,15 @@ Add new lines at the bottom of the right section. Hindi, Hinglish or English are
 ## Project structure
 
 - Two repositories: this one is the **backend** (`Juris-one`: Spring Boot API in `backend/`, Postgres, jobs) and `juris-one-frontend` is the **web app** (React + Vite). Frontend code lives only in the frontend repo; backend code only here.
-- The frontend repo's browser tests start this API through `scripts/e2e-env.mjs`; keep that working.
+- The frontend repo's browser tests (`scripts/e2e-env.mjs` there) build and start this API from a checkout next to it; keep `./mvnw -DskipTests package` and the `reset` / `jobs` commands working.
 
 ## Code and configuration rules
 
 - The repo must stay clean: no unused files, no dead code, no leftover references to removed things (Next.js, Prisma, `.env`, exit/F&F, Form 16).
 - Configuration is one file per environment: `backend/src/main/resources/application.properties` and `application-dev|sqe|uat|prd.properties`. Do not add `.env` files or separate templates. Secrets of sqe/uat/prd are `${ENV_VARS}` from the server and are never committed.
-- Config files live under `src/` (resources), not in the repository root.
-- Verify before saying "done": backend `npm run backend:test`; frontend `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, and `npm run test:e2e` for anything the UI or API contract touches.
+- Config files live under `src/` (resources), not in the repository root. Generated and uploaded files live outside the project (`jurisone.storage-dir`).
+- The backend is a pure Java project: no Node, no `package.json`.
+- Verify before saying "done": backend `./mvnw test` (in `backend/`); frontend `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, and `npm run test:e2e` for anything the UI or API contract touches.
 
 ## Requirements (add yours here)
 

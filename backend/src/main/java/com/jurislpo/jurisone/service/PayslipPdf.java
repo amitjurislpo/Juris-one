@@ -1,13 +1,10 @@
 package com.jurislpo.jurisone.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.jurislpo.jurisone.config.JurisOneProperties;
 import com.jurislpo.jurisone.engine.Format;
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,10 +31,16 @@ public class PayslipPdf {
             ACCENT = new Color(110, 86, 207), PANEL = new Color(244, 244, 247), BAD = new Color(207, 58, 64);
     static final float W = 210, M = 16;
 
-    private final Path projectDir;
+    /** The company logo drawn at the top of every payslip (classpath: brand/logo-ink.png). */
+    private final byte[] logo;
 
-    public PayslipPdf(JurisOneProperties props) {
-        this.projectDir = Path.of(props.projectDir() == null ? "." : props.projectDir());
+    public PayslipPdf() {
+        try (var in = PayslipPdf.class.getResourceAsStream("/brand/logo-ink.png")) {
+            if (in == null) throw new IllegalStateException("brand/logo-ink.png is missing from the classpath");
+            this.logo = in.readAllBytes();
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not read brand/logo-ink.png", e);
+        }
     }
 
     static float mm(double v) {
@@ -103,14 +106,9 @@ public class PayslipPdf {
             try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
                 Canvas c = new Canvas(cs, page.getMediaBox().getHeight(), font, bold);
                 double y = 16;
-                try {
-                    Path logo = projectDir.resolve("public/brand/logo-ink.png");
-                    PDImageXObject img = PDImageXObject.createFromByteArray(doc, Files.readAllBytes(logo), "logo");
-                    double w = 46, h = (double) img.getHeight() / img.getWidth() * w;
-                    cs.drawImage(img, mm(M), c.H - mm(y + h), mm(w), mm(h));
-                } catch (IOException | RuntimeException ignored) {
-                    // logo is decorative
-                }
+                PDImageXObject img = PDImageXObject.createFromByteArray(doc, logo, "logo");
+                double w = 46, h = (double) img.getHeight() / img.getWidth() * w;
+                cs.drawImage(img, mm(M), c.H - mm(y + h), mm(w), mm(h));
                 c.text("PAYSLIP", W - M, y + 7, 18, bold, INK, true);
                 c.text(ymLabel, W - M, y + 13, 11, font, MUTED, true);
                 c.text(s.at("/company/name").asText() + " · " + s.at("/company/address").asText(), W - M, y + 18.5, 8.5f, font, MUTED, true);

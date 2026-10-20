@@ -1,17 +1,20 @@
-# One stack per environment. Run it through the helper, which fills in ports, database and project name from that
-# environment's backend/src/main/resources/application-<env>.properties (and the secrets from your environment variables):
-#   node scripts/with-env.mjs <dev|sqe|uat|prd> docker compose up -d db
-#   (or: npm run db:up / db:up:sqe / db:up:uat / db:up:prd, backend:up / backend:up:<env>)
-# Each environment gets its own containers and data volume (COMPOSE_PROJECT_NAME), so they can run side by side.
+# Postgres (and, optionally, the API) in Docker. The defaults below are for development:
+#   docker compose up -d db                 # Postgres 16 on 127.0.0.1:5436, then run the API with Maven (see README)
+#   docker compose up -d --build backend    # the API in Docker too (APP_ENV=dev)
+# Other environments run side by side by setting these variables (shell, systemd or a CI job), e.g. for sqe:
+#   COMPOSE_PROJECT_NAME=jurisone-sqe APP_ENV=sqe DB_PORT=5446 BACKEND_PORT=8090 POSTGRES_DB=jurisone_sqe \
+#   POSTGRES_PASSWORD=... PII_ENCRYPTION_KEY=... JWT_SECRET=... docker compose up -d
+# Each project name gets its own containers and volumes. The API's settings are in the jar's
+# application-<env>.properties; only the database address and the secrets are passed here.
 services:
   db:
     image: postgres:16-alpine
     container_name: ${COMPOSE_PROJECT_NAME:-jurisone}-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?run through scripts/with-env.mjs}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set DB_PASSWORD in the environment (sqe, uat, prd)}
-      POSTGRES_DB: ${POSTGRES_DB:?run through scripts/with-env.mjs}
+      POSTGRES_USER: ${POSTGRES_USER:-jurisone}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jurisone_dev_pw}   # dev default; set it for every other environment
+      POSTGRES_DB: ${POSTGRES_DB:-jurisone}
       TZ: UTC
     ports:
       - "127.0.0.1:${DB_PORT:-5436}:5432"
@@ -24,7 +27,6 @@ services:
       retries: 10
 
   # Spring Boot API (BACKEND_PORT on the host, 8080 inside). The web app (juris-one-frontend) proxies /api/* to it.
-  # Settings come from the jar's application-<env>.properties; only the database address and the secrets are given here.
   backend:
     build: ./backend
     container_name: ${COMPOSE_PROJECT_NAME:-jurisone}-backend
@@ -33,11 +35,11 @@ services:
       db:
         condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: ${APP_ENV:?run through scripts/with-env.mjs}
+      SPRING_PROFILES_ACTIVE: ${APP_ENV:-dev}
       SERVER_PORT: 8080
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-jurisone}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-jurisone}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-jurisone_dev_pw}
       # secrets of sqe / uat / prd (dev has its own values in application-dev.properties)
       PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-}
@@ -49,7 +51,8 @@ services:
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     volumes:
-      - ./storage:/app/data/storage   # payslip PDFs and investment proofs
+      - jurisone_files:/app/data/files   # payslip PDFs, investment proofs, policy PDFs, onboarding documents
 
 volumes:
   jurisone_pg:
+  jurisone_files:
