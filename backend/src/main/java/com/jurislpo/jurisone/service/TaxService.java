@@ -26,7 +26,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 /**
- * Tax projection — src/lib/tax/service.ts. Annual taxable income = closed payslips this FY + earlier months estimated
+ * Tax projection. Annual taxable income = closed payslips this FY + earlier months estimated
  * from the structure then in force + this month + current structure × remaining months + previous employer income
  * − standard deduction − (old regime) deductions. Monthly TDS = (annual tax − TDS already deducted) ÷ remaining months.
  * Amounts in rupees like the TS code, except where noted.

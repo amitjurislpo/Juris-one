@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
-/** Every 10 minutes, plus once 15 s after boot (src/lib/scheduler.ts). On only with jurisone.jobs-enabled=true. */
+/** Every 10 minutes, plus once 15 s after boot. On only with jurisone.jobs-enabled=true. */
 @Configuration
 @EnableScheduling
 @ConditionalOnProperty(name = "jurisone.jobs-enabled", havingValue = "true")

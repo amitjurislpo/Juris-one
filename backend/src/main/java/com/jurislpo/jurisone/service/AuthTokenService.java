@@ -15,7 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** One-time invite / reset links (src/lib/auth-tokens.ts). Only the newest link of each kind works. */
+/** One-time invite / reset links. Only the newest link of each kind works. */
 @Service
 public class AuthTokenService {
 

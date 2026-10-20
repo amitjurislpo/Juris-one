@@ -2,7 +2,7 @@
 # No secret has a default here.
 server:
   port: ${BACKEND_PORT:8080}
-  forward-headers-strategy: none     # X-Forwarded-For is read as-is (RequestMeta), like the Next.js app
+  forward-headers-strategy: none     # X-Forwarded-For is read as-is (RequestMeta)
 
 spring:
   application:

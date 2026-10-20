@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Payroll maths — pure functions, integer PAISE throughout (REQUIREMENTS §5.8). Port of src/lib/payroll/engine.ts.
+ * Payroll maths — pure functions, integer PAISE throughout (REQUIREMENTS §5.8).
  *
  * <pre>
  *   earned_component = monthly_rate × paid_days ÷ days_in_month

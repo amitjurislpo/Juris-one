@@ -9,8 +9,8 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Who may do what to an employee record (REQUIREMENTS §3.3). Port of src/lib/people-rules.ts and the
- * step checks of src/lib/employee-schema.ts. Pure — services call these after loading actor + target.
+ * Who may do what to an employee record (REQUIREMENTS §3.3), including the
+ * step checks of the employee form. Pure — services call these after loading actor + target.
  */
 public final class PeopleRules {
     private PeopleRules() {}

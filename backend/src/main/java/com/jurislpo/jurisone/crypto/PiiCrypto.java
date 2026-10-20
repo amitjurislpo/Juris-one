@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Application-level encryption for PII (PAN, Aadhaar, UAN, phone, address, bank account) — the same
- * format as src/lib/crypto.ts, so data written by either side reads on the other:
+ * format, so data written by either side reads on the other:
  * AES-256-GCM, 12-byte IV, 16-byte tag, no AAD, stored as {@code v1.<iv>.<tag>.<ciphertext>} (base64url, no padding).
  */
 @Component

@@ -3,7 +3,7 @@ package com.jurislpo.jurisone.engine;
 import java.util.List;
 import java.util.Map;
 
-/** Shift labels, port of src/lib/shifts.ts. */
+/** Shift labels. */
 public final class Shifts {
     private Shifts() {}
 

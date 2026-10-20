@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Who, what, when, before → after (REQUIREMENTS §5.16; src/lib/audit.ts). Joins the caller's transaction when
+ * Who, what, when, before → after (REQUIREMENTS §5.16). Joins the caller's transaction when
  * there is one. Values that were Prisma BigInt in the Node app are written as strings by the callers, so new
  * rows look like existing ones.
  */

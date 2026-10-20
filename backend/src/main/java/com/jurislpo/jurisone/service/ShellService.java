@@ -13,8 +13,8 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /**
- * Sidebar groups, badges, bell contents and the profile card for the signed-in user — src/lib/shell-data.ts and
- * the data part of src/app/(app)/layout.tsx. Everything is permission-driven.
+ * Sidebar groups, badges, bell contents and the profile card for the signed-in user.
+ * Everything is permission-driven.
  */
 @Service
 public class ShellService {

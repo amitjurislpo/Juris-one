@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Leave maths — pure functions (REQUIREMENTS §5.6). Port of src/lib/leave/rules.ts. Dates are in the employee's zone. */
+/** Leave maths — pure functions (REQUIREMENTS §5.6). Dates are in the employee's zone. */
 public final class LeaveRules {
 
     private LeaveRules() {}

@@ -4,7 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Old-regime declaration items (REQUIREMENTS §5.10) — src/lib/tax/catalogue.ts. */
+/** Old-regime declaration items (REQUIREMENTS §5.10). */
 public final class TaxCatalogue {
     private TaxCatalogue() {}
 

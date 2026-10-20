@@ -32,7 +32,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import org.springframework.stereotype.Service;
 
-/** Home, company overview and My team — src/lib/dashboard.ts, src/lib/team-status.ts and the home/overview/team pages. */
+/** Home, company overview and My team. */
 @Service
 public class DashboardService {
 

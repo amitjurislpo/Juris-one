@@ -5,7 +5,7 @@
 set -eu
 
 FILE=${1:?usage: scripts/restore.sh <dump file>}
-[ -f .env ] && set -a && . ./.env && set +a
+ENV_FILE=".env.${APP_ENV:-dev}"; [ -f "$ENV_FILE" ] && set -a && . "./$ENV_FILE" && set +a
 : "${DATABASE_URL:?DATABASE_URL is not set}"
 URL=$(printf '%s' "$DATABASE_URL" | sed 's/[?&]schema=[^&]*//')
 

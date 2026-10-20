@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Every email is recorded in {@code email_outbox} (src/lib/email.ts). With SMTP configured it is sent; without it (dev)
+ * Every email is recorded in {@code email_outbox}. With SMTP configured it is sent; without it (dev)
  * it is logged so invite / reset links can be copied. A failed send is recorded and never thrown.
  */
 @Service

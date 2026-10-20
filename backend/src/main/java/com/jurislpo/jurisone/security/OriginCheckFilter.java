@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * CSRF guard (src/lib/api.ts assertSameOrigin): a mutating /api request must carry an Origin whose host equals
+ * CSRF guard (assertSameOrigin): a mutating /api request must carry an Origin whose host equals
  * X-Forwarded-Host, or Host. Together with SameSite=Lax session cookies this is the app's CSRF defence.
  */
 @Component

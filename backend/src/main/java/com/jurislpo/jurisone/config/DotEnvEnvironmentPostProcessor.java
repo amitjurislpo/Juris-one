@@ -14,7 +14,7 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 
 /**
- * Makes the backend use the same configuration as the Next.js app:
+ * Makes the backend read the per-environment .env files:
  * <ul>
  *   <li>loads the environment's file {@code .env.<APP_ENV>} (dev, sqe, uat or prd; default dev; falls back to a plain
  *       {@code .env}), found in the working directory or its parent, as the

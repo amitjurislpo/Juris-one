@@ -7,7 +7,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** In-app notifications (bell) and decision emails — src/lib/notify.ts. */
+/** In-app notifications (bell) and decision emails. */
 @Service
 @Transactional
 public class NotificationService {

@@ -28,7 +28,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** People records (REQUIREMENTS §5.2; src/app/(app)/people). HR never receives salary; PII travels masked. */
+/** People records (REQUIREMENTS §5.2). HR never receives salary; PII travels masked. */
 @Service
 public class PeopleService {
 

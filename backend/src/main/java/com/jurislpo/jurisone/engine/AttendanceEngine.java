@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Attendance engine — pure functions, no database (REQUIREMENTS §5.4). Port of src/lib/attendance/engine.ts.
+ * Attendance engine — pure functions, no database (REQUIREMENTS §5.4).
  *
  * <p>Every date here is a <em>work date</em> in the employee's own IANA zone. A night shift belongs to the
  * date it started on: punches are attributed to the shift whose window contains them, where a window opens

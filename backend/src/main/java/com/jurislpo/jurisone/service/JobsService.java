@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Scheduled jobs — src/lib/jobs.ts, same order and idempotency (job_runs), each job committing as it goes,
+ * Scheduled jobs, same order and idempotency (job_runs), each job committing as it goes,
  * run business by business. One run at a time across instances: advisory lock 74202, taken and released on one dedicated connection
  * (the Node app took and released it through a pool, which could leak the lock).
  */

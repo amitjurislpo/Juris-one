@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.ConfigurableApplicationContext;
 
 /**
- * JurisOne REST API. The Next.js app (port 3005) is its only client; it proxies /api/* here.
+ * JurisOne REST API. The web app (juris-one-frontend, port 3005) is its only client; it proxies /api/* here.
  * With a command argument it runs that once and exits instead: {@code migrate}, {@code seed}, {@code reset} or {@code jobs} (see cli.Commands).
  */
 @SpringBootApplication

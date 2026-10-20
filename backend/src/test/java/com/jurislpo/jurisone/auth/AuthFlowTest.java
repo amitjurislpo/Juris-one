@@ -45,12 +45,12 @@ class AuthFlowTest extends IntegrationTest {
         limiter.clear();
     }
 
-    /** A POST as the Next.js server sends it: same-origin headers, JSON body. */
+    /** A POST as the web server sends it: same-origin headers, JSON body. */
     static MockHttpServletRequestBuilder api(String path, String json) {
         return api(post(path), json);
     }
 
-    /** Any write as the Next.js server sends it. */
+    /** Any write as the web server sends it. */
     static MockHttpServletRequestBuilder api(MockHttpServletRequestBuilder b, String json) {
         return b.header("origin", ORIGIN).header("host", "localhost:3005").header("x-forwarded-for", "10.0.0.7")
                 .contentType(MediaType.APPLICATION_JSON).content(json);

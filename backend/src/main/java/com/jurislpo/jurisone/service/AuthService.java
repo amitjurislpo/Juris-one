@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Sign in / out, forgot password, invite + reset links — src/app/(auth)/actions.ts, same messages and rules:
+ * Sign in / out, forgot password, invite + reset links, same messages and rules:
  * failed attempts per IP, account lockout, no account enumeration, login history and audit.
  */
 @Service

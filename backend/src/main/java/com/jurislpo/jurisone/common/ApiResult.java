@@ -3,7 +3,7 @@ package com.jurislpo.jurisone.common;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * The response body of every JSON endpoint — the same shape as the Next.js {@code ActionResult}:
+ * The response body of every JSON endpoint — the shape the web app expects:
  * {@code {ok:true, msg?, data?}} or {@code {ok:false, error}}. Its own empty fields are omitted; nulls inside {@code data} are kept.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)

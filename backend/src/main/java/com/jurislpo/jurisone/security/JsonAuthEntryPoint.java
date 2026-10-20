@@ -15,13 +15,13 @@ import org.springframework.stereotype.Component;
 
 /**
  * Signed-out request to a protected endpoint, as {@code application/problem+json}. The seven file/export routes that
- * existed in the Next.js app answer 403 (their contract, checked by the e2e tests); every other endpoint answers 401,
+ * existed in the original app answer 403 (their contract, checked by the e2e tests); every other endpoint answers 401,
  * with code {@code TOKEN_EXPIRED} when the access token has merely run out (the client should refresh and retry).
  */
 @Component
 public class JsonAuthEntryPoint implements AuthenticationEntryPoint {
 
-    /** Paths of the original route handlers (src/app/api/**). */
+    /** Paths of the original route handlers. */
     public static final List<String> LEGACY_ROUTES = List.of(
             "/api/attendance/register", "/api/declarations/proof", "/api/payroll/export", "/api/payslips/", "/api/people/export", "/api/tax/export");
 

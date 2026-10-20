@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 @DisplayName("PII encryption")
 class CryptoTest {
 
-    /** Throwaway test key (32 × 0x07), the one used to produce NODE_CIPHERTEXT with the algorithm of src/lib/crypto.ts. */
+    /** Throwaway test key (32 × 0x07), the one used to produce NODE_CIPHERTEXT (a ciphertext made by the original Node implementation). */
     static final String TEST_KEY = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=";
     static final String NODE_CIPHERTEXT = "v1.AwMDAwMDAwMDAwMD.ztCOsv-s2wt0laFaIVS8WQ.F82XNnoeaXpDYHJu2GM";
     final PiiCrypto crypto = new PiiCrypto(TEST_KEY);

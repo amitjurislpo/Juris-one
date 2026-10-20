@@ -3,8 +3,8 @@ package com.jurislpo.jurisone.common;
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * Client IP and user agent (src/lib/request.ts): first X-Forwarded-For hop, else X-Real-IP; UA cut to 400 chars.
- * The Next.js app forwards these headers when it calls the API on the browser's behalf.
+ * Client IP and user agent: first X-Forwarded-For hop, else X-Real-IP; UA cut to 400 chars.
+ * The web server in front (proxy) forwards these headers.
  */
 public record RequestMeta(String ip, String userAgent) {
 

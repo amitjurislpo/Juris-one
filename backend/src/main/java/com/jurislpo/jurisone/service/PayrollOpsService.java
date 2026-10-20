@@ -33,7 +33,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Payroll actions, close & publish, salary structures, payslips and payroll exports (src/app/(app)/payroll|structures|payslips, src/lib/payroll/close.ts). */
+/** Payroll actions, close & publish, salary structures, payslips and payroll exports. */
 @Service
 public class PayrollOpsService {
 

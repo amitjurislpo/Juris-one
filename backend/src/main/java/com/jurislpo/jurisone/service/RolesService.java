@@ -14,7 +14,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Roles & permissions (REQUIREMENTS §3; src/app/(app)/roles). Admin only (roles.manage). */
+/** Roles & permissions (REQUIREMENTS §3). Admin only (roles.manage). */
 @Service
 public class RolesService {
 

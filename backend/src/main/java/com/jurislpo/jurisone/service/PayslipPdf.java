@@ -23,8 +23,8 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.springframework.stereotype.Component;
 
 /**
- * A4 payslip PDF from an immutable snapshot (REQUIREMENTS §5.11) — a line-for-line port of src/lib/payroll/pdf.ts
- * (pdf-lib): same coordinates in mm from the top, Helvetica / Helvetica-Bold, logo, colours and wording.
+ * A4 payslip PDF from an immutable snapshot (REQUIREMENTS §5.11) drawn with the
+ * following layout: same coordinates in mm from the top, Helvetica / Helvetica-Bold, logo, colours and wording.
  * Standard PDF fonts can't draw "₹", so amounts are written "Rs.".
  */
 @Component

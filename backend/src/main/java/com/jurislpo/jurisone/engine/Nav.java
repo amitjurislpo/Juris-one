@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/** Sidebar + route access table (prototype NAV). Port of src/lib/nav.ts — every page checks it on the server. */
+/** Sidebar + route access table (prototype NAV). Every page checks it on the server. */
 public final class Nav {
     private Nav() {}
 

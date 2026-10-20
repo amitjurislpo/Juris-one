@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
-/** RFC 4180 CSV with spreadsheet formula-injection protection. Port of src/lib/csv.ts (BOM + CRLF). */
+/** RFC 4180 CSV with spreadsheet formula-injection protection (BOM + CRLF). */
 public final class Csv {
     private Csv() {}
 

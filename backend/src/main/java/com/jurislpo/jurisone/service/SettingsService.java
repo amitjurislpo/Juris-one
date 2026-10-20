@@ -11,12 +11,12 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /**
- * Policies (src/lib/settings.ts + settings-defaults.ts): the DB row for a key is shallow-merged over the code default.
+ * Policies: the DB row for a key is shallow-merged over the code default.
  */
 @Service
 public class SettingsService {
 
-    /** Defaults, verbatim from src/lib/settings-defaults.ts. */
+    /** Defaults. */
     public static final Map<String, String> DEFAULTS = Map.of(
             "attendance.policy", """
                 {"fullDayHours":8,"halfDayHours":4,"graceMinutes":15,"lateMarksPerHalfDayLop":3,"weeklyOffs":[0,6],

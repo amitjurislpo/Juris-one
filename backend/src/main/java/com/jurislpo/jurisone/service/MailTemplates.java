@@ -1,6 +1,6 @@
 package com.jurislpo.jurisone.service;
 
-/** Email bodies, verbatim from src/lib/email.ts. */
+/** Email bodies. */
 public final class MailTemplates {
     private MailTemplates() {}
 

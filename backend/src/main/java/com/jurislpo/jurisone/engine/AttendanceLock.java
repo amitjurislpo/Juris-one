@@ -3,7 +3,7 @@ package com.jurislpo.jurisone.engine;
 import java.time.Instant;
 import java.time.LocalDate;
 
-/** When a month's attendance locks (src/lib/attendance/service.ts lockInstant / isMonthLocked). */
+/** When a month's attendance locks (lockInstant / isMonthLocked). */
 public final class AttendanceLock {
     private AttendanceLock() {}
 

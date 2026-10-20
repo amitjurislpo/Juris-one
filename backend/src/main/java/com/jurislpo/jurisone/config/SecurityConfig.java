@@ -25,7 +25,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * Stateless: no JSESSIONID. Authentication comes from the {@code jo_at} JWT access-token cookie (JwtAuthFilter), renewed
  * through {@code POST /api/auth/session/refresh} with the rotating {@code jo_rt} refresh cookie.
  * Spring's CSRF token is off because the app's defence is SameSite=Lax cookies + an Origin check on writes, as today.
- * Permissions are checked in the services with the same any-of rules and messages as the Next.js app.
+ * Permissions are checked in the services with any-of rules.
  * Not loaded for the one-shot CLI commands (migrate / seed / jobs), which run without a web server.
  */
 @Configuration
@@ -91,7 +91,7 @@ public class SecurityConfig {
         return r;
     }
 
-    /** CORS: only the Next.js origin, with credentials (the browser normally reaches us through its /api proxy). */
+    /** CORS: only the web app's origin, with credentials (the browser normally reaches us through the app's /api proxy). */
     @Bean
     CorsConfigurationSource corsConfigurationSource(JurisOneProperties props) {
         CorsConfiguration c = new CorsConfiguration();

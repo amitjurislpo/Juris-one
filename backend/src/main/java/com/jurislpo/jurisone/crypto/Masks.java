@@ -1,6 +1,6 @@
 package com.jurislpo.jurisone.crypto;
 
-/** Masked display formats (src/lib/mask.ts). Only the last four characters are ever stored in clear. */
+/** Masked display formats. Only the last four characters are ever stored in clear. */
 public final class Masks {
     private Masks() {}
 

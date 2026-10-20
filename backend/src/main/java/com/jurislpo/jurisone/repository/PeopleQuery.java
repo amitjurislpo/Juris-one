@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * People list filters from the URL → SQL (src/lib/people-query.ts). Used by the People page and its CSV export.
+ * People list filters from the URL → SQL. Used by the People page and its CSV export.
  * Joins: e employee, d department, m reporting manager, r role.
  */
 public final class PeopleQuery {

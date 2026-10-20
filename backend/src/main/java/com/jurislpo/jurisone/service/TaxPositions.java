@@ -15,7 +15,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import org.springframework.stereotype.Service;
 
-/** Tax positions for the open payroll month and the Tax page rows — src/lib/tax/position.ts + rows.ts. */
+/** Tax positions for the open payroll month and the Tax page rows. */
 @Service
 public class TaxPositions {
 

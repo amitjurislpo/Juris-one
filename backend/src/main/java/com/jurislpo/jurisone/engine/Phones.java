@@ -3,7 +3,7 @@ package com.jurislpo.jurisone.engine;
 import java.util.List;
 import java.util.Optional;
 
-/** Country codes for phone numbers and how many digits the national number has. Port of src/lib/phone.ts. */
+/** Country codes for phone numbers and how many digits the national number has. */
 public final class Phones {
     private Phones() {}
 

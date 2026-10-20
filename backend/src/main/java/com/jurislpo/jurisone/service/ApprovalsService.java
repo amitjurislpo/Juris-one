@@ -27,7 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Approvals (REQUIREMENTS §5.6/§5.4; src/app/(app)/approvals): leave by HR (appr.leave), regularizations by HR, Finance or
+ * Approvals (REQUIREMENTS §5.6/§5.4): leave by HR (appr.leave), regularizations by HR, Finance or
  * Admin (appr.reg). The first decision wins — an atomic {@code UPDATE … WHERE status = 'PENDING'}.
  */
 @Service

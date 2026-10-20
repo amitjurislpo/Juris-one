@@ -19,7 +19,7 @@ import java.util.function.Function;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Holiday calendar (REQUIREMENTS §5.5; src/app/(app)/holidays). holidays.manage. */
+/** Holiday calendar (REQUIREMENTS §5.5). holidays.manage. */
 @Service
 public class HolidaysService {
 

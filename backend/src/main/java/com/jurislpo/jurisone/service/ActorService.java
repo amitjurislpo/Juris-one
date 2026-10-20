@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
-/** Everything the people rules need about the signed-in user and a target record (src/lib/actor.ts). */
+/** Everything the people rules need about the signed-in user and a target record. */
 @Service
 public class ActorService {
 

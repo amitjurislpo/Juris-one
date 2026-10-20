@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 
-/** Audit log view (audit page) — src/lib/audit-view.ts. */
+/** Audit log view (audit page). */
 @Service
 public class AuditViewService {
 

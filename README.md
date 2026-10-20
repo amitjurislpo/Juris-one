@@ -2,24 +2,24 @@
 
 > **The web app moved.** This repository is the backend (Spring Boot API, database, scheduled jobs). The user interface is a React app in its own
 > repository, [juris-one-frontend](https://github.com/amitjurislpo/juris-one-frontend); it serves the pages and proxies `/api/*` to this API.
-> The parts of this README that describe pages, `npm run dev`, Next.js or the browser tests now live there.
+> The pages, the UI code and the browser tests live there too.
 
 HRMS and payroll portal for Juris Consultants. It covers attendance, leave, people records, payroll, TDS and payslips.
 
 - **Rules:** [references/REQUIREMENTS.md](references/REQUIREMENTS.md) is the source of truth.
-- **Design:** [references/Juris-People-Design-8.html](references/Juris-People-Design-8.html) is the clickable prototype. Its CSS is ported verbatim into `src/app/globals.css`.
-- **Backend migration:** [references/MIGRATION_PLAN.md](references/MIGRATION_PLAN.md) records how the API moved from Next.js to Spring Boot, the decisions taken and the parity checklist.
+- **Design:** [references/Juris-People-Design-8.html](references/Juris-People-Design-8.html) is the clickable prototype. Its CSS is ported verbatim into the frontend repo (`src/globals.css`).
+- **Backend migration:** [references/MIGRATION_PLAN.md](references/MIGRATION_PLAN.md) records how the API was built (a Spring Boot service), the decisions taken and the parity checklist.
 
 ## Stack
 
 | Part | Technology | Port |
 |---|---|---|
-| Frontend | Next.js 16 (App Router) with TypeScript — pages, layout and server actions that call the API | 3005 |
+| Frontend | React single-page app (Vite, TypeScript) in its own repo, `juris-one-frontend` — it serves the pages and proxies `/api/*` to the API | 3005 |
 | Backend | Java 17, Spring Boot 3.5 (Web, Security, Validation, Data JPA, JDBC), Flyway, Maven Wrapper — in `backend/` | 8080 |
 | Database | PostgreSQL 16 in docker-compose | 5436 on the host |
-| Tests | JUnit 5 + Testcontainers (backend), Vitest (frontend helpers), Playwright (end to end) | |
+| Tests | JUnit 5 + Testcontainers (backend); the frontend repo has Vitest and the Playwright end-to-end tests | |
 
-The browser only talks to Next.js. Next.js calls the API server-side (`src/lib/backend.ts`) and forwards `/api/*` to it (`next.config.ts`), so the API is never exposed on its own. Signing in sets two HTTP-only cookies: a 5-minute JWT access token (`jo_at`) and a rotating refresh token (`jo_rt`) that `src/proxy.ts` uses to renew it silently; passwords are argon2id. Every endpoint, with its method and status codes, is listed in [MIGRATION_PLAN.md §14](references/MIGRATION_PLAN.md#14-rest-api-after-the-migration).
+The browser only talks to the web app's origin, which forwards `/api/*` to the API, so the API is never exposed on its own. Signing in sets two HTTP-only cookies: a 5-minute JWT access token (`jo_at`) and a rotating refresh token (`jo_rt`) that the web app uses to renew it silently; passwords are argon2id. Every endpoint, with its method and status codes, is listed in [MIGRATION_PLAN.md §14](references/MIGRATION_PLAN.md#14-rest-api-after-the-migration).
 
 ## Quick start (development)
 
@@ -32,8 +32,9 @@ npm run db:up               # Postgres 16 on localhost:5436
 npm run db:migrate          # create / update the schema (Flyway)
 npm run db:seed             # shared tables and the super admin (SEED_DEMO=true adds a demo business)
 npm run backend:dev         # API on http://localhost:8080 (leave it running)
-npm run dev                 # http://localhost:3005
 ```
+
+Then start the web app from the `juris-one-frontend` repo (`npm install`, `npm run dev` → http://localhost:3005); see its README.
 
 ### Sign in
 
@@ -53,10 +54,6 @@ The seed never overwrites a password that is already set.
 
 | Script | What it does |
 |---|---|
-| `npm run dev` / `build` / `start` | Next.js on port 3005 |
-| `npm run lint` / `typecheck` | ESLint / route typegen + `tsc --noEmit` |
-| `npm test` | Vitest unit tests (`tests/unit`) |
-| `npm run test:e2e` | Playwright end-to-end tests (`tests/e2e`) in their own environment (`scripts/e2e-env.mjs`): the database `<db>_e2e` on the same Postgres is reset and seeded with the demo business on every run, the API runs on :8081 and a production build of the app (`.next-e2e`, rebuilt when `src/` changes) on :3006; files go to `storage/e2e`, no email is sent. Your development data is never touched. Needs Docker (Postgres) and the `SUPER_ADMIN_*`, `SEED_DEMO_PASSWORD` and `SEED_OWNER_PASSWORD` values in `.env`. `E2E_BUILD=1` forces a rebuild of the backend jar and the app. |
 | `npm run backend:dev` | Spring Boot API on port 8080 |
 | `npm run backend:test` | Backend unit + API tests (JUnit 5; Testcontainers starts its own Postgres, so Docker must be running) |
 | `npm run backend:up` | Build and start the API in docker-compose |
@@ -80,8 +77,8 @@ Four environments, each with **its own file, ports, database, secrets, email and
 
 The real files are git-ignored; commit only the `.env.<env>.example` templates. Create one with `cp .env.sqe.example .env.sqe` and fill the `<placeholders>` (use a different `JWT_SECRET` and `PII_ENCRYPTION_KEY` in every environment).
 
-- Pick the environment with `APP_ENV` (default `dev`). `npm run dev`, `build`, `start`, `db:*`, `backend:dev` and `jobs` use `.env.dev`.
-- Other environments: `npm run db:up:sqe`, `npm run backend:sqe`, `npm run dev:sqe` / `start:sqe` (same for `uat`, `prd`; `backend:up:<env>` runs the API in Docker). Anything else: `node scripts/with-env.mjs <env> <command>`, e.g. `node scripts/with-env.mjs uat npm run db:seed`.
+- Pick the environment with `APP_ENV` (default `dev`). `db:*`, `backend:dev` and `jobs` use `.env.dev`.
+- Other environments: `npm run db:up:sqe`, `npm run backend:sqe` (same for `uat`, `prd`; `backend:up:<env>` runs the API in Docker). Anything else: `node scripts/with-env.mjs <env> <command>`, e.g. `node scripts/with-env.mjs uat npm run db:seed`.
 - Each environment gets its own Docker containers and data volume (`COMPOSE_PROJECT_NAME`), so they can run side by side.
 - The backend also loads `.env.<APP_ENV>` itself and activates the Spring profile `application-<env>.yml` (log levels, error detail).
 - **Sign-in is by emailed code only** (no password option). Only `dev` may use the fixed code `000000` (`OTP_FIXED_CODE`); `sqe`, `uat` and `prd` send real codes, so they need `SMTP_*`. The identity provider (IAM JCG) replaces this later. The password endpoint is off unless `PASSWORD_LOGIN_ENABLED=true`.
@@ -90,7 +87,7 @@ The real files are git-ignored; commit only the `.env.<env>.example` templates. 
 
 ## Deploying
 
-JurisOne is a Next.js server, a Spring Boot API and Postgres 16. Any Linux VPS or VM works (REQUIREMENTS §9.4 leaves hosting open).
+JurisOne is a web app (static files from `juris-one-frontend`), a Spring Boot API and Postgres 16. Any Linux VPS or VM works (REQUIREMENTS §9.4 leaves hosting open).
 
 1. **Postgres 16.** A managed instance, or `docker compose up -d db` with a strong `POSTGRES_PASSWORD` and the port not exposed publicly.
 2. **Environment.** Copy `.env.prd.example` to `.env.prd` (both apps read it; see *Environments* below) and set:
@@ -99,7 +96,6 @@ JurisOne is a Next.js server, a Spring Boot API and Postgres 16. Any Linux VPS o
    - `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` — change the password after the first sign-in.
    - `SEED_DEMO=false` and an empty `SEED_DEMO_PASSWORD` for a real company (no demo people).
    - `SMTP_*` so invites, resets and decisions are emailed.
-   - `BACKEND_URL` — where Next.js reaches the API (default `http://127.0.0.1:8080`).
 3. **API.** Either in Docker:
    ```bash
    docker compose up -d --build backend      # migrates the schema on start
@@ -111,13 +107,8 @@ JurisOne is a Next.js server, a Spring Boot API and Postgres 16. Any Linux VPS o
    java -jar backend/target/jurisone-backend-*.jar seed    # once; migrates, seeds and exits
    java -jar backend/target/jurisone-backend-*.jar         # port 8080; keep it running with systemd
    ```
-4. **Frontend.**
-   ```bash
-   npm ci
-   npm run build
-   npm run start           # port 3005; keep it running with systemd or pm2
-   ```
-5. **HTTPS.** Put Caddy or nginx in front, terminate TLS there and proxy to `localhost:3005` only. Keep port 8080 private. Session cookies are `Secure` in production, so the app must be served over https.
+4. **Frontend.** Build and host the `juris-one-frontend` repo (`npm ci`, `npm run build` → static files in `dist/`). Serve them from a web server on the same origin as the API and send `/api/*` to the API (an nginx example is in that repo's README).
+5. **HTTPS.** Put Caddy or nginx in front, terminate TLS there, serve the web app and proxy `/api/` to `localhost:8080`. Keep port 8080 itself private. Session cookies are `Secure` in production, so the app must be served over https.
 6. **Jobs.** Leave `JOBS_ENABLED=true` for a single API instance. With several instances either keep it on (an advisory lock lets only one run) or set it to `false` everywhere and run `npm run jobs` (or `java -jar … jobs`) from cron every 10 minutes.
 7. **Files.** `UPLOAD_DIR` (default `./storage`) holds payslip PDFs and investment proofs. Put it on persistent disk and include it in backups. In Docker it is the `./storage` volume.
 
@@ -135,9 +126,9 @@ JurisOne is a Next.js server, a Spring Boot API and Postgres 16. Any Linux VPS o
 
 ### Upgrading and rolling back
 
-- Deploy: pull, rebuild the API and run it (Flyway applies new migrations on start), then `npm ci`, `npm run build`, restart Next.js.
+- Deploy: pull, rebuild the API and run it (Flyway applies new migrations on start), then build and deploy the frontend (see its repo).
 - **Take a backup before deploying a release with new migrations.**
-- Migrations live in `backend/src/main/resources/db/migration/`. Each has a reverse script in `db/rollback/` (`V<n>__x.sql` ↔ `U<n>__x.sql`). To roll one back: run its `U` script with `psql`, delete its row from `flyway_schema_history`, then deploy the previous release.
+- Migrations live in `backend/src/main/resources/db/migration/`. Each has a reverse script in `backend/src/main/resources/db/rollback/` (`V<n>__x.sql` ↔ `U<n>__x.sql`). To roll one back: run its `U` script with `psql`, delete its row from `flyway_schema_history`, then deploy the previous release.
 - Databases created by the earlier Prisma version are baselined automatically: Flyway checks that all four Prisma migrations are applied, records them as version 1 and leaves the schema untouched.
 
 ## How it is put together
@@ -159,12 +150,6 @@ backend/                           Spring Boot API (Maven)
     cli/                           migrate / seed / reset / jobs commands
   src/main/resources/db/migration/ Flyway migrations (V1 = the original schema)
   src/test/java/                   JUnit 5: engine tests + API tests against Testcontainers Postgres
-src/lib/backend.ts                 server-side API client used by pages and server actions
-src/lib/auth.ts                    getCurrentUser / requirePage on the Next side (asks the API)
-src/app/(auth)/                    login, forgot, invite/[token], reset/[token]
-src/app/(app)/                     signed-in pages; layout.tsx renders the shell
-src/components/                    shell (sidebar, header, notifications, ⌘K, theme, toasts), tables, forms
-prisma/schema.prisma               the original data model, kept as a readable reference (not used at run time)
 ```
 
 ### Security model
@@ -192,7 +177,7 @@ prisma/schema.prisma               the original data model, kept as a readable r
 **Employees list and My profile.** *Employees* (`people.view`) never lists the signed-in person or the business owner (admin); HR sees other HR. The CSV export and the owner's Excel export leave the owner out. Everyone in a business has *My profile*: their job record (read-only) and the personal details they edit themselves (father's name, date of birth, current and permanent address, emergency contact). Name, work email, phone, IDs, bank and job details are changed by HR. Names are first / middle / last (first and last required); phone numbers carry a country code and must have that country's length; PAN and Aadhaar are optional; the work location is optional (India when not set) and a free-text *joining office* records where someone joins.
 
 **Permissions are checked by the API.**
-- Every page calls `requirePage(<nav id>)` in Next.js, and the API checks the same permission again for the data it returns.
+- Every page of the web app is guarded by its nav permission, and the API checks the same permission again for the data it returns.
 - Every write goes through an API endpoint that calls `assertPerm(...)`.
 - HR roles never receive salary or tax fields from the API.
 - Hiding UI is cosmetic only.
@@ -393,4 +378,4 @@ To add the licensed font:
 
 ### Table conventions
 
-List pages keep search, filters, sorting and paging in the URL (`?q=&sort=&dir=&page=`). The API runs the query, so lists stay fast as the company grows. The shared pieces are `common/ListParams.java` and `src/components/table/`.
+List pages keep search, filters, sorting and paging in the URL (`?q=&sort=&dir=&page=`). The API runs the query, so lists stay fast as the company grows. The shared pieces are `common/ListParams.java` here and the table components in the frontend repo.

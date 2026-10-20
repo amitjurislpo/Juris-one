@@ -35,7 +35,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 /**
- * Loads the data for the attendance engine and runs it — src/lib/attendance/service.ts. Home, My attendance,
+ * Loads the data for the attendance engine and runs it. Home, My attendance,
  * My team, the register and payroll all read attendance through here. Locked days come from
  * {@code attendance_days} as frozen; everything else is computed live.
  */

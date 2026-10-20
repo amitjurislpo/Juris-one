@@ -8,7 +8,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
- * Server-side formatting, port of src/lib/format.ts. Output is byte-identical to Node's Intl
+ * Server-side formatting. Output is byte-identical to Node's Intl
  * (en-GB date-times use "Sept" and lower-case am/pm; en-IN grouping 12,34,567).
  */
 public final class Format {

@@ -29,7 +29,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import org.springframework.stereotype.Service;
 
-/** Payroll run computation, payslip snapshots and the payroll view — src/lib/payroll/service.ts + view.ts. */
+/** Payroll run computation, payslip snapshots and the payroll view. */
 @Service
 public class PayrollService {
 

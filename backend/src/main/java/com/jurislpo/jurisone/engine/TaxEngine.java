@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Income-tax engine — pure functions (REQUIREMENTS §5.9). Port of src/lib/tax/engine.ts.
+ * Income-tax engine — pure functions (REQUIREMENTS §5.9).
  *
  * <p>Amounts are RUPEES here, as {@code double} exactly like the TS code (slabs, caps and limits are stored in
  * rupees per financial year); callers convert to/from paise. Tax rules are data: slabs, rebate, cess, surcharge and
@@ -100,7 +100,7 @@ public final class TaxEngine {
         public double ppf, elss, lic, ssy, tuition, hlp, nsc;
         public double nps, medSelf, medParents, hli, edu, don, sav;
 
-        /** Sets a declaration item by its key ("rent", "ppf", … as in src/lib/tax/catalogue.ts); unknown keys are ignored. */
+        /** Sets a declaration item by its key ("rent", "ppf", …); unknown keys are ignored. */
         public void set(String key, double v) {
             switch (key) {
                 case "rent" -> rent = v; case "ppf" -> ppf = v; case "elss" -> elss = v; case "lic" -> lic = v; case "ssy" -> ssy = v;

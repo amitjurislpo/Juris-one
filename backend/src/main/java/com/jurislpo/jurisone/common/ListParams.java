@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.function.Function;
 
 /**
- * List state from the query string (src/lib/list.ts): ?q=&sort=&dir=&page= — invalid values fall back silently.
+ * List state from the query string: ?q=&sort=&dir=&page= — invalid values fall back silently.
  */
 public record ListParams(String q, String sort, String dir, int page, int skip, int take) {
 

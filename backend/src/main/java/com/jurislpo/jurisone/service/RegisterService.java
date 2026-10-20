@@ -27,7 +27,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import org.springframework.stereotype.Service;
 
-/** Attendance register: daily log and monthly grid, time-zone aware, plus its CSV — src/lib/attendance/register.ts. att.all. */
+/** Attendance register: daily log and monthly grid, time-zone aware, plus its CSV. att.all. */
 @Service
 public class RegisterService {
 

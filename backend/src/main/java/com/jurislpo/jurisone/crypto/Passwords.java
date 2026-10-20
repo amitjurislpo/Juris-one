@@ -4,7 +4,7 @@ import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * argon2id with the parameters of src/lib/password.ts (@node-rs/argon2: m=19456 KiB, t=2, p=1, 16-byte salt,
+ * argon2id with the parameters (m=19456 KiB, t=2, p=1, 16-byte salt,
  * 32-byte hash). Verification reads the parameters from the stored PHC string, so every existing hash works.
  */
 @Component

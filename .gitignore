@@ -13,11 +13,6 @@
 # testing
 /coverage
 
-# next.js
-/.next/
-/.next-e2e/
-/out/
-
 # production
 /build
 
@@ -41,7 +36,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
 !.env.example
 
 # app

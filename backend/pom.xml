@@ -14,7 +14,7 @@
   <artifactId>jurisone-backend</artifactId>
   <version>0.1.0</version>
   <name>JurisOne backend</name>
-  <description>REST API for JurisOne (HRMS + payroll). The Next.js app is its client.</description>
+  <description>REST API for JurisOne (HRMS + payroll). The web app (juris-one-frontend) is its client.</description>
 
   <properties>
     <java.version>17</java.version>

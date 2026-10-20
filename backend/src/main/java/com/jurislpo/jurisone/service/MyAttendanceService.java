@@ -104,7 +104,7 @@ public class MyAttendanceService {
         return new Page(true, ym, minYm, wd.toString(), summary, cal, regs, initialSel, locked, hols);
     }
 
-    /** Holidays an employee sees: their own region plus "Everyone" (src/lib/holidays.ts). */
+    /** Holidays an employee sees: their own region plus "Everyone". */
     public List<HolidayView> upcomingHolidays(String region, LocalDate from, int take) {
         return repo.upcomingHolidays(region, from, take);
     }

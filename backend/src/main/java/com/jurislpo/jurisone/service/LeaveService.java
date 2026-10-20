@@ -27,7 +27,7 @@ import java.util.function.Function;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
-/** Leave balances, the apply preview, apply / cancel, and the Leave page — src/lib/leave/service.ts + src/app/(app)/leave. */
+/** Leave balances, the apply preview, apply / cancel, and the Leave page. */
 @Service
 public class LeaveService {
 

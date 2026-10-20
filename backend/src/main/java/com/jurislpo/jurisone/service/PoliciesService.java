@@ -14,7 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Policies page (src/app/(app)/settings): read-only summaries + the editable attendance policy. Admin only. */
+/** Policies page: read-only summaries + the editable attendance policy. Admin only. */
 @Service
 public class PoliciesService {
 
@@ -75,7 +75,7 @@ public class PoliciesService {
         return n == null ? 0 : n;
     }
 
-    // ── attendance policy (zod schema of src/app/(app)/settings/actions.ts) ──
+    // ── attendance policy ──
 
     private static void range(Number v, double min, double max) {
         if (v == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected number, received undefined");

@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Permission catalogue (REQUIREMENTS §3.1). Port of src/lib/permissions.ts. */
+/** Permission catalogue (REQUIREMENTS §3.1). */
 public final class Permissions {
     private Permissions() {}
 

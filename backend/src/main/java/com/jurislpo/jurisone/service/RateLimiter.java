@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
 
 /**
- * Fixed-window in-memory counter keyed by e.g. IP (src/lib/rate-limit.ts). Good for a single instance; several
+ * Fixed-window in-memory counter keyed by e.g. IP. Good for a single instance; several
  * instances would need a shared store. Per-account lockout lives on {@code users} in the DB.
  */
 @Component
