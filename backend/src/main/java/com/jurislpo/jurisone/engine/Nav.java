@@ -27,6 +27,7 @@ public final class Nav {
     public static final List<Item> NAV = List.of(
             item("platform", "Businesses", "building", List.of(PLATFORM_MANAGE), "Platform"),
             item("plans", "Plans", "layers", List.of(PLATFORM_MANAGE), "Platform"),
+            item("platform-audit", "Audit log", "doc", List.of(PLATFORM_MANAGE), "Platform"),
             item("home", "Home", "home", List.of(SELF), null),
             item("overview", "Overview", "home", List.of(ROLES_MANAGE), null),
             item("notifications", "Notifications", "bell", List.of(SELF, DIR, ROLES_MANAGE), null),

@@ -34,7 +34,7 @@ Users are in two regions:
 | Database | **PostgreSQL 16** (required) |
 | App | Next.js (App Router) + TypeScript, server actions / route handlers |
 | ORM / migrations | Prisma (or Drizzle). Every schema change goes through a migration. |
-| Auth | Own email/employee-ID + password auth. Passwords hashed with argon2id. HTTP-only session cookies. |
+| Auth | Email + emailed one-time code sign-in (no passwords). HTTP-only session cookies. |
 | Styling | Port the prototype's CSS tokens (light default + dark theme, violet accent `#6E56CF`). Fonts: **Balkind** for display headings (needs a commercial licence; the prototype uses the demo file), **Geist** for UI text, **Geist Mono** for numbers. |
 | PDF | Server-side payslip PDF (e.g. pdf-lib or Playwright print), with the company logo |
 | Files | Investment proofs on S3-compatible storage (local disk in dev) |
@@ -74,7 +74,9 @@ Access is **permission-based**, not hard-coded by role name. Every API endpoint 
 | `proofs.verify` | Verify investment proofs |
 | `roles.manage` | Roles, permissions, policies |
 
-### 3.2 Default roles (seeded; editable by Admin)
+### 3.2 Default roles (role templates, set by the super admin)
+
+The super admin keeps a catalogue of **role templates** (Platform → role templates; the table below is what is seeded). When a business is created the super admin picks its roles: Owner (Admin), HR Manager, Finance Manager and Employee are mandatory and always added, the rest (HR Executive, Finance Executive and any template the super admin adds) are optional; roles can also be added to or removed from a business later. A business's role is a **copy** of its template taken at that moment: changing a template doesn't alter existing businesses until the super admin syncs the role. The business owner (sub admin) can **view** roles but can't create, edit or delete them or toggle their permissions: only the super admin can (the API answers 403 "Roles are set up for your business by JurisOne."). Salary, payroll and tax permissions can't go into an HR template.
 
 | Role | Permissions | Can add employees with role |
 |---|---|---|
@@ -89,11 +91,7 @@ Access is **permission-based**, not hard-coded by role name. Every API endpoint 
 
 - **Hierarchy:** Admin adds the HR Manager and the Finance Manager. The HR Manager adds HR Executives and Employees. The Finance Manager adds Finance Executives.
 - **No salary for HR:** HR roles never see salary, CTC, payslip amounts or tax of other employees. Only roles with `struct.manage` / `pay.view` / `tax.view` (Finance) and Admin can.
-- **Roles page (Admin):**
-  - toggle any permission of any role (Admin role is locked)
-  - create custom roles, starting from a copy of an existing role
-  - set which roles each role is allowed to assign
-  - delete a custom role only when nobody has it
+- **Roles page (Admin):** read-only for the business owner. The super admin can, from the platform console or this page, toggle permissions, create roles from a copy, set which roles each role may assign, and delete a role only when nobody has it; the Admin role is locked.
 - **Manager is a relationship, not a role.** Anyone who has active direct reports (via `reporting_manager_id`) automatically gets a **My team** page.
 - **Editing employees:** a user can edit an employee only if they have `people.add` **and** the target's role is in their assignable list (Admin can edit anyone). Nobody edits their own record or role.
 - **Access toggle:**
@@ -107,12 +105,15 @@ Access is **permission-based**, not hard-coded by role name. Every API endpoint 
 
 ## 4. Authentication
 
-- Login uses employee ID (e.g. `JC-074`) or official email, plus a password. There is no role selector.
+- Login uses the official email plus a 6-digit code emailed to it (no passwords). Email is the primary sign-in identity for every user. There is no role selector.
 - **Blocked logins:**
   - Disabled access shows: "Your portal access is disabled. Please contact HR."
   - A past (exited) employee shows: "This account belongs to a past employee and can no longer sign in."
+  - **Subscription not started, or none:** nobody in the business can sign in ("Your organisation's subscription starts on <date>…" / "…has no active subscription…").
+  - **Business suspended by the super admin:** nobody in it can sign in (the admin included) and every active session ends at once; reactivating the business lets everyone sign in again (with a fresh code).
+  - **Subscription expired:** users can sign in and view all their data; the owner can export. Every change is refused by the API (402) and the screens hide the actions.
 - **Session revocation:** disabling access or marking an employee exited **ends their active sessions immediately**.
-- **New employee onboarding:** the new employee gets an invite email with a one-time link to set their password. Forgot-password works the same way.
+- **New employee onboarding:** there is no invite or password step; once portal access is on, the new employee signs in with the code emailed to their official email.
 - **Login protection:** rate-limit login attempts, lock the account after repeated failures, and keep a login history (time, IP, device).
 - **After login, the landing page is:**
   - **Home** for anyone with `self`
@@ -136,6 +137,8 @@ Access is **permission-based**, not hard-coded by role name. Every API endpoint 
 1. **Personal:**
    - required: full name, father's name, email, phone
    - work location: India-IST / US-ET / US-CT / US-PT, which sets the time zone
+   - **Phone numbers (employee, emergency contact and the business contact phone) are validated per country code:** the country code is picked first and only a valid national number for it can be entered (for example +91 takes exactly 10 digits starting 6-9). The business contact phone is stored as `+91 8888788888`.
+   - optional **photo** (see Profile photos); the employee can also set it from My profile.
 2. **Identity & address** (India only):
    - required: PAN (format `ABCDE1234F`), Aadhaar (12 digits)
    - optional: UAN (12 digits)
@@ -153,6 +156,8 @@ Access is **permission-based**, not hard-coded by role name. Every API endpoint 
   - Onboarding if joining is in the future
   - Probation, then Active
   - Exited, which needs a last working day
+  - **Probation → permanent:** automatic after the probation period (default 6 months), or earlier when the business admin (owner) or HR clicks **Make permanent** on the employee's profile (`PUT /api/people/{id}/status` with `{"status": "ACTIVE"}`, needs `people.add`; audited as `employee.confirm`). Nobody else can change an employee's status.
+  - **Role changes:** only the business admin and HR may change an existing employee's role; anyone else who can edit the person sees just the current role, and the API refuses a change.
 
 **Sensitive data:**
 
@@ -179,6 +184,8 @@ When a new India employee is added, Finance is notified: "salary structure pendi
 - Search any employee, past or present.
 - Show **only**: name, official email, designation, and status as **Active** or **Past employee**.
 - Has search, a department filter, an Active/Past filter and sorting.
+
+**Profile photos.** Every employee may have a photo (JPEG, PNG or WebP, at most 400 KB; the type is checked from the image's own bytes). The employee sets or removes their own (`PUT`/`DELETE /api/profile/photo`); HR and the business admin can do it for anyone they may edit (`PUT`/`DELETE /api/people/{id}/photo`, never an exited employee). Anyone signed in to the business can read it (`GET /api/people/{id}/photo`, cached for an hour with an ETag). Lists carry `photo` (a version number, null = no photo) so screens show the image in the circle and fall back to initials. Both changes are audited (`employee.photo_set`, `employee.photo_remove`, no image bytes in the log).
 
 ### 5.4 Attendance
 
@@ -253,6 +260,8 @@ When a new India employee is added, Finance is notified: "salary structure pendi
 | Earned leave (EL) | 18/yr, 1.5 per month, carry forward up to 30, encash 15/yr after 12 months |
 | Comp-off (CO) | Earned from approved holiday/weekend work of 4h+, expires in 60 days |
 | Leave without pay (LOP) | Unpaid |
+
+**Earned leave is not available during probation** (or before joining): the apply form shows it locked ("Not during probation") and the API refuses it; it becomes available once the employee is permanent. If nothing can be applied for, the Apply button explains why instead of opening the form.
 
 New joiners accrue pro-rata from the date of joining. All balance changes go through a **leave ledger** (accrual, used, cancelled, encashed, expired, adjustment).
 
@@ -422,7 +431,7 @@ Cards that appear by permission:
 - payslip ready
 - next holiday
 
-**Email** for: invite, leave decision, regularization decision, payslip published.
+**Email** for: sign-in code, leave decision, regularization decision, payslip published.
 
 **Shell:**
 
@@ -453,6 +462,10 @@ Record **who, what, when, before → after** for these events:
 
 Admin can view the audit log with filters.
 
+**No step is lost (every portal, every role, super admin included).** On top of the events above, the API records one row for **every write request** (POST / PUT / PATCH / DELETE) and for every **sensitive read** (exports, downloads, PDFs, revealing contact details, employee profiles, the audit log itself), whatever its outcome: success, a business-rule refusal, 401, 402, 403, 428 or a server error. The row has the actor (empty when not signed in), the business, method, path (secrets in a path are masked), status, duration in milliseconds, IP, user agent and a request id (also sent back as `X-Request-Id`), with the time to the microsecond. It is written on its own connection in a `finally`, so a rolled-back transaction or a failing handler cannot take it away; a failed audit write is logged as an ERROR and counted (`jurisone.audit.write.failures`). Request bodies, cookies, codes and tokens are never stored. Sign-in attempts (success and failure, the email masked), code requests and sign-out are recorded. The web app also reports each **page view** (`POST /api/audit/page-views`). The log is **append-only** (a database trigger refuses changes and deletes).
+
+The business admin sees their own business's log (`/audit`); the **super admin** sees every business and the platform itself (`/platform/audit`, filter by business). Both can be exported as CSV.
+
 ---
 
 ## 6. Data model (PostgreSQL), minimum tables
@@ -466,7 +479,7 @@ employees(id, code 'JC-###' unique, full_name, father_name, email unique, phone_
           pan_enc, aadhaar_enc, uan_enc, pan_last4, aadhaar_last4, uan_last4,
           department_id, designation, reporting_manager_id → employees, role_id,
           date_of_joining, exit_date, status, time_zone, region (IN/US), shift_id, portal_access bool)
-users(employee_id, password_hash, failed_attempts, locked_until, last_login_at)
+users(employee_id, failed_attempts, locked_until, last_login_at)
 sessions(id, employee_id, created_at, expires_at, ip, user_agent, revoked_at)
 shifts(id, name, start_local, end_local, grace_minutes, region)
 punches(id, employee_id, at timestamptz, kind in/out, source web/mobile, ip)

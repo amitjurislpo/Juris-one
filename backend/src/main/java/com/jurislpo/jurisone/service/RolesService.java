@@ -24,7 +24,7 @@ public class RolesService {
     public record Member(String id, String name) {}
 
     public record RoleView(String id, String key, String name, boolean builtin, boolean locked, List<String> perms, List<String> assign,
-                           List<Member> members, int totalEver) {}
+                           List<Member> members, int totalEver, boolean canEdit) {}
 
     private final RolesRepository repo;
     private final AuditService audit;
@@ -34,17 +34,18 @@ public class RolesService {
         this.audit = audit;
     }
 
-    public List<RoleView> list() {
+    /** {@code canEdit}: whether the caller may change roles (only the platform super admin; business owners see them read-only). */
+    public List<RoleView> list(boolean canEdit) {
         List<Map<String, Object>> roles = repo.findAll();
         List<RoleView> out = new ArrayList<>();
-        for (Map<String, Object> r : roles) {
-            UUID id = (UUID) r.get("id");
+        for (Map<String, Object> role : roles) {
+            UUID id = (UUID) role.get("id");
             List<String> perms = repo.findPermissionsSorted(id);
             List<String> assign = repo.findAssignableRoleIds(id);
             List<Member> members = repo.findCurrentMembers(id);
             Integer total = repo.countEmployees(id);
-            out.add(new RoleView(id.toString(), (String) r.get("key"), (String) r.get("name"), (Boolean) r.get("is_builtin"), (Boolean) r.get("is_locked"),
-                    perms, assign, members, total == null ? 0 : total));
+            out.add(new RoleView(id.toString(), (String) role.get("key"), (String) role.get("name"), (Boolean) role.get("is_builtin"), (Boolean) role.get("is_locked"),
+                    perms, assign, members, total == null ? 0 : total, canEdit));
         }
         out.sort((a, b) -> rank(a.key()) - rank(b.key())); // stable: keeps builtin/created order among equals
         return out;
@@ -64,7 +65,7 @@ public class RolesService {
     }
 
     @Transactional
-    public String setPermission(CurrentUser u, String roleIdRaw, String perm, boolean on, String ip) {
+    public String setPermission(CurrentUser user, String roleIdRaw, String perm, boolean on, String ip) {
         UUID roleId = Check.uuid(roleIdRaw);
         if (perm == null || !Permissions.isPermission(perm)) throw new UserException("Unknown permission.");
         Map<String, Object> role = editableRole(roleId);
@@ -79,12 +80,12 @@ public class RolesService {
         } else {
             after = before.stream().filter(p -> !p.equals(perm)).toList();
         }
-        audit.log(u.id(), "role.permission_change", "role", roleId.toString(), Map.of("permissions", before), Map.of("permissions", after), ip);
+        audit.log(user.id(), "role.permission_change", "role", roleId.toString(), Map.of("permissions", before), Map.of("permissions", after), ip);
         return role.get("name") + ": " + (on ? "granted" : "removed") + " “" + Permissions.LABELS.get(perm) + "”";
     }
 
     @Transactional
-    public String setAssignable(CurrentUser u, String roleIdRaw, String assignableRaw, boolean on, String ip) {
+    public String setAssignable(CurrentUser user, String roleIdRaw, String assignableRaw, boolean on, String ip) {
         UUID roleId = Check.uuid(roleIdRaw);
         UUID assignableId = Check.uuid(assignableRaw);
         Map<String, Object> role = editableRole(roleId);
@@ -93,14 +94,14 @@ public class RolesService {
         String tName = target.get(0);
         if (on) repo.addAssignable(roleId, assignableId);
         else repo.removeAssignable(roleId, assignableId);
-        audit.log(u.id(), "role.assignable_change", "role", roleId.toString(), Map.of(tName, !on), Map.of(tName, on), ip);
+        audit.log(user.id(), "role.assignable_change", "role", roleId.toString(), Map.of(tName, !on), Map.of(tName, on), ip);
         return role.get("name") + " " + (on ? "can now" : "can no longer") + " add " + tName + "s";
     }
 
     public record Created(String id, String name) {}
 
     @Transactional
-    public Created create(CurrentUser u, String nameRaw, String fromRaw) {
+    public Created create(CurrentUser user, String nameRaw, String fromRaw) {
         String name = Check.trimmed(nameRaw, 2, "Role name is required.", 60, "Keep the name under 60 characters.");
         UUID fromId = Check.uuid(fromRaw);
         Integer dup = repo.countByNameIgnoreCase(name);
@@ -119,25 +120,25 @@ public class RolesService {
         after.put("name", name);
         after.put("copiedFrom", src.get(0));
         after.put("permissions", perms);
-        audit.log(u.id(), "role.create", "role", id.toString(), null, after, null);
+        audit.log(user.id(), "role.create", "role", id.toString(), null, after, null);
         return new Created(id.toString(), name);
     }
 
     @Transactional
-    public String delete(CurrentUser u, String roleIdRaw, String ip) {
+    public String delete(CurrentUser user, String roleIdRaw, String ip) {
         UUID roleId = Check.uuid(roleIdRaw);
         List<Map<String, Object>> rs = repo.findForDelete(roleId);
         if (rs.isEmpty()) throw new UserException("That role no longer exists.");
         if (Boolean.TRUE.equals(rs.get(0).get("is_builtin"))) throw new UserException("Built-in roles can't be deleted.");
         // Past employees keep their role on record, so they count too.
-        Integer n = repo.countEmployees(roleId);
-        if (n != null && n > 0) throw new UserException("Move everyone (including past employees) to another role first.");
+        Integer count = repo.countEmployees(roleId);
+        if (count != null && count > 0) throw new UserException("Move everyone (including past employees) to another role first.");
         List<String> perms = repo.findPermissions(roleId);
         repo.delete(roleId);
         Map<String, Object> before = new LinkedHashMap<>();
         before.put("name", rs.get(0).get("name"));
         before.put("permissions", perms);
-        audit.log(u.id(), "role.delete", "role", roleId.toString(), before, null, null);
+        audit.log(user.id(), "role.delete", "role", roleId.toString(), before, null, null);
         return "Role “" + rs.get(0).get("name") + "” deleted";
     }
 }

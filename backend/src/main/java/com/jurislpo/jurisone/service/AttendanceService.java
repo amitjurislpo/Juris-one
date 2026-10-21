@@ -6,16 +6,16 @@ import com.jurislpo.jurisone.engine.AttendanceEngine.DayResult;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Leave;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Policy;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Punch;
-import com.jurislpo.jurisone.engine.AttendanceEngine.Reg;
+import com.jurislpo.jurisone.engine.AttendanceEngine.Regularization;
 import com.jurislpo.jurisone.engine.AttendanceEngine.ShiftDef;
 import com.jurislpo.jurisone.engine.AttendanceLock;
 import com.jurislpo.jurisone.engine.LeaveRules;
 import com.jurislpo.jurisone.entity.DayStatus;
 import com.jurislpo.jurisone.repository.AttendanceRepository;
-import com.jurislpo.jurisone.repository.AttendanceRepository.Hol;
+import com.jurislpo.jurisone.repository.AttendanceRepository.HolidayRow;
 import com.jurislpo.jurisone.repository.AttendanceRepository.LeaveRow;
 import com.jurislpo.jurisone.repository.AttendanceRepository.PunchRow;
-import com.jurislpo.jurisone.repository.AttendanceRepository.RegRow;
+import com.jurislpo.jurisone.repository.AttendanceRepository.RegularizationRow;
 import com.jurislpo.jurisone.service.SettingsService.AttendancePolicy;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -43,8 +43,8 @@ import org.springframework.stereotype.Service;
 public class AttendanceService {
 
     /** A tracked employee (role has `self`). */
-    public record AttEmployee(UUID id, String code, String name, String designation, String department, UUID departmentId, String tz, String region,
-                              LocalDate doj, LocalDate exit, Shift shift) {}
+    public record AttendanceEmployee(UUID id, String code, String name, String designation, String department, UUID departmentId, String timeZone, String region,
+                              LocalDate dateOfJoining, LocalDate exitDate, Shift shift) {}
 
     public record Shift(String code, String name, String startLocal, String endLocal, int graceMinutes) {
         public ShiftDef def() { return new ShiftDef(startLocal, endLocal, graceMinutes); }
@@ -57,14 +57,14 @@ public class AttendanceService {
         public final DayResult r;
         public final List<Punch> punches;
 
-        DayView(DayResult r, List<Punch> punches) {
-            this.r = r;
+        DayView(DayResult dayResult, List<Punch> punches) {
+            this.r = dayResult;
             this.punches = punches;
         }
     }
 
     /** The policy with the engine's shape plus lock settings. */
-    public record Pol(Policy engine, LocalDate trackingStart, double shiftTargetHours, int lockDayOfNextMonth, String lockTime, AttendancePolicy raw) {}
+    public record ResolvedAttendancePolicy(Policy engine, LocalDate trackingStart, double shiftTargetHours, int lockDayOfNextMonth, String lockTime, AttendancePolicy raw) {}
 
     private final AttendanceRepository repo;
     private final SettingsService settings;
@@ -74,136 +74,136 @@ public class AttendanceService {
         this.settings = settings;
     }
 
-    public Pol policy() {
-        AttendancePolicy p = settings.attendance();
-        Policy engine = new Policy(p.fullDayHours(), p.halfDayHours(), Set.copyOf(p.weeklyOffs()), p.absenceJobBufferMinutes(), p.lateMarksPerHalfDayLop());
-        return new Pol(engine, LocalDate.parse(p.trackingStartDate()), p.shiftTargetHours(), p.lockDayOfNextMonth(), p.lockTime(), p);
+    public ResolvedAttendancePolicy policy() {
+        AttendancePolicy attendancePolicy = settings.attendance();
+        Policy engine = new Policy(attendancePolicy.fullDayHours(), attendancePolicy.halfDayHours(), Set.copyOf(attendancePolicy.weeklyOffs()), attendancePolicy.absenceJobBufferMinutes(), attendancePolicy.lateMarksPerHalfDayLop());
+        return new ResolvedAttendancePolicy(engine, LocalDate.parse(attendancePolicy.trackingStartDate()), attendancePolicy.shiftTargetHours(), attendancePolicy.lockDayOfNextMonth(), attendancePolicy.lockTime(), attendancePolicy);
     }
 
-    public Instant lockInstant(String ym, Pol p) {
-        return AttendanceLock.lockInstant(ym, p.lockDayOfNextMonth(), p.lockTime());
+    public Instant lockInstant(String yearMonth, ResolvedAttendancePolicy resolvedAttendancePolicy) {
+        return AttendanceLock.lockInstant(yearMonth, resolvedAttendancePolicy.lockDayOfNextMonth(), resolvedAttendancePolicy.lockTime());
     }
 
-    public boolean isMonthLocked(String ym, Pol p, Instant now) {
-        return AttendanceLock.isMonthLocked(ym, p.lockDayOfNextMonth(), p.lockTime(), now);
+    public boolean isMonthLocked(String yearMonth, ResolvedAttendancePolicy resolvedAttendancePolicy, Instant now) {
+        return AttendanceLock.isMonthLocked(yearMonth, resolvedAttendancePolicy.lockDayOfNextMonth(), resolvedAttendancePolicy.lockTime(), now);
     }
 
     /**
      * Tracked employees matching {@code where} (SQL on alias {@code e}), ordered by name.
      * @param where e.g. {@code "e.id = ?"}; may be empty
      */
-    public List<AttEmployee> loadAttEmployees(String where, Object... args) {
+    public List<AttendanceEmployee> loadAttendanceEmployees(String where, Object... args) {
         int grace = settings.attendance().graceMinutes(); // the business's grace period applies to every shift
-        return repo.findAttEmployees(where, DEFAULT_SHIFT, grace, args);
+        return repo.findAttendanceEmployees(where, DEFAULT_SHIFT, grace, args);
     }
 
-    public LocalDate currentWorkDate(AttEmployee e, Instant now) {
-        return AttendanceEngine.workDateOf(now, e.shift().def(), e.tz());
+    public LocalDate currentWorkDate(AttendanceEmployee employee, Instant now) {
+        return AttendanceEngine.workDateOf(now, employee.shift().def(), employee.timeZone());
     }
 
     /** Day-by-day attendance for each employee over [from, to] (inclusive, work dates). */
-    public Map<UUID, List<DayView>> attendanceFor(List<AttEmployee> emps, LocalDate from, LocalDate to, Instant now) {
+    public Map<UUID, List<DayView>> attendanceFor(List<AttendanceEmployee> employees, LocalDate from, LocalDate to, Instant now) {
         Map<UUID, List<DayView>> out = new LinkedHashMap<>();
-        if (emps.isEmpty() || from.isAfter(to)) return out;
-        Pol policy = policy();
-        UUID[] idArr = emps.stream().map(AttEmployee::id).toArray(UUID[]::new);
+        if (employees.isEmpty() || from.isAfter(to)) return out;
+        ResolvedAttendancePolicy policy = policy();
+        UUID[] idArr = employees.stream().map(AttendanceEmployee::id).toArray(UUID[]::new);
 
         List<LeaveRow> leaves = repo.approvedLeaves(idArr, from, to);
-        List<RegRow> regs = repo.approvedRegularizations(idArr, from, to);
+        List<RegularizationRow> regularizations = repo.approvedRegularizations(idArr, from, to);
         List<PunchRow> punches = repo.punches(idArr, from.atStartOfDay(ZoneId.of("UTC")).toInstant().minusSeconds(36 * 3600),
                 to.atStartOfDay(ZoneId.of("UTC")).toInstant().plusSeconds(60 * 3600));
         Map<String, Map<String, Object>> locked = repo.lockedDays(idArr, from, to);
 
         // Holidays across every leave range too: a leave's paid days are allocated from its first working day.
         LocalDate hFrom = from, hTo = to;
-        for (LeaveRow l : leaves) {
-            if (l.from().isBefore(hFrom)) hFrom = l.from();
-            if (l.to().isAfter(hTo)) hTo = l.to();
+        for (LeaveRow leaveRow : leaves) {
+            if (leaveRow.from().isBefore(hFrom)) hFrom = leaveRow.from();
+            if (leaveRow.to().isAfter(hTo)) hTo = leaveRow.to();
         }
-        List<Hol> holidays = repo.holidays(hFrom, hTo);
+        List<HolidayRow> holidays = repo.holidays(hFrom, hTo);
 
-        Map<UUID, AttEmployee> byId = new HashMap<>();
-        for (AttEmployee e : emps) byId.put(e.id(), e);
-        Map<UUID, Map<LocalDate, List<Punch>>> byEmp = new HashMap<>();
-        for (AttEmployee e : emps) byEmp.put(e.id(), new HashMap<>());
-        for (PunchRow p : punches) {
-            AttEmployee e = byId.get(p.employeeId());
-            LocalDate wd = AttendanceEngine.workDateOf(p.at(), e.shift().def(), e.tz());
-            byEmp.get(e.id()).computeIfAbsent(wd, k -> new ArrayList<>()).add(new Punch(p.at(), p.kind(), p.source()));
+        Map<UUID, AttendanceEmployee> byId = new HashMap<>();
+        for (AttendanceEmployee e : employees) byId.put(e.id(), e);
+        Map<UUID, Map<LocalDate, List<Punch>>> byEmployee = new HashMap<>();
+        for (AttendanceEmployee e : employees) byEmployee.put(e.id(), new HashMap<>());
+        for (PunchRow punchRow : punches) {
+            AttendanceEmployee employee = byId.get(punchRow.employeeId());
+            LocalDate wd = AttendanceEngine.workDateOf(punchRow.at(), employee.shift().def(), employee.timeZone());
+            byEmployee.get(employee.id()).computeIfAbsent(wd, k -> new ArrayList<>()).add(new Punch(punchRow.at(), punchRow.kind(), punchRow.source()));
         }
 
         Map<UUID, Map<LocalDate, Double>> fractions = new HashMap<>(); // leave id → date → paid fraction
-        for (LeaveRow l : leaves) {
-            AttEmployee e = byId.get(l.employeeId());
+        for (LeaveRow leaveRow : leaves) {
+            AttendanceEmployee employee = byId.get(leaveRow.employeeId());
             Map<LocalDate, String> hol = new HashMap<>();
-            for (Hol h : holidays) if ("ALL".equals(h.region()) || h.region().equals(e.region())) hol.put(h.date(), h.name());
-            List<LocalDate> dates = LeaveRules.workingDays(l.from(), l.to(), policy.engine().weeklyOffs(), hol).dates();
-            double paidDays = l.paid() ? l.days().doubleValue() - l.lop().doubleValue() : 0;
-            fractions.put(l.id(), LeaveRules.paidFractions(dates, l.part(), paidDays));
+            for (HolidayRow h : holidays) if ("ALL".equals(h.region()) || h.region().equals(employee.region())) hol.put(h.date(), h.name());
+            List<LocalDate> dates = LeaveRules.workingDays(leaveRow.from(), leaveRow.to(), policy.engine().weeklyOffs(), hol).dates();
+            double paidDays = leaveRow.paid() ? leaveRow.days().doubleValue() - leaveRow.lop().doubleValue() : 0;
+            fractions.put(leaveRow.id(), LeaveRules.paidFractions(dates, leaveRow.part(), paidDays));
         }
 
-        for (AttEmployee e : emps) {
+        for (AttendanceEmployee employee : employees) {
             List<DayView> days = new ArrayList<>();
-            for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
-                List<Punch> ps = byEmp.get(e.id()).getOrDefault(d, List.of());
-                Map<String, Object> lr = locked.get(e.id() + "|" + d);
-                if (lr != null) {
-                    DayResult r = new DayResult();
-                    r.date = d;
-                    r.status = DayStatus.valueOf((String) lr.get("status"));
-                    r.label = lr.get("label") == null ? "" : (String) lr.get("label");
-                    r.firstIn = lr.get("first_in") == null ? null : ((Timestamp) lr.get("first_in")).toInstant();
-                    r.lastOut = lr.get("last_out") == null ? null : ((Timestamp) lr.get("last_out")).toInstant();
-                    r.workedMinutes = (Integer) lr.get("worked_minutes");
-                    r.openSince = null;
-                    r.lateWaived = (Boolean) lr.get("late_waived");
-                    r.late = (Boolean) lr.get("late") && !r.lateWaived;
-                    r.missedCheckout = (Boolean) lr.get("missed_checkout");
-                    r.regularized = (Boolean) lr.get("regularized");
-                    r.lopDays = ((BigDecimal) lr.get("lop_days")).doubleValue();
-                    r.leaveDays = ((BigDecimal) lr.get("leave_days")).doubleValue();
-                    r.live = false;
-                    r.future = false;
-                    r.offDayWork = false;
-                    days.add(new DayView(r, ps));
+            for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
+                List<Punch> dayPunches = byEmployee.get(employee.id()).getOrDefault(date, List.of());
+                Map<String, Object> row = locked.get(employee.id() + "|" + date);
+                if (row != null) {
+                    DayResult dayResult = new DayResult();
+                    dayResult.date = date;
+                    dayResult.status = DayStatus.valueOf((String) row.get("status"));
+                    dayResult.label = row.get("label") == null ? "" : (String) row.get("label");
+                    dayResult.firstIn = row.get("first_in") == null ? null : ((Timestamp) row.get("first_in")).toInstant();
+                    dayResult.lastOut = row.get("last_out") == null ? null : ((Timestamp) row.get("last_out")).toInstant();
+                    dayResult.workedMinutes = (Integer) row.get("worked_minutes");
+                    dayResult.openSince = null;
+                    dayResult.lateWaived = (Boolean) row.get("late_waived");
+                    dayResult.late = (Boolean) row.get("late") && !dayResult.lateWaived;
+                    dayResult.missedCheckout = (Boolean) row.get("missed_checkout");
+                    dayResult.regularized = (Boolean) row.get("regularized");
+                    dayResult.lopDays = ((BigDecimal) row.get("lop_days")).doubleValue();
+                    dayResult.leaveDays = ((BigDecimal) row.get("leave_days")).doubleValue();
+                    dayResult.live = false;
+                    dayResult.future = false;
+                    dayResult.offDayWork = false;
+                    days.add(new DayView(dayResult, dayPunches));
                     continue;
                 }
-                LocalDate day = d;
-                LeaveRow lv = leaves.stream().filter(l -> l.employeeId().equals(e.id()) && !l.from().isAfter(day) && !l.to().isBefore(day)).findFirst().orElse(null);
-                List<RegRow> rs = regs.stream().filter(x -> x.employeeId().equals(e.id()) && x.date().equals(day)).toList();
-                String holiday = holidays.stream().filter(h -> h.date().equals(day) && ("ALL".equals(h.region()) || h.region().equals(e.region())))
-                        .map(Hol::name).findFirst().orElse(null);
+                LocalDate day = date;
+                LeaveRow leaveRow = leaves.stream().filter(l -> l.employeeId().equals(employee.id()) && !l.from().isAfter(day) && !l.to().isBefore(day)).findFirst().orElse(null);
+                List<RegularizationRow> regularizationRows = regularizations.stream().filter(x -> x.employeeId().equals(employee.id()) && x.date().equals(day)).toList();
+                String holiday = holidays.stream().filter(h -> h.date().equals(day) && ("ALL".equals(h.region()) || h.region().equals(employee.region())))
+                        .map(HolidayRow::name).findFirst().orElse(null);
                 Leave leave = null;
-                if (lv != null) {
-                    Double f = fractions.getOrDefault(lv.id(), Map.of()).get(day);
-                    leave = new Leave(lv.code(), lv.name(), lv.part(), f != null ? f : (lv.paid() ? 1 : 0));
+                if (leaveRow != null) {
+                    Double f = fractions.getOrDefault(leaveRow.id(), Map.of()).get(day);
+                    leave = new Leave(leaveRow.code(), leaveRow.name(), leaveRow.part(), f != null ? f : (leaveRow.paid() ? 1 : 0));
                 }
-                Reg reg = new Reg(rs.stream().anyMatch(x -> x.kind().equals("ABSENT") || x.kind().equals("MISSED_CHECKOUT")),
-                        rs.stream().anyMatch(x -> x.kind().equals("LATE_CHECKIN")));
-                DayResult r = AttendanceEngine.computeDay(new DayInput(d, now, e.tz(), e.shift().def(), policy.engine(), e.doj(), e.exit(),
-                        policy.trackingStart(), holiday, leave, ps, reg));
-                days.add(new DayView(r, ps));
+                Regularization reg = new Regularization(regularizationRows.stream().anyMatch(x -> x.kind().equals("ABSENT") || x.kind().equals("MISSED_CHECKOUT")),
+                        regularizationRows.stream().anyMatch(x -> x.kind().equals("LATE_CHECKIN")));
+                DayResult dayResult = AttendanceEngine.computeDay(new DayInput(date, now, employee.timeZone(), employee.shift().def(), policy.engine(), employee.dateOfJoining(), employee.exitDate(),
+                        policy.trackingStart(), holiday, leave, dayPunches, reg));
+                days.add(new DayView(dayResult, dayPunches));
             }
-            out.put(e.id(), days);
+            out.put(employee.id(), days);
         }
         return out;
     }
 
     /** Persist computed days (finished days only unless locking). Locked rows are never rewritten. */
-    public int materialize(List<AttEmployee> emps, LocalDate from, LocalDate to, boolean lock, Instant now) {
-        Map<UUID, List<DayView>> all = attendanceFor(emps, from, to, now);
+    public int materialize(List<AttendanceEmployee> employees, LocalDate from, LocalDate to, boolean lock, Instant now) {
+        Map<UUID, List<DayView>> all = attendanceFor(employees, from, to, now);
         Set<String> isLocked = new HashSet<>();
-        if (!emps.isEmpty()) {
-            UUID[] idArr = emps.stream().map(AttEmployee::id).toArray(UUID[]::new);
+        if (!employees.isEmpty()) {
+            UUID[] idArr = employees.stream().map(AttendanceEmployee::id).toArray(UUID[]::new);
             isLocked = repo.lockedDayKeys(idArr, from, to);
         }
         int written = 0;
-        for (Map.Entry<UUID, List<DayView>> en : all.entrySet()) {
-            for (DayView v : en.getValue()) {
-                DayResult d = v.r;
-                if (d.future || (d.live && !lock)) continue;
-                if (isLocked.contains(en.getKey() + "|" + d.date)) continue;
-                repo.upsertDay(en.getKey(), d, lock);
+        for (Map.Entry<UUID, List<DayView>> entry : all.entrySet()) {
+            for (DayView dayView : entry.getValue()) {
+                DayResult dayResult = dayView.r;
+                if (dayResult.future || (dayResult.live && !lock)) continue;
+                if (isLocked.contains(entry.getKey() + "|" + dayResult.date)) continue;
+                repo.upsertDay(entry.getKey(), dayResult, lock);
                 written++;
             }
         }
@@ -213,7 +213,7 @@ public class AttendanceService {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("h:mm a", Locale.US);
 
     /** Intl en-US {hour numeric, minute 2-digit}: "9:31 AM"; "—" for none. */
-    public static String fmtTime(Instant at, String tz) {
-        return at == null ? "—" : TIME.format(at.atZone(ZoneId.of(tz)));
+    public static String formatTime(Instant at, String timeZone) {
+        return at == null ? "—" : TIME.format(at.atZone(ZoneId.of(timeZone)));
     }
 }

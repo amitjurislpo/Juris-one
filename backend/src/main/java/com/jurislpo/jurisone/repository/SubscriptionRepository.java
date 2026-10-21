@@ -92,7 +92,7 @@ public class SubscriptionRepository {
             SELECT s.id::text, s.plan_id::text, p.name, s.starts_on, s.ends_on, s.price_paise, s.status, s.notes, s.created_at
             FROM business_subscriptions s JOIN subscription_plans p ON p.id = s.plan_id WHERE s.business_id = ? ORDER BY s.starts_on DESC, s.created_at DESC""",
                 (rs, i) -> new Subscription(rs.getString(1), rs.getString(2), rs.getString(3), rs.getDate(4).toLocalDate().toString(), rs.getDate(5).toLocalDate().toString(),
-                        rs.getLong(6), rs.getString(7), rs.getString(8), Format.jsIso(rs.getTimestamp(9).toInstant())), businessId);
+                        rs.getLong(6), rs.getString(7), rs.getString(8), Format.isoTimestamp(rs.getTimestamp(9).toInstant())), businessId);
     }
 
     // ── plans ──

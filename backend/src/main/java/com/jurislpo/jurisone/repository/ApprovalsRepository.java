@@ -22,10 +22,10 @@ public class ApprovalsRepository {
     }
 
     /** A decided leave request (last 30 days list). */
-    public record DecidedLeave(String id, Instant at, String name, String typeName, LocalDate from, LocalDate to, String status, String by) {}
+    public record DecidedLeave(String id, Instant at, String name, String typeName, LocalDate from, LocalDate to, String status, String decidedBy) {}
 
     /** A decided regularization (last 30 days list). */
-    public record DecidedReg(String id, Instant at, String name, String kind, LocalDate workDate, String status, String by, String role) {}
+    public record DecidedRegularization(String id, Instant at, String name, String kind, LocalDate workDate, String status, String decidedBy, String role) {}
 
     /** The leave request with its type name and the employee's name (empty when not found). */
     public List<Map<String, Object>> findLeaveForDecision(UUID id) {
@@ -118,12 +118,12 @@ public class ApprovalsRepository {
     }
 
     /** The 15 most recently decided regularizations since the given time. */
-    public List<DecidedReg> findDecidedRegularizations(Timestamp since) {
+    public List<DecidedRegularization> findDecidedRegularizations(Timestamp since) {
         return jdbc.query("""
             SELECT r.id::text, r.decided_at, e.full_name, r.kind::text, r.work_date, r.status::text, dd.full_name AS by, r.decided_role
             FROM regularization_requests r JOIN employees e ON e.id = r.employee_id LEFT JOIN employees dd ON dd.id = r.decided_by
             WHERE r.status IN ('APPROVED', 'DECLINED') AND r.decided_at >= ? ORDER BY r.decided_at DESC LIMIT 15""",
-                (rs, i) -> new DecidedReg(rs.getString(1), rs.getTimestamp(2).toInstant(), rs.getString(3), rs.getString(4), rs.getDate(5).toLocalDate(),
+                (rs, i) -> new DecidedRegularization(rs.getString(1), rs.getTimestamp(2).toInstant(), rs.getString(3), rs.getString(4), rs.getDate(5).toLocalDate(),
                         rs.getString(6), rs.getString(7), rs.getString(8)), since);
     }
 }

@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,7 +25,7 @@ public class SettingsService {
             "employee.policy", """
                 {"probationMonths":6}""",
             "auth.policy", """
-                {"maxFailedAttempts":5,"lockMinutes":15,"ipWindowMinutes":15,"ipMaxAttempts":30,"inviteTtlHours":72,"resetTtlMinutes":60}""",
+                {"maxFailedAttempts":5,"lockMinutes":15,"ipWindowMinutes":15,"ipMaxAttempts":30}""",
             "payroll.policy", """
                 {"pfRate":0.12,"pfWageCeiling":15000,"professionalTax":{"state":"Default","monthly":200}}""",
             "tax.policy", """
@@ -37,7 +38,7 @@ public class SettingsService {
     public static final List<String> KEYS = List.of("attendance.policy", "employee.policy", "auth.policy", "payroll.policy", "tax.policy", "company",
             "onboarding.policy");
 
-    public record AuthPolicy(int maxFailedAttempts, int lockMinutes, int ipWindowMinutes, int ipMaxAttempts, int inviteTtlHours, int resetTtlMinutes) {}
+    public record AuthPolicy(int maxFailedAttempts, int lockMinutes, int ipWindowMinutes, int ipMaxAttempts) {}
 
     public record AttendancePolicy(double fullDayHours, double halfDayHours, int graceMinutes, int lateMarksPerHalfDayLop, List<Integer> weeklyOffs,
                                    int absenceJobBufferMinutes, int lockDayOfNextMonth, String lockTime, double shiftTargetHours, String trackingStartDate) {}
@@ -48,7 +49,7 @@ public class SettingsService {
 
     public record PayrollPolicy(double pfRate, double pfWageCeiling, ProfessionalTax professionalTax) {}
 
-    public record TaxPolicy(String fy, String regimeChangeUntil, String proofWindowFrom, String proofWindowUntil, double maxProofMb) {}
+    public record TaxPolicy(@JsonProperty("fy") String financialYear, String regimeChangeUntil, String proofWindowFrom, String proofWindowUntil, double maxProofMb) {}
 
     /** {@code tan} / {@code pan}: the deductor's tax numbers for Form 16 (optional; absent until Finance sets them). */
     public record Company(String name, String address, String tan, String pan) {}

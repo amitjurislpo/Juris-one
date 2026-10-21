@@ -31,31 +31,31 @@ public class OriginCheckFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected boolean shouldNotFilter(HttpServletRequest req) {
-        return SAFE.contains(req.getMethod()) || !req.getRequestURI().startsWith("/api/");
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return SAFE.contains(request.getMethod()) || !request.getRequestURI().startsWith("/api/");
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain) throws ServletException, IOException {
-        String origin = req.getHeader("origin");
-        String host = req.getHeader("x-forwarded-host") != null ? req.getHeader("x-forwarded-host") : req.getHeader("host");
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
+        String origin = request.getHeader("origin");
+        String host = request.getHeader("x-forwarded-host") != null ? request.getHeader("x-forwarded-host") : request.getHeader("host");
         if (origin == null || host == null || !host.equalsIgnoreCase(hostOf(origin))) {
-            res.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            res.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-            json.writeValue(res.getOutputStream(), Problems.of(HttpStatus.FORBIDDEN, "CROSS_SITE_BLOCKED", MESSAGE, req.getRequestURI()));
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+            json.writeValue(response.getOutputStream(), Problems.of(HttpStatus.FORBIDDEN, "CROSS_SITE_BLOCKED", MESSAGE, request.getRequestURI()));
             return;
         }
-        chain.doFilter(req, res);
+        chain.doFilter(request, response);
     }
 
     /** {@code new URL(origin).host}: host plus a non-default port. */
     static String hostOf(String origin) {
         try {
-            URI u = URI.create(origin);
-            if (u.getHost() == null) return "";
-            int port = u.getPort();
-            boolean dflt = port == -1 || ("http".equals(u.getScheme()) && port == 80) || ("https".equals(u.getScheme()) && port == 443);
-            return dflt ? u.getHost() : u.getHost() + ":" + port;
+            URI uRI = URI.create(origin);
+            if (uRI.getHost() == null) return "";
+            int port = uRI.getPort();
+            boolean defaultValue = port == -1 || ("http".equals(uRI.getScheme()) && port == 80) || ("https".equals(uRI.getScheme()) && port == 443);
+            return defaultValue ? uRI.getHost() : uRI.getHost() + ":" + port;
         } catch (IllegalArgumentException e) {
             return "";
         }

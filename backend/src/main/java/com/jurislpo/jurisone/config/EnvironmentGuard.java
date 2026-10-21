@@ -18,7 +18,7 @@ public class EnvironmentGuard {
 
     static final List<String> ENVIRONMENTS = List.of("dev", "sqe", "uat", "prd");
     static final List<String> STRICT = List.of("uat", "prd");
-    private static final List<String> SECRETS = List.of("jurisone.security.jwt-secret", "jurisone.security.pii-encryption-key", "jurisone.seed.super-admin-password", "spring.datasource.password");
+    private static final List<String> SECRETS = List.of("jurisone.security.jwt-secret", "jurisone.security.pii-encryption-key", "spring.datasource.password");
 
     private final Environment env;
 
@@ -55,7 +55,7 @@ public class EnvironmentGuard {
         return out;
     }
 
-    private static String blankTo(String v, String fallback) {
-        return v == null || v.isBlank() ? fallback : v;
+    private static String blankTo(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 }

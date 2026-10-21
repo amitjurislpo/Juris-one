@@ -8,7 +8,7 @@ import java.util.UUID;
 /** The signed-in user, re-validated against the database on every request. */
 public record CurrentUser(
         UUID id, String code, String name, String email, String designation, UUID roleId, String roleKey, String roleName,
-        Set<String> perms, boolean isSuperAdmin, String region, String timeZone, boolean hasReports, String sessionId, UUID businessId) {
+        Set<String> perms, boolean isSuperAdmin, String region, String timeZone, boolean hasReports, String sessionId, UUID businessId, Long photo) {
 
     /** Any one of {@code perms}. */
     public boolean can(String... perms) {

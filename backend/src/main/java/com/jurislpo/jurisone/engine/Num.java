@@ -5,8 +5,8 @@ public final class Num {
     private Num() {}
 
     /** JS {@code Math.round}: halves round toward +∞ (Java's {@link Math#round(double)} matches). */
-    public static long jsRound(double x) {
-        return Math.round(x);
+    public static long jsRound(double value) {
+        return Math.round(value);
     }
 
     /** {@code Math.round(n * 100) / 100} — the app's round2. */

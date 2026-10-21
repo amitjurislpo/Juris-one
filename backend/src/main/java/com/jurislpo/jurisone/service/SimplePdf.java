@@ -73,43 +73,43 @@ final class SimplePdf implements AutoCloseable {
         y += mm;
     }
 
-    float width(String t, PDFont f, float size) {
+    float width(String t, PDFont font, float size) {
         try {
-            return f.getStringWidth(PolicyEvidencePdf.safe(f, t)) / 1000 * size;
+            return font.getStringWidth(PolicyEvidencePdf.safe(font, t)) / 1000 * size;
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
     }
 
-    private void raw(String t, double x, double yMm, float size, PDFont f, Color c, boolean right) throws IOException {
-        float w = f.getStringWidth(t) / 1000 * size;
+    private void raw(String t, double x, double yMm, float size, PDFont font, Color color, boolean right) throws IOException {
+        float w = font.getStringWidth(t) / 1000 * size;
         cs.beginText();
-        cs.setFont(f, size);
-        cs.setNonStrokingColor(c);
+        cs.setFont(font, size);
+        cs.setNonStrokingColor(color);
         cs.newLineAtOffset(mm(x) - (right ? w : 0), mm(H - yMm));
         cs.showText(t);
         cs.endText();
     }
 
     /** One line at the current y (does not move y). {@code x} is the left edge, or the right edge when {@code right}. */
-    void text(String t, double x, float size, boolean isBold, Color c, boolean right) {
+    void text(String t, double x, float size, boolean isBold, Color color, boolean right) {
         try {
-            raw(PolicyEvidencePdf.safe(isBold ? bold : font, t), x, y + size * 0.3528 * 0.8, size, isBold ? bold : font, c, right);
+            raw(PolicyEvidencePdf.safe(isBold ? bold : font, t), x, y + size * 0.3528 * 0.8, size, isBold ? bold : font, color, right);
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
     }
 
     /** A line of text that moves y down by its height. */
-    void line(String t, float size, boolean isBold, Color c) {
+    void line(String t, float size, boolean isBold, Color color) {
         double h = size * 0.3528 * 1.45;
         ensure(h);
-        text(t, M, size, isBold, c, false);
+        text(t, M, size, isBold, color, false);
         y += h;
     }
 
     /** Word-wrapped paragraph(s); "\n" keeps line breaks, a blank line leaves a gap. */
-    void paragraphs(String body, float size, Color c) {
+    void paragraphs(String body, float size, Color color) {
         double h = size * 0.3528 * 1.5;
         for (String para : body.replace("\r\n", "\n").split("\n", -1)) {
             if (para.isBlank()) {
@@ -118,7 +118,7 @@ final class SimplePdf implements AutoCloseable {
             }
             for (String l : wrap(para, W - 2 * M, size)) {
                 ensure(h);
-                text(l, M, size, false, c, false);
+                text(l, M, size, false, color, false);
                 y += h;
             }
         }
@@ -140,9 +140,9 @@ final class SimplePdf implements AutoCloseable {
         return out;
     }
 
-    void rule(Color c, float thickness) {
+    void rule(Color color, float thickness) {
         try {
-            cs.setStrokingColor(c);
+            cs.setStrokingColor(color);
             cs.setLineWidth(thickness);
             cs.moveTo(mm(M), mm(H - y));
             cs.lineTo(mm(W - M), mm(H - y));
@@ -152,9 +152,9 @@ final class SimplePdf implements AutoCloseable {
         }
     }
 
-    void panel(double h, Color c) {
+    void panel(double h, Color color) {
         try {
-            cs.setNonStrokingColor(c);
+            cs.setNonStrokingColor(color);
             cs.addRect(mm(M), mm(H - y - h), mm(W - 2 * M), mm(h));
             cs.fill();
         } catch (IOException e) {
@@ -163,10 +163,10 @@ final class SimplePdf implements AutoCloseable {
     }
 
     /** A table row: cells at the given left x positions (mm); {@code rightEdge[i]} true = x is the cell's right edge. */
-    void row(String[] cells, double[] xs, boolean[] rightEdge, float size, boolean isBold, Color c) {
+    void row(String[] cells, double[] xs, boolean[] rightEdge, float size, boolean isBold, Color color) {
         double h = size * 0.3528 * 1.7;
         ensure(h);
-        for (int i = 0; i < cells.length; i++) text(cells[i], xs[i], size, isBold, c, rightEdge[i]);
+        for (int i = 0; i < cells.length; i++) text(cells[i], xs[i], size, isBold, color, rightEdge[i]);
         y += h;
     }
 

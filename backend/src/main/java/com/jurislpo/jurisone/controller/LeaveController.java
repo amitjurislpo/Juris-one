@@ -33,12 +33,12 @@ public class LeaveController {
     }
 
     @GetMapping("/api/leave")
-    public ApiResult<Map<String, Object>> page(@RequestParam Map<String, String> sp) {
-        return ApiResult.success(leave.page(auth.requirePage("leave"), sp));
+    public ApiResult<Map<String, Object>> page(@RequestParam Map<String, String> queryParams) {
+        return ApiResult.success(leave.page(auth.requirePage("leave"), queryParams));
     }
 
     /** Live numbers for the apply form ({@code ?type=&from=&to=&part=}); rule failures come back in {@code data.error} (200). */
-    @GetMapping("/api/leave/preview")
+    @GetMapping("/api/leave/previews")
     public ApiResult<LeaveService.Preview> preview(@RequestParam(required = false) String type, @RequestParam(required = false) String from,
                                                    @RequestParam(required = false) String to, @RequestParam(required = false) String part) {
         return ApiResult.success(leave.preview(auth.assertPerm("self"), new LeaveService.ApplyInput(type, from, to, part, null)));
@@ -46,8 +46,8 @@ public class LeaveController {
 
     @PostMapping("/api/leave/requests")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Void> apply(@RequestBody LeaveService.ApplyInput body, HttpServletRequest req) {
-        return ApiResult.message(leave.apply(auth.assertPerm("self"), body, RequestMeta.of(req).ip()));
+    public ApiResult<Void> apply(@RequestBody LeaveService.ApplyInput body, HttpServletRequest request) {
+        return ApiResult.message(leave.apply(auth.assertPerm("self"), body, RequestMeta.of(request).ip()));
     }
 
     @DeleteMapping("/api/leave/requests/{id}")
@@ -56,20 +56,20 @@ public class LeaveController {
     }
 
     @GetMapping("/api/approvals")
-    public ApiResult<Map<String, Object>> approvals(@RequestParam Map<String, String> sp) {
-        return ApiResult.success(approvals.page(auth.requirePage("approvals"), sp));
+    public ApiResult<Map<String, Object>> approvals(@RequestParam Map<String, String> queryParams) {
+        return ApiResult.success(approvals.page(auth.requirePage("approvals"), queryParams));
     }
 
     /** Approve or reject a leave request ({@code {approve, note?}}); the first decision wins. */
     @PutMapping("/api/leave/requests/{id}/decision")
-    public ApiResult<Void> decideLeave(@PathVariable String id, @RequestBody DecisionBody body, HttpServletRequest req) {
-        return ApiResult.message(approvals.decideLeave(auth.assertPerm("appr.leave"), body.with(id), RequestMeta.of(req).ip()));
+    public ApiResult<Void> decideLeave(@PathVariable String id, @RequestBody DecisionBody body, HttpServletRequest request) {
+        return ApiResult.message(approvals.decideLeave(auth.assertPerm("appr.leave"), body.with(id), RequestMeta.of(request).ip()));
     }
 
     /** Approve or reject a regularization request ({@code {approve, note?}}); the first decision wins. */
     @PutMapping("/api/attendance/regularizations/{id}/decision")
-    public ApiResult<Void> decideRegularization(@PathVariable String id, @RequestBody DecisionBody body, HttpServletRequest req) {
-        return ApiResult.message(approvals.decideRegularization(auth.assertPerm("appr.reg"), body.with(id), RequestMeta.of(req).ip()));
+    public ApiResult<Void> decideRegularization(@PathVariable String id, @RequestBody DecisionBody body, HttpServletRequest request) {
+        return ApiResult.message(approvals.decideRegularization(auth.assertPerm("appr.reg"), body.with(id), RequestMeta.of(request).ip()));
     }
 
     public record DecisionBody(Boolean approve, String note) {

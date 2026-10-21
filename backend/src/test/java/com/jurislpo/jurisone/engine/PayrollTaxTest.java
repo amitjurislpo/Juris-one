@@ -7,7 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jurislpo.jurisone.engine.PayrollEngine.PayInput;
 import com.jurislpo.jurisone.engine.PayrollEngine.PayResult;
 import com.jurislpo.jurisone.engine.PayrollEngine.Structure;
-import com.jurislpo.jurisone.engine.TaxEngine.Caps;
+import com.jurislpo.jurisone.engine.TaxEngine.DeductionCaps;
 import com.jurislpo.jurisone.engine.TaxEngine.Declared;
 import com.jurislpo.jurisone.engine.TaxEngine.Deductions;
 import com.jurislpo.jurisone.engine.TaxEngine.Regime;
@@ -32,7 +32,7 @@ class PayrollTaxTest {
     static final TaxYearConfig OLD = new TaxYearConfig(Regime.OLD, 50000, 500000, false, 0.04,
             List.of(new Slab(250000d, 0), new Slab(500000d, 0.05), new Slab(1000000d, 0.2), new Slab(null, 0.3)),
             List.of(new Surcharge(5000000, 0.1), new Surcharge(10000000, 0.15), new Surcharge(20000000, 0.25), new Surcharge(50000000, 0.37)));
-    static final Caps CAPS = new Caps(150000, 50000, 25000, 25000, 50000, 200000, 10000);
+    static final DeductionCaps CAPS = new DeductionCaps(150000, 50000, 25000, 25000, 50000, 200000, 10000);
     static final Structure JC074 = new Structure(7_500_000, 3_000_000, 750_000, 3_750_000); // ₹1,50,000 / month
 
     @Nested
@@ -52,7 +52,7 @@ class PayrollTaxTest {
         @Test
         @DisplayName("monthly TDS ≈ ₹14,926 on the new regime with ₹7.5L / ₹38,000 from the previous employer")
         void monthlyTds() {
-            int remaining = TaxEngine.fyOf("2026-09").remainingInclCurrent();
+            int remaining = TaxEngine.financialYearOf("2026-09").remainingInclCurrent();
             assertThat(remaining).isEqualTo(7);
             double juris = 110000 + 150000 * 6; // Sep actual + Oct–Mar projected
             TaxResult t = TaxEngine.computeTax(juris + 750000, 0, NEW);
@@ -92,13 +92,13 @@ class PayrollTaxTest {
         @Test
         @DisplayName("old-regime deductions: HRA least-of, 80C cap incl. PF, 80D parents")
         void deductions() {
-            Declared decl = new Declared();
-            decl.rent = 180000;
-            decl.metro = true;
-            decl.ppf = 80000;
-            decl.lic = 25000;
-            decl.medSelf = 18000;
-            Deductions d = TaxEngine.oldRegimeDeductions(432000, 172800, 51840, decl, CAPS, null);
+            Declared declaration = new Declared();
+            declaration.rent = 180000;
+            declaration.metro = true;
+            declaration.ppf = 80000;
+            declaration.lic = 25000;
+            declaration.medSelf = 18000;
+            Deductions d = TaxEngine.oldRegimeDeductions(432000, 172800, 51840, declaration, CAPS, null);
             assertThat(d.hraExemption()).isEqualTo(Math.round(Math.min(172800, Math.min(180000 - 43200, 216000))));
             assertThat(d.c80C()).isEqualTo(150000);
             assertThat(d.total()).isEqualTo(136800 + 150000 + 18000);

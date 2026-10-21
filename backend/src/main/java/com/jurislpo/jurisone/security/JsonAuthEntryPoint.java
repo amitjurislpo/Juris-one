@@ -23,7 +23,7 @@ public class JsonAuthEntryPoint implements AuthenticationEntryPoint {
 
     /** Paths of the original route handlers. */
     public static final List<String> LEGACY_ROUTES = List.of(
-            "/api/attendance/register", "/api/declarations/proof", "/api/payroll/export", "/api/payslips/", "/api/people/export", "/api/tax/export");
+            "/api/attendance/register", "/api/declarations/proofs", "/api/payroll/export", "/api/payslips/", "/api/people/export", "/api/tax/export");
 
     private final ObjectMapper json;
 
@@ -36,11 +36,11 @@ public class JsonAuthEntryPoint implements AuthenticationEntryPoint {
     }
 
     @Override
-    public void commence(HttpServletRequest req, HttpServletResponse res, AuthenticationException e) throws IOException {
-        HttpStatus status = isLegacyRoute(req.getRequestURI()) ? HttpStatus.FORBIDDEN : HttpStatus.UNAUTHORIZED;
-        String code = Boolean.TRUE.equals(req.getAttribute(JwtAuthFilter.EXPIRED_ATTR)) ? Problems.TOKEN_EXPIRED : Problems.UNAUTHENTICATED;
-        res.setStatus(status.value());
-        res.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        json.writeValue(res.getOutputStream(), Problems.of(status, code, UnauthenticatedException.MESSAGE, req.getRequestURI()));
+    public void commence(HttpServletRequest request, HttpServletResponse response, AuthenticationException e) throws IOException {
+        HttpStatus status = isLegacyRoute(request.getRequestURI()) ? HttpStatus.FORBIDDEN : HttpStatus.UNAUTHORIZED;
+        String code = Boolean.TRUE.equals(request.getAttribute(JwtAuthFilter.EXPIRED_ATTR)) ? Problems.TOKEN_EXPIRED : Problems.UNAUTHENTICATED;
+        response.setStatus(status.value());
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        json.writeValue(response.getOutputStream(), Problems.of(status, code, UnauthenticatedException.MESSAGE, request.getRequestURI()));
     }
 }

@@ -28,60 +28,76 @@ public final class PeopleRules {
         return "owner".equals(roleKey) || "super_admin".equals(roleKey);
     }
 
-    public static boolean isAdmin(Actor a) {
-        return isAdminRole(a.roleKey()); // the business owner (sub admin), or the super admin in the platform company
+    public static boolean isAdmin(Actor actor) {
+        return isAdminRole(actor.roleKey()); // the business owner (sub admin), or the super admin in the platform company
+    }
+
+    /** The HR Manager role (built into every business). */
+    public static boolean isHr(Actor actor) {
+        return "hrm".equals(actor.roleKey());
+    }
+
+    /** Only the business admin (owner) and HR may change an employee's status (confirmation) or role. */
+    public static boolean canManageStatusAndRole(Actor actor) {
+        return isAdmin(actor) || isHr(actor);
+    }
+
+    /** Make a probation / onboarding employee permanent: admin or HR with people.add; never yourself, never the super admin. */
+    public static boolean canConfirm(Actor actor, Target target) {
+        return actor.perms().contains(Permissions.PEOPLE_ADD) && canManageStatusAndRole(actor) && !actor.id().equals(target.id()) && !target.isSuperAdmin()
+                && (target.status() == EmployeeStatus.PROBATION || target.status() == EmployeeStatus.ONBOARDING);
     }
 
     /** People ops can add employees only if their role can assign at least one role. */
-    public static boolean canAddEmployees(Actor a) {
-        return a.perms().contains(Permissions.PEOPLE_ADD) && (isAdmin(a) || !a.assignable().isEmpty());
+    public static boolean canAddEmployees(Actor actor) {
+        return actor.perms().contains(Permissions.PEOPLE_ADD) && (isAdmin(actor) || !actor.assignable().isEmpty());
     }
 
     /** Edit needs people.add and the target's role in the actor's assignable list. Admin edits anyone. Nobody edits themselves. */
-    public static boolean canEditEmployee(Actor a, Target t) {
-        if (!a.perms().contains(Permissions.PEOPLE_ADD) || a.id().equals(t.id()) || t.isSuperAdmin()) return false;
-        return isAdmin(a) || a.assignable().contains(t.roleId());
+    public static boolean canEditEmployee(Actor actor, Target target) {
+        if (!actor.perms().contains(Permissions.PEOPLE_ADD) || actor.id().equals(target.id()) || target.isSuperAdmin()) return false;
+        return isAdmin(actor) || actor.assignable().contains(target.roleId());
     }
 
     /** access.toggle; never yourself; never the super admin; only Admin toggles an Admin; exited people stay off. */
-    public static boolean canToggleAccess(Actor a, Target t) {
-        if (!a.perms().contains(Permissions.ACCESS_TOGGLE) || a.id().equals(t.id()) || t.isSuperAdmin() || t.status() == EmployeeStatus.EXITED) return false;
-        return isAdmin(a) || !isAdminRole(t.roleKey());
+    public static boolean canToggleAccess(Actor actor, Target target) {
+        if (!actor.perms().contains(Permissions.ACCESS_TOGGLE) || actor.id().equals(target.id()) || target.isSuperAdmin() || target.status() == EmployeeStatus.EXITED) return false;
+        return isAdmin(actor) || !isAdminRole(target.roleKey());
     }
 
     /** May the actor give {@code roleId} to someone? Keeping a person's current role is always allowed for an editor. */
-    public static boolean canAssignRole(Actor a, String roleId, String currentRoleId) {
+    public static boolean canAssignRole(Actor actor, String roleId, String currentRoleId) {
         if (currentRoleId != null && !currentRoleId.isEmpty() && roleId.equals(currentRoleId)) return true;
-        return a.assignable().contains(roleId);
+        return actor.assignable().contains(roleId);
     }
 
     /**
      * Managers who can't hire plain Employees (e.g. Finance Manager → Finance Executive) add people
      * into their own department only. Admin and HR choose freely.
      */
-    public static String lockedDepartment(Actor a) {
-        if (isAdmin(a) || a.assignable().contains(a.employeeRoleId())) return null;
-        return a.departmentId();
+    public static String lockedDepartment(Actor actor) {
+        if (isAdmin(actor) || actor.assignable().contains(actor.employeeRoleId())) return null;
+        return actor.departmentId();
     }
 
     /** Status for a new hire: Onboarding until the joining date, then Probation. */
-    public static EmployeeStatus initialStatus(LocalDate doj, LocalDate today) {
-        return doj.isAfter(today) ? EmployeeStatus.ONBOARDING : EmployeeStatus.PROBATION;
+    public static EmployeeStatus initialStatus(LocalDate dateOfJoining, LocalDate today) {
+        return dateOfJoining.isAfter(today) ? EmployeeStatus.ONBOARDING : EmployeeStatus.PROBATION;
     }
 
     /**
      * {@code Date.UTC(y, m - 1 + months, d)}: JS lets the day overflow into the next month
      * (31 Aug + 6 months = 3 Mar), unlike {@link LocalDate#plusMonths} which clamps.
      */
-    static LocalDate jsAddMonths(LocalDate d, int months) {
-        return LocalDate.of(d.getYear(), 1, 1).plusMonths(d.getMonthValue() - 1L + months).plusDays(d.getDayOfMonth() - 1L);
+    static LocalDate jsAddMonths(LocalDate date, int months) {
+        return LocalDate.of(date.getYear(), 1, 1).plusMonths(date.getMonthValue() - 1L + months).plusDays(date.getDayOfMonth() - 1L);
     }
 
     /** Status as time passes (daily job): Onboarding → Probation on DOJ → Active after N months. */
-    public static EmployeeStatus derivedStatus(EmployeeStatus current, LocalDate doj, LocalDate today, int probationMonths) {
+    public static EmployeeStatus derivedStatus(EmployeeStatus current, LocalDate dateOfJoining, LocalDate today, int probationMonths) {
         if (current == EmployeeStatus.EXITED) return current;
-        if (doj.isAfter(today)) return EmployeeStatus.ONBOARDING;
-        LocalDate end = jsAddMonths(doj, probationMonths);
+        if (dateOfJoining.isAfter(today)) return EmployeeStatus.ONBOARDING;
+        LocalDate end = jsAddMonths(dateOfJoining, probationMonths);
         if (!today.isBefore(end)) return current == EmployeeStatus.ONBOARDING || current == EmployeeStatus.PROBATION ? EmployeeStatus.ACTIVE : current;
         return current == EmployeeStatus.ONBOARDING ? EmployeeStatus.PROBATION : current;
     }
@@ -97,7 +113,7 @@ public final class PeopleRules {
     }
 
     // ─── locations ───
-    public record Location(String v, String l, String tz, String region) {}
+    public record Location(String value, String label, String timeZone, String region) {}
 
     public static final List<Location> LOCATIONS = List.of(
             new Location("IN_IST", "India · IST", "Asia/Kolkata", "IN"),
@@ -105,12 +121,12 @@ public final class PeopleRules {
             new Location("US_CT", "US Central · CT", "America/Chicago", "US"),
             new Location("US_PT", "US West · PT", "America/Los_Angeles", "US"));
 
-    public static Location locationOfTz(String tz) {
-        return LOCATIONS.stream().filter(l -> l.tz().equals(tz)).findFirst().orElse(LOCATIONS.get(0));
+    public static Location locationOfTimeZone(String timeZone) {
+        return LOCATIONS.stream().filter(l -> l.timeZone().equals(timeZone)).findFirst().orElse(LOCATIONS.get(0));
     }
 
     public static Location location(String code) {
-        return LOCATIONS.stream().filter(l -> l.v().equals(code)).findFirst().orElse(null);
+        return LOCATIONS.stream().filter(l -> l.value().equals(code)).findFirst().orElse(null);
     }
 
     // ─── identity validation (same regexes as the TS / zod 4 code) ───
@@ -120,20 +136,20 @@ public final class PeopleRules {
     /** zod 4 {@code z.string().uuid()}. */
     public static final Pattern UUID_RE = Pattern.compile("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$");
 
-    public static String digits(String s) {
-        return s == null ? "" : s.replaceAll("\\D", "");
+    public static String digits(String text) {
+        return text == null ? "" : text.replaceAll("\\D", "");
     }
 
-    public static boolean validAadhaar(String s) {
-        return digits(s).length() == 12;
+    public static boolean validAadhaar(String text) {
+        return digits(text).length() == 12;
     }
 
-    public static boolean validUan(String s) {
-        return digits(s).length() == 12;
+    public static boolean validUan(String text) {
+        return digits(text).length() == 12;
     }
 
-    public static boolean validPhone(String s) {
-        int n = digits(s).length();
+    public static boolean validPhone(String text) {
+        int n = digits(text).length();
         return n >= 10 && n <= 15;
     }
 
@@ -144,7 +160,7 @@ public final class PeopleRules {
      */
     public record EmployeeInput(String firstName, String middleName, String lastName, String fatherName, String email, String phoneCountry, String phone,
                                 String location, String joiningOffice, String pan, String aadhaar, String uan, String address, String designation,
-                                String departmentId, String managerId, String doj, String shift, String roleId) {
+                                String departmentId, String managerId, String dateOfJoining, String shift, String roleId) {
 
         /** "First Middle Last". */
         public String fullName() {
@@ -159,35 +175,35 @@ public final class PeopleRules {
     }
 
     /** Step-by-step checks shown in the form (and re-run on the server). Field → message, in check order. */
-    public static Map<String, String> stepErrors(int step, EmployeeInput f, boolean editing, boolean hadManager) {
+    public static Map<String, String> stepErrors(int step, EmployeeInput input, boolean editing, boolean hadManager) {
         Map<String, String> x = new LinkedHashMap<>();
-        boolean india = "IN_IST".equals(f.locationOrDefault());
+        boolean india = "IN_IST".equals(input.locationOrDefault());
         if (step == 1) {
-            if (f.firstName().trim().isEmpty()) x.put("firstName", "First name is required");
-            if (f.lastName().trim().isEmpty()) x.put("lastName", "Last name is required");
-            if (f.fatherName().trim().length() < 2) x.put("fatherName", "Father’s name is required");
-            if (!EMAIL_RE.matcher(f.email().trim()).matches()) x.put("email", "Enter a valid email");
-            if (!f.phone().isEmpty() || !editing) {
-                String p = Phones.problem(f.phoneCountry(), f.phone());
+            if (input.firstName().trim().isEmpty()) x.put("firstName", "First name is required");
+            if (input.lastName().trim().isEmpty()) x.put("lastName", "Last name is required");
+            if (input.fatherName().trim().length() < 2) x.put("fatherName", "Father’s name is required");
+            if (!EMAIL_RE.matcher(input.email().trim()).matches()) x.put("email", "Enter a valid email");
+            if (!input.phone().isEmpty() || !editing) {
+                String p = Phones.problem(input.phoneCountry(), input.phone());
                 if (p != null) x.put("phone", p);
             }
         }
         if (step == 2 && india) {
-            if (!f.pan().isEmpty() && !PAN_RE.matcher(f.pan().trim().toUpperCase()).matches()) x.put("pan", "PAN looks like ABCDE1234F");
-            if (!f.aadhaar().isEmpty() && !validAadhaar(f.aadhaar())) x.put("aadhaar", "Aadhaar has 12 digits");
-            if (!f.uan().isEmpty() && !validUan(f.uan())) x.put("uan", "UAN has 12 digits");
+            if (!input.pan().isEmpty() && !PAN_RE.matcher(input.pan().trim().toUpperCase()).matches()) x.put("pan", "PAN looks like ABCDE1234F");
+            if (!input.aadhaar().isEmpty() && !validAadhaar(input.aadhaar())) x.put("aadhaar", "Aadhaar has 12 digits");
+            if (!input.uan().isEmpty() && !validUan(input.uan())) x.put("uan", "UAN has 12 digits");
         }
         if (step == 3) {
-            if (f.designation().trim().length() < 2) x.put("designation", "Designation is required");
-            if (f.departmentId().isEmpty()) x.put("departmentId", "Pick a department");
-            if (f.managerId().isEmpty() && (!editing || hadManager)) x.put("managerId", "Pick a reporting manager");
-            if (f.doj().isEmpty()) x.put("doj", "Pick the date of joining");
-            if (f.roleId().isEmpty()) x.put("roleId", "Pick a role");
+            if (input.designation().trim().length() < 2) x.put("designation", "Designation is required");
+            if (input.departmentId().isEmpty()) x.put("departmentId", "Pick a department");
+            if (input.managerId().isEmpty() && (!editing || hadManager)) x.put("managerId", "Pick a reporting manager");
+            if (input.dateOfJoining().isEmpty()) x.put("dateOfJoining", "Pick the date of joining");
+            if (input.roleId().isEmpty()) x.put("roleId", "Pick a role");
         }
         return x;
     }
 
-    public static Map<String, String> stepErrors(int step, EmployeeInput f, boolean editing) {
-        return stepErrors(step, f, editing, false);
+    public static Map<String, String> stepErrors(int step, EmployeeInput input, boolean editing) {
+        return stepErrors(step, input, editing, false);
     }
 }

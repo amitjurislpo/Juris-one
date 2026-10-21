@@ -113,12 +113,12 @@ public class SessionService {
     /** {@code maxAge} null = browser-session cookies (no "keep me signed in"). */
     private List<ResponseCookie> cookies(UUID employeeId, String sid, String refresh, Duration maxAge) {
         ResponseCookie.ResponseCookieBuilder at = base(ACCESS_COOKIE, jwt.issue(employeeId, sid));
-        ResponseCookie.ResponseCookieBuilder rt = base(REFRESH_COOKIE, refresh);
+        ResponseCookie.ResponseCookieBuilder responseCookieBuilder = base(REFRESH_COOKIE, refresh);
         if (maxAge != null) {
             at.maxAge(maxAge);
-            rt.maxAge(maxAge);
+            responseCookieBuilder.maxAge(maxAge);
         }
-        return List.of(at.build(), rt.build(), expired(LEGACY_COOKIE));
+        return List.of(at.build(), responseCookieBuilder.build(), expired(LEGACY_COOKIE));
     }
 
     private ResponseCookie.ResponseCookieBuilder base(String name, String value) {

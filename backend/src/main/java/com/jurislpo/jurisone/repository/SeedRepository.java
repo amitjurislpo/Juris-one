@@ -19,7 +19,7 @@ import org.springframework.stereotype.Repository;
 public class SeedRepository {
 
     /** An employee who gets demo punches, with their shift start (null = no shift). */
-    public record PunchEmployee(UUID id, String code, LocalDate doj, LocalDate exit, String tz, String region, String startLocal) {}
+    public record PunchEmployee(UUID id, String code, LocalDate dateOfJoining, LocalDate exitDate, String timeZone, String region, String startLocal) {}
 
     /** A holiday's date and region. */
     public record HolidayDay(LocalDate date, String region) {}
@@ -80,13 +80,13 @@ public class SeedRepository {
     }
 
     /** Inserts a tax year of a regime unless it exists ({@code slabs} / {@code surcharge}: JSON). */
-    public void insertTaxYear(String fy, String regime, Object stdDeduction, Object rebateLimit, boolean marginalRelief, String slabs, String surcharge) {
-        jdbc.update(TAX_YEAR_SQL, fy, regime, stdDeduction, rebateLimit, marginalRelief, slabs, surcharge);
+    public void insertTaxYear(String financialYear, String regime, Object stdDeduction, Object rebateLimit, boolean marginalRelief, String slabs, String surcharge) {
+        jdbc.update(TAX_YEAR_SQL, financialYear, regime, stdDeduction, rebateLimit, marginalRelief, slabs, surcharge);
     }
 
-    public void insertTaxSection(String fy, Object key, Object label, Object cap, int sortOrder) {
+    public void insertTaxSection(String financialYear, Object key, Object label, Object cap, int sortOrder) {
         jdbc.update("INSERT INTO tax_sections (fy, key, label, cap, sort_order) VALUES (?, ?, ?, ?, ?) ON CONFLICT (fy, key) DO NOTHING",
-                fy, key, label, cap, sortOrder);
+                financialYear, key, label, cap, sortOrder);
     }
 
     // ── employees and users ──
@@ -120,8 +120,8 @@ public class SeedRepository {
     }
 
     /** Inserts a demo employee with encrypted identity numbers. */
-    public void insertEmployee(UUID id, String code, String name, String father, String email, String title, UUID roleId, UUID deptId, UUID managerId, Date doj,
-                               Date exit, String status, String tz, String region, UUID shiftId, boolean portalAccess, UUID createdBy, String phoneEnc, String phoneLast4,
+    public void insertEmployee(UUID id, String code, String name, String father, String email, String title, UUID roleId, UUID departmentId, UUID managerId, Date dateOfJoining,
+                               Date exit, String status, String timeZone, String region, UUID shiftId, boolean portalAccess, UUID createdBy, String phoneEnc, String phoneLast4,
                                String addressEnc, String panEnc, String panLast4, String aadhaarEnc, String aadhaarLast4, String uanEnc, String uanLast4, String bankEnc,
                                String bankLast4, String bankName, String bankIfsc) {
         jdbc.update("""
@@ -129,29 +129,25 @@ public class SeedRepository {
               status, time_zone, region, shift_id, portal_access, created_by, phone_enc, phone_last4, address_enc, pan_enc, pan_last4, aadhaar_enc, aadhaar_last4,
               uan_enc, uan_last4, bank_account_enc, bank_account_last4, bank_name, bank_ifsc, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::"EmployeeStatus", ?, ?::"Region", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())""",
-                id, code, name, father, email, title, roleId, deptId, managerId, doj,
-                exit, status, tz, region, shiftId,
+                id, code, name, father, email, title, roleId, departmentId, managerId, dateOfJoining,
+                exit, status, timeZone, region, shiftId,
                 portalAccess, createdBy,
                 phoneEnc, phoneLast4, addressEnc, panEnc, panLast4,
                 aadhaarEnc, aadhaarLast4, uanEnc, uanLast4, bankEnc,
                 bankLast4, bankName, bankIfsc);
     }
 
-    /** password_hash and is_super_admin of the employee's user (zero or one row). */
+    /** is_super_admin of the employee's user (zero or one row). */
     public List<Map<String, Object>> findUser(UUID employeeId) {
-        return jdbc.queryForList("SELECT password_hash, is_super_admin FROM users WHERE employee_id = ?", employeeId);
+        return jdbc.queryForList("SELECT is_super_admin FROM users WHERE employee_id = ?", employeeId);
     }
 
     public void markSuperAdmin(UUID employeeId) {
         jdbc.update("UPDATE users SET is_super_admin = true WHERE employee_id = ?", employeeId);
     }
 
-    /** Inserts the user, or overwrites its password and super admin flag. */
-    public void upsertUser(UUID employeeId, String passwordHash, Timestamp passwordSetAt, boolean superAdmin) {
-        jdbc.update("""
-            INSERT INTO users (employee_id, password_hash, password_set_at, is_super_admin) VALUES (?, ?, ?, ?)
-            ON CONFLICT (employee_id) DO UPDATE SET password_hash = EXCLUDED.password_hash, password_set_at = EXCLUDED.password_set_at, is_super_admin = EXCLUDED.is_super_admin""",
-                employeeId, passwordHash, passwordSetAt, superAdmin);
+    public void insertUser(UUID employeeId, boolean superAdmin) {
+        jdbc.update("INSERT INTO users (employee_id, is_super_admin) VALUES (?, ?)", employeeId, superAdmin);
     }
 
     // ── demo attendance, payroll, proofs, requests ──
@@ -304,16 +300,16 @@ public class SeedRepository {
     }
 
     /** Inserts a tax profile unless it exists (metro, not senior parents). */
-    public void insertTaxProfile(UUID employeeId, String fy, String regime, Object prevEmployerIncome, Object prevEmployerTds) {
-        jdbc.update(TAX_PROFILE_SQL, employeeId, fy, regime, prevEmployerIncome, prevEmployerTds);
+    public void insertTaxProfile(UUID employeeId, String financialYear, String regime, Object prevEmployerIncome, Object prevEmployerTds) {
+        jdbc.update(TAX_PROFILE_SQL, employeeId, financialYear, regime, prevEmployerIncome, prevEmployerTds);
     }
 
-    public void insertDeclarationItem(UUID id, UUID employeeId, String fy, Object section, String itemKey, long amount, String proofName, String status,
+    public void insertDeclarationItem(UUID id, UUID employeeId, String financialYear, Object section, String itemKey, long amount, String proofName, String status,
                                       UUID decidedBy, Timestamp decidedAt) {
         jdbc.update("""
             INSERT INTO declaration_items (id, employee_id, fy, section, item_key, amount, proof_name, status, decided_by, decided_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?::"DeclarationStatus", ?, ?, now()) ON CONFLICT (employee_id, fy, item_key) DO NOTHING""",
-                id, employeeId, fy, section, itemKey, amount, proofName, status, decidedBy, decidedAt);
+                id, employeeId, financialYear, section, itemKey, amount, proofName, status, decidedBy, decidedAt);
     }
 
     // ── plans ──

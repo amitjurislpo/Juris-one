@@ -34,12 +34,12 @@ public class AnnouncementService {
 
     public record AnnouncementInput(String title, String body, String audience, Boolean pinned, String expiresOn) {}
 
-    record Valid(String title, String body, String audience, boolean pinned, LocalDate expiresOn) {}
+    record ValidatedAnnouncement(String title, String body, String audience, boolean pinned, LocalDate expiresOn) {}
 
     /** The announcements shown to this user now (pinned first, newest first). */
-    public List<Map<String, Object>> active(CurrentUser u, Integer limit) {
+    public List<Map<String, Object>> active(CurrentUser user, Integer limit) {
         int n = limit == null ? 50 : Math.max(1, Math.min(100, limit));
-        return repo.findActive(u.region(), n);
+        return repo.findActive(user.region(), n);
     }
 
     /** Everything ever posted, with whether it is showing now (managers). */
@@ -53,46 +53,46 @@ public class AnnouncementService {
         return rows.get(0);
     }
 
-    static Valid validate(AnnouncementInput in) {
-        if (in == null) throw new UserException(HttpStatus.BAD_REQUEST, "Announcement details are missing.");
-        String title = Check.trimmed(in.title(), 3, "Enter the announcement title.", 160, "Keep the title under 160 characters.");
-        String body = in.body() == null ? "" : in.body().replace("\r\n", "\n").strip();
+    static ValidatedAnnouncement validate(AnnouncementInput input) {
+        if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Announcement details are missing.");
+        String title = Check.trimmed(input.title(), 3, "Enter the announcement title.", 160, "Keep the title under 160 characters.");
+        String body = input.body() == null ? "" : input.body().replace("\r\n", "\n").strip();
         if (body.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Write the announcement text.");
         if (body.length() > 10_000) throw new UserException(HttpStatus.BAD_REQUEST, "The announcement is too long (10,000 characters at most).");
-        String audience = Check.oneOf(in.audience() == null ? "ALL" : in.audience(), AUDIENCES);
-        LocalDate expires = in.expiresOn() == null || in.expiresOn().isBlank() ? null : AssetService.date(in.expiresOn(), "Enter the expiry date as YYYY-MM-DD.");
+        String audience = Check.oneOf(input.audience() == null ? "ALL" : input.audience(), AUDIENCES);
+        LocalDate expires = input.expiresOn() == null || input.expiresOn().isBlank() ? null : AssetService.date(input.expiresOn(), "Enter the expiry date as YYYY-MM-DD.");
         if (expires != null && expires.isBefore(LocalDate.now())) throw new UserException("The expiry date can't be in the past.");
-        return new Valid(title, body, audience, Boolean.TRUE.equals(in.pinned()), expires);
+        return new ValidatedAnnouncement(title, body, audience, Boolean.TRUE.equals(input.pinned()), expires);
     }
 
     /** Publishes the announcement straight away and notifies everyone it is for. */
-    public String create(CurrentUser u, AnnouncementInput in, String ip) {
-        Valid v = validate(in);
+    public String create(CurrentUser user, AnnouncementInput input, String ip) {
+        ValidatedAnnouncement validated = validate(input);
         UUID id = UUID.randomUUID();
-        repo.insert(id, v.title(), v.body(), v.audience(), v.pinned(), v.expiresOn(), u.id());
-        audit.log(u.id(), "announcement.create", "announcement", id.toString(), null, Map.of("title", v.title(), "audience", v.audience(), "pinned", v.pinned()), ip);
-        notifyAll(id, v.title(), v.audience());
+        repo.insert(id, validated.title(), validated.body(), validated.audience(), validated.pinned(), validated.expiresOn(), user.id());
+        audit.log(user.id(), "announcement.create", "announcement", id.toString(), null, Map.of("title", validated.title(), "audience", validated.audience(), "pinned", validated.pinned()), ip);
+        notifyAll(id, validated.title(), validated.audience());
         return id.toString();
     }
 
     /** Edits it in place (nobody is notified again). */
-    public void update(CurrentUser u, String idRaw, AnnouncementInput in, String ip) {
+    public void update(CurrentUser user, String idRaw, AnnouncementInput input, String ip) {
         UUID id = Check.uuid(idRaw);
-        Map<String, Object> a = row(id);
-        Valid v = validate(in);
-        repo.update(id, v.title(), v.body(), v.audience(), v.pinned(), v.expiresOn());
-        audit.log(u.id(), "announcement.update", "announcement", id.toString(), Map.of("title", a.get("title")), Map.of("title", v.title(), "audience", v.audience()), ip);
+        Map<String, Object> announcement = row(id);
+        ValidatedAnnouncement validated = validate(input);
+        repo.update(id, validated.title(), validated.body(), validated.audience(), validated.pinned(), validated.expiresOn());
+        audit.log(user.id(), "announcement.update", "announcement", id.toString(), Map.of("title", announcement.get("title")), Map.of("title", validated.title(), "audience", validated.audience()), ip);
     }
 
     /** PUBLISHED (again — notifies again) or UNPUBLISHED (hidden from everyone). */
-    public String setStatus(CurrentUser u, String idRaw, String statusRaw, String ip) {
+    public String setStatus(CurrentUser user, String idRaw, String statusRaw, String ip) {
         UUID id = Check.uuid(idRaw);
         String status = Check.oneOf(statusRaw, List.of("PUBLISHED", "UNPUBLISHED"));
-        Map<String, Object> a = row(id);
-        if (status.equals(a.get("status"))) throw new UserException("It is already " + status.toLowerCase() + ".");
+        Map<String, Object> announcement = row(id);
+        if (status.equals(announcement.get("status"))) throw new UserException("It is already " + status.toLowerCase() + ".");
         repo.setStatus(id, status);
-        audit.log(u.id(), "announcement." + (status.equals("PUBLISHED") ? "publish" : "unpublish"), "announcement", id.toString(), null, Map.of("title", a.get("title")), ip);
-        if (status.equals("PUBLISHED")) notifyAll(id, (String) a.get("title"), (String) a.get("audience"));
+        audit.log(user.id(), "announcement." + (status.equals("PUBLISHED") ? "publish" : "unpublish"), "announcement", id.toString(), null, Map.of("title", announcement.get("title")), ip);
+        if (status.equals("PUBLISHED")) notifyAll(id, (String) announcement.get("title"), (String) announcement.get("audience"));
         return status.equals("PUBLISHED") ? "Announcement published" : "Announcement unpublished";
     }
 

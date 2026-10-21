@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
@@ -30,7 +31,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** HR invites a candidate by link; the candidate fills in details and documents; HR verifies, adds the employee, then enables access. */
 class OnboardingApiTest extends IntegrationTest {
 
-    static final String PW = "correct-horse-battery-7";
     static final byte[] PDF = "%PDF-1.4\n%doc\n".getBytes(StandardCharsets.US_ASCII);
 
     @Autowired MockMvc mvc;
@@ -38,7 +38,7 @@ class OnboardingApiTest extends IntegrationTest {
     @Autowired ObjectMapper json;
 
     Cookie hr;
-    UUID dept, empRole, hrId;
+    UUID department, empRole, hrId;
     String s;
 
     static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder b) {
@@ -46,7 +46,7 @@ class OnboardingApiTest extends IntegrationTest {
     }
 
     Cookie signIn(String email) throws Exception {
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + email + "\",\"password\":\"" + PW + "\"}"))
+        String set = SignIn.session(mvc, email)
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -64,9 +64,9 @@ class OnboardingApiTest extends IntegrationTest {
             jdbc.update("INSERT INTO shifts (id, code, name, start_local, end_local, region) SELECT ?, ?, ?, ?, ?, ?::\"Region\" WHERE NOT EXISTS (SELECT 1 FROM shifts WHERE code = ?)",
                     UUID.randomUUID(), sh[0], sh[0], sh[1], sh[2], sh[3], sh[0]);
         }
-        dept = UUID.randomUUID();
-        jdbc.update("INSERT INTO departments (id, name, business_id) VALUES (?, 'Litigation', ?)", dept, t.business());
-        hrId = t.employee("OH-" + s, "hr." + s + "@example.com", hrRole, PW);
+        department = UUID.randomUUID();
+        jdbc.update("INSERT INTO departments (id, name, business_id) VALUES (?, 'Litigation', ?)", department, t.business());
+        hrId = t.employee("OH-" + s, "hr." + s + "@example.com", hrRole);
         hr = signIn("hr." + s + "@example.com");
     }
 
@@ -78,7 +78,7 @@ class OnboardingApiTest extends IntegrationTest {
     }
 
     String upload(String token, String kind) throws Exception {
-        return json.readTree(mvc.perform(multipart("/api/onboarding/" + token + "/documents").file(new MockMultipartFile("file", kind.toLowerCase() + ".pdf", "application/pdf", PDF))
+        return json.readTree(mvc.perform(multipart("/api/public/onboardings/" + token + "/documents").file(new MockMultipartFile("file", kind.toLowerCase() + ".pdf", "application/pdf", PDF))
                 .param("kind", kind).header("origin", "http://localhost:3005").header("host", "localhost:3005")).andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString()).at("/data/id").asText();
     }
@@ -94,26 +94,26 @@ class OnboardingApiTest extends IntegrationTest {
         String personal = "riya." + s + "@gmail.test";
         String id = json.readTree(mvc.perform(write(post("/api/onboardings")).cookie(hr).content("""
             {"candidateName":"Riya Sen","personalEmail":"%s","designation":"Associate","departmentId":"%s","roleId":"%s","joiningDate":"2031-11-03"}"""
-                .formatted(personal.toUpperCase(), dept, empRole))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).at("/data/id").asText();
+                .formatted(personal.toUpperCase(), department, empRole))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).at("/data/id").asText();
         String token = lastLink(personal);
         assertThat(jdbc.queryForObject("SELECT token_hash FROM onboardings WHERE id = ?::uuid", String.class, id)).doesNotContain(token); // only the hash is kept
 
         // the candidate, signed out
-        mvc.perform(get("/api/onboarding/" + token)).andExpect(status().isOk()).andExpect(jsonPath("$.data.candidateName").value("Riya Sen"))
+        mvc.perform(get("/api/public/onboardings/" + token)).andExpect(status().isOk()).andExpect(jsonPath("$.data.candidateName").value("Riya Sen"))
                 .andExpect(jsonPath("$.data.editable").value(true)).andExpect(jsonPath("$.data.checklist.length()").value(5));
-        mvc.perform(get("/api/onboarding/not-a-real-token-at-all-123")).andExpect(status().isNotFound());
-        mvc.perform(write(post("/api/onboarding/" + token + "/submission"))).andExpect(status().isUnprocessableEntity())
+        mvc.perform(get("/api/public/onboardings/not-a-real-token-at-all-123")).andExpect(status().isNotFound());
+        mvc.perform(write(post("/api/public/onboardings/" + token + "/submission"))).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value("Enter your father's name."));
-        mvc.perform(write(put("/api/onboarding/" + token)).content(FORM)).andExpect(status().isOk());
+        mvc.perform(write(put("/api/public/onboardings/" + token)).content(FORM)).andExpect(status().isOk());
         assertThat(jdbc.queryForObject("SELECT form_enc FROM onboardings WHERE id = ?::uuid", String.class, id)).doesNotContain("ABCPE1234F"); // encrypted
-        mvc.perform(multipart("/api/onboarding/" + token + "/documents").file(new MockMultipartFile("file", "x.pdf", "application/pdf", "nope".getBytes()))
+        mvc.perform(multipart("/api/public/onboardings/" + token + "/documents").file(new MockMultipartFile("file", "x.pdf", "application/pdf", "nope".getBytes()))
                 .param("kind", "PAN").header("origin", "http://localhost:3005").header("host", "localhost:3005")).andExpect(status().isBadRequest());
         for (String k : new String[] {"ID_PROOF", "ADDRESS_PROOF", "PAN", "AADHAAR", "SALARY_SLIP", "SALARY_SLIP"}) upload(token, k);
-        mvc.perform(write(post("/api/onboarding/" + token + "/submission"))).andExpect(status().isUnprocessableEntity())
+        mvc.perform(write(post("/api/public/onboardings/" + token + "/submission"))).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value("Upload Salary slips (last 3 months) (3 files)."));
         String slip3 = upload(token, "SALARY_SLIP");
-        mvc.perform(write(post("/api/onboarding/" + token + "/submission"))).andExpect(status().isCreated());
-        mvc.perform(write(put("/api/onboarding/" + token)).content(FORM)).andExpect(status().isUnprocessableEntity()); // read-only once submitted
+        mvc.perform(write(post("/api/public/onboardings/" + token + "/submission"))).andExpect(status().isCreated());
+        mvc.perform(write(put("/api/public/onboardings/" + token)).content(FORM)).andExpect(status().isUnprocessableEntity()); // read-only once submitted
 
         // HR reviews: identity numbers masked; every document must be decided; a rejected one goes back to the candidate
         JsonNode d = json.readTree(mvc.perform(get("/api/onboardings/" + id).cookie(hr)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).at("/data");
@@ -130,12 +130,12 @@ class OnboardingApiTest extends IntegrationTest {
         mvc.perform(write(put("/api/onboardings/" + id + "/status")).cookie(hr).content("{\"status\":\"CHANGES_REQUESTED\",\"comment\":\"One salary slip is blurred.\"}"))
                 .andExpect(status().isOk());
         String token2 = lastLink(personal);
-        mvc.perform(get("/api/onboarding/" + token)).andExpect(status().isNotFound()); // the old link stops working
-        mvc.perform(get("/api/onboarding/" + token2)).andExpect(jsonPath("$.data.hrComment").value("One salary slip is blurred."));
+        mvc.perform(get("/api/public/onboardings/" + token)).andExpect(status().isNotFound()); // the old link stops working
+        mvc.perform(get("/api/public/onboardings/" + token2)).andExpect(jsonPath("$.data.hrComment").value("One salary slip is blurred."));
         String verifiedDoc = d.at("/documents/0/id").asText();
-        mvc.perform(write(delete("/api/onboarding/" + token2 + "/documents/" + verifiedDoc))).andExpect(status().isUnprocessableEntity());
+        mvc.perform(write(delete("/api/public/onboardings/" + token2 + "/documents/" + verifiedDoc))).andExpect(status().isUnprocessableEntity());
         String slip4 = upload(token2, "SALARY_SLIP");
-        mvc.perform(write(post("/api/onboarding/" + token2 + "/submission"))).andExpect(status().isCreated());
+        mvc.perform(write(post("/api/public/onboardings/" + token2 + "/submission"))).andExpect(status().isCreated());
         mvc.perform(write(put("/api/onboardings/" + id + "/documents/" + slip4 + "/status")).cookie(hr).content("{\"status\":\"VERIFIED\"}")).andExpect(status().isOk());
         mvc.perform(write(put("/api/onboardings/" + id + "/status")).cookie(hr).content("{\"status\":\"VERIFIED\"}")).andExpect(status().isOk());
 
@@ -143,28 +143,28 @@ class OnboardingApiTest extends IntegrationTest {
         String work = "riya.sen." + s + "@firm.test";
         JsonNode added = json.readTree(mvc.perform(write(post("/api/onboardings/" + id + "/employee")).cookie(hr).content("""
             {"workEmail":"%s","designation":"Associate","departmentId":"%s","managerId":"%s","roleId":"%s","joiningDate":"2031-11-03","location":"IN_IST","shift":"IN_DAY"}"""
-                .formatted(work, dept, hrId, empRole))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+                .formatted(work, department, hrId, empRole))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
         assertThat(added.at("/msg").asText()).contains("portal access is off");
-        String emp = added.at("/data/id").asText();
-        var e = jdbc.queryForMap("SELECT portal_access, pan_last4, bank_account_last4, bank_ifsc, full_name FROM employees WHERE id = ?::uuid", emp);
+        String employee = added.at("/data/id").asText();
+        var e = jdbc.queryForMap("SELECT portal_access, pan_last4, bank_account_last4, bank_ifsc, full_name FROM employees WHERE id = ?::uuid", employee);
         assertThat(e.get("portal_access")).isEqualTo(false);
         assertThat(e.get("pan_last4")).isEqualTo("234F");
         assertThat(e.get("bank_account_last4")).isEqualTo("6789");
         assertThat(e.get("bank_ifsc")).isEqualTo("HDFC0001234");
-        var names = jdbc.queryForMap("SELECT first_name, last_name, full_name, phone_country, emergency_name, emergency_phone, date_of_birth FROM employees WHERE id = ?::uuid", emp);
+        var names = jdbc.queryForMap("SELECT first_name, last_name, full_name, phone_country, emergency_name, emergency_phone, date_of_birth FROM employees WHERE id = ?::uuid", employee);
         assertThat(names.get("full_name")).isEqualTo("Riya Sen");
         assertThat(names.get("last_name")).isEqualTo("Sen");
         assertThat(names.get("phone_country")).isEqualTo("+91");
         assertThat(names.get("emergency_phone")).isEqualTo("+91 9810044556");
         assertThat(names.get("date_of_birth").toString()).isEqualTo("1996-04-02");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ?", Integer.class, work)).isZero();
-        mvc.perform(get("/api/people/" + emp + "/documents").cookie(hr)).andExpect(jsonPath("$.data.length()").value(7)); // the rejected one stays behind
-        mvc.perform(get("/api/onboarding/" + token2)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/people/" + employee + "/documents").cookie(hr)).andExpect(jsonPath("$.data.length()").value(7)); // the rejected one stays behind
+        mvc.perform(get("/api/public/onboardings/" + token2)).andExpect(status().isNotFound());
 
-        // HR turns access on: the invite goes to the work email
-        mvc.perform(write(put("/api/people/" + emp + "/access")).cookie(hr).content("{\"on\":true}")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.endsWith("invite sent to their work email")));
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ?", Integer.class, work)).isEqualTo(1);
+        // HR turns access on: no invite, they sign in with the emailed code
+        mvc.perform(write(put("/api/people/" + employee + "/access")).cookie(hr).content("{\"enabled\":true}")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.endsWith("they sign in with the code emailed to their work email")));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ?", Integer.class, work)).isZero();
     }
 
     @Test
@@ -182,7 +182,7 @@ class OnboardingApiTest extends IntegrationTest {
                 .andExpect(jsonPath("$.data.requiredDocs[1]").value("PHOTO"));
         // other businesses keep theirs
         TestData other = new TestData(jdbc).inBusiness("onboard-def-" + s);
-        other.employee("DH-" + s, "dhr." + s + "@example.com", other.role("hrm", "self", "dir", "people.view", "people.add"), PW);
+        other.employee("DH-" + s, "dhr." + s + "@example.com", other.role("hrm", "self", "dir", "people.view", "people.add"));
         mvc.perform(get("/api/onboardings/defaults").cookie(signIn("dhr." + s + "@example.com"))).andExpect(jsonPath("$.data.requiredDocs.length()").value(5));
     }
 
@@ -195,12 +195,12 @@ class OnboardingApiTest extends IntegrationTest {
                 .andExpect(status().isUnprocessableEntity()); // one open onboarding per email
         String token = lastLink(personal);
         mvc.perform(write(put("/api/onboardings/" + id + "/status")).cookie(hr).content("{\"status\":\"CANCELLED\"}")).andExpect(status().isOk());
-        mvc.perform(get("/api/onboarding/" + token)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/public/onboardings/" + token)).andExpect(status().isNotFound());
 
         // another business's HR doesn't see it
         TestData other = new TestData(jdbc).inBusiness("onboard-other-" + s);
         UUID role = other.role("hrm", "self", "dir", "people.view", "people.add");
-        other.employee("XH-" + s, "xhr." + s + "@example.com", role, PW);
+        other.employee("XH-" + s, "xhr." + s + "@example.com", role);
         Cookie otherHr = signIn("xhr." + s + "@example.com");
         mvc.perform(get("/api/onboardings/" + id).cookie(otherHr)).andExpect(status().isNotFound());
         // and employees without people.add can't open the list

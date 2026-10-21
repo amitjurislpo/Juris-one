@@ -69,22 +69,22 @@ public class BusinessService {
      * Every employee of the business as an Excel sheet. Identity numbers, phone, bank account and address are masked
      * unless {@code full} — reading them in full is audited.
      */
-    public Export employees(CurrentUser u, boolean full, String ip) throws IOException {
+    public Export employees(CurrentUser user, boolean full, String ip) throws IOException {
         List<Map<String, Object>> rows = repo.findEmployeesForExport();
         String business = repo.findCode(TenantContext.current());
         try (SXSSFWorkbook wb = new SXSSFWorkbook(100); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("Employees");
             CellStyle bold = wb.createCellStyle();
-            Font f = wb.createFont();
-            f.setBold(true);
-            bold.setFont(f);
+            Font font = wb.createFont();
+            font.setBold(true);
+            bold.setFont(font);
             Row head = sheet.createRow(0);
             for (int i = 0; i < HEADERS.length; i++) {
-                Cell c = head.createCell(i);
-                c.setCellValue(HEADERS[i]);
-                c.setCellStyle(bold);
+                Cell cell = head.createCell(i);
+                cell.setCellValue(HEADERS[i]);
+                cell.setCellStyle(bold);
             }
-            int n = 1;
+            int count = 1;
             for (Map<String, Object> e : rows) {
                 List<String> v = new ArrayList<>();
                 v.add(str(e.get("code")));
@@ -110,7 +110,7 @@ public class BusinessService {
                 v.add(full ? orDash(pii.decrypt((String) e.get("bank_account_enc"))) : Masks.bank((String) e.get("bank_account_last4")));
                 v.add(orDash((String) e.get("bank_ifsc")));
                 v.add(full ? orDash(pii.decrypt((String) e.get("address_enc"))) : (e.get("address_enc") == null ? "—" : "(hidden)"));
-                Row row = sheet.createRow(n++);
+                Row row = sheet.createRow(count++);
                 for (int i = 0; i < v.size(); i++) row.createCell(i).setCellValue(v.get(i));
             }
             sheet.createFreezePane(0, 1);
@@ -119,20 +119,20 @@ public class BusinessService {
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("rows", rows.size());
             after.put("identityNumbers", full ? "full" : "masked");
-            audit.log(u.id(), "business.employee_export", "business", TenantContext.current().toString(), null, after, ip);
+            audit.log(user.id(), "business.employee_export", "business", TenantContext.current().toString(), null, after, ip);
             return new Export(business + "-employees-" + SubscriptionService.today() + ".xlsx", out.toByteArray());
         }
     }
 
-    static String str(Object o) {
-        return o == null ? "" : o.toString();
+    static String str(Object value) {
+        return value == null ? "" : value.toString();
     }
 
-    static String orDash(String s) {
-        return s == null || s.isEmpty() ? "—" : s;
+    static String orDash(String text) {
+        return text == null || text.isEmpty() ? "—" : text;
     }
 
-    static String date(Object o) {
-        return o == null ? "" : ((Date) o).toLocalDate().toString();
+    static String date(Object value) {
+        return value == null ? "" : ((Date) value).toLocalDate().toString();
     }
 }

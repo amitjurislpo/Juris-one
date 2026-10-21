@@ -18,13 +18,13 @@ import org.springframework.web.bind.annotation.RestController;
 /** /api/settings — the Policies page (roles.manage). */
 @RestController
 @RequestMapping("/api/settings")
-public class PoliciesController {
+public class SettingsController {
 
     private final Auth auth;
     private final PoliciesService policies;
     private final SettingsService settings;
 
-    public PoliciesController(Auth auth, PoliciesService policies, SettingsService settings) {
+    public SettingsController(Auth auth, PoliciesService policies, SettingsService settings) {
         this.auth = auth;
         this.policies = policies;
         this.settings = settings;
@@ -55,8 +55,8 @@ public class PoliciesController {
     }
 
     @PutMapping("/attendance")
-    public ApiResult<Void> updateAttendance(@RequestBody PoliciesService.AttendancePolicyInput body, HttpServletRequest req) {
-        policies.updateAttendancePolicy(auth.assertPerm("roles.manage"), body, RequestMeta.of(req).ip());
+    public ApiResult<Void> updateAttendance(@RequestBody PoliciesService.AttendancePolicyInput body, HttpServletRequest request) {
+        policies.updateAttendancePolicy(auth.assertPerm("roles.manage"), body, RequestMeta.of(request).ip());
         return ApiResult.message("Attendance policy saved");
     }
 }

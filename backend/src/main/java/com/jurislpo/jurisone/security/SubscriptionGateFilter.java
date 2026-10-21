@@ -17,18 +17,27 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * A business can be used only while a subscription covers today. Without one, its users can still sign in and see
- * who they are, but every other business API answers 402 {@code SUBSCRIPTION_INACTIVE} — except the subscription
- * page and the owner's employee export, which stay available. The super admin (no business) is never blocked.
+ * A business can be used only while a subscription covers today.
+ * <ul>
+ *   <li>Not started yet, or never had one: sign-in is refused (see AuthService); a session that already exists gets 402
+ *       {@code SUBSCRIPTION_INACTIVE} on every API except sign-out / refresh, who-am-I and the shell.</li>
+ *   <li>Ended: read-only. Every read (and the exports) works; every write answers 402 {@code SUBSCRIPTION_INACTIVE},
+ *       except signing out / refreshing the session and marking notifications read.</li>
+ * </ul>
+ * The super admin and the platform company (no subscription needed) are never blocked.
  */
 @Component
 public class SubscriptionGateFilter extends OncePerRequestFilter {
 
-    public static final String MESSAGE = "Your organisation's subscription has ended. Please contact your administrator.";
+    public static final String MESSAGE = "Your organisation's subscription isn't active. Please contact your administrator.";
+    public static final String READ_ONLY_MESSAGE = "Your organisation's subscription has ended. You can view and export your data but not change it. "
+            + "Please contact your administrator to renew.";
 
-    /** Still reachable without an active subscription. */
-    static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell", "/api/notifications", "/api/business/subscription",
-            "/api/business/employees/export", "/api/onboarding/"); // a candidate link: the service checks that business itself
+    /** Reachable with no usable subscription at all (not started / none). */
+    static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell",
+            "/api/public/onboardings/"); // a candidate link: the service checks that business itself
+    /** Still writable once the subscription has ended. */
+    static final List<String> WRITABLE_WHEN_ENDED = List.of("/api/auth/", "/api/notifications", "/api/audit/page-views"); // page views are only recorded
 
     private final SubscriptionService subscriptions;
     private final ObjectMapper json;
@@ -39,20 +48,37 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected boolean shouldNotFilter(HttpServletRequest req) {
-        String uri = req.getRequestURI();
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String uri = request.getRequestURI();
         return !uri.startsWith("/api/") || OPEN.stream().anyMatch(uri::startsWith);
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain) throws ServletException, IOException {
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         UUID business = TenantContext.current();
         if (business != null && !subscriptions.isActive(business)) {
-            res.setStatus(HttpStatus.PAYMENT_REQUIRED.value());
-            res.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-            json.writeValue(res.getOutputStream(), Problems.of(HttpStatus.PAYMENT_REQUIRED, "SUBSCRIPTION_INACTIVE", MESSAGE, req.getRequestURI()));
+            if (subscriptions.isReadOnly(business)) {
+                if (isRead(request) || WRITABLE_WHEN_ENDED.stream().anyMatch(request.getRequestURI()::startsWith)) {
+                    chain.doFilter(request, response);
+                    return;
+                }
+                refuse(request, response, READ_ONLY_MESSAGE);
+                return;
+            }
+            refuse(request, response, MESSAGE);
             return;
         }
-        chain.doFilter(req, res);
+        chain.doFilter(request, response);
+    }
+
+    private static boolean isRead(HttpServletRequest request) {
+        String m = request.getMethod();
+        return "GET".equals(m) || "HEAD".equals(m) || "OPTIONS".equals(m);
+    }
+
+    private void refuse(HttpServletRequest request, HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpStatus.PAYMENT_REQUIRED.value());
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        json.writeValue(response.getOutputStream(), Problems.of(HttpStatus.PAYMENT_REQUIRED, "SUBSCRIPTION_INACTIVE", message, request.getRequestURI()));
     }
 }

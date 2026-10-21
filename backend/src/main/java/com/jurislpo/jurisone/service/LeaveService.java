@@ -2,7 +2,7 @@ package com.jurislpo.jurisone.service;
 
 import static com.jurislpo.jurisone.engine.Num.round2;
 
-import com.jurislpo.jurisone.service.AttendanceService.AttEmployee;
+import com.jurislpo.jurisone.service.AttendanceService.AttendanceEmployee;
 import com.jurislpo.jurisone.common.Check;
 import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.exception.UserException;
@@ -35,9 +35,9 @@ public class LeaveService {
     private final AttendanceService att;
     private final AuditService audit;
 
-    public LeaveService(LeaveRepository repo, AttendanceService att, AuditService audit) {
+    public LeaveService(LeaveRepository repo, AttendanceService attendance, AuditService audit) {
         this.repo = repo;
-        this.att = att;
+        this.att = attendance;
         this.audit = audit;
     }
 
@@ -48,11 +48,11 @@ public class LeaveService {
         Map<String, BigDecimal> sums = repo.ledgerSums(employeeId);
         Map<String, double[]> pending = repo.pendingDays(employeeId);
         List<Balance> out = new ArrayList<>();
-        for (LeaveRepository.ActiveType t : repo.activeTypes()) {
-            String code = t.code();
+        for (LeaveRepository.ActiveType activeType : repo.activeTypes()) {
+            String code = activeType.code();
             double[] p = pending.get(code);
-            out.add(new Balance(code, t.name(), round2(sums.containsKey(code) && sums.get(code) != null ? sums.get(code).doubleValue() : 0),
-                    p != null ? round2(p[0] - p[1]) : 0, t.paid(), t.needsBalance(), t.annualQuota(), t.maxStretch()));
+            out.add(new Balance(code, activeType.name(), round2(sums.containsKey(code) && sums.get(code) != null ? sums.get(code).doubleValue() : 0),
+                    p != null ? round2(p[0] - p[1]) : 0, activeType.paid(), activeType.needsBalance(), activeType.annualQuota(), activeType.maxStretch()));
         }
         return out;
     }
@@ -61,6 +61,8 @@ public class LeaveService {
     public Map<LocalDate, String> holidayMap(String region, LocalDate from, LocalDate to) {
         return repo.holidays(region, from, to);
     }
+
+    static final String EL_ON_PROBATION = "Earned leave isn't available during probation. Choose another leave type.";
 
     public record Skipped(String date, String name) {}
 
@@ -75,22 +77,23 @@ public class LeaveService {
      * Everything the apply form shows and the server enforces: working days, balance after, LOP if
      * the balance is short, plus the rules (no past dates, max stretch, overlaps, joining/exit).
      */
-    public Preview previewRequest(AttEmployee emp, String typeCode, LocalDate fromIn, LocalDate toIn, LeavePart part, UUID excludeRequestId, boolean forDecision) {
+    public Preview previewRequest(AttendanceEmployee employee, String typeCode, LocalDate fromIn, LocalDate toIn, LeavePart part, UUID excludeRequestId, boolean forDecision) {
         LocalDate from = fromIn, to = toIn;
         if (to.isBefore(from)) {
             LocalDate x = from;
             from = to;
             to = x;
         }
-        AttendanceService.Pol policy = att.policy();
+        AttendanceService.ResolvedAttendancePolicy policy = att.policy();
         List<Map<String, Object>> types = repo.findTypeRules(typeCode);
         Preview base = new Preview(from.toString(), to.toString(), List.of(), List.of(), 0, 0, 0, 0, null, null);
         if (types.isEmpty() || !Boolean.TRUE.equals(types.get(0).get("active"))) return base.withError("Pick a leave type.");
         Map<String, Object> type = types.get(0);
-        Map<LocalDate, String> hol = holidayMap(emp.region(), from, to);
-        LeaveRules.WorkingDays wd = LeaveRules.workingDays(from, to, policy.engine().weeklyOffs(), hol);
-        double days = LeaveRules.requestDays(wd.dates(), wd.dates().size() == 1 ? part : LeavePart.FULL);
-        Balance bal = balances(emp.id()).stream().filter(b -> b.code().equals(typeCode)).findFirst().orElseThrow();
+        if (!forDecision && "EL".equals(typeCode) && repo.onProbation(employee.id())) return base.withError(EL_ON_PROBATION);
+        Map<LocalDate, String> hol = holidayMap(employee.region(), from, to);
+        LeaveRules.WorkingDays workingDays = LeaveRules.workingDays(from, to, policy.engine().weeklyOffs(), hol);
+        double days = LeaveRules.requestDays(workingDays.dates(), workingDays.dates().size() == 1 ? part : LeavePart.FULL);
+        Balance bal = balances(employee.id()).stream().filter(b -> b.code().equals(typeCode)).findFirst().orElseThrow();
         // pending requests already hold part of the balance (except the one being decided)
         double held = bal.pending();
         if (excludeRequestId != null) {
@@ -102,22 +105,22 @@ public class LeaveService {
         double available = round2(bal.balance() - held);
         boolean needsBalance = Boolean.TRUE.equals(type.get("needs_balance"));
         LeaveRules.LopSplit split = LeaveRules.lopSplit(days, available, needsBalance, Boolean.TRUE.equals(type.get("paid")));
-        Preview out = new Preview(from.toString(), to.toString(), wd.dates().stream().map(LocalDate::toString).toList(),
-                wd.skipped().stream().map(s -> new Skipped(s.date().toString(), s.name())).toList(), days, available, split.paidDays(), split.lopDays(),
+        Preview out = new Preview(from.toString(), to.toString(), workingDays.dates().stream().map(LocalDate::toString).toList(),
+                workingDays.skipped().stream().map(s -> new Skipped(s.date().toString(), s.name())).toList(), days, available, split.paidDays(), split.lopDays(),
                 needsBalance ? round2(available - split.paidDays()) : null, null);
 
-        LocalDate today = att.currentWorkDate(emp, Instant.now());
+        LocalDate today = att.currentWorkDate(employee, Instant.now());
         if (!forDecision && from.isBefore(today)) return out.withError("Leave can't start in the past. For a missed day, request a regularization.");
-        if (from.isBefore(emp.doj())) return out.withError("Leave can't start before your joining date.");
-        if (emp.exit() != null && to.isAfter(emp.exit())) return out.withError("Leave can't go beyond your last working day.");
+        if (from.isBefore(employee.dateOfJoining())) return out.withError("Leave can't start before your joining date.");
+        if (employee.exitDate() != null && to.isAfter(employee.exitDate())) return out.withError("Leave can't go beyond your last working day.");
         if (ChronoUnit.DAYS.between(from, to) + 1 > 62) return out.withError("Apply for at most two months at a time.");
-        if (wd.dates().isEmpty()) return out.withError("Those dates are all weekends or holidays — nothing to apply for.");
+        if (workingDays.dates().isEmpty()) return out.withError("Those dates are all weekends or holidays — nothing to apply for.");
         BigDecimal maxStretch = (BigDecimal) type.get("max_stretch");
         if (maxStretch != null && days > maxStretch.doubleValue()) {
             return out.withError(type.get("name") + " can be taken for at most " + num(maxStretch.doubleValue()) + " days at a stretch.");
         }
         if (att.isMonthLocked(from.toString().substring(0, 7), policy, Instant.now())) return out.withError("Attendance for that month is locked.");
-        List<Map<String, Object>> overlap = repo.findOverlap(emp.id(), from, to, excludeRequestId);
+        List<Map<String, Object>> overlap = repo.findOverlap(employee.id(), from, to, excludeRequestId);
         if (!overlap.isEmpty()) {
             Map<String, Object> o = overlap.get(0);
             return out.withError("You already have a " + ((String) o.get("status")).toLowerCase() + " request from " + o.get("from_date") + " to " + o.get("to_date") + ".");
@@ -133,8 +136,8 @@ public class LeaveService {
     /** Records leave used from the balance when a request is approved. Joins the caller's transaction. */
     public void postUsage(UUID requestId, UUID employeeId, String leaveType, double paidDays) {
         if (paidDays <= 0) return;
-        Map<String, Object> t = repo.findTypeFlags(leaveType);
-        if (!Boolean.TRUE.equals(t.get("needs_balance")) || !Boolean.TRUE.equals(t.get("paid"))) return;
+        Map<String, Object> row = repo.findTypeFlags(leaveType);
+        if (!Boolean.TRUE.equals(row.get("needs_balance")) || !Boolean.TRUE.equals(row.get("paid"))) return;
         repo.insertUsage(employeeId, leaveType, BigDecimal.valueOf(-paidDays), requestId.toString());
     }
 
@@ -156,48 +159,48 @@ public class LeaveService {
         return new Parsed(type, LocalDate.parse(i.from()), LocalDate.parse(i.to()), part, reason);
     }
 
-    AttEmployee me(CurrentUser u) {
-        List<AttEmployee> e = att.loadAttEmployees("e.id = ?", u.id());
+    AttendanceEmployee me(CurrentUser user) {
+        List<AttendanceEmployee> e = att.loadAttendanceEmployees("e.id = ?", user.id());
         if (e.isEmpty()) throw new UserException("Leave isn't tracked for your account.");
         return e.get(0);
     }
 
     /** Live numbers for the apply form — same rules the server enforces on submit. */
-    public Preview preview(CurrentUser u, ApplyInput i) {
-        AttEmployee emp = me(u);
+    public Preview preview(CurrentUser user, ApplyInput i) {
+        AttendanceEmployee employee = me(user);
         Parsed f = parse(i);
-        return previewRequest(emp, f.type(), f.from(), f.to(), f.part(), null, false);
+        return previewRequest(employee, f.type(), f.from(), f.to(), f.part(), null, false);
     }
 
-    public String apply(CurrentUser u, ApplyInput i, String ip) {
-        AttEmployee emp = me(u);
-        Parsed f = parse(i);
-        Preview p = previewRequest(emp, f.type(), f.from(), f.to(), f.part(), null, false);
-        if (p.error() != null) throw new UserException(p.error());
-        LeavePart part = p.dates().size() == 1 ? f.part() : LeavePart.FULL;
-        String typeName = repo.findTypeName(f.type());
+    public String apply(CurrentUser user, ApplyInput i, String ip) {
+        AttendanceEmployee employee = me(user);
+        Parsed parsed = parse(i);
+        Preview preview = previewRequest(employee, parsed.type(), parsed.from(), parsed.to(), parsed.part(), null, false);
+        if (preview.error() != null) throw new UserException(preview.error());
+        LeavePart part = preview.dates().size() == 1 ? parsed.part() : LeavePart.FULL;
+        String typeName = repo.findTypeName(parsed.type());
         UUID id = UUID.randomUUID();
-        repo.insertRequest(id, u.id(), f.type(), Date.valueOf(p.from()), Date.valueOf(p.to()), part.name(), BigDecimal.valueOf(p.days()),
-                BigDecimal.valueOf(p.lopDays()), f.reason().isEmpty() ? null : f.reason());
+        repo.insertRequest(id, user.id(), parsed.type(), Date.valueOf(preview.from()), Date.valueOf(preview.to()), part.name(), BigDecimal.valueOf(preview.days()),
+                BigDecimal.valueOf(preview.lopDays()), parsed.reason().isEmpty() ? null : parsed.reason());
         Map<String, Object> after = new LinkedHashMap<>();
-        after.put("type", f.type());
-        after.put("from", p.from());
-        after.put("to", p.to());
+        after.put("type", parsed.type());
+        after.put("from", preview.from());
+        after.put("to", preview.to());
         after.put("part", part.name());
-        after.put("days", p.days());
-        after.put("lopDays", p.lopDays());
-        audit.log(u.id(), "leave.apply", "leave_request", id.toString(), null, after, ip);
-        String span = p.from().equals(p.to()) ? Format.fmtD(LocalDate.parse(p.from())) : Format.fmtD(LocalDate.parse(p.from())) + " – " + Format.fmtD(LocalDate.parse(p.to()));
-        return typeName + " for " + num(p.days()) + " day" + (p.days() == 1 ? "" : "s") + " (" + span + ") sent to HR"
-                + (p.lopDays() != 0 ? " · " + num(p.lopDays()) + " day(s) unpaid" : "");
+        after.put("days", preview.days());
+        after.put("lopDays", preview.lopDays());
+        audit.log(user.id(), "leave.apply", "leave_request", id.toString(), null, after, ip);
+        String span = preview.from().equals(preview.to()) ? Format.formatDayMonth(LocalDate.parse(preview.from())) : Format.formatDayMonth(LocalDate.parse(preview.from())) + " – " + Format.formatDayMonth(LocalDate.parse(preview.to()));
+        return typeName + " for " + num(preview.days()) + " day" + (preview.days() == 1 ? "" : "s") + " (" + span + ") sent to HR"
+                + (preview.lopDays() != 0 ? " · " + num(preview.lopDays()) + " day(s) unpaid" : "");
     }
 
-    public String cancel(CurrentUser u, String idRaw) {
+    public String cancel(CurrentUser user, String idRaw) {
         UUID id = Check.uuid(idRaw);
         // atomic: only a still-pending request of mine can be cancelled
-        int n = repo.cancelPending(id, u.id());
-        if (n == 0) throw new UserException("Only your pending requests can be cancelled.");
-        audit.log(u.id(), "leave.cancel", "leave_request", id.toString(), Map.of("status", "PENDING"), Map.of("status", "CANCELLED"), null);
+        int count = repo.cancelPending(id, user.id());
+        if (count == 0) throw new UserException("Only your pending requests can be cancelled.");
+        audit.log(user.id(), "leave.cancel", "leave_request", id.toString(), Map.of("status", "PENDING"), Map.of("status", "CANCELLED"), null);
         return "Leave request cancelled";
     }
 
@@ -206,52 +209,54 @@ public class LeaveService {
     static final List<String> STATUS = List.of("All", "PENDING", "APPROVED", "DECLINED", "CANCELLED");
     static final List<String> SORTS = List.of("type", "from", "days", "applied", "status");
 
-    public record ReqRow(String id, String typeName, String leaveType, String from, String to, String part, double days, double lopDays, String applied,
+    public record RequestRow(String id, String typeName, String leaveType, String from, String to, String part, double days, double lopDays, String applied,
                          String reason, String status, String decidedBy, Instant appliedAt) {}
 
-    public record TypeOption(String code, String name, boolean paid, Double available) {}
+    /** {@code lockedReason}: why this type can't be applied for right now (null = it can). */
+    public record TypeOption(String code, String name, boolean paid, Double available, String lockedReason) {}
 
     public record HolidayView(String id, String date, String name) {}
 
-    public Map<String, Object> page(CurrentUser u, Map<String, String> sp) {
-        String tab = ListParams.pick(sp, "tab", List.of("requests", "holidays"), "requests");
-        String st = ListParams.pick(sp, "st", STATUS, "All");
-        ListParams ls = ListParams.of(sp, SORTS, "applied", 50, "desc");
-        List<AttEmployee> emps = att.loadAttEmployees("e.id = ?", u.id());
-        AttEmployee emp = emps.isEmpty() ? null : emps.get(0);
-        AttendanceService.Pol policy = att.policy();
+    public Map<String, Object> page(CurrentUser user, Map<String, String> queryParams) {
+        String tab = ListParams.pick(queryParams, "tab", List.of("requests", "holidays"), "requests");
+        String st = ListParams.pick(queryParams, "status", STATUS, "All");
+        ListParams listParams = ListParams.of(queryParams, SORTS, "applied", 50, "desc");
+        List<AttendanceEmployee> employees = att.loadAttendanceEmployees("e.id = ?", user.id());
+        AttendanceEmployee employee = employees.isEmpty() ? null : employees.get(0);
+        AttendanceService.ResolvedAttendancePolicy policy = att.policy();
         Instant now = Instant.now();
-        LocalDate today = emp != null ? att.currentWorkDate(emp, now) : Format.isoInZone(now, u.timeZone());
+        LocalDate today = employee != null ? att.currentWorkDate(employee, now) : Format.isoInZone(now, user.timeZone());
         int year = today.getYear();
 
-        List<Balance> bals = balances(u.id());
-        List<ReqRow> reqs = new ArrayList<>(repo.findRequests(u.id(), st, u.timeZone()));
-        Map<String, Function<ReqRow, ? extends Comparable>> keys = Map.of("type", ReqRow::typeName, "from", ReqRow::from, "days", ReqRow::days,
-                "applied", r -> r.appliedAt().toEpochMilli(), "status", ReqRow::status);
-        reqs.sort(ls.comparator(keys));
+        List<Balance> bals = balances(user.id());
+        List<RequestRow> reqs = new ArrayList<>(repo.findRequests(user.id(), st, user.timeZone()));
+        Map<String, Function<RequestRow, ? extends Comparable>> keys = Map.of("type", RequestRow::typeName, "from", RequestRow::from, "days", RequestRow::days,
+                "applied", r -> r.appliedAt().toEpochMilli(), "status", RequestRow::status);
+        reqs.sort(listParams.comparator(keys));
 
         double lopYear = 0;
-        if (emp != null) {
+        if (employee != null) {
             LocalDate start = LocalDate.of(year, 1, 1);
             if (policy.trackingStart().isAfter(start)) start = policy.trackingStart();
-            if (emp.doj().isAfter(start)) start = emp.doj();
-            lopYear = AttendanceEngine.summarize(att.attendanceFor(List.of(emp), start, today, now).get(emp.id()).stream().filter(x -> !x.r.future).map(x -> x.r).toList(),
+            if (employee.dateOfJoining().isAfter(start)) start = employee.dateOfJoining();
+            lopYear = AttendanceEngine.summarize(att.attendanceFor(List.of(employee), start, today, now).get(employee.id()).stream().filter(x -> !x.r.future).map(x -> x.r).toList(),
                     policy.engine()).lopDays;
         }
-        List<HolidayView> hols = repo.findHolidayViews(u.region(), Date.valueOf(LocalDate.of(year, 1, 1)), Date.valueOf(LocalDate.of(year, 12, 31)));
-        Map<String, String> upcoming = repo.upcomingHolidays(u.region(), Date.valueOf(today));
-        List<TypeOption> types = bals.stream().map(b -> new TypeOption(b.code(), b.name(), b.paid(), b.needsBalance() ? round2(b.balance() - b.pending()) : null)).toList();
+        List<HolidayView> holidays = repo.findHolidayViews(user.region(), Date.valueOf(LocalDate.of(year, 1, 1)), Date.valueOf(LocalDate.of(year, 12, 31)));
+        Map<String, String> upcoming = repo.upcomingHolidays(user.region(), Date.valueOf(today));
+        boolean probation = repo.onProbation(user.id());
+        List<TypeOption> types = bals.stream().map(b -> new TypeOption(b.code(), b.name(), b.paid(), b.needsBalance() ? round2(b.balance() - b.pending()) : null, "EL".equals(b.code()) && probation ? EL_ON_PROBATION : null)).toList();
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("tab", tab);
-        out.put("st", st);
+        out.put("status", st);
         out.put("today", today.toString());
         out.put("year", String.valueOf(year));
-        out.put("canApply", emp != null);
+        out.put("canApply", employee != null);
         out.put("balances", bals);
         out.put("lopYear", lopYear);
         out.put("requests", reqs);
-        out.put("holidays", hols);
+        out.put("holidays", holidays);
         out.put("holidayMap", upcoming);
         out.put("types", types);
         out.put("weeklyOffs", policy.engine().weeklyOffs().stream().sorted().toList());

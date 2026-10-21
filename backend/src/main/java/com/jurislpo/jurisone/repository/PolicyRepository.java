@@ -37,14 +37,14 @@ public class PolicyRepository {
             WHERE p.status = 'PUBLISHED' AND v.requires_ack
               AND NOT EXISTS (SELECT 1 FROM policy_acknowledgements a WHERE a.policy_version_id = v.id AND a.employee_id = ?)
             ORDER BY v.published_at, v.title""", (rs, i) -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", rs.getString(1));
-            m.put("version", rs.getInt(2));
-            m.put("title", rs.getString(3));
-            m.put("body", rs.getString(4));
-            m.put("fileName", rs.getString(5));
-            m.put("publishedAt", iso(rs.getTimestamp(6)));
-            return m;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", rs.getString(1));
+            row.put("version", rs.getInt(2));
+            row.put("title", rs.getString(3));
+            row.put("body", rs.getString(4));
+            row.put("fileName", rs.getString(5));
+            row.put("publishedAt", iso(rs.getTimestamp(6)));
+            return row;
         }, employeeId);
     }
 
@@ -72,16 +72,16 @@ public class PolicyRepository {
                    (SELECT a.acknowledged_at FROM policy_acknowledgements a WHERE a.policy_version_id = v.id AND a.employee_id = ?) AS acked_at
             FROM policies p JOIN policy_versions v ON v.policy_id = p.id AND v.version = p.version
             WHERE p.status = 'PUBLISHED' ORDER BY v.title""", (rs, i) -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", rs.getString(1));
-            m.put("version", rs.getInt(2));
-            m.put("title", rs.getString(3));
-            m.put("body", rs.getString(4));
-            m.put("fileName", rs.getString(5));
-            m.put("publishedAt", iso(rs.getTimestamp(6)));
-            m.put("requiresAck", rs.getBoolean(7));
-            m.put("acknowledgedAt", iso(rs.getTimestamp(8)));
-            return m;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", rs.getString(1));
+            row.put("version", rs.getInt(2));
+            row.put("title", rs.getString(3));
+            row.put("body", rs.getString(4));
+            row.put("fileName", rs.getString(5));
+            row.put("publishedAt", iso(rs.getTimestamp(6)));
+            row.put("requiresAck", rs.getBoolean(7));
+            row.put("acknowledgedAt", iso(rs.getTimestamp(8)));
+            return row;
         }, employeeId);
     }
 
@@ -151,18 +151,18 @@ public class PolicyRepository {
             SELECT v.id, v.version, v.title, v.published_at, e.full_name, v.file_name, v.requires_ack, v.body_sha256, v.file_sha256,
                    (SELECT count(*) FROM policy_acknowledgements a WHERE a.policy_version_id = v.id) AS acks
             FROM policy_versions v LEFT JOIN employees e ON e.id = v.published_by WHERE v.policy_id = ? ORDER BY v.version DESC""", (rs, i) -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("versionId", rs.getString(1));
-            m.put("version", rs.getInt(2));
-            m.put("title", rs.getString(3));
-            m.put("publishedAt", iso(rs.getTimestamp(4)));
-            m.put("publishedBy", rs.getString(5));
-            m.put("fileName", rs.getString(6));
-            m.put("requiresAck", rs.getBoolean(7));
-            m.put("bodySha256", rs.getString(8));
-            m.put("fileSha256", rs.getString(9));
-            m.put("acknowledgements", rs.getLong(10));
-            return m;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("versionId", rs.getString(1));
+            row.put("version", rs.getInt(2));
+            row.put("title", rs.getString(3));
+            row.put("publishedAt", iso(rs.getTimestamp(4)));
+            row.put("publishedBy", rs.getString(5));
+            row.put("fileName", rs.getString(6));
+            row.put("requiresAck", rs.getBoolean(7));
+            row.put("bodySha256", rs.getString(8));
+            row.put("fileSha256", rs.getString(9));
+            row.put("acknowledgements", rs.getLong(10));
+            return row;
         }, policyId);
     }
 
@@ -176,13 +176,13 @@ public class PolicyRepository {
                    (SELECT a.acknowledged_at FROM policy_acknowledgements a WHERE a.policy_version_id = ?::uuid AND a.employee_id = x.id) AS acked_at,
                    (SELECT max(a.version) FROM policy_acknowledgements a WHERE a.policy_id = ? AND a.employee_id = x.id) AS last_version
             FROM (""" + REQUIRED + ") x) y ORDER BY y.acked_at IS NOT NULL, y.full_name", (rs, i) -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("code", rs.getString(1));
-            m.put("name", rs.getString(2));
-            m.put("department", rs.getString(3));
-            m.put("acknowledgedAt", iso(rs.getTimestamp(4)));
-            m.put("lastVersion", rs.getObject(5));
-            return m;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("code", rs.getString(1));
+            row.put("name", rs.getString(2));
+            row.put("department", rs.getString(3));
+            row.put("acknowledgedAt", iso(rs.getTimestamp(4)));
+            row.put("lastVersion", rs.getObject(5));
+            return row;
         }, versionId, policyId);
     }
 

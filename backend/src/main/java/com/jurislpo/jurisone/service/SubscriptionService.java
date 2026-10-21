@@ -59,10 +59,10 @@ public class SubscriptionService {
         List<Current> now = repo.findCovering(b, today, employees);
         if (!now.isEmpty()) {
             // the plan's modules plus modules granted on their own (complimentary or paid) that cover today
-            Current c = now.get(0);
-            java.util.TreeSet<String> all = new java.util.TreeSet<>(c.modules());
+            Current current = now.get(0);
+            java.util.TreeSet<String> all = new java.util.TreeSet<>(current.modules());
             all.addAll(grantedModules(b, today));
-            return new Current(c.state(), c.active(), c.planName(), c.startsOn(), c.endsOn(), c.daysLeft(), c.maxEmployees(), List.copyOf(all), c.employees());
+            return new Current(current.state(), current.active(), current.planName(), current.startsOn(), current.endsOn(), current.daysLeft(), current.maxEmployees(), List.copyOf(all), current.employees());
         }
         List<Current> later = repo.findUpcoming(b, today, employees);
         if (!later.isEmpty()) return later.get(0);
@@ -75,16 +75,26 @@ public class SubscriptionService {
         return repo.findGrantedModules(businessId, day);
     }
 
-    /** Modules the business can use today: none while its subscription isn't active. */
+    /** Modules the business can use today: none before its subscription starts or without one; an ended one keeps them view-only. */
     public java.util.Set<String> activeModules(UUID businessId) {
         if (businessId == null) return java.util.Set.of();
         Current c = current(businessId);
-        return c.active() ? java.util.Set.copyOf(c.modules()) : java.util.Set.of();
+        return c.active() || "EXPIRED".equals(c.state()) ? java.util.Set.copyOf(c.modules()) : java.util.Set.of(); // an ended subscription keeps them view-only
     }
 
     /** The JurisOne operator's own business (needs no subscription). */
     boolean isPlatform(UUID businessId) {
         return Boolean.TRUE.equals(repo.isPlatform(businessId));
+    }
+
+    /** ACTIVE, UPCOMING, EXPIRED or NONE (the platform company is always ACTIVE). Needs no tenant context. */
+    public String state(UUID businessId) {
+        return current(businessId).state();
+    }
+
+    /** The subscription has ended: the business can still sign in, view and export, but nothing can be changed. */
+    public boolean isReadOnly(UUID businessId) {
+        return !isActive(businessId) && "EXPIRED".equals(state(businessId));
     }
 
     public boolean isActive(UUID businessId) {
@@ -114,35 +124,35 @@ public class SubscriptionService {
 
     public record PlanInput(String name, String description, Double price, Integer periodMonths, Integer maxEmployees, List<String> modules, Boolean active) {}
 
-    record ValidPlan(String name, String description, long pricePaise, int periodMonths, Integer maxEmployees, String[] modules, boolean active) {}
+    record ValidatedPlan(String name, String description, long pricePaise, int periodMonths, Integer maxEmployees, String[] modules, boolean active) {}
 
-    static ValidPlan validate(PlanInput in) {
-        String name = Check.trimmed(in.name(), 2, "Give the plan a name.", 60, "Keep the name under 60 characters.");
-        String desc = in.description() == null ? null : in.description().trim();
+    static ValidatedPlan validate(PlanInput input) {
+        String name = Check.trimmed(input.name(), 2, "Give the plan a name.", 60, "Keep the name under 60 characters.");
+        String desc = input.description() == null ? null : input.description().trim();
         if (desc != null && desc.length() > 300) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the description under 300 characters.");
-        if (in.price() == null || in.price() < 0 || in.price() > 100_000_000) throw new UserException(HttpStatus.BAD_REQUEST, "Enter a price in rupees (0 or more).");
-        if (in.price() * 100 != Math.rint(in.price() * 100)) throw new UserException(HttpStatus.BAD_REQUEST, "Price can have at most 2 decimals.");
-        if (in.periodMonths() == null || in.periodMonths() < 1 || in.periodMonths() > 60) throw new UserException(HttpStatus.BAD_REQUEST, "The period is 1 to 60 months.");
-        if (in.maxEmployees() != null && (in.maxEmployees() < 1 || in.maxEmployees() > 100_000)) {
+        if (input.price() == null || input.price() < 0 || input.price() > 100_000_000) throw new UserException(HttpStatus.BAD_REQUEST, "Enter a price in rupees (0 or more).");
+        if (input.price() * 100 != Math.rint(input.price() * 100)) throw new UserException(HttpStatus.BAD_REQUEST, "Price can have at most 2 decimals.");
+        if (input.periodMonths() == null || input.periodMonths() < 1 || input.periodMonths() > 60) throw new UserException(HttpStatus.BAD_REQUEST, "The period is 1 to 60 months.");
+        if (input.maxEmployees() != null && (input.maxEmployees() < 1 || input.maxEmployees() > 100_000)) {
             throw new UserException(HttpStatus.BAD_REQUEST, "The employee limit is 1 to 100,000 (or empty for no limit).");
         }
-        List<String> mods = in.modules() == null ? List.of() : in.modules();
+        List<String> mods = input.modules() == null ? List.of() : input.modules();
         for (String m : mods) if (!MODULES.contains(m)) throw new UserException(HttpStatus.BAD_REQUEST, "Unknown module " + m + ".");
-        return new ValidPlan(name, desc == null || desc.isEmpty() ? null : desc, Math.round(in.price() * 100), in.periodMonths(), in.maxEmployees(),
-                mods.stream().distinct().toArray(String[]::new), in.active() == null || in.active());
+        return new ValidatedPlan(name, desc == null || desc.isEmpty() ? null : desc, Math.round(input.price() * 100), input.periodMonths(), input.maxEmployees(),
+                mods.stream().distinct().toArray(String[]::new), input.active() == null || input.active());
     }
 
-    public String createPlan(PlanInput in) {
-        ValidPlan p = validate(in);
+    public String createPlan(PlanInput input) {
+        ValidatedPlan validated = validate(input);
         UUID id = UUID.randomUUID();
-        repo.insertPlan(id, p.name(), p.description(), p.pricePaise(), p.periodMonths(), p.maxEmployees(), p.modules(), p.active());
+        repo.insertPlan(id, validated.name(), validated.description(), validated.pricePaise(), validated.periodMonths(), validated.maxEmployees(), validated.modules(), validated.active());
         return id.toString();
     }
 
-    public void updatePlan(String idRaw, PlanInput in) {
+    public void updatePlan(String idRaw, PlanInput input) {
         UUID id = Check.uuid(idRaw);
-        ValidPlan p = validate(in);
-        int n = repo.updatePlan(id, p.name(), p.description(), p.pricePaise(), p.periodMonths(), p.maxEmployees(), p.modules(), p.active());
+        ValidatedPlan validated = validate(input);
+        int n = repo.updatePlan(id, validated.name(), validated.description(), validated.pricePaise(), validated.periodMonths(), validated.maxEmployees(), validated.modules(), validated.active());
         if (n == 0) throw new UserException(HttpStatus.NOT_FOUND, "Plan not found.");
     }
 
@@ -151,20 +161,20 @@ public class SubscriptionService {
     public record SubscriptionInput(String planId, String startsOn, String endsOn, Double price, String notes) {}
 
     /** Assigns / renews a plan for a business. End date defaults to the plan's period; price defaults to the plan's price. */
-    public String addSubscription(UUID businessId, SubscriptionInput in, UUID by) {
+    public String addSubscription(UUID businessId, SubscriptionInput input, UUID by) {
         if (isPlatform(businessId)) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
-        UUID planId = Check.uuid(in.planId(), "Choose a plan.");
+        UUID planId = Check.uuid(input.planId(), "Choose a plan.");
         List<Map<String, Object>> plan = repo.findPlanTerms(planId);
         if (plan.isEmpty()) throw new UserException("Plan not found.");
         if (!Boolean.TRUE.equals(plan.get(0).get("active"))) throw new UserException("That plan is no longer offered.");
-        LocalDate starts = LocalDate.parse(Check.isoDate(in.startsOn() == null || in.startsOn().isBlank() ? today().toString() : in.startsOn(), "Pick a start date."));
+        LocalDate starts = LocalDate.parse(Check.isoDate(input.startsOn() == null || input.startsOn().isBlank() ? today().toString() : input.startsOn(), "Pick a start date."));
         int months = ((Number) plan.get(0).get("period_months")).intValue();
-        LocalDate ends = in.endsOn() == null || in.endsOn().isBlank() ? starts.plusMonths(months).minusDays(1)
-                : LocalDate.parse(Check.isoDate(in.endsOn(), "Pick an end date."));
+        LocalDate ends = input.endsOn() == null || input.endsOn().isBlank() ? starts.plusMonths(months).minusDays(1)
+                : LocalDate.parse(Check.isoDate(input.endsOn(), "Pick an end date."));
         if (ends.isBefore(starts)) throw new UserException("The end date can't be before the start date.");
-        long price = in.price() == null ? ((Number) plan.get(0).get("price_paise")).longValue() : Math.round(in.price() * 100);
+        long price = input.price() == null ? ((Number) plan.get(0).get("price_paise")).longValue() : Math.round(input.price() * 100);
         if (price < 0) throw new UserException(HttpStatus.BAD_REQUEST, "The price can't be negative.");
-        String notes = in.notes() == null ? null : in.notes().trim();
+        String notes = input.notes() == null ? null : input.notes().trim();
         if (notes != null && notes.length() > 500) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the notes under 500 characters.");
         UUID id = UUID.randomUUID();
         repo.insertSubscription(id, businessId, planId, starts, ends, price, notes == null || notes.isEmpty() ? null : notes, by);
@@ -174,19 +184,19 @@ public class SubscriptionService {
     public record SubscriptionUpdate(String startsOn, String endsOn, String status, String notes) {}
 
     /** Changes dates / notes, or cancels a subscription (cancelled ones no longer give access). */
-    public UUID updateSubscription(String idRaw, SubscriptionUpdate in) {
+    public UUID updateSubscription(String idRaw, SubscriptionUpdate subscriptionUpdate) {
         UUID id = Check.uuid(idRaw);
         List<Map<String, Object>> rows = repo.findSubscription(id);
         if (rows.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Subscription not found.");
-        Map<String, Object> r = rows.get(0);
-        LocalDate starts = in.startsOn() == null ? ((Date) r.get("starts_on")).toLocalDate() : LocalDate.parse(Check.isoDate(in.startsOn(), "Pick a start date."));
-        LocalDate ends = in.endsOn() == null ? ((Date) r.get("ends_on")).toLocalDate() : LocalDate.parse(Check.isoDate(in.endsOn(), "Pick an end date."));
+        Map<String, Object> row = rows.get(0);
+        LocalDate starts = subscriptionUpdate.startsOn() == null ? ((Date) row.get("starts_on")).toLocalDate() : LocalDate.parse(Check.isoDate(subscriptionUpdate.startsOn(), "Pick a start date."));
+        LocalDate ends = subscriptionUpdate.endsOn() == null ? ((Date) row.get("ends_on")).toLocalDate() : LocalDate.parse(Check.isoDate(subscriptionUpdate.endsOn(), "Pick an end date."));
         if (ends.isBefore(starts)) throw new UserException("The end date can't be before the start date.");
-        String status = in.status() == null ? (String) r.get("status") : Check.oneOf(in.status(), List.of("ACTIVE", "CANCELLED"));
-        String notes = in.notes() == null ? (String) r.get("notes") : in.notes().trim();
+        String status = subscriptionUpdate.status() == null ? (String) row.get("status") : Check.oneOf(subscriptionUpdate.status(), List.of("ACTIVE", "CANCELLED"));
+        String notes = subscriptionUpdate.notes() == null ? (String) row.get("notes") : subscriptionUpdate.notes().trim();
         if (notes != null && notes.length() > 500) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the notes under 500 characters.");
         repo.updateSubscription(id, starts, ends, status, notes == null || notes.isEmpty() ? null : notes);
-        return (UUID) r.get("business_id");
+        return (UUID) row.get("business_id");
     }
 
     /** Owners of the current business who should hear about the subscription (portal access on). */

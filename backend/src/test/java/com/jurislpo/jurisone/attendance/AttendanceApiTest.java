@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.service.JobsService;
@@ -32,8 +33,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /** Check-in/out, regularization requests, the register and the jobs through the API. */
 class AttendanceApiTest extends IntegrationTest {
-
-    static final String PW = "correct-horse-battery-7";
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -70,9 +69,9 @@ class AttendanceApiTest extends IntegrationTest {
 
     Person person(UUID role) throws Exception {
         String c = code();
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
+        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
         jdbc.update("UPDATE employees SET shift_id = ? WHERE id = ?", nightShift, id);
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}"))
+        String set = SignIn.session(mvc, c.toLowerCase() + "@example.com")
                 .andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -101,10 +100,10 @@ class AttendanceApiTest extends IntegrationTest {
         Instant in = AttendanceEngine.atLocal(d, "19:50", "Asia/Kolkata"), out = AttendanceEngine.atLocal(d.plusDays(1), "02:00", "Asia/Kolkata");
         jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source) VALUES (?, ?, ?, 'IN', 'WEB'), (?, ?, ?, 'OUT', 'WEB')",
                 UUID.randomUUID(), p.id(), Timestamp.from(in), UUID.randomUUID(), p.id(), Timestamp.from(out));
-        JsonNode page = json.readTree(mvc.perform(get("/api/attendance/me?m=2026-09&d=2026-09-14").cookie(p.cookie())).andExpect(status().isOk())
+        JsonNode page = json.readTree(mvc.perform(get("/api/attendance/mine?month=2026-09&date=2026-09-14").cookie(p.cookie())).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString()).get("data");
         assertThat(page.get("tracked").asBoolean()).isTrue();
-        assertThat(page.get("initialSel").asText()).isEqualTo("2026-09-14");
+        assertThat(page.get("selectedDate").asText()).isEqualTo("2026-09-14");
         JsonNode day = null;
         for (JsonNode x : page.get("days")) if (x.get("date").asText().equals("2026-09-14")) day = x;
         assertThat(day.get("status").asText()).isEqualTo("HALF_DAY");
@@ -145,16 +144,17 @@ class AttendanceApiTest extends IntegrationTest {
         jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source) VALUES (?, ?, ?, 'IN', 'WEB'), (?, ?, ?, 'OUT', 'WEB')",
                 UUID.randomUUID(), e.id(), Timestamp.from(AttendanceEngine.atLocal(d, "19:31", "Asia/Kolkata")),
                 UUID.randomUUID(), e.id(), Timestamp.from(AttendanceEngine.atLocal(d.plusDays(1), "04:40", "Asia/Kolkata")));
-        mvc.perform(get("/api/register?day=2026-09-16&q=" + e.code()).cookie(hr.cookie())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rows[0].st").value("Present"))
-                .andExpect(jsonPath("$.data.rows[0].inn.text").value("7:31 PM IST"))
-                .andExpect(jsonPath("$.data.rows[0].out.text").value("4:40 AM IST (+1)"));
-        mvc.perform(get("/api/register?day=2026-09-16&tz=America/New_York&q=" + e.code()).cookie(hr.cookie()))
-                .andExpect(jsonPath("$.data.rows[0].inn.text").value("10:01 AM EDT")).andExpect(jsonPath("$.data.rows[0].inn.local").value("7:31 PM IST"));
-        mvc.perform(get("/api/attendance/register?view=month&ym=2026-09&q=" + e.code()).cookie(hr.cookie())).andExpect(status().isOk())
+        mvc.perform(get("/api/attendance/register?date=2026-09-16&search=" + e.code()).cookie(hr.cookie())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rows[0].status").value("Present"))
+                .andExpect(jsonPath("$.data.rows[0].checkIn.text").value("7:31 PM IST"))
+                .andExpect(jsonPath("$.data.rows[0].checkOut.text").value("4:40 AM IST (+1)"));
+        mvc.perform(get("/api/attendance/register?date=2026-09-16&timeZone=America/New_York&search=" + e.code()).cookie(hr.cookie()))
+                .andExpect(jsonPath("$.data.rows[0].checkIn.text").value("10:01 AM EDT")).andExpect(jsonPath("$.data.rows[0].checkIn.local").value("7:31 PM IST"));
+        mvc.perform(get("/api/attendance/register/export?view=month&month=2026-09&search=" + e.code()).cookie(hr.cookie())).andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.startsWith("﻿Employee ID,Name,Department,Team,2026-09-01,")));
         mvc.perform(get("/api/attendance/register").cookie(e.cookie())).andExpect(status().isForbidden());
         mvc.perform(get("/api/attendance/register")).andExpect(status().isForbidden());
+        mvc.perform(get("/api/attendance/register/export").cookie(e.cookie())).andExpect(status().isForbidden());
     }
 
     @Test

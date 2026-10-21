@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
@@ -33,8 +34,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** Policies are versioned, must be accepted before anything else, and every acceptance is a permanent record. */
 class PolicyApiTest extends IntegrationTest {
 
-    static final String PW = "correct-horse-battery-7";
-
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper json;
@@ -48,7 +47,7 @@ class PolicyApiTest extends IntegrationTest {
     }
 
     Cookie signIn(String email) throws Exception {
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + email + "\",\"password\":\"" + PW + "\"}"))
+        String set = SignIn.session(mvc, email)
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -64,9 +63,9 @@ class PolicyApiTest extends IntegrationTest {
         UUID empRole = t.role("employee", "self", "dir");
         UUID ownerRole = t.role("owner", "dir", "roles.manage", "policies.manage", "business.manage");
         employeeCode = "PE-" + s;
-        t.employee("PH-" + s, "hr." + s + "@example.com", hrRole, PW);
-        t.employee(employeeCode, "emp." + s + "@example.com", empRole, PW);
-        t.employee("PO-" + s, "owner." + s + "@example.com", ownerRole, PW);
+        t.employee("PH-" + s, "hr." + s + "@example.com", hrRole);
+        t.employee(employeeCode, "emp." + s + "@example.com", empRole);
+        t.employee("PO-" + s, "owner." + s + "@example.com", ownerRole);
         hr = signIn("hr." + s + "@example.com");
         employee = signIn("emp." + s + "@example.com");
         owner = signIn("owner." + s + "@example.com");
@@ -90,7 +89,7 @@ class PolicyApiTest extends IntegrationTest {
 
         // published: everything but the policy endpoints answers 428 until accepted
         mvc.perform(get("/api/me").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.pendingPolicies").value(1));
-        mvc.perform(get("/api/attendance/me").cookie(employee)).andExpect(status().isPreconditionRequired())
+        mvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isPreconditionRequired())
                 .andExpect(jsonPath("$.code").value("POLICY_ACK_REQUIRED"));
         mvc.perform(get("/api/policies").cookie(hr)).andExpect(status().isPreconditionRequired()); // HR too
         mvc.perform(get("/api/policies").cookie(owner)).andExpect(status().isOk()); // never the owner
@@ -106,7 +105,7 @@ class PolicyApiTest extends IntegrationTest {
         mvc.perform(write(post("/api/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated());
         mvc.perform(write(post("/api/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.msg").value("Already accepted"));
-        mvc.perform(get("/api/attendance/me").cookie(employee)).andExpect(status().isOk());
+        mvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isOk());
         var ack = jdbc.queryForMap("SELECT * FROM policy_acknowledgements WHERE employee_code = ?", employeeCode);
         assertThat(ack.get("policy_title")).isEqualTo("Code of conduct");
         assertThat(ack.get("version")).isEqualTo(1);
@@ -120,9 +119,9 @@ class PolicyApiTest extends IntegrationTest {
                 .andExpect(jsonPath("$.detail").value("Nothing has changed since version 1."));
         mvc.perform(write(put("/api/policies/" + id)).cookie(hr).content("{\"title\":\"Code of conduct\",\"body\":\"Be kind. Be on time. Be honest.\"}"))
                 .andExpect(status().isOk());
-        mvc.perform(get("/api/attendance/me").cookie(employee)).andExpect(status().isOk()); // a draft change asks nothing
+        mvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isOk()); // a draft change asks nothing
         publish(hr, id);
-        mvc.perform(get("/api/attendance/me").cookie(employee)).andExpect(status().isPreconditionRequired());
+        mvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isPreconditionRequired());
         mvc.perform(get("/api/policies/mine").cookie(employee)).andExpect(jsonPath("$.data[0].version").value(2))
                 .andExpect(jsonPath("$.data[0].acknowledgedAt").doesNotExist());
         mvc.perform(get("/api/policies/" + id).cookie(owner)).andExpect(jsonPath("$.data.versions.length()").value(2))

@@ -4,7 +4,7 @@ import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.repository.TaxPositionsRepository;
 import com.jurislpo.jurisone.service.PayrollService.PayRow;
-import com.jurislpo.jurisone.service.TaxService.DeclMode;
+import com.jurislpo.jurisone.service.TaxService.DeclarationMode;
 import com.jurislpo.jurisone.service.TaxService.MonthFigures;
 import com.jurislpo.jurisone.service.TaxService.Projection;
 import java.time.YearMonth;
@@ -41,10 +41,10 @@ public class TaxPositions {
     }
 
     /** Re-project one payroll row with different declarations / regime (same month figures). */
-    public Projection reproject(PayRow row, String month, DeclMode decl, String regime) {
+    public Projection reproject(PayRow row, String month, DeclarationMode declaration, String regime) {
         var p = row.pay();
         return tax.projectTax(row.employeeId(), month, new MonthFigures(p.grossEarned(), p.components().get(0).earned(), p.components().get(1).earned(), p.pf()),
-                row.structure().gross(), row.structure().basic(), row.structure().hra(), decl, regime);
+                row.structure().gross(), row.structure().basic(), row.structure().hra(), declaration, regime);
     }
 
     public record Positions(String month, List<PayRow> rows) {}
@@ -55,32 +55,32 @@ public class TaxPositions {
         return new Positions(month, payroll.computeRun(month, ids));
     }
 
-    public record Row(String id, String code, String name, String title, String reg, double inc, double ded, long taxable, long tax, long tds, int pend,
+    public record Row(String id, String code, String name, String title, String regime, double income, double deductions, long taxable, long tax, long tds, int pending,
                       boolean overridden) {}
 
-    public record Rows(String month, String fy, List<Row> all, List<Row> rows) {}
+    public record Rows(String month, String financialYear, List<Row> all, List<Row> rows) {}
 
-    static final List<String> SORTS = List.of("name", "reg", "inc", "taxable", "tax", "tds", "pend");
+    static final List<String> SORTS = List.of("name", "regime", "income", "taxable", "tax", "tds", "pending");
 
     /** One row per India payroll employee for the Tax page and its export. */
-    public Rows taxRows(Map<String, String> sp) {
-        ListParams ls = ListParams.of(sp, SORTS, "name", 200, "asc");
-        String reg = ListParams.pick(sp, "reg", List.of("All", "NEW", "OLD"), "All");
-        String fy = settings.tax().fy();
+    public Rows taxRows(Map<String, String> queryParams) {
+        ListParams listParams = ListParams.of(queryParams, SORTS, "name", 200, "asc");
+        String reg = ListParams.pick(queryParams, "regime", List.of("All", "NEW", "OLD"), "All");
+        String financialYear = settings.tax().financialYear();
         Positions pos = taxPositions(null);
-        Map<UUID, Integer> pending = repo.pendingDeclarationCounts(fy);
+        Map<UUID, Integer> pending = repo.pendingDeclarationCounts(financialYear);
         List<Row> all = new ArrayList<>();
-        for (PayRow r : pos.rows()) {
-            Projection t = r.tax();
-            all.add(new Row(r.employeeId().toString(), r.code(), r.name(), r.designation(), t.regime(), t.income(), t.current().std() + t.current().deductions(),
-                    t.current().taxable(), t.current().total(), t.monthly(), pending.getOrDefault(r.employeeId(), 0), t.regimeOverridden()));
+        for (PayRow payRow : pos.rows()) {
+            Projection projection = payRow.tax();
+            all.add(new Row(payRow.employeeId().toString(), payRow.code(), payRow.name(), payRow.designation(), projection.regime(), projection.income(), projection.current().std() + projection.current().deductions(),
+                    projection.current().taxable(), projection.current().total(), projection.monthly(), pending.getOrDefault(payRow.employeeId(), 0), projection.regimeOverridden()));
         }
-        String q = ls.q().toLowerCase();
-        List<Row> out = new ArrayList<>(all.stream().filter(r -> (q.isEmpty() || (r.name() + " " + r.code()).toLowerCase().contains(q))
-                && ("All".equals(reg) || r.reg().equals(reg))).toList());
-        Map<String, Function<Row, ? extends Comparable>> keys = Map.of("name", Row::name, "reg", Row::reg, "inc", Row::inc, "taxable", Row::taxable,
-                "tax", Row::tax, "tds", Row::tds, "pend", Row::pend);
-        out.sort(ls.comparator(keys));
-        return new Rows(pos.month(), fy, all, out);
+        String search = listParams.search().toLowerCase();
+        List<Row> out = new ArrayList<>(all.stream().filter(r -> (search.isEmpty() || (r.name() + " " + r.code()).toLowerCase().contains(search))
+                && ("All".equals(reg) || r.regime().equals(reg))).toList());
+        Map<String, Function<Row, ? extends Comparable>> keys = Map.of("name", Row::name, "reg", Row::regime, "inc", Row::income, "taxable", Row::taxable,
+                "tax", Row::tax, "tds", Row::tds, "pend", Row::pending);
+        out.sort(listParams.comparator(keys));
+        return new Rows(pos.month(), financialYear, all, out);
     }
 }

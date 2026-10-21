@@ -23,9 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class HolidaysService {
 
-    static final List<String> SORTS = List.of("k", "n", "region", "by");
+    static final List<String> SORTS = List.of("date", "name", "region", "addedBy");
 
-    public record Item(String id, String k, String n, String region, String by) {}
+    public record Item(String id, String date, String name, String region, String addedBy) {}
 
     public record Page(List<Item> items, List<Item> rows, String today) {}
 
@@ -39,17 +39,17 @@ public class HolidaysService {
         this.settings = settings;
     }
 
-    public Page page(CurrentUser u, Map<String, String> sp) {
-        ListParams ls = ListParams.of(sp, SORTS, "k");
-        String region = ListParams.pick(sp, "region", List.of("All", "IN", "US"), "All");
+    public Page page(CurrentUser user, Map<String, String> queryParams) {
+        ListParams listParams = ListParams.of(queryParams, SORTS, "date");
+        String region = ListParams.pick(queryParams, "region", List.of("All", "IN", "US"), "All");
         List<Item> items = repo.findAll();
-        String q = ls.q().toLowerCase();
+        String search = listParams.search().toLowerCase();
         List<Item> rows = new ArrayList<>(items.stream()
-                .filter(h -> ("All".equals(region) || h.region().equals(region) || "ALL".equals(h.region())) && (q.isEmpty() || h.n().toLowerCase().contains(q)))
+                .filter(h -> ("All".equals(region) || h.region().equals(region) || "ALL".equals(h.region())) && (search.isEmpty() || h.name().toLowerCase().contains(search)))
                 .toList());
-        Map<String, Function<Item, ? extends Comparable>> keys = Map.of("k", Item::k, "n", Item::n, "region", Item::region, "by", Item::by);
-        rows.sort(ls.comparator(keys));
-        return new Page(items, rows, Format.todayIn(u.timeZone()).toString());
+        Map<String, Function<Item, ? extends Comparable>> keys = Map.of("date", Item::date, "name", Item::name, "region", Item::region, "addedBy", Item::addedBy);
+        rows.sort(listParams.comparator(keys));
+        return new Page(items, rows, Format.todayIn(user.timeZone()).toString());
     }
 
     static String label(String r) {
@@ -57,41 +57,41 @@ public class HolidaysService {
     }
 
     @Transactional
-    public String add(CurrentUser u, String dateRaw, String nameRaw, String regionRaw, String ip) {
+    public String add(CurrentUser user, String dateRaw, String nameRaw, String regionRaw, String ip) {
         String date = Check.isoDate(dateRaw, "Pick a date");
         String name = Check.trimmed(nameRaw, 2, "Enter the holiday name", 80, "Too big: expected string to have <=80 characters");
         String region = Check.oneOf(regionRaw, List.of("IN", "US", "ALL"));
-        SettingsService.AttendancePolicy p = settings.attendance();
-        if (AttendanceLock.isMonthLocked(date.substring(0, 7), p.lockDayOfNextMonth(), p.lockTime(), Instant.now())) {
+        SettingsService.AttendancePolicy attendancePolicy = settings.attendance();
+        if (AttendanceLock.isMonthLocked(date.substring(0, 7), attendancePolicy.lockDayOfNextMonth(), attendancePolicy.lockTime(), Instant.now())) {
             throw new UserException("That month's attendance is already locked.");
         }
         List<String> regions = "ALL".equals(region) ? List.of("IN", "US", "ALL") : List.of(region, "ALL");
         List<String> clash = repo.findClashingName(Date.valueOf(date), regions.get(0), regions.get(1), regions.size() > 2 ? regions.get(2) : regions.get(1));
         if (!clash.isEmpty()) throw new UserException("There's already a holiday on this date for this team (" + clash.get(0) + ").");
         UUID id = UUID.randomUUID();
-        repo.insert(id, Date.valueOf(date), name, region, u.id());
+        repo.insert(id, Date.valueOf(date), name, region, user.id());
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("date", date);
         after.put("name", name);
         after.put("region", region);
-        audit.log(u.id(), "holiday.create", "holiday", id.toString(), null, after, ip);
-        return name + " added for " + label(region) + " · " + Format.fmtDL(LocalDate.parse(date));
+        audit.log(user.id(), "holiday.create", "holiday", id.toString(), null, after, ip);
+        return name + " added for " + label(region) + " · " + Format.formatWeekdayDate(LocalDate.parse(date));
     }
 
     @Transactional
-    public String delete(CurrentUser u, String idRaw, String ip) {
+    public String delete(CurrentUser user, String idRaw, String ip) {
         UUID id = Check.uuid(idRaw);
         List<Map<String, Object>> hs = repo.findById(id);
         if (hs.isEmpty()) throw new UserException("That holiday no longer exists.");
-        Map<String, Object> h = hs.get(0);
-        LocalDate date = ((Date) h.get("date")).toLocalDate();
+        Map<String, Object> row = hs.get(0);
+        LocalDate date = ((Date) row.get("date")).toLocalDate();
         if (date.isBefore(Format.todayIn("Asia/Kolkata"))) throw new UserException("Past holidays can't be deleted.");
         repo.delete(id);
         Map<String, Object> before = new LinkedHashMap<>();
         before.put("date", date.toString());
-        before.put("name", h.get("name"));
-        before.put("region", h.get("region"));
-        audit.log(u.id(), "holiday.delete", "holiday", id.toString(), before, null, ip);
-        return h.get("name") + " removed from the calendar";
+        before.put("name", row.get("name"));
+        before.put("region", row.get("region"));
+        audit.log(user.id(), "holiday.delete", "holiday", id.toString(), before, null, ip);
+        return row.get("name") + " removed from the calendar";
     }
 }

@@ -21,17 +21,17 @@ public class Auth {
 
     /** Signed in, holding any one of {@code perms} (none = just signed in). */
     public CurrentUser assertPerm(String... perms) {
-        CurrentUser u = current();
-        if (u == null) throw new UnauthenticatedException();
-        if (perms.length > 0 && !u.can(perms)) throw new ForbiddenException();
-        return u;
+        CurrentUser user = current();
+        if (user == null) throw new UnauthenticatedException();
+        if (perms.length > 0 && !user.can(perms)) throw new ForbiddenException();
+        return user;
     }
 
     /** A page's nav entry must be allowed (incl. "has direct reports" for My team). */
     public CurrentUser requirePage(String navId) {
-        CurrentUser u = current();
-        if (u == null) throw new UnauthenticatedException();
-        if (!u.navAllowed(navId)) throw new ForbiddenException();
-        return u;
+        CurrentUser user = current();
+        if (user == null) throw new UnauthenticatedException();
+        if (!user.navAllowed(navId)) throw new ForbiddenException();
+        return user;
     }
 }

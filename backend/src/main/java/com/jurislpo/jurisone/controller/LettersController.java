@@ -69,15 +69,15 @@ public class LettersController {
     /** {@code {type, name, subject, body}} — a new template (unknown merge fields are rejected). */
     @PostMapping("/templates")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Map<String, String>> createTemplate(@RequestBody LettersService.TemplateInput body, HttpServletRequest req) {
-        String id = letters.createTemplate(auth.requirePage("letters"), body, RequestMeta.of(req).ip());
+    public ApiResult<Map<String, String>> createTemplate(@RequestBody LettersService.TemplateInput body, HttpServletRequest request) {
+        String id = letters.createTemplate(auth.requirePage("letters"), body, RequestMeta.of(request).ip());
         return ApiResult.success("Template saved", Map.of("id", id));
     }
 
     /** {@code {name, subject, body, active?}} */
     @PutMapping("/templates/{id}")
-    public ApiResult<Void> updateTemplate(@PathVariable String id, @RequestBody LettersService.TemplateInput body, HttpServletRequest req) {
-        letters.updateTemplate(auth.requirePage("letters"), id, body, RequestMeta.of(req).ip());
+    public ApiResult<Void> updateTemplate(@PathVariable String id, @RequestBody LettersService.TemplateInput body, HttpServletRequest request) {
+        letters.updateTemplate(auth.requirePage("letters"), id, body, RequestMeta.of(request).ip());
         return ApiResult.message("Template saved");
     }
 
@@ -99,9 +99,9 @@ public class LettersController {
     /** {@code {templateId, employeeId, lastWorkingDate?}} — issues the letter. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Map<String, Object>> issue(@RequestBody LettersService.IssueInput body, HttpServletRequest req) {
-        Map<String, Object> out = letters.issue(auth.requirePage("letters"), body, RequestMeta.of(req).ip());
-        return ApiResult.success("Letter " + out.get("reference") + " issued", out);
+    public ApiResult<Map<String, Object>> issue(@RequestBody LettersService.IssueInput body, HttpServletRequest request) {
+        Map<String, Object> out = letters.issue(auth.requirePage("letters"), body, RequestMeta.of(request).ip());
+        return ApiResult.success("Letter " + out.get("reference") + " issued · emailed to the employee and added to their My letters", out);
     }
 
     @GetMapping
@@ -117,9 +117,9 @@ public class LettersController {
 
     @GetMapping("/{id}/pdf")
     public ResponseEntity<byte[]> pdf(@PathVariable String id) {
-        LettersService.PdfFile f = letters.pdf(auth.assertPerm("self", "letters.manage"), id);
+        LettersService.PdfFile file = letters.pdf(auth.assertPerm("self", "letters.manage"), id);
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(f.filename(), StandardCharsets.UTF_8).build().toString())
-                .header(HttpHeaders.CACHE_CONTROL, "private, no-store").header("X-Content-Type-Options", "nosniff").body(f.bytes());
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(file.filename(), StandardCharsets.UTF_8).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store").header("X-Content-Type-Options", "nosniff").body(file.bytes());
     }
 }

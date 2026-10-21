@@ -65,7 +65,7 @@ public final class Permissions {
     /** Permissions that expose salary / tax figures. HR roles must never hold these. */
     public static final Set<String> SALARY = Set.of(PAY_VIEW, PAY_CLOSE, STRUCT_MANAGE, TAX_VIEW, PROOFS_VERIFY);
 
-    public static boolean isPermission(String s) {
-        return LABELS.containsKey(s);
+    public static boolean isPermission(String text) {
+        return LABELS.containsKey(text);
     }
 }

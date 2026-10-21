@@ -18,22 +18,22 @@ public class JacksonConfig {
 
     static final class JsDouble extends JsonSerializer<Double> {
         @Override
-        public void serialize(Double v, JsonGenerator g, SerializerProvider p) throws IOException {
-            if (v == null) {
-                g.writeNull();
-            } else if (!v.isNaN() && !v.isInfinite() && v == Math.rint(v) && Math.abs(v) < 1e15) {
-                g.writeNumber(v.longValue());
+        public void serialize(Double value, JsonGenerator generator, SerializerProvider provider) throws IOException {
+            if (value == null) {
+                generator.writeNull();
+            } else if (!value.isNaN() && !value.isInfinite() && value == Math.rint(value) && Math.abs(value) < 1e15) {
+                generator.writeNumber(value.longValue());
             } else {
-                g.writeNumber(v);
+                generator.writeNumber(value);
             }
         }
     }
 
     public static SimpleModule jsNumbers() {
-        SimpleModule m = new SimpleModule("js-numbers");
-        m.addSerializer(Double.class, new JsDouble());
-        m.addSerializer(double.class, new JsDouble());
-        return m;
+        SimpleModule module = new SimpleModule("js-numbers");
+        module.addSerializer(Double.class, new JsDouble());
+        module.addSerializer(double.class, new JsDouble());
+        return module;
     }
 
     @Bean

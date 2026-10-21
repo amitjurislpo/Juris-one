@@ -25,14 +25,14 @@ public final class LeaveRules {
     public static WorkingDays workingDays(LocalDate from, LocalDate to, Set<Integer> weeklyOffs, Map<LocalDate, String> holidays) {
         List<LocalDate> dates = new ArrayList<>();
         List<Skipped> skipped = new ArrayList<>();
-        for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
-            if (weeklyOffs.contains(AttendanceEngine.dowOf(d))) continue;
-            String h = holidays.get(d);
+        for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
+            if (weeklyOffs.contains(AttendanceEngine.dowOf(date))) continue;
+            String h = holidays.get(date);
             if (h != null && !h.isEmpty()) {
-                skipped.add(new Skipped(d, h));
+                skipped.add(new Skipped(date, h));
                 continue;
             }
-            dates.add(d);
+            dates.add(date);
         }
         return new WorkingDays(dates, skipped);
     }
@@ -61,21 +61,21 @@ public final class LeaveRules {
         double unit = dates.size() == 1 && part != LeavePart.FULL ? 0.5 : 1;
         Map<LocalDate, Double> out = new LinkedHashMap<>();
         double left = paidDays;
-        for (LocalDate d : dates) {
+        for (LocalDate date : dates) {
             double take = Math.min(unit, Math.max(0, left));
-            out.put(d, unit != 0 ? take / unit : 0);
+            out.put(date, unit != 0 ? take / unit : 0);
             left -= take;
         }
         return out;
     }
 
     /** Monthly accrual, pro-rata in the joining month (and zero before it). */
-    public static double accrualFor(YearMonth ym, LocalDate doj, double perMonth) {
-        int dim = ym.lengthOfMonth();
-        LocalDate first = ym.atDay(1), last = ym.atEndOfMonth();
-        if (doj.isAfter(last)) return 0;
-        if (!doj.isAfter(first)) return perMonth;
-        int daysLeft = dim - doj.getDayOfMonth() + 1;
+    public static double accrualFor(YearMonth yearMonth, LocalDate dateOfJoining, double perMonth) {
+        int dim = yearMonth.lengthOfMonth();
+        LocalDate first = yearMonth.atDay(1), last = yearMonth.atEndOfMonth();
+        if (dateOfJoining.isAfter(last)) return 0;
+        if (!dateOfJoining.isAfter(first)) return perMonth;
+        int daysLeft = dim - dateOfJoining.getDayOfMonth() + 1;
         return round2((perMonth * daysLeft) / dim);
     }
 
@@ -99,12 +99,12 @@ public final class LeaveRules {
         List<Expiry> out = new ArrayList<>();
         List<Credit> sorted = new ArrayList<>(credits);
         sorted.sort(Comparator.comparing(Credit::expiresOn));
-        for (Credit c : sorted) {
-            double usable = c.amount() - c.expired();
+        for (Credit credit : sorted) {
+            double usable = credit.amount() - credit.expired();
             double fromThis = Math.min(Math.max(0, toAllocate), usable);
             toAllocate -= fromThis;
             double remaining = round2(usable - fromThis);
-            if (c.expiresOn().isBefore(today) && remaining > 0) out.add(new Expiry(c.id(), remaining));
+            if (credit.expiresOn().isBefore(today) && remaining > 0) out.add(new Expiry(credit.id(), remaining));
         }
         return out;
     }

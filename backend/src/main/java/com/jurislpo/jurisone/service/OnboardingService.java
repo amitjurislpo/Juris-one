@@ -76,10 +76,10 @@ public class OnboardingService {
     static final List<String> OPEN = List.of("INVITED", "IN_PROGRESS", "CHANGES_REQUESTED");
     static final Pattern IFSC = Pattern.compile("^[A-Z]{4}0[A-Z0-9]{6}$");
 
-    record Kind(String ext, String mime, byte[] magic) {}
+    record FileKind(String ext, String mime, byte[] magic) {}
 
-    static final List<Kind> FILES = List.of(new Kind("pdf", "application/pdf", new byte[] {0x25, 0x50, 0x44, 0x46}),
-            new Kind("png", "image/png", new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47}), new Kind("jpg", "image/jpeg", new byte[] {(byte) 0xff, (byte) 0xd8, (byte) 0xff}));
+    static final List<FileKind> FILES = List.of(new FileKind("pdf", "application/pdf", new byte[] {0x25, 0x50, 0x44, 0x46}),
+            new FileKind("png", "image/png", new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47}), new FileKind("jpg", "image/jpeg", new byte[] {(byte) 0xff, (byte) 0xd8, (byte) 0xff}));
 
     /** What the candidate fills in. Stored as encrypted JSON. */
     public record Form(String firstName, String middleName, String lastName, String fatherName, String dateOfBirth, String gender, String phoneCountry,
@@ -89,8 +89,8 @@ public class OnboardingService {
 
         /** A blank form with the name HR typed split into first / middle / last. */
         static Form empty(String name) {
-            String[] w = name.trim().split("\\s+");
-            String first = w[0], last = w.length > 1 ? w[w.length - 1] : "", middle = w.length > 2 ? String.join(" ", Arrays.copyOfRange(w, 1, w.length - 1)) : "";
+            String[] parts = name.trim().split("\\s+");
+            String first = parts[0], last = parts.length > 1 ? parts[parts.length - 1] : "", middle = parts.length > 2 ? String.join(" ", Arrays.copyOfRange(parts, 1, parts.length - 1)) : "";
             return new Form(first, middle, last, "", "", "", "+91", "", "", "", "", "", "", "", "", "", "", "", "", "", "+91", "");
         }
 
@@ -150,26 +150,26 @@ public class OnboardingService {
     }
 
     @Transactional
-    public String saveDefaults(CurrentUser u, List<String> docs, String ip) {
+    public String saveDefaults(CurrentUser user, List<String> docs, String ip) {
         List<String> before = defaultDocs();
         List<String> valid = validDocs(docs);
         settings.save("onboarding.policy", json.valueToTree(Map.of("requiredDocs", valid)));
-        audit.log(u.id(), "onboarding.default_documents", "setting", "onboarding.policy", Map.of("requiredDocs", before), Map.of("requiredDocs", valid), ip);
+        audit.log(user.id(), "onboarding.default_documents", "setting", "onboarding.policy", Map.of("requiredDocs", before), Map.of("requiredDocs", valid), ip);
         return valid.isEmpty() ? "New onboardings ask for no documents by default" : "Default documents saved (" + valid.size() + ")";
     }
 
     // ───────────────────────── helpers ─────────────────────────
 
-    public static String iso(Object ts) {
-        return ts == null ? null : Format.jsIso(((Timestamp) ts).toInstant());
+    public static String iso(Object timestamp) {
+        return timestamp == null ? null : Format.isoTimestamp(((Timestamp) timestamp).toInstant());
     }
 
-    static String str(Object o) {
-        return o == null ? null : o.toString();
+    static String str(Object value) {
+        return value == null ? null : value.toString();
     }
 
-    static String trim(String v, int max, String field) {
-        String t = v == null ? "" : v.trim();
+    static String trim(String value, int max, String field) {
+        String t = value == null ? "" : value.trim();
         if (t.length() > max) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the " + field + " under " + max + " characters.");
         return t;
     }
@@ -184,9 +184,9 @@ public class OnboardingService {
         }
     }
 
-    String writeForm(Form f) {
+    String writeForm(Form form) {
         try {
-            return pii.encrypt(json.writeValueAsString(f));
+            return pii.encrypt(json.writeValueAsString(form));
         } catch (JsonProcessingException e) {
             throw new IllegalStateException(e);
         }
@@ -205,16 +205,16 @@ public class OnboardingService {
     /** Each required kind with how many files it needs, has (not rejected) and has verified. */
     static List<Map<String, Object>> checklist(List<String> required, List<Map<String, Object>> docs) {
         List<Map<String, Object>> out = new ArrayList<>();
-        for (String k : required) {
-            long has = docs.stream().filter(d -> k.equals(d.get("kind")) && !"REJECTED".equals(d.get("status"))).count();
-            long ok = docs.stream().filter(d -> k.equals(d.get("kind")) && "VERIFIED".equals(d.get("status"))).count();
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("kind", k);
-            m.put("label", KINDS.get(k));
-            m.put("needed", needed(k));
-            m.put("uploaded", has);
-            m.put("verified", ok);
-            out.add(m);
+        for (String key : required) {
+            long has = docs.stream().filter(d -> key.equals(d.get("kind")) && !"REJECTED".equals(d.get("status"))).count();
+            long ok = docs.stream().filter(d -> key.equals(d.get("kind")) && "VERIFIED".equals(d.get("status"))).count();
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("kind", key);
+            view.put("label", KINDS.get(key));
+            view.put("needed", needed(key));
+            view.put("uploaded", has);
+            view.put("verified", ok);
+            out.add(view);
         }
         return out;
     }
@@ -252,96 +252,96 @@ public class OnboardingService {
     public record Plan(String candidateName, String personalEmail, String designation, String departmentId, String roleId, String managerId, String joiningDate,
                        String location, List<String> requiredDocs) {}
 
-    record ValidPlan(String name, String email, String designation, UUID departmentId, UUID roleId, UUID managerId, LocalDate joining, String location,
+    record ValidatedPlan(String name, String email, String designation, UUID departmentId, UUID roleId, UUID managerId, LocalDate joining, String location,
                      String[] required) {}
 
-    ValidPlan validate(Plan in, UUID editing) {
-        if (in == null) throw new UserException(HttpStatus.BAD_REQUEST, "Onboarding details are missing.");
-        String name = Check.trimmed(in.candidateName(), 2, "Enter the candidate's name.", 120, "Keep the name under 120 characters.");
-        String email = in.personalEmail() == null ? "" : in.personalEmail().trim().toLowerCase(Locale.ROOT);
+    ValidatedPlan validate(Plan plan, UUID editing) {
+        if (plan == null) throw new UserException(HttpStatus.BAD_REQUEST, "Onboarding details are missing.");
+        String name = Check.trimmed(plan.candidateName(), 2, "Enter the candidate's name.", 120, "Keep the name under 120 characters.");
+        String email = plan.personalEmail() == null ? "" : plan.personalEmail().trim().toLowerCase(Locale.ROOT);
         if (!PeopleRules.EMAIL_RE.matcher(email).matches()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the candidate's personal email.");
         List<String> open = repo.findOpenCandidateNames(email, editing);
         if (!open.isEmpty()) throw new UserException("An onboarding for " + email + " is already open (" + open.get(0) + ").");
-        String designation = trim(in.designation(), 120, "designation");
-        UUID dept = blankUuid(in.departmentId());
-        if (dept != null && !repo.departmentIsActive(dept)) throw new UserException("Pick a department.");
-        UUID role = blankUuid(in.roleId());
+        String designation = trim(plan.designation(), 120, "designation");
+        UUID department = blankUuid(plan.departmentId());
+        if (department != null && !repo.departmentIsActive(department)) throw new UserException("Pick a department.");
+        UUID role = blankUuid(plan.roleId());
         if (role != null && !repo.roleIsAssignable(role)) throw new UserException("Pick a role.");
-        UUID manager = blankUuid(in.managerId());
+        UUID manager = blankUuid(plan.managerId());
         if (manager != null && !repo.employeeIsCurrent(manager)) {
             throw new UserException("Pick a current employee as reporting manager.");
         }
-        LocalDate joining = in.joiningDate() == null || in.joiningDate().isBlank() ? null : LocalDate.parse(Check.isoDate(in.joiningDate(), "Pick the joining date."));
-        String location = in.location() == null || in.location().isBlank() ? "IN_IST" : Check.oneOf(in.location(), PeopleRules.LOCATIONS.stream().map(PeopleRules.Location::v).toList());
-        List<String> req = in.requiredDocs() == null ? defaultDocs() : validDocs(in.requiredDocs());
-        return new ValidPlan(name, email, designation.isEmpty() ? null : designation, dept, role, manager, joining, location,
+        LocalDate joining = plan.joiningDate() == null || plan.joiningDate().isBlank() ? null : LocalDate.parse(Check.isoDate(plan.joiningDate(), "Pick the joining date."));
+        String location = plan.location() == null || plan.location().isBlank() ? "IN_IST" : Check.oneOf(plan.location(), PeopleRules.LOCATIONS.stream().map(PeopleRules.Location::value).toList());
+        List<String> req = plan.requiredDocs() == null ? defaultDocs() : validDocs(plan.requiredDocs());
+        return new ValidatedPlan(name, email, designation.isEmpty() ? null : designation, department, role, manager, joining, location,
                 req.stream().distinct().toArray(String[]::new));
     }
 
-    static UUID blankUuid(String v) {
-        return v == null || v.isBlank() ? null : Check.uuid(v);
+    static UUID blankUuid(String value) {
+        return value == null || value.isBlank() ? null : Check.uuid(value);
     }
 
     /** Starts an onboarding and emails the candidate their link. */
     @Transactional
-    public String start(CurrentUser u, Plan in, String ip) {
-        ValidPlan p = validate(in, null);
+    public String start(CurrentUser user, Plan plan, String ip) {
+        ValidatedPlan validated = validate(plan, null);
         UUID id = UUID.randomUUID();
-        repo.insert(id, p.name(), p.email(), p.designation(), p.departmentId(), p.roleId(), p.managerId(), p.joining() == null ? null : Date.valueOf(p.joining()),
-                p.location(), p.required(), u.id());
+        repo.insert(id, validated.name(), validated.email(), validated.designation(), validated.departmentId(), validated.roleId(), validated.managerId(), validated.joining() == null ? null : Date.valueOf(validated.joining()),
+                validated.location(), validated.required(), user.id());
         String token = newLink(id);
         emailLink(row(id), token, null);
-        audit.log(u.id(), "onboarding.start", "onboarding", id.toString(), null, Map.of("candidate", p.name(), "email", p.email()), ip);
+        audit.log(user.id(), "onboarding.start", "onboarding", id.toString(), null, Map.of("candidate", validated.name(), "email", validated.email()), ip);
         return id.toString();
     }
 
     @Transactional
-    public void update(CurrentUser u, String idRaw, Plan in, String ip) {
+    public void update(CurrentUser user, String idRaw, Plan plan, String ip) {
         UUID id = Check.uuid(idRaw);
-        Map<String, Object> r = row(id);
-        if (List.of("ADDED", "CANCELLED").contains(r.get("status"))) throw new UserException("This onboarding is closed.");
-        ValidPlan p = validate(in, id);
-        if (!p.email().equals(r.get("personal_email")) && !OPEN.contains(r.get("status"))) throw new UserException("The email can't change after the candidate has submitted.");
-        repo.updatePlan(id, p.name(), p.email(), p.designation(), p.departmentId(), p.roleId(), p.managerId(), p.joining() == null ? null : Date.valueOf(p.joining()),
-                p.location(), p.required());
-        audit.log(u.id(), "onboarding.update", "onboarding", id.toString(), null, Map.of("candidate", p.name()), ip);
+        Map<String, Object> onboarding = row(id);
+        if (List.of("ADDED", "CANCELLED").contains(onboarding.get("status"))) throw new UserException("This onboarding is closed.");
+        ValidatedPlan validated = validate(plan, id);
+        if (!validated.email().equals(onboarding.get("personal_email")) && !OPEN.contains(onboarding.get("status"))) throw new UserException("The email can't change after the candidate has submitted.");
+        repo.updatePlan(id, validated.name(), validated.email(), validated.designation(), validated.departmentId(), validated.roleId(), validated.managerId(), validated.joining() == null ? null : Date.valueOf(validated.joining()),
+                validated.location(), validated.required());
+        audit.log(user.id(), "onboarding.update", "onboarding", id.toString(), null, Map.of("candidate", validated.name()), ip);
     }
 
     /** A fresh link (the old one stops working), emailed again. */
     @Transactional
-    public String resend(CurrentUser u, String idRaw, String ip) {
+    public String resend(CurrentUser user, String idRaw, String ip) {
         UUID id = Check.uuid(idRaw);
-        Map<String, Object> r = row(id);
-        if (!OPEN.contains(r.get("status"))) throw new UserException("The candidate has already submitted — there's nothing to fill in.");
-        emailLink(r, newLink(id), null);
-        audit.log(u.id(), "onboarding.resend", "onboarding", id.toString(), ip);
-        return "A new link was sent to " + r.get("personal_email");
+        Map<String, Object> onboarding = row(id);
+        if (!OPEN.contains(onboarding.get("status"))) throw new UserException("The candidate has already submitted — there's nothing to fill in.");
+        emailLink(onboarding, newLink(id), null);
+        audit.log(user.id(), "onboarding.resend", "onboarding", id.toString(), ip);
+        return "A new link was sent to " + onboarding.get("personal_email");
     }
 
     /** Everything HR reviews: the plan, the candidate's answers (identity numbers masked), documents and the checklist. */
     public Map<String, Object> detail(String idRaw) {
         UUID id = Check.uuid(idRaw);
-        Map<String, Object> r = row(id);
-        Form f = readForm(r);
+        Map<String, Object> onboarding = row(id);
+        Form f = readForm(onboarding);
         List<Map<String, Object>> docs = documents(id);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", id.toString());
-        out.put("candidateName", r.get("candidate_name"));
-        out.put("personalEmail", r.get("personal_email"));
-        out.put("designation", r.get("designation"));
-        out.put("departmentId", str(r.get("department_id")));
-        out.put("roleId", str(r.get("role_id")));
-        out.put("managerId", str(r.get("manager_id")));
-        out.put("joiningDate", r.get("joining_date") == null ? null : r.get("joining_date").toString());
-        out.put("location", r.get("location"));
-        out.put("requiredDocs", requiredOf(r));
-        out.put("status", r.get("status"));
-        out.put("hrComment", r.get("hr_comment"));
-        out.put("linkExpiresAt", iso(r.get("token_expires_at")));
-        out.put("submittedAt", iso(r.get("submitted_at")));
-        out.put("verifiedAt", iso(r.get("verified_at")));
-        out.put("employeeId", str(r.get("employee_id")));
-        out.put("employeeCode", r.get("employee_id") == null ? null : repo.findEmployeeCode((UUID) r.get("employee_id")));
+        out.put("candidateName", onboarding.get("candidate_name"));
+        out.put("personalEmail", onboarding.get("personal_email"));
+        out.put("designation", onboarding.get("designation"));
+        out.put("departmentId", str(onboarding.get("department_id")));
+        out.put("roleId", str(onboarding.get("role_id")));
+        out.put("managerId", str(onboarding.get("manager_id")));
+        out.put("joiningDate", onboarding.get("joining_date") == null ? null : onboarding.get("joining_date").toString());
+        out.put("location", onboarding.get("location"));
+        out.put("requiredDocs", requiredOf(onboarding));
+        out.put("status", onboarding.get("status"));
+        out.put("hrComment", onboarding.get("hr_comment"));
+        out.put("linkExpiresAt", iso(onboarding.get("token_expires_at")));
+        out.put("submittedAt", iso(onboarding.get("submitted_at")));
+        out.put("verifiedAt", iso(onboarding.get("verified_at")));
+        out.put("employeeId", str(onboarding.get("employee_id")));
+        out.put("employeeCode", onboarding.get("employee_id") == null ? null : repo.findEmployeeCode((UUID) onboarding.get("employee_id")));
         Map<String, Object> form = new LinkedHashMap<>();
         form.put("fullName", f.fullName());
         form.put("firstName", f.firstName());
@@ -366,7 +366,7 @@ public class OnboardingService {
         form.put("emergencyPhone", f.emergencyPhone().isEmpty() ? "" : f.emergencyPhoneCountry() + " " + f.emergencyPhone());
         out.put("form", form);
         out.put("documents", docs);
-        out.put("checklist", checklist(requiredOf(r), docs));
+        out.put("checklist", checklist(requiredOf(onboarding), docs));
         return out;
     }
 
@@ -374,19 +374,19 @@ public class OnboardingService {
 
     /** Verify or reject one document (a rejection needs a comment the candidate will see). */
     @Transactional
-    public String decideDocument(CurrentUser u, String idRaw, String docIdRaw, DocDecision in, String ip) {
+    public String decideDocument(CurrentUser user, String idRaw, String docIdRaw, DocDecision docDecision, String ip) {
         UUID id = Check.uuid(idRaw);
         UUID doc = Check.uuid(docIdRaw);
-        Map<String, Object> r = row(id);
-        if (!List.of("SUBMITTED", "IN_PROGRESS", "CHANGES_REQUESTED", "INVITED").contains(r.get("status"))) throw new UserException("This onboarding can no longer change.");
-        String status = Check.oneOf(in == null ? null : in.status(), List.of("VERIFIED", "REJECTED"));
-        String comment = in.comment() == null ? "" : in.comment().trim();
+        Map<String, Object> onboarding = row(id);
+        if (!List.of("SUBMITTED", "IN_PROGRESS", "CHANGES_REQUESTED", "INVITED").contains(onboarding.get("status"))) throw new UserException("This onboarding can no longer change.");
+        String status = Check.oneOf(docDecision == null ? null : docDecision.status(), List.of("VERIFIED", "REJECTED"));
+        String comment = docDecision.comment() == null ? "" : docDecision.comment().trim();
         if ("REJECTED".equals(status) && comment.length() < 3) throw new UserException(HttpStatus.BAD_REQUEST, "Tell the candidate what's wrong with the document.");
         if (comment.length() > 300) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the comment under 300 characters.");
-        int n = repo.decideDocument(doc, id, status, comment.isEmpty() ? null : comment, u.id());
-        if (n == 0) throw new UserException(HttpStatus.NOT_FOUND, "Document not found.");
+        int count = repo.decideDocument(doc, id, status, comment.isEmpty() ? null : comment, user.id());
+        if (count == 0) throw new UserException(HttpStatus.NOT_FOUND, "Document not found.");
         repo.touch(id);
-        audit.log(u.id(), "onboarding.document_" + status.toLowerCase(Locale.ROOT), "onboarding_document", doc.toString(), null, Map.of("onboarding", id.toString()), ip);
+        audit.log(user.id(), "onboarding.document_" + status.toLowerCase(Locale.ROOT), "onboarding_document", doc.toString(), null, Map.of("onboarding", id.toString()), ip);
         return "VERIFIED".equals(status) ? "Document verified" : "Document rejected — the candidate will be asked for a new one";
     }
 
@@ -394,37 +394,37 @@ public class OnboardingService {
 
     /** CHANGES_REQUESTED (with a comment; a new link is emailed), VERIFIED (everything required is verified) or CANCELLED. */
     @Transactional
-    public String setStatus(CurrentUser u, String idRaw, StatusInput in, String ip) {
+    public String setStatus(CurrentUser user, String idRaw, StatusInput input, String ip) {
         UUID id = Check.uuid(idRaw);
-        Map<String, Object> r = row(id);
-        String from = (String) r.get("status");
-        String to = Check.oneOf(in == null ? null : in.status(), List.of("CHANGES_REQUESTED", "VERIFIED", "CANCELLED"));
-        String comment = in.comment() == null ? "" : in.comment().trim();
+        Map<String, Object> onboarding = row(id);
+        String from = (String) onboarding.get("status");
+        String to = Check.oneOf(input == null ? null : input.status(), List.of("CHANGES_REQUESTED", "VERIFIED", "CANCELLED"));
+        String comment = input.comment() == null ? "" : input.comment().trim();
         switch (to) {
             case "CHANGES_REQUESTED" -> {
                 if (!List.of("SUBMITTED", "VERIFIED").contains(from)) throw new UserException("Only a submitted onboarding can be sent back.");
                 if (comment.length() < 3) throw new UserException(HttpStatus.BAD_REQUEST, "Tell the candidate what to change.");
                 if (comment.length() > 1000) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the comment under 1000 characters.");
                 repo.requestChanges(id, comment);
-                emailLink(r, newLink(id), comment);
+                emailLink(onboarding, newLink(id), comment);
             }
             case "VERIFIED" -> {
                 if (!"SUBMITTED".equals(from)) throw new UserException("Only a submitted onboarding can be verified.");
                 List<Map<String, Object>> docs = documents(id);
                 if (docs.stream().anyMatch(d -> "PENDING".equals(d.get("status")))) throw new UserException("Verify or reject every document first.");
-                for (Map<String, Object> c : checklist(requiredOf(r), docs)) {
-                    if (((Number) c.get("verified")).intValue() < (int) c.get("needed")) {
-                        throw new UserException(c.get("label") + ": " + c.get("needed") + " verified file" + ((int) c.get("needed") == 1 ? "" : "s") + " needed — send it back to the candidate.");
+                for (Map<String, Object> row : checklist(requiredOf(onboarding), docs)) {
+                    if (((Number) row.get("verified")).intValue() < (int) row.get("needed")) {
+                        throw new UserException(row.get("label") + ": " + row.get("needed") + " verified file" + ((int) row.get("needed") == 1 ? "" : "s") + " needed — send it back to the candidate.");
                     }
                 }
-                repo.markVerified(id, u.id());
+                repo.markVerified(id, user.id());
             }
             default -> {
                 if ("ADDED".equals(from) || "CANCELLED".equals(from)) throw new UserException("This onboarding is already closed.");
                 repo.cancel(id);
             }
         }
-        audit.log(u.id(), "onboarding.status", "onboarding", id.toString(), Map.of("status", from), Map.of("status", to), ip);
+        audit.log(user.id(), "onboarding.status", "onboarding", id.toString(), Map.of("status", from), Map.of("status", to), ip);
         return switch (to) {
             case "CHANGES_REQUESTED" -> "Sent back to the candidate with a new link";
             case "VERIFIED" -> "Onboarding verified — you can add the employee now";
@@ -441,44 +441,44 @@ public class OnboardingService {
      * candidate; portal access stays off and no invite is sent until HR turns access on.
      */
     @Transactional
-    public PeopleService.Saved addEmployee(CurrentUser u, String idRaw, AddInput in, String ip) {
+    public PeopleService.Saved addEmployee(CurrentUser user, String idRaw, AddInput input, String ip) {
         UUID id = Check.uuid(idRaw);
-        Map<String, Object> r = row(id);
-        if (!"VERIFIED".equals(r.get("status"))) throw new UserException("Verify the onboarding before adding the employee.");
-        if (in == null) throw new UserException(HttpStatus.BAD_REQUEST, "Employee details are missing.");
-        Form f = readForm(r);
-        String location = in.location() == null || in.location().isBlank() ? (String) r.get("location") : in.location();
+        Map<String, Object> onboarding = row(id);
+        if (!"VERIFIED".equals(onboarding.get("status"))) throw new UserException("Verify the onboarding before adding the employee.");
+        if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Employee details are missing.");
+        Form form = readForm(onboarding);
+        String location = input.location() == null || input.location().isBlank() ? (String) onboarding.get("location") : input.location();
         if (location == null || location.isBlank()) location = "IN_IST";
         boolean india = "IN_IST".equals(location);
-        EmployeeInput e = new EmployeeInput(f.firstName(), f.middleName(), f.lastName(), f.fatherName(), in.workEmail() == null ? "" : in.workEmail(),
-                f.phoneCountry(), f.phone(), location, in.joiningOffice() == null ? "" : in.joiningOffice(),
-                india ? f.pan() : "", india ? f.aadhaar() : "", india ? f.uan() : "", f.currentAddress(), in.designation() == null ? "" : in.designation(),
-                in.departmentId() == null ? "" : in.departmentId(), in.managerId() == null ? "" : in.managerId(), in.joiningDate() == null ? "" : in.joiningDate(),
-                in.shift() == null || in.shift().isBlank() ? (india ? "IN_NIGHT" : "US_DAY") : in.shift(), in.roleId() == null ? "" : in.roleId());
-        PeopleService.Saved saved = people.addWithoutAccess(u, e, ip);
-        UUID emp = UUID.fromString(saved.id());
-        if (!f.bankAccount().isEmpty()) {
-            repo.updateEmployeeBank(emp, pii.encrypt(f.bankAccount()), PiiCrypto.last4(f.bankAccount()), f.ifsc().isEmpty() ? null : f.ifsc(),
-                    f.bankName().isEmpty() ? null : f.bankName());
+        EmployeeInput e = new EmployeeInput(form.firstName(), form.middleName(), form.lastName(), form.fatherName(), input.workEmail() == null ? "" : input.workEmail(),
+                form.phoneCountry(), form.phone(), location, input.joiningOffice() == null ? "" : input.joiningOffice(),
+                india ? form.pan() : "", india ? form.aadhaar() : "", india ? form.uan() : "", form.currentAddress(), input.designation() == null ? "" : input.designation(),
+                input.departmentId() == null ? "" : input.departmentId(), input.managerId() == null ? "" : input.managerId(), input.joiningDate() == null ? "" : input.joiningDate(),
+                input.shift() == null || input.shift().isBlank() ? (india ? "IN_NIGHT" : "US_DAY") : input.shift(), input.roleId() == null ? "" : input.roleId());
+        PeopleService.Saved saved = people.addWithoutAccess(user, e, ip);
+        UUID employee = UUID.fromString(saved.id());
+        if (!form.bankAccount().isEmpty()) {
+            repo.updateEmployeeBank(employee, pii.encrypt(form.bankAccount()), PiiCrypto.last4(form.bankAccount()), form.ifsc().isEmpty() ? null : form.ifsc(),
+                    form.bankName().isEmpty() ? null : form.bankName());
         }
         // personal details the employee record keeps from the candidate's form
-        repo.updateEmployeePersonal(emp,
-                f.dateOfBirth().isEmpty() ? null : Date.valueOf(f.dateOfBirth()), f.permanentAddress().isEmpty() ? null : pii.encrypt(f.permanentAddress()),
-                f.emergencyName().isEmpty() ? null : f.emergencyName(), f.emergencyRelation().isEmpty() ? null : f.emergencyRelation(),
-                f.emergencyPhone().isEmpty() ? null : f.emergencyPhoneCountry() + " " + f.emergencyPhone());
-        repo.attachVerifiedDocuments(id, emp);
-        repo.markAdded(id, emp);
-        audit.log(u.id(), "onboarding.employee_added", "onboarding", id.toString(), null, Map.of("employee", saved.id(), "code", saved.code()), ip);
+        repo.updateEmployeePersonal(employee,
+                form.dateOfBirth().isEmpty() ? null : Date.valueOf(form.dateOfBirth()), form.permanentAddress().isEmpty() ? null : pii.encrypt(form.permanentAddress()),
+                form.emergencyName().isEmpty() ? null : form.emergencyName(), form.emergencyRelation().isEmpty() ? null : form.emergencyRelation(),
+                form.emergencyPhone().isEmpty() ? null : form.emergencyPhoneCountry() + " " + form.emergencyPhone());
+        repo.attachVerifiedDocuments(id, employee);
+        repo.markAdded(id, employee);
+        audit.log(user.id(), "onboarding.employee_added", "onboarding", id.toString(), null, Map.of("employee", saved.id(), "code", saved.code()), ip);
         return saved;
     }
 
     public record FileOut(String name, String mime, byte[] bytes) {}
 
-    FileOut read(Map<String, Object> d) {
-        Path abs = storageDir.resolve((String) d.get("file_path")).normalize();
-        if (!abs.startsWith(storageDir)) return null;
+    FileOut read(Map<String, Object> row) {
+        Path absolutePath = storageDir.resolve((String) row.get("file_path")).normalize();
+        if (!absolutePath.startsWith(storageDir)) return null;
         try {
-            return new FileOut((String) d.get("file_name"), (String) d.get("mime"), Files.readAllBytes(abs));
+            return new FileOut((String) row.get("file_name"), (String) row.get("mime"), Files.readAllBytes(absolutePath));
         } catch (IOException e) {
             return null;
         }
@@ -512,8 +512,8 @@ public class OnboardingService {
         Map<String, Object> r = rows.get(0);
         if (((Timestamp) r.get("token_expires_at")).toInstant().isBefore(Instant.now())) throw new UserException(HttpStatus.NOT_FOUND, "This link has expired. Ask HR for a new one.");
         UUID business = (UUID) r.get("business_id");
-        Map<String, Object> b = TenantContext.call(null, () -> repo.findBusinessStatus(business));
-        if (!"ACTIVE".equals(b.get("status")) || !TenantContext.call(null, () -> subscriptions.isActive(business))) {
+        Map<String, Object> row = TenantContext.call(null, () -> repo.findBusinessStatus(business));
+        if (!"ACTIVE".equals(row.get("status")) || !TenantContext.call(null, () -> subscriptions.isActive(business))) {
             throw new UserException(HttpStatus.SERVICE_UNAVAILABLE, "Onboarding is not available right now. Please contact HR.");
         }
         return new Link((UUID) r.get("id"), business, r);
@@ -529,26 +529,26 @@ public class OnboardingService {
     public Map<String, Object> candidateView(String token) {
         Link l = link(token);
         return TenantContext.call(l.business(), () -> {
-            Map<String, Object> r = row(l.id());
+            Map<String, Object> onboarding = row(l.id());
             List<Map<String, Object>> docs = documents(l.id());
             Map<String, Object> out = new LinkedHashMap<>();
-            out.put("candidateName", r.get("candidate_name"));
-            out.put("personalEmail", r.get("personal_email"));
+            out.put("candidateName", onboarding.get("candidate_name"));
+            out.put("personalEmail", onboarding.get("personal_email"));
             out.put("businessName", repo.findBusinessName(l.business()));
-            out.put("designation", r.get("designation"));
-            out.put("joiningDate", r.get("joining_date") == null ? null : r.get("joining_date").toString());
-            out.put("india", "IN_IST".equals(r.get("location")));
-            out.put("status", r.get("status"));
-            out.put("editable", OPEN.contains(r.get("status")));
-            out.put("hrComment", "CHANGES_REQUESTED".equals(r.get("status")) ? r.get("hr_comment") : null);
-            out.put("linkExpiresAt", iso(r.get("token_expires_at")));
-            out.put("form", readForm(r));
+            out.put("designation", onboarding.get("designation"));
+            out.put("joiningDate", onboarding.get("joining_date") == null ? null : onboarding.get("joining_date").toString());
+            out.put("india", "IN_IST".equals(onboarding.get("location")));
+            out.put("status", onboarding.get("status"));
+            out.put("editable", OPEN.contains(onboarding.get("status")));
+            out.put("hrComment", "CHANGES_REQUESTED".equals(onboarding.get("status")) ? onboarding.get("hr_comment") : null);
+            out.put("linkExpiresAt", iso(onboarding.get("token_expires_at")));
+            out.put("form", readForm(onboarding));
             out.put("documents", docs.stream().map(d -> {
-                Map<String, Object> m = new LinkedHashMap<>(d);
-                m.remove("verifiedBy");
-                return m;
+                Map<String, Object> view = new LinkedHashMap<>(d);
+                view.remove("verifiedBy");
+                return view;
             }).toList());
-            out.put("checklist", checklist(requiredOf(r), docs));
+            out.put("checklist", checklist(requiredOf(onboarding), docs));
             out.put("kinds", KINDS);
             return out;
         });
@@ -556,92 +556,92 @@ public class OnboardingService {
 
     /** Saves the candidate's answers (partial is fine until they submit). */
     public String candidateSave(String token, Form in) {
-        Link l = editable(token);
-        Form f = clean(in, (String) l.row().get("candidate_name"));
-        TenantContext.run(l.business(), () -> repo.saveForm(l.id(), writeForm(f)));
+        Link link = editable(token);
+        Form form = clean(in, (String) link.row().get("candidate_name"));
+        TenantContext.run(link.business(), () -> repo.saveForm(link.id(), writeForm(form)));
         return "Saved";
     }
 
-    static Form clean(Form in, String fallbackName) {
-        if (in == null) throw new UserException(HttpStatus.BAD_REQUEST, "Your details are missing.");
+    static Form clean(Form form, String fallbackName) {
+        if (form == null) throw new UserException(HttpStatus.BAD_REQUEST, "Your details are missing.");
         Form blank = Form.empty(fallbackName);
-        String pan = trim(in.pan(), 10, "PAN").toUpperCase(Locale.ROOT);
-        String ifsc = trim(in.ifsc(), 11, "IFSC").toUpperCase(Locale.ROOT);
-        String code = trim(in.phoneCountry(), 5, "country code");
-        String ecode = trim(in.emergencyPhoneCountry(), 5, "country code");
-        return new Form(trim(in.firstName(), 60, "first name"), trim(in.middleName(), 60, "middle name"), trim(in.lastName(), 60, "last name"),
-                trim(in.fatherName(), 120, "father's name"), trim(in.dateOfBirth(), 10, "date of birth"), trim(in.gender(), 20, "gender"),
-                code.isEmpty() ? blank.phoneCountry() : code, PeopleRules.digits(trim(in.phone(), 30, "phone")), trim(in.currentAddress(), 500, "address"),
-                trim(in.permanentAddress(), 500, "address"), pan, PeopleRules.digits(trim(in.aadhaar(), 20, "Aadhaar")), PeopleRules.digits(trim(in.uan(), 20, "UAN")),
-                trim(in.bankName(), 80, "bank name"), PeopleRules.digits(trim(in.bankAccount(), 24, "account number")), ifsc,
-                trim(in.previousEmployer(), 120, "previous employer"), trim(in.previousDesignation(), 120, "previous designation"),
-                trim(in.emergencyName(), 120, "emergency contact"), trim(in.emergencyRelation(), 40, "relationship"),
-                ecode.isEmpty() ? blank.emergencyPhoneCountry() : ecode, PeopleRules.digits(trim(in.emergencyPhone(), 30, "emergency phone")));
+        String pan = trim(form.pan(), 10, "PAN").toUpperCase(Locale.ROOT);
+        String ifsc = trim(form.ifsc(), 11, "IFSC").toUpperCase(Locale.ROOT);
+        String code = trim(form.phoneCountry(), 5, "country code");
+        String ecode = trim(form.emergencyPhoneCountry(), 5, "country code");
+        return new Form(trim(form.firstName(), 60, "first name"), trim(form.middleName(), 60, "middle name"), trim(form.lastName(), 60, "last name"),
+                trim(form.fatherName(), 120, "father's name"), trim(form.dateOfBirth(), 10, "date of birth"), trim(form.gender(), 20, "gender"),
+                code.isEmpty() ? blank.phoneCountry() : code, PeopleRules.digits(trim(form.phone(), 30, "phone")), trim(form.currentAddress(), 500, "address"),
+                trim(form.permanentAddress(), 500, "address"), pan, PeopleRules.digits(trim(form.aadhaar(), 20, "Aadhaar")), PeopleRules.digits(trim(form.uan(), 20, "UAN")),
+                trim(form.bankName(), 80, "bank name"), PeopleRules.digits(trim(form.bankAccount(), 24, "account number")), ifsc,
+                trim(form.previousEmployer(), 120, "previous employer"), trim(form.previousDesignation(), 120, "previous designation"),
+                trim(form.emergencyName(), 120, "emergency contact"), trim(form.emergencyRelation(), 40, "relationship"),
+                ecode.isEmpty() ? blank.emergencyPhoneCountry() : ecode, PeopleRules.digits(trim(form.emergencyPhone(), 30, "emergency phone")));
     }
 
     /** The first missing / invalid answer, or null when the form is complete. */
-    static String problem(Form f, boolean india) {
-        if (f.firstName().isEmpty()) return "Enter your first name.";
-        if (f.lastName().isEmpty()) return "Enter your last name.";
-        if (f.fatherName().length() < 2) return "Enter your father's name.";
-        if (!f.dateOfBirth().matches("^\\d{4}-\\d{2}-\\d{2}$")) return "Enter your date of birth.";
+    static String problem(Form form, boolean india) {
+        if (form.firstName().isEmpty()) return "Enter your first name.";
+        if (form.lastName().isEmpty()) return "Enter your last name.";
+        if (form.fatherName().length() < 2) return "Enter your father's name.";
+        if (!form.dateOfBirth().matches("^\\d{4}-\\d{2}-\\d{2}$")) return "Enter your date of birth.";
         try {
-            LocalDate dob = LocalDate.parse(f.dateOfBirth());
-            if (dob.isAfter(LocalDate.now().minusYears(14)) || dob.isBefore(LocalDate.now().minusYears(100))) return "Check your date of birth.";
+            LocalDate dob = LocalDate.parse(form.dateOfBirth());
+            if (dob.isAfter(LocalDate.now().minusYears(14)) || dob.isBefore(LocalDate.now().minusYears(100))) return "Date of birth isn't valid: you must be at least 14 years old.";
         } catch (java.time.DateTimeException e) {
             return "Check your date of birth.";
         }
-        String phone = com.jurislpo.jurisone.engine.Phones.problem(f.phoneCountry(), f.phone());
+        String phone = com.jurislpo.jurisone.engine.Phones.problem(form.phoneCountry(), form.phone());
         if (phone != null) return phone + ".";
-        if (f.currentAddress().length() < 10) return "Enter your current address.";
+        if (form.currentAddress().length() < 10) return "Enter your current address.";
         if (india) {
-            if (!f.pan().isEmpty() && !PeopleRules.PAN_RE.matcher(f.pan()).matches()) return "Enter a valid PAN, e.g. ABCDE1234F (or leave it empty).";
-            if (!f.aadhaar().isEmpty() && !PeopleRules.validAadhaar(f.aadhaar())) return "Your Aadhaar number has 12 digits (or leave it empty).";
-            if (!f.uan().isEmpty() && !PeopleRules.validUan(f.uan())) return "Your UAN has 12 digits (leave it empty if you don't have one).";
-            if (!IFSC.matcher(f.ifsc()).matches()) return "Enter your bank's IFSC, e.g. HDFC0001234.";
+            if (!form.pan().isEmpty() && !PeopleRules.PAN_RE.matcher(form.pan()).matches()) return "Enter a valid PAN, e.g. ABCDE1234F (or leave it empty).";
+            if (!form.aadhaar().isEmpty() && !PeopleRules.validAadhaar(form.aadhaar())) return "Your Aadhaar number has 12 digits (or leave it empty).";
+            if (!form.uan().isEmpty() && !PeopleRules.validUan(form.uan())) return "Your UAN has 12 digits (leave it empty if you don't have one).";
+            if (!IFSC.matcher(form.ifsc()).matches()) return "Enter your bank's IFSC, e.g. HDFC0001234.";
         }
-        if (f.bankName().length() < 2) return "Enter your bank's name.";
-        if (f.bankAccount().length() < 6 || f.bankAccount().length() > 18) return "Enter your bank account number.";
-        if (f.emergencyName().length() < 2) return "Enter an emergency contact.";
-        String ephone = com.jurislpo.jurisone.engine.Phones.problem(f.emergencyPhoneCountry(), f.emergencyPhone());
+        if (form.bankName().length() < 2) return "Enter your bank's name.";
+        if (form.bankAccount().length() < 6 || form.bankAccount().length() > 18) return "Enter your bank account number.";
+        if (form.emergencyName().length() < 2) return "Enter an emergency contact.";
+        String ephone = com.jurislpo.jurisone.engine.Phones.problem(form.emergencyPhoneCountry(), form.emergencyPhone());
         if (ephone != null) return "Emergency contact: " + ephone + ".";
         return null;
     }
 
     public Map<String, String> candidateUpload(String token, String kind, String fileName, byte[] bytes) {
-        Link l = editable(token);
+        Link link = editable(token);
         if (kind == null || !KINDS.containsKey(kind)) throw new UserException(HttpStatus.BAD_REQUEST, "Choose what this document is.");
         if (bytes == null || bytes.length == 0) throw new UserException(HttpStatus.BAD_REQUEST, "Choose a file.");
         if (bytes.length > MAX_FILE_MB * 1024 * 1024) throw new UserException(HttpStatus.BAD_REQUEST, "Files up to " + MAX_FILE_MB + " MB.");
-        Kind k = FILES.stream().filter(x -> bytes.length >= x.magic().length && Arrays.equals(Arrays.copyOf(bytes, x.magic().length), x.magic())).findFirst().orElse(null);
-        if (k == null) throw new UserException(HttpStatus.BAD_REQUEST, "Upload a PDF, JPG or PNG.");
-        return TenantContext.call(l.business(), () -> {
-            int count = repo.countDocuments(l.id());
+        FileKind fileKind = FILES.stream().filter(x -> bytes.length >= x.magic().length && Arrays.equals(Arrays.copyOf(bytes, x.magic().length), x.magic())).findFirst().orElse(null);
+        if (fileKind == null) throw new UserException(HttpStatus.BAD_REQUEST, "Upload a PDF, JPG or PNG.");
+        return TenantContext.call(link.business(), () -> {
+            int count = repo.countDocuments(link.id());
             if (count >= MAX_DOCS) throw new UserException("You can upload up to " + MAX_DOCS + " documents. Remove one first.");
-            Path dir = storageDir.resolve("onboarding").resolve(l.business().toString()).resolve(l.id().toString());
-            Path abs = dir.resolve(UUID.randomUUID() + "." + k.ext());
+            Path directory = storageDir.resolve("onboarding").resolve(link.business().toString()).resolve(link.id().toString());
+            Path absolutePath = directory.resolve(UUID.randomUUID() + "." + fileKind.ext());
             try {
-                Files.createDirectories(dir);
-                Files.write(abs, bytes);
+                Files.createDirectories(directory);
+                Files.write(absolutePath, bytes);
             } catch (IOException e) {
                 throw new IllegalStateException(e);
             }
             String name = (fileName == null ? "" : fileName).replaceAll("[^\\w.\\- ()]", "_");
             name = name.substring(0, Math.min(120, name.length()));
-            if (name.isBlank()) name = "document." + k.ext();
+            if (name.isBlank()) name = "document." + fileKind.ext();
             UUID doc = UUID.randomUUID();
-            repo.insertDocument(doc, l.id(), kind, storageDir.relativize(abs).toString().replace('\\', '/'), name, k.mime(), bytes.length,
+            repo.insertDocument(doc, link.id(), kind, storageDir.relativize(absolutePath).toString().replace('\\', '/'), name, fileKind.mime(), bytes.length,
                     com.jurislpo.jurisone.service.PolicyService.sha256(bytes));
-            repo.markInProgress(l.id());
+            repo.markInProgress(link.id());
             return Map.of("id", doc.toString(), "name", name);
         });
     }
 
     public void candidateDelete(String token, String docIdRaw) {
-        Link l = editable(token);
+        Link link = editable(token);
         UUID doc = Check.uuid(docIdRaw);
-        TenantContext.run(l.business(), () -> {
-            List<String> st = repo.findDocumentStatus(doc, l.id());
+        TenantContext.run(link.business(), () -> {
+            List<String> st = repo.findDocumentStatus(doc, link.id());
             if (st.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Document not found.");
             if ("VERIFIED".equals(st.get(0))) throw new UserException("HR has already verified this document.");
             repo.deleteDocument(doc);
@@ -658,20 +658,20 @@ public class OnboardingService {
 
     /** Submits for HR review: the form must be complete and every required document uploaded. */
     public String candidateSubmit(String token, String ip) {
-        Link l = editable(token);
-        return TenantContext.call(l.business(), () -> {
-            Map<String, Object> r = row(l.id());
-            String p = problem(readForm(r), "IN_IST".equals(r.get("location")));
+        Link link = editable(token);
+        return TenantContext.call(link.business(), () -> {
+            Map<String, Object> onboarding = row(link.id());
+            String p = problem(readForm(onboarding), "IN_IST".equals(onboarding.get("location")));
             if (p != null) throw new UserException(p);
-            for (Map<String, Object> c : checklist(requiredOf(r), documents(l.id()))) {
-                if (((Number) c.get("uploaded")).intValue() < (int) c.get("needed")) {
-                    throw new UserException("Upload " + c.get("label") + ((int) c.get("needed") > 1 ? " (" + c.get("needed") + " files)" : "") + ".");
+            for (Map<String, Object> row : checklist(requiredOf(onboarding), documents(link.id()))) {
+                if (((Number) row.get("uploaded")).intValue() < (int) row.get("needed")) {
+                    throw new UserException("Upload " + row.get("label") + ((int) row.get("needed") > 1 ? " (" + row.get("needed") + " files)" : "") + ".");
                 }
             }
-            repo.markSubmitted(l.id());
-            audit.log(null, "onboarding.submit", "onboarding", l.id().toString(), null, Map.of("candidate", r.get("candidate_name")), ip);
-            UUID hr = (UUID) r.get("created_by");
-            if (hr != null) notifications.notify(hr, r.get("candidate_name") + " submitted their onboarding details — ready for review", "/onboarding/" + l.id());
+            repo.markSubmitted(link.id());
+            audit.log(null, "onboarding.submit", "onboarding", link.id().toString(), null, Map.of("candidate", onboarding.get("candidate_name")), ip);
+            UUID hr = (UUID) onboarding.get("created_by");
+            if (hr != null) notifications.notify(hr, onboarding.get("candidate_name") + " submitted their onboarding details — ready for review", "/onboarding/" + link.id());
             return "Thank you — your details were sent to HR";
         });
     }

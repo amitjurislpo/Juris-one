@@ -20,7 +20,7 @@ public class DepartmentsRepository {
         this.jdbc = jdbc;
     }
 
-    /** Every non-archived department with its head, creator and current headcount; "on" is the creation date in {@code timeZone}. */
+    /** Every non-archived department with its head, creator and current headcount; "createdOn" is the creation date in {@code timeZone}. */
     public List<Row> findActive(String timeZone) {
         return jdbc.query("""
             SELECT d.id, d.name, d.description, h.full_name AS head, c.full_name AS by, d.created_at,

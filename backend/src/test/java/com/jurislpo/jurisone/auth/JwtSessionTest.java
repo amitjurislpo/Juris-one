@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import com.jurislpo.jurisone.security.JwtService;
 import jakarta.servlet.http.Cookie;
@@ -29,8 +30,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /** JWT access tokens (5 min) + rotating refresh tokens; revocation on the next request; problem+json errors. */
 class JwtSessionTest extends IntegrationTest {
-
-    static final String PW = "correct-horse-battery-7";
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -62,8 +61,8 @@ class JwtSessionTest extends IntegrationTest {
 
     Signed signIn() throws Exception {
         String c = "JC-J" + (int) (Math.random() * 1_000_000);
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
-        MockHttpServletResponse res = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}"))
+        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
+        MockHttpServletResponse res = SignIn.session(mvc, c.toLowerCase() + "@example.com")
                 .andExpect(status().isCreated()).andReturn().getResponse();
         List<String> headers = res.getHeaders("Set-Cookie");
         assertThat(headers).anyMatch(h -> h.startsWith("jo_at=") && h.contains("HttpOnly") && h.contains("SameSite=Lax"));
@@ -102,16 +101,16 @@ class JwtSessionTest extends IntegrationTest {
     @Test
     void refreshRotatesAndAReusedRefreshTokenRevokesTheSession() throws Exception {
         Signed s = signIn();
-        MockHttpServletResponse r1 = mvc.perform(write(post("/api/auth/session/refresh")).cookie(s.rt())).andExpect(status().isOk()).andReturn().getResponse();
+        MockHttpServletResponse r1 = mvc.perform(write(post("/api/auth/session-refreshes")).cookie(s.rt())).andExpect(status().isCreated()).andReturn().getResponse();
         String at2 = cookie(r1, "jo_at"), rt2 = cookie(r1, "jo_rt");
         assertThat(rt2).isNotEqualTo(s.rt().getValue());
         mvc.perform(get("/api/me").cookie(new Cookie("jo_at", at2))).andExpect(status().isOk());
 
         // the old refresh token was used — presenting it again means it was copied
-        mvc.perform(write(post("/api/auth/session/refresh")).cookie(s.rt())).andExpect(status().isUnauthorized())
+        mvc.perform(write(post("/api/auth/session-refreshes")).cookie(s.rt())).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
         mvc.perform(get("/api/me").cookie(new Cookie("jo_at", at2))).andExpect(status().isUnauthorized());
-        mvc.perform(write(post("/api/auth/session/refresh")).cookie(new Cookie("jo_rt", rt2))).andExpect(status().isUnauthorized());
+        mvc.perform(write(post("/api/auth/session-refreshes")).cookie(new Cookie("jo_rt", rt2))).andExpect(status().isUnauthorized());
         assertThat(jdbc.queryForObject("SELECT revoked_reason FROM sessions WHERE employee_id = ?", String.class, s.id())).isEqualTo("refresh_reuse");
     }
 
@@ -121,7 +120,7 @@ class JwtSessionTest extends IntegrationTest {
         mvc.perform(get("/api/me").cookie(s.at())).andExpect(status().isOk());
         jdbc.update("UPDATE employees SET portal_access = false WHERE id = ?", s.id());
         mvc.perform(get("/api/me").cookie(s.at())).andExpect(status().isUnauthorized());
-        mvc.perform(write(post("/api/auth/session/refresh")).cookie(s.rt())).andExpect(status().isUnauthorized());
+        mvc.perform(write(post("/api/auth/session-refreshes")).cookie(s.rt())).andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -129,7 +128,7 @@ class JwtSessionTest extends IntegrationTest {
         Signed s = signIn();
         mvc.perform(write(delete("/api/auth/session")).cookie(s.rt())).andExpect(status().isOk());
         mvc.perform(get("/api/me").cookie(s.at())).andExpect(status().isUnauthorized());
-        mvc.perform(write(post("/api/auth/session/refresh")).cookie(s.rt())).andExpect(status().isUnauthorized());
+        mvc.perform(write(post("/api/auth/session-refreshes")).cookie(s.rt())).andExpect(status().isUnauthorized());
     }
 
     @Test

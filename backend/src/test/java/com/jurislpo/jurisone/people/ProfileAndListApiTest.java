@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
@@ -25,8 +26,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** Employees list: never yourself, never the owner; exports leave the owner out; everyone edits a few details of their own. */
 class ProfileAndListApiTest extends IntegrationTest {
 
-    static final String PW = "correct-horse-battery-7";
-
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
 
@@ -38,7 +37,7 @@ class ProfileAndListApiTest extends IntegrationTest {
     }
 
     Cookie signIn(String email) throws Exception {
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + email + "\",\"password\":\"" + PW + "\"}"))
+        String set = SignIn.session(mvc, email)
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -52,10 +51,10 @@ class ProfileAndListApiTest extends IntegrationTest {
         UUID hrRole = t.role("hrm", "self", "dir", "people.view", "people.add");
         UUID empRole = t.role("employee", "self", "dir");
         UUID ownerRole = t.role("owner", "dir", "roles.manage", "people.view", "people.add", "business.manage");
-        t.employee("LH-" + s, "hr." + s + "@example.com", hrRole, PW);
-        t.employee("LX-" + s, "hr2." + s + "@example.com", hrRole, PW);
-        t.employee("LE-" + s, "emp." + s + "@example.com", empRole, PW);
-        t.employee("LO-" + s, "owner." + s + "@example.com", ownerRole, PW);
+        t.employee("LH-" + s, "hr." + s + "@example.com", hrRole);
+        t.employee("LX-" + s, "hr2." + s + "@example.com", hrRole);
+        t.employee("LE-" + s, "emp." + s + "@example.com", empRole);
+        t.employee("LO-" + s, "owner." + s + "@example.com", ownerRole);
         hr = signIn("hr." + s + "@example.com");
         employee = signIn("emp." + s + "@example.com");
         owner = signIn("owner." + s + "@example.com");
@@ -65,7 +64,7 @@ class ProfileAndListApiTest extends IntegrationTest {
     void theListLeavesOutYourselfAndTheOwner() throws Exception {
         String hrList = mvc.perform(get("/api/people").cookie(hr)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(hrList).contains("LX-" + s, "LE-" + s).doesNotContain("LH-" + s, "LO-" + s);
-        mvc.perform(get("/api/people").cookie(hr)).andExpect(jsonPath("$.data.total").value(2)).andExpect(jsonPath("$.data.counts.cur").value(2));
+        mvc.perform(get("/api/people").cookie(hr)).andExpect(jsonPath("$.data.total").value(2)).andExpect(jsonPath("$.data.counts.current").value(2));
         String ownerList = mvc.perform(get("/api/people").cookie(owner)).andReturn().getResponse().getContentAsString();
         assertThat(ownerList).contains("LH-" + s, "LX-" + s, "LE-" + s).doesNotContain("LO-" + s);
         // the export has everyone but the owner (including the person exporting)

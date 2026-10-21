@@ -23,7 +23,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
  * Stateless: no JSESSIONID. Authentication comes from the {@code jo_at} JWT access-token cookie (JwtAuthFilter), renewed
- * through {@code POST /api/auth/session/refresh} with the rotating {@code jo_rt} refresh cookie.
+ * through {@code POST /api/auth/session-refreshes} with the rotating {@code jo_rt} refresh cookie.
  * Spring's CSRF token is off because the app's defence is SameSite=Lax cookies + an Origin check on writes, as today.
  * Permissions are checked in the services with any-of rules.
  * Not loaded for the one-shot CLI commands (migrate / seed / jobs), which run without a web server.
@@ -34,8 +34,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     /** Reachable without a session. */
-    static final String[] PUBLIC = {"/api/auth/session", "/api/auth/session/refresh", "/api/auth/otp-requests", "/api/auth/password-resets", "/api/auth/password", "/api/auth/tokens/**",
-            "/api/onboarding/**"}; // the candidate's one-time link is the credential
+    static final String[] PUBLIC = {"/api/auth/session", "/api/auth/session-refreshes", "/api/auth/otp-requests",
+            "/api/public/onboardings/**"}; // the candidate's one-time link is the credential
 
     @Bean
     SecurityFilterChain api(HttpSecurity http, JwtAuthFilter sessions, OriginCheckFilter origin, SubscriptionGateFilter subscription,
@@ -64,43 +64,43 @@ public class SecurityConfig {
 
     /** The filters run inside the security chain only — not again as plain servlet filters. */
     @Bean
-    FilterRegistrationBean<JwtAuthFilter> sessionFilterRegistration(JwtAuthFilter f) {
-        FilterRegistrationBean<JwtAuthFilter> r = new FilterRegistrationBean<>(f);
-        r.setEnabled(false);
-        return r;
+    FilterRegistrationBean<JwtAuthFilter> sessionFilterRegistration(JwtAuthFilter jwtAuthFilter) {
+        FilterRegistrationBean<JwtAuthFilter> registration = new FilterRegistrationBean<>(jwtAuthFilter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean
-    FilterRegistrationBean<SubscriptionGateFilter> subscriptionFilterRegistration(SubscriptionGateFilter f) {
-        FilterRegistrationBean<SubscriptionGateFilter> r = new FilterRegistrationBean<>(f);
-        r.setEnabled(false);
-        return r;
+    FilterRegistrationBean<SubscriptionGateFilter> subscriptionFilterRegistration(SubscriptionGateFilter subscriptionGateFilter) {
+        FilterRegistrationBean<SubscriptionGateFilter> registration = new FilterRegistrationBean<>(subscriptionGateFilter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean
-    FilterRegistrationBean<PolicyGateFilter> policyGateFilterRegistration(PolicyGateFilter f) {
-        FilterRegistrationBean<PolicyGateFilter> r = new FilterRegistrationBean<>(f);
-        r.setEnabled(false);
-        return r;
+    FilterRegistrationBean<PolicyGateFilter> policyGateFilterRegistration(PolicyGateFilter policyGateFilter) {
+        FilterRegistrationBean<PolicyGateFilter> registration = new FilterRegistrationBean<>(policyGateFilter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean
-    FilterRegistrationBean<OriginCheckFilter> originFilterRegistration(OriginCheckFilter f) {
-        FilterRegistrationBean<OriginCheckFilter> r = new FilterRegistrationBean<>(f);
-        r.setEnabled(false);
-        return r;
+    FilterRegistrationBean<OriginCheckFilter> originFilterRegistration(OriginCheckFilter originCheckFilter) {
+        FilterRegistrationBean<OriginCheckFilter> registration = new FilterRegistrationBean<>(originCheckFilter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     /** CORS: only the web app's origin, with credentials (the browser normally reaches us through the app's /api proxy). */
     @Bean
     CorsConfigurationSource corsConfigurationSource(JurisOneProperties props) {
-        CorsConfiguration c = new CorsConfiguration();
-        c.setAllowedOrigins(List.of(props.frontendOrigin()));
-        c.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE"));
-        c.setAllowedHeaders(List.of("Content-Type", "Accept"));
-        c.setAllowCredentials(true);
+        CorsConfiguration corsConfiguration = new CorsConfiguration();
+        corsConfiguration.setAllowedOrigins(List.of(props.frontendOrigin()));
+        corsConfiguration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE"));
+        corsConfiguration.setAllowedHeaders(List.of("Content-Type", "Accept"));
+        corsConfiguration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
-        src.registerCorsConfiguration("/api/**", c);
+        src.registerCorsConfiguration("/api/**", corsConfiguration);
         return src;
     }
 }

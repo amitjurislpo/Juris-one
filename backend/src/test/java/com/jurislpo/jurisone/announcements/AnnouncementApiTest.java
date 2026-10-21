@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
@@ -25,8 +26,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** Announcements: HR posts them, active ones reach the right employees and ring the bell, each business is separate. */
 class AnnouncementApiTest extends IntegrationTest {
 
-    static final String PW = "correct-horse-battery-7";
-
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper json;
@@ -40,7 +39,7 @@ class AnnouncementApiTest extends IntegrationTest {
     }
 
     Cookie signIn(String email) throws Exception {
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + email + "\",\"password\":\"" + PW + "\"}"))
+        String set = SignIn.session(mvc, email)
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -52,12 +51,12 @@ class AnnouncementApiTest extends IntegrationTest {
         s = TestData.letters(8);
         TestData t = new TestData(jdbc).inBusiness("news-" + s);
         UUID empRole = t.role("employee", "self", "dir");
-        t.employee("NH-" + s, "hr." + s + "@example.com", t.role("hrm", "self", "dir", "announcements.manage"), PW);
-        indianId = t.employee("NI-" + s, "in." + s + "@example.com", empRole, PW);
-        americanId = t.employee("NU-" + s, "us." + s + "@example.com", empRole, PW);
+        t.employee("NH-" + s, "hr." + s + "@example.com", t.role("hrm", "self", "dir", "announcements.manage"));
+        indianId = t.employee("NI-" + s, "in." + s + "@example.com", empRole);
+        americanId = t.employee("NU-" + s, "us." + s + "@example.com", empRole);
         jdbc.update("UPDATE employees SET region = 'US' WHERE id = ?", americanId);
         TestData t2 = new TestData(jdbc).inBusiness("news2-" + s);
-        t2.employee("MX-" + s, "x." + s + "@example.com", t2.role("employee", "self", "dir"), PW);
+        t2.employee("MX-" + s, "x." + s + "@example.com", t2.role("employee", "self", "dir"));
         hr = signIn("hr." + s + "@example.com");
         indian = signIn("in." + s + "@example.com");
         american = signIn("us." + s + "@example.com");

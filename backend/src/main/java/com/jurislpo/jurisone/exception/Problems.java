@@ -46,20 +46,20 @@ public final class Problems {
     }
 
     public static ProblemDetail of(HttpStatusCode status, String code, String detail, String instance) {
-        ProblemDetail p = ProblemDetail.forStatusAndDetail(status, detail);
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         HttpStatus known = HttpStatus.resolve(status.value());
-        p.setTitle(known != null ? known.getReasonPhrase() : "Error");
-        if (instance != null) p.setInstance(URI.create(instance));
-        p.setProperty("code", code != null ? code : defaultCode(status));
-        return p;
+        problem.setTitle(known != null ? known.getReasonPhrase() : "Error");
+        if (instance != null) problem.setInstance(URI.create(instance));
+        problem.setProperty("code", code != null ? code : defaultCode(status));
+        return problem;
     }
 
     public static ProblemDetail of(HttpStatusCode status, String detail, String instance) {
         return of(status, defaultCode(status), detail, instance);
     }
 
-    public static ProblemDetail withErrors(ProblemDetail p, List<FieldError> errors) {
-        if (errors != null && !errors.isEmpty()) p.setProperty("errors", errors);
-        return p;
+    public static ProblemDetail withErrors(ProblemDetail problem, List<FieldError> errors) {
+        if (errors != null && !errors.isEmpty()) problem.setProperty("errors", errors);
+        return problem;
     }
 }

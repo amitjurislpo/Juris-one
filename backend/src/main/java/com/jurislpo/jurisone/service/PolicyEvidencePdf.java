@@ -38,10 +38,10 @@ public final class PolicyEvidencePdf {
             String generated = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm 'UTC'").format(Instant.now().atOffset(ZoneOffset.UTC));
             int page = 0, i = 0;
             do {
-                PDPage p = new PDPage(size);
-                doc.addPage(p);
+                PDPage pDPage = new PDPage(size);
+                doc.addPage(pDPage);
                 page++;
-                try (PDPageContentStream c = new PDPageContentStream(doc, p)) {
+                try (PDPageContentStream c = new PDPageContentStream(doc, pDPage)) {
                     float y = size.getHeight() - margin;
                     if (page == 1) {
                         text(c, bold, 15, margin, y, "Policy acceptance record");
@@ -88,38 +88,38 @@ public final class PolicyEvidencePdf {
         }
     }
 
-    static String str(Object o) {
-        return o == null ? "" : o.toString();
+    static String str(Object value) {
+        return value == null ? "" : value.toString();
     }
 
-    static void text(PDPageContentStream c, PDFont f, float size, float x, float y, String s) throws IOException {
-        c.beginText();
-        c.setFont(f, size);
-        c.newLineAtOffset(x, y);
-        c.showText(s);
-        c.endText();
+    static void text(PDPageContentStream pDPageContentStream, PDFont font, float size, float x, float y, String text) throws IOException {
+        pDPageContentStream.beginText();
+        pDPageContentStream.setFont(font, size);
+        pDPageContentStream.newLineAtOffset(x, y);
+        pDPageContentStream.showText(text);
+        pDPageContentStream.endText();
     }
 
     /** Characters the standard font can't draw become "?". */
-    static String safe(PDFont f, String s) {
-        StringBuilder b = new StringBuilder(s.length());
-        s.codePoints().forEach(cp -> {
+    static String safe(PDFont font, String text) {
+        StringBuilder builder = new StringBuilder(text.length());
+        text.codePoints().forEach(cp -> {
             String ch = new String(Character.toChars(cp));
             try {
-                f.encode(ch);
-                b.append(ch);
+                font.encode(ch);
+                builder.append(ch);
             } catch (IOException | IllegalArgumentException e) {
-                b.append('?');
+                builder.append('?');
             }
         });
-        return b.toString();
+        return builder.toString();
     }
 
     /** Cuts the text (with "…" as "...") to fit the column. */
-    static String fit(PDFont f, float size, String s, float max) throws IOException {
-        if (f.getStringWidth(s) / 1000 * size <= max) return s;
-        String t = s;
-        while (t.length() > 1 && f.getStringWidth(t + "...") / 1000 * size > max) t = t.substring(0, t.length() - 1);
+    static String fit(PDFont font, float size, String text, float max) throws IOException {
+        if (font.getStringWidth(text) / 1000 * size <= max) return text;
+        String t = text;
+        while (t.length() > 1 && font.getStringWidth(t + "...") / 1000 * size > max) t = t.substring(0, t.length() - 1);
         return t + "...";
     }
 }

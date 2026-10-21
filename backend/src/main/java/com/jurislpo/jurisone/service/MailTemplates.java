@@ -6,19 +6,19 @@ public final class MailTemplates {
 
     public record Content(String subject, String text, String html) {}
 
-    static String esc(String s) {
-        StringBuilder b = new StringBuilder();
-        for (char c : s.toCharArray()) {
-            switch (c) {
-                case '&' -> b.append("&amp;");
-                case '<' -> b.append("&lt;");
-                case '>' -> b.append("&gt;");
-                case '"' -> b.append("&quot;");
-                case '\'' -> b.append("&#39;");
-                default -> b.append(c);
+    static String esc(String text) {
+        StringBuilder builder = new StringBuilder();
+        for (char character : text.toCharArray()) {
+            switch (character) {
+                case '&' -> builder.append("&amp;");
+                case '<' -> builder.append("&lt;");
+                case '>' -> builder.append("&gt;");
+                case '"' -> builder.append("&quot;");
+                case '\'' -> builder.append("&#39;");
+                default -> builder.append(character);
             }
         }
-        return b.toString();
+        return builder.toString();
     }
 
     static String shell(String title, String body) {
@@ -32,15 +32,6 @@ public final class MailTemplates {
     static String button(String href, String label) {
         return "<p style=\"margin:22px 0\"><a href=\"" + href + "\" style=\"background:#6E56CF;color:#fff;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:600\">"
                 + label + "</a></p><p style=\"color:#5D5F6D;font-size:12px;word-break:break-all\">Or paste this link: " + href + "</p>";
-    }
-
-    public static Content invite(String name, String code, String link, int hours) {
-        return new Content(
-                "Welcome to JurisOne — set your password",
-                "Hi " + name + ",\n\nYour JurisOne account (" + code + ") is ready. Set your password with this one-time link (valid " + hours + " hours):\n"
-                        + link + "\n\nSign in afterwards with your official email.",
-                shell("Welcome, " + esc(name), "<p>Your JurisOne account <b>" + code + "</b> is ready. Set your password with this one-time link — it expires in "
-                        + hours + " hours.</p>" + button(link, "Set my password")));
     }
 
     /** The candidate's onboarding link (to their personal email); {@code note}: what HR asked to change, if sent back. */
@@ -70,6 +61,15 @@ public final class MailTemplates {
                         + (hasNote ? "<p style=\"color:#5D5F6D\">Note: " + esc(note) + "</p>" : "")));
     }
 
+    /** An HR letter was issued to the employee; the PDF is attached and also lives under My letters. */
+    public static Content letter(String name, String business, String subject, String reference, String link) {
+        return new Content(
+                subject + " (" + reference + ")",
+                "Hi " + name + ",\n\n" + business + " has issued you a letter: " + subject + " (reference " + reference + "). The PDF is attached; you can also find it under My letters in JurisOne: " + link,
+                shell(esc(subject), "<p>Hi " + esc(name) + ", " + esc(business) + " has issued you a letter: <b>" + esc(subject) + "</b> (reference " + esc(reference) + ").</p>"
+                        + "<p style=\"color:#5D5F6D\">The PDF is attached. You can also find it under <a href=\"" + esc(link) + "\">My letters</a> in JurisOne.</p>"));
+    }
+
     /** Subscription ending soon ({@code daysLeft} > 0) or ended ({@code daysLeft} &lt;= 0). */
     public static Content subscription(String name, String business, String plan, String endsOn, int daysLeft, String link) {
         boolean ended = daysLeft <= 0;
@@ -82,16 +82,6 @@ public final class MailTemplates {
                 "Hi " + name + ",\n\nThe " + plan + " subscription for " + business + " " + when + ".\n" + after + "\n\nContact JurisOne to renew.\n" + link,
                 shell(esc(subject), "<p>Hi " + esc(name) + ", the <b>" + esc(plan) + "</b> subscription for <b>" + esc(business) + "</b> " + esc(when) + ".</p>"
                         + "<p style=\"color:#5D5F6D\">" + esc(after) + " Contact JurisOne to renew.</p>" + button(link, "View subscription")));
-    }
-
-    public static Content reset(String name, String link, int minutes) {
-        return new Content(
-                "Reset your JurisOne password",
-                "Hi " + name + ",\n\nUse this one-time link to choose a new password (valid " + minutes + " minutes):\n" + link
-                        + "\n\nIf you didn't ask for this, you can ignore this email.",
-                shell("Reset your password", "<p>Hi " + esc(name) + ", use this one-time link to choose a new password. It expires in " + minutes + " minutes.</p>"
-                        + button(link, "Choose a new password")
-                        + "<p style=\"color:#5D5F6D;font-size:13px\">If you didn't ask for this, ignore this email — your password stays the same.</p>"));
     }
 
     public static Content otp(String name, String code, int minutes) {

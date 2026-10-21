@@ -35,63 +35,63 @@ public class ApiExceptionHandler {
     static final String DUPLICATE = "That already exists.";
     static final String GENERIC = "Something went wrong. Please try again.";
 
-    private static ResponseEntity<ProblemDetail> respond(ProblemDetail p) {
-        return ResponseEntity.status(p.getStatus()).body(p);
+    private static ResponseEntity<ProblemDetail> respond(ProblemDetail problem) {
+        return ResponseEntity.status(problem.getStatus()).body(problem);
     }
 
     @ExceptionHandler(ApiException.class)
-    ResponseEntity<ProblemDetail> api(ApiException e, HttpServletRequest req) {
-        return respond(Problems.of(e.status(), e.code(), e.getMessage(), req.getRequestURI()));
+    ResponseEntity<ProblemDetail> api(ApiException e, HttpServletRequest request) {
+        return respond(Problems.of(e.status(), e.code(), e.getMessage(), request.getRequestURI()));
     }
 
     /** {@code @PreAuthorize} denial: 401 when signed out, 403 otherwise. */
     @ExceptionHandler(AccessDeniedException.class)
-    ResponseEntity<ProblemDetail> denied(AccessDeniedException e, HttpServletRequest req) {
+    ResponseEntity<ProblemDetail> denied(AccessDeniedException e, HttpServletRequest request) {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
         if (a == null || a instanceof AnonymousAuthenticationToken || !a.isAuthenticated()) {
-            return respond(Problems.of(HttpStatus.UNAUTHORIZED, UnauthenticatedException.MESSAGE, req.getRequestURI()));
+            return respond(Problems.of(HttpStatus.UNAUTHORIZED, UnauthenticatedException.MESSAGE, request.getRequestURI()));
         }
-        return respond(Problems.of(HttpStatus.FORBIDDEN, ForbiddenException.DEFAULT, req.getRequestURI()));
+        return respond(Problems.of(HttpStatus.FORBIDDEN, ForbiddenException.DEFAULT, request.getRequestURI()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    ResponseEntity<ProblemDetail> invalid(MethodArgumentNotValidException e, HttpServletRequest req) {
+    ResponseEntity<ProblemDetail> invalid(MethodArgumentNotValidException e, HttpServletRequest request) {
         List<Problems.FieldError> errors = e.getBindingResult().getFieldErrors().stream()
                 .map(fe -> new Problems.FieldError(fe.getField(), fe.getDefaultMessage() != null ? fe.getDefaultMessage() : INVALID)).toList();
         // the first issue is the message shown, like before
         String msg = errors.isEmpty() ? e.getBindingResult().getAllErrors().stream().findFirst().map(err -> err.getDefaultMessage()).orElse(INVALID) : errors.get(0).message();
-        return respond(Problems.withErrors(Problems.of(HttpStatus.BAD_REQUEST, msg == null ? INVALID : msg, req.getRequestURI()), errors));
+        return respond(Problems.withErrors(Problems.of(HttpStatus.BAD_REQUEST, msg == null ? INVALID : msg, request.getRequestURI()), errors));
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
-    ResponseEntity<ProblemDetail> invalid(ConstraintViolationException e, HttpServletRequest req) {
+    ResponseEntity<ProblemDetail> invalid(ConstraintViolationException e, HttpServletRequest request) {
         List<Problems.FieldError> errors = e.getConstraintViolations().stream()
                 .map(v -> new Problems.FieldError(String.valueOf(v.getPropertyPath()), v.getMessage())).toList();
         String msg = errors.isEmpty() ? INVALID : errors.get(0).message();
-        return respond(Problems.withErrors(Problems.of(HttpStatus.BAD_REQUEST, msg, req.getRequestURI()), errors));
+        return respond(Problems.withErrors(Problems.of(HttpStatus.BAD_REQUEST, msg, request.getRequestURI()), errors));
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
-    ResponseEntity<ProblemDetail> unreadable(Exception e, HttpServletRequest req) {
-        return respond(Problems.of(HttpStatus.BAD_REQUEST, INVALID, req.getRequestURI()));
+    ResponseEntity<ProblemDetail> unreadable(Exception e, HttpServletRequest request) {
+        return respond(Problems.of(HttpStatus.BAD_REQUEST, INVALID, request.getRequestURI()));
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
-    ResponseEntity<ProblemDetail> tooLarge(MaxUploadSizeExceededException e, HttpServletRequest req) {
-        return respond(Problems.of(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "That file is too large.", req.getRequestURI()));
+    ResponseEntity<ProblemDetail> tooLarge(MaxUploadSizeExceededException e, HttpServletRequest request) {
+        return respond(Problems.of(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "That file is too large.", request.getRequestURI()));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
-    ResponseEntity<ProblemDetail> integrity(DataIntegrityViolationException e, HttpServletRequest req) {
+    ResponseEntity<ProblemDetail> integrity(DataIntegrityViolationException e, HttpServletRequest request) {
         if (e.getMostSpecificCause() instanceof SQLException sql && "23505".equals(sql.getSQLState())) {
-            return respond(Problems.of(HttpStatus.CONFLICT, DUPLICATE, req.getRequestURI()));
+            return respond(Problems.of(HttpStatus.CONFLICT, DUPLICATE, request.getRequestURI()));
         }
-        log.error("[api] data integrity {}", req.getRequestURI(), e);
-        return respond(Problems.of(HttpStatus.INTERNAL_SERVER_ERROR, GENERIC, req.getRequestURI()));
+        log.error("[api] data integrity {}", request.getRequestURI(), e);
+        return respond(Problems.of(HttpStatus.INTERNAL_SERVER_ERROR, GENERIC, request.getRequestURI()));
     }
 
     @ExceptionHandler(Exception.class)
-    ResponseEntity<ProblemDetail> unexpected(Exception e, HttpServletRequest req) {
+    ResponseEntity<ProblemDetail> unexpected(Exception e, HttpServletRequest request) {
         // Spring's own 404 / 405 / 415 … keep their status and headers (Allow, Accept)
         if (e instanceof ErrorResponse er && !er.getStatusCode().is5xxServerError()) {
             String msg = switch (er.getStatusCode().value()) {
@@ -100,9 +100,9 @@ public class ApiExceptionHandler {
                 case 415 -> "Unsupported content type.";
                 default -> INVALID;
             };
-            return ResponseEntity.status(er.getStatusCode()).headers(er.getHeaders()).body(Problems.of(er.getStatusCode(), msg, req.getRequestURI()));
+            return ResponseEntity.status(er.getStatusCode()).headers(er.getHeaders()).body(Problems.of(er.getStatusCode(), msg, request.getRequestURI()));
         }
-        log.error("[api] {} {}", req.getMethod(), req.getRequestURI(), e);
-        return respond(Problems.of(HttpStatus.INTERNAL_SERVER_ERROR, GENERIC, req.getRequestURI()));
+        log.error("[api] {} {}", request.getMethod(), request.getRequestURI(), e);
+        return respond(Problems.of(HttpStatus.INTERNAL_SERVER_ERROR, GENERIC, request.getRequestURI()));
     }
 }

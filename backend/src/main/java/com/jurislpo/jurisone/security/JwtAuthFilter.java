@@ -50,49 +50,50 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain) throws ServletException, IOException {
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         TenantContext.clear(); // the lookup below is a system query
         try {
-            String token = cookie(req, SessionService.ACCESS_COOKIE);
+            String token = cookie(request, SessionService.ACCESS_COOKIE);
             if (token != null && !token.isEmpty()) {
                 try {
                     JwtService.AccessClaims claims = jwt.verify(token);
-                    CurrentUser u = load(claims);
-                    if (u != null) {
-                        List<SimpleGrantedAuthority> auth = u.perms().stream().map(SimpleGrantedAuthority::new).toList();
-                        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(u, null, auth));
-                        TenantContext.set(u.businessId()); // null for the super admin: platform requests run in system mode
+                    CurrentUser user = load(claims);
+                    if (user != null) {
+                        List<SimpleGrantedAuthority> auth = user.perms().stream().map(SimpleGrantedAuthority::new).toList();
+                        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(user, null, auth));
+                        request.setAttribute(AuditTrail.USER_ATTR, user); // the audit trail reads the actor after this chain has ended
+                        TenantContext.set(user.businessId()); // null for the super admin: platform requests run in system mode
                     }
                 } catch (JwtService.ExpiredException e) {
-                    req.setAttribute(EXPIRED_ATTR, Boolean.TRUE);
+                    request.setAttribute(EXPIRED_ATTR, Boolean.TRUE);
                 } catch (JwtException | IllegalArgumentException e) {
                     log.debug("rejected access token: {}", e.getMessage()); // forged / malformed: treated as signed out
                 }
             }
-            chain.doFilter(req, res);
+            chain.doFilter(request, response);
         } finally {
             TenantContext.clear();
         }
     }
 
     /** A cookie's value, or null. */
-    public static String cookie(HttpServletRequest req, String name) {
-        if (req.getCookies() == null) return null;
-        for (Cookie c : req.getCookies()) if (name.equals(c.getName())) return c.getValue();
+    public static String cookie(HttpServletRequest request, String name) {
+        if (request.getCookies() == null) return null;
+        for (Cookie c : request.getCookies()) if (name.equals(c.getName())) return c.getValue();
         return null;
     }
 
     CurrentUser load(JwtService.AccessClaims claims) {
         List<Map<String, Object>> rows = sessions.findSessionUser(claims.sessionId());
         if (rows.isEmpty()) return null;
-        Map<String, Object> r = rows.get(0);
+        Map<String, Object> row = rows.get(0);
         Instant now = Instant.now();
-        if (!claims.employeeId().equals(r.get("session_employee"))) return null;
-        if (r.get("revoked_at") != null || !((Timestamp) r.get("expires_at")).toInstant().isAfter(now)) return null;
-        if (!Boolean.TRUE.equals(r.get("portal_access")) || "EXITED".equals(r.get("status")) || r.get("user_id") == null) return null;
-        if ("SUSPENDED".equals(r.get("business_status"))) return null; // a suspended business is signed out everywhere
+        if (!claims.employeeId().equals(row.get("session_employee"))) return null;
+        if (row.get("revoked_at") != null || !((Timestamp) row.get("expires_at")).toInstant().isAfter(now)) return null;
+        if (!Boolean.TRUE.equals(row.get("portal_access")) || "EXITED".equals(row.get("status")) || row.get("user_id") == null) return null;
+        if ("SUSPENDED".equals(row.get("business_status"))) return null; // a suspended business is signed out everywhere
 
-        Instant lastSeen = ((Timestamp) r.get("last_seen_at")).toInstant();
+        Instant lastSeen = ((Timestamp) row.get("last_seen_at")).toInstant();
         if (Duration.between(lastSeen, now).compareTo(TOUCH_EVERY) >= 0) {
             try {
                 sessions.touch(claims.sessionId());
@@ -100,12 +101,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 log.debug("session touch failed", e);
             }
         }
-        UUID roleId = (UUID) r.get("role_id");
+        UUID roleId = (UUID) row.get("role_id");
         List<String> perms = sessions.findPermissionKeys(roleId);
         return new CurrentUser(
-                (UUID) r.get("id"), (String) r.get("code"), (String) r.get("full_name"), (String) r.get("email"), (String) r.get("designation"),
-                roleId, (String) r.get("role_key"), (String) r.get("role_name"), java.util.Set.copyOf(new HashSet<>(perms)),
-                Boolean.TRUE.equals(r.get("is_super_admin")), (String) r.get("region"), (String) r.get("time_zone"),
-                Boolean.TRUE.equals(r.get("has_reports")), claims.sessionId(), (UUID) r.get("business_id"));
+                (UUID) row.get("id"), (String) row.get("code"), (String) row.get("full_name"), (String) row.get("email"), (String) row.get("designation"),
+                roleId, (String) row.get("role_key"), (String) row.get("role_name"), java.util.Set.copyOf(new HashSet<>(perms)),
+                Boolean.TRUE.equals(row.get("is_super_admin")), (String) row.get("region"), (String) row.get("time_zone"),
+                Boolean.TRUE.equals(row.get("has_reports")), claims.sessionId(), (UUID) row.get("business_id"),
+                com.jurislpo.jurisone.service.PhotoService.version(row.get("photo_updated_at")));
     }
 }

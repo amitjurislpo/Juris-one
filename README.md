@@ -39,17 +39,13 @@ Then start the web app from the `juris-one-frontend` repo (`npm install`, `npm r
 
 ### Sign in
 
-Everyone signs in with their **email** (employee IDs repeat from one business to the next, so they are not a sign-in name).
+Everyone signs in with their **email** and a 6-digit code emailed to it (there are no passwords). Employee IDs repeat from one business to the next, so they are not a sign-in name. In `dev` the code is always `000000`.
 
-| Who | Email | Password |
-|---|---|---|
-| Super admin (platform) | `jurisone.seed.super-admin-email` | `jurisone.seed.super-admin-password` (in `application-<env>.properties`) |
-| Demo business owner — sub admin (only with `jurisone.seed.demo=true`) | `sana.kapoor@jurislpo.com` (JC-002) | `jurisone.seed.owner-password` |
-| Demo business employees (only with `jurisone.seed.demo=true`) | `firstname.lastname@jurislpo.com` (JC-004 … JC-091) | `jurisone.seed.demo-password` |
-
-The seed never overwrites a password that is already set.
-
-**Change the super admin password after the first sign-in in any shared environment.**
+| Who | Email |
+|---|---|
+| Super admin (platform) | `jurisone.seed.super-admin-email` (in `application-<env>.properties`) |
+| Demo business owner — sub admin (only with `jurisone.seed.demo=true`) | `sana.kapoor@jurislpo.com` (JC-002) |
+| Demo business employees (only with `jurisone.seed.demo=true`) | `firstname.lastname@jurislpo.com` (JC-004 … JC-091) |
 
 ## Commands
 
@@ -81,12 +77,12 @@ Four environments. **Each one is a single file**, `backend/src/main/resources/ap
 
 - **Secrets.** `dev` has local-only values written in its file (nothing in it is a real secret). `sqe`, `uat` and `prd` never have secrets in
   git: their files contain `${PLACEHOLDERS}` that you provide as **environment variables on the server**: `DB_PASSWORD`,
-  `PII_ENCRYPTION_KEY` (`openssl rand -base64 32`), `JWT_SECRET` (`openssl rand -base64 48`), `SUPER_ADMIN_PASSWORD`, `SMTP_USER`,
-  `SMTP_PASS` (and `SEED_OWNER_PASSWORD` / `SEED_DEMO_PASSWORD` for sqe). Use a different PII key and JWT secret in every environment.
+  `PII_ENCRYPTION_KEY` (`openssl rand -base64 32`), `JWT_SECRET` (`openssl rand -base64 48`), `SMTP_USER`,
+  `SMTP_PASS`. Use a different PII key and JWT secret in every environment.
   Any setting can also be overridden by an environment variable, e.g. `JURISONE_MAIL_HOST=smtp.corp.example`.
 - Pick the environment with the Spring profile: `SPRING_PROFILES_ACTIVE=sqe` or `-Dspring-boot.run.profiles=sqe` (default `dev`).
 - Docker: the database and the API run per environment by setting variables for `docker compose` (see the top of `docker-compose.yml`): `COMPOSE_PROJECT_NAME`, `APP_ENV`, `DB_PORT`, `BACKEND_PORT`, `POSTGRES_DB`, `POSTGRES_PASSWORD` and the secrets above. Each project name gets its own containers and volumes, so environments run side by side.
-- **Sign-in is by emailed code only** (no password option). Only `dev` may use the fixed code `000000` (`jurisone.otp.fixed-code`); `sqe`, `uat` and `prd` send real codes, so they need `jurisone.mail.*`. The identity provider (IAM JCG) replaces this later. The password endpoint is off unless `jurisone.password-login.enabled=true`.
+- **Sign-in is by emailed code only** (no password option). Only `dev` may use the fixed code `000000` (`jurisone.otp.fixed-code`); `sqe`, `uat` and `prd` send real codes, so they need `jurisone.mail.*`. The identity provider (IAM JCG) replaces this later.
 - **Guard:** `sqe`, `uat` and `prd` refuse to start with a fixed sign-in code or without a mail host; `uat` and `prd` also with demo data, an `http://` `jurisone.app-url` or a secret that is empty or still a `<placeholder>`.
 
 ## Deploying
@@ -97,8 +93,8 @@ JurisOne is a web app (static files from `juris-one-frontend`), a Spring Boot AP
 2. **Environment.** Edit `backend/src/main/resources/application-prd.properties` for your site (`jurisone.app-url` — the public https URL, the only origin the API accepts —, the database address, `jurisone.mail.host`, the super admin's email) and set the secrets as environment variables of the API process (systemd `Environment=` / a secret manager):
    - `DB_PASSWORD`
    - `PII_ENCRYPTION_KEY` — generate once and keep it in your password manager. Losing it makes PII unreadable.
-   - `JWT_SECRET`, `SUPER_ADMIN_PASSWORD` — change the super admin password after the first sign-in.
-   - `SMTP_USER`, `SMTP_PASS` so invites, resets and decisions are emailed.
+   - `JWT_SECRET`
+   - `SMTP_USER`, `SMTP_PASS` so sign-in codes and decisions are emailed.
    - Demo data is off in `prd` (`jurisone.seed.demo=false`), so no demo people are created.
 3. **API.** Either in Docker:
    ```bash
@@ -152,7 +148,7 @@ backend/                           Spring Boot API (Maven)
     security/                      JWT filter, subscription / policy gates, origin check, Auth.requirePage / assertPerm
     tenancy/                       TenantContext + the DataSource that applies row-level security per business
     engine/                        pure rules: attendance, leave, payroll, tax, permissions, nav, formatting
-    crypto/                        AES-256-GCM PII encryption, argon2id passwords, masking
+    crypto/                        AES-256-GCM PII encryption, tokens, masking
     cli/                           migrate / seed / reset / jobs commands
   src/main/resources/db/migration/ Flyway migrations (V1 = the original schema)
   src/test/java/                   JUnit 5: engine tests + API tests against Testcontainers Postgres
@@ -162,16 +158,19 @@ backend/                           Spring Boot API (Maven)
 
 **Businesses are kept apart by the database.** JurisOne hosts many businesses in one database. Every business-owned row carries `business_id`, and PostgreSQL row-level security lets a request see and change only its own business's rows: the API sets the business of the signed-in user on every database connection (and switches to the restricted `jurisone_tenant` role, because superusers skip row-level security). Sign-in, the super admin and the scheduled jobs run without a business; the jobs then process one business at a time. Employee codes, department names, holidays, roles, policies and payroll months are unique per business; emails are unique across the platform.
 
+**Roles come from the super admin.** Platform → role templates is a catalogue of roles (name, permissions, which roles each may assign). Creating a business picks its roles (Owner, HR Manager, Finance Manager and Employee are always added; others are optional) and each business gets a copy; the super admin can add, remove or re-sync a business's roles later (`/api/platform/role-templates`, `/api/platform/businesses/{id}/roles`). A business owner can look at roles but not change them.
+
 **Subscriptions decide who can use JurisOne.** The super admin (Platform → Businesses, Plans) creates each business with its sub admin, the business owner, who has the `owner` role and runs everything in it but can't make another owner. Billing is manual: the super admin assigns a plan for a period (price, dates, notes) and renews it. A plan can cap the number of employees and include modules such as Juris Track.
 - **Covered today:** everything works.
 - **Last 7 days:** the owner sees a banner on every page and gets a bell notification and an email 7 days and 1 day before the end, and on the day after it ends.
-- **Not active** (ended, not started yet, or cancelled; no grace period): everyone can still sign in, but every page shows "JurisOne is paused" and the API answers `402 SUBSCRIPTION_INACTIVE`. Only these stay open: sign-in, `/api/me`, the shell, notifications, and for the owner the Subscription page and the employee export.
+- **Not started yet, or no subscription at all:** nobody in the business can sign in (`402 SUBSCRIPTION_INACTIVE`, "starts on <date>" / "no active subscription"). A session that already exists is refused on every API except sign-out, `/api/me` and the shell.
+- **Ended (or cancelled after it ran; no grace period):** read-only. Everyone can sign in and view all their data, and the owner can export it, but every write (POST/PUT/PATCH/DELETE) answers `402 SUBSCRIPTION_INACTIVE` from the API itself; only sign-out / session refresh and marking notifications read stay writable. The web app hides every action. Pending policy acceptances are not asked (accepting is a write), and a candidate's onboarding link stops working. `GET /api/me` returns `readOnly: true`.
 - **Suspended business:** nobody in it can sign in, and existing sign-ins end at once.
 - **Juris Track:** a business has it when its plan includes the module or the super admin grants it on its own (complimentary, optionally with no end date, or paid with a price and an end date; revoking keeps the record). With it, everyone in the business sees *Juris Track* in the menu, which for now shows "Coming soon". Without it, there is no menu item and both `/juris-track` and `GET /api/juris-track` answer 404.
 - **Employee export:** the owner can download every employee as Excel, before and after expiry. Identity numbers are masked unless the owner confirms the full export. Both downloads are audited.
 
 **Company policies must be accepted, and every acceptance is a legal record.** HR managers and owners (`policies.manage`) write a policy (text and/or a PDF) as a draft and publish it. Each publish is a new, numbered version that can never be changed.
-- While the current version of a published policy that needs acceptance hasn't been accepted, the user sees only the acceptance screen, and the API answers `428 POLICY_ACK_REQUIRED` to everything except sign-in, `/api/me`, the shell, notifications and reading and accepting the policies. Owners aren't asked. A new version asks everyone again.
+- While the current version of a published policy that needs acceptance hasn't been accepted (and the business's subscription hasn't ended), the user sees only the acceptance screen, and the API answers `428 POLICY_ACK_REQUIRED` to everything except sign-in, `/api/me`, the shell, notifications and reading and accepting the policies. Owners aren't asked. A new version asks everyone again.
 - Each acceptance stores a snapshot: policy title and version, SHA-256 of the text and of the PDF, the employee's ID, name and email, the time (UTC), IP address and browser. Database triggers reject any UPDATE, DELETE or TRUNCATE on `policy_versions` and `policy_acknowledgements`.
 - HR sees who has and hasn't accepted the current version, can send reminders, and can download the evidence (every acceptance of every version) as CSV or as a printable PDF with the full fingerprints. Both downloads are audited.
 - Everyone can read the current policies under *My policies*. Published policies are archived, not deleted.
@@ -193,8 +192,8 @@ backend/                           Spring Boot API (Maven)
 - So is the session of an employee whose access is disabled or who has exited.
 - Disabling access or marking someone exited revokes their sessions immediately.
 
-**Passwords, tokens and sessions:**
-- Passwords are hashed with argon2id (m=19456, t=2, p=1).
+**Sign-in codes, tokens and sessions:**
+- There are no passwords: a sign-in code is emailed, works once, expires in 10 minutes and is stored only as a hash.
 - Access tokens are JWTs (HS256, `jurisone.security.jwt-secret`) that expire after 5 minutes; every request also re-checks the session and the employee, so revocation is immediate.
 - Refresh tokens are 256-bit random values that rotate on every use; only their SHA-256 is stored, and replaying an old one revokes the session.
 
@@ -214,7 +213,7 @@ backend/                           Spring Boot API (Maven)
 
 **Secrets:** no password, key or secret is stored in the code, README or the env templates; everything comes from the environment.
 
-**Audit:** sensitive changes are written to `audit_log` (who, what, when, before → after).
+**Audit:** sensitive changes are written to `audit_log` (who, what, when, before → after). On top of that every write request and every sensitive read is recorded (actor, business, path, status, duration, IP; never bodies or secrets), so no step is lost: `AuditTrailFilter` writes it on its own connection even when the request fails or rolls back. Page views come from `POST /api/audit/page-views`. The table is append-only (trigger). The owner reads it at `/api/audit`, the super admin (all businesses) at `/api/platform/audit`; both have `/export` (CSV).
 
 ### Money and time
 
@@ -370,7 +369,7 @@ Salary is never shown on Home; an e2e test checks that no ₹ amount appears the
 
 ### Email
 
-**Without SMTP (dev):** leave `jurisone.mail.host` empty. Emails are written to the `email_outbox` table and printed in the API log, so you can copy invite and reset links from there.
+**Without SMTP (dev):** leave `jurisone.mail.host` empty. Emails are written to the `email_outbox` table and printed in the API log, so you can copy sign-in codes and links from there.
 
 **With SMTP:** set the `jurisone.mail.*` settings (`SMTP_USER` / `SMTP_PASS` as environment variables).
 
@@ -384,4 +383,4 @@ To add the licensed font:
 
 ### Table conventions
 
-List pages keep search, filters, sorting and paging in the URL (`?q=&sort=&dir=&page=`). The API runs the query, so lists stay fast as the company grows. The shared pieces are `common/ListParams.java` here and the table components in the frontend repo.
+List pages keep search, filters, sorting and paging in the URL (`?search=&sort=&sortDirection=&page=`). The API runs the query, so lists stay fast as the company grows. The shared pieces are `common/ListParams.java` here and the table components in the frontend repo.

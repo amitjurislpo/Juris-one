@@ -36,44 +36,44 @@ public class ModuleGrantService {
         return repo.findByBusiness(businessId, today);
     }
 
-    record Valid(String module, String source, long pricePaise, LocalDate starts, LocalDate ends, String notes) {}
+    record ValidatedGrant(String module, String source, long pricePaise, LocalDate starts, LocalDate ends, String notes) {}
 
-    Valid validate(GrantInput in, UUID businessId, UUID editing) {
-        if (in == null) throw new UserException(HttpStatus.BAD_REQUEST, "Grant details are missing.");
-        String module = in.module() == null || in.module().isBlank() ? "JURIS_TRACK" : Check.oneOf(in.module(), SubscriptionService.MODULES);
-        String source = Check.oneOf(in.source(), SOURCES);
-        LocalDate starts = LocalDate.parse(Check.isoDate(in.startsOn() == null || in.startsOn().isBlank() ? SubscriptionService.today().toString() : in.startsOn(),
+    ValidatedGrant validate(GrantInput input, UUID businessId, UUID editing) {
+        if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Grant details are missing.");
+        String module = input.module() == null || input.module().isBlank() ? "JURIS_TRACK" : Check.oneOf(input.module(), SubscriptionService.MODULES);
+        String source = Check.oneOf(input.source(), SOURCES);
+        LocalDate starts = LocalDate.parse(Check.isoDate(input.startsOn() == null || input.startsOn().isBlank() ? SubscriptionService.today().toString() : input.startsOn(),
                 "Pick a start date."));
-        LocalDate ends = in.endsOn() == null || in.endsOn().isBlank() ? null : LocalDate.parse(Check.isoDate(in.endsOn(), "Pick an end date."));
+        LocalDate ends = input.endsOn() == null || input.endsOn().isBlank() ? null : LocalDate.parse(Check.isoDate(input.endsOn(), "Pick an end date."));
         if (ends != null && ends.isBefore(starts)) throw new UserException("The end date can't be before the start date.");
         long price = 0;
         if ("PAID".equals(source)) {
-            if (in.price() == null || in.price() <= 0) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the price paid (more than ₹0).");
-            if (in.price() > 100_000_000 || in.price() * 100 != Math.rint(in.price() * 100)) throw new UserException(HttpStatus.BAD_REQUEST, "Enter a valid price in rupees.");
+            if (input.price() == null || input.price() <= 0) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the price paid (more than ₹0).");
+            if (input.price() > 100_000_000 || input.price() * 100 != Math.rint(input.price() * 100)) throw new UserException(HttpStatus.BAD_REQUEST, "Enter a valid price in rupees.");
             if (ends == null) throw new UserException(HttpStatus.BAD_REQUEST, "A paid grant needs an end date.");
-            price = Math.round(in.price() * 100);
+            price = Math.round(input.price() * 100);
         }
-        String notes = in.notes() == null ? null : in.notes().trim();
+        String notes = input.notes() == null ? null : input.notes().trim();
         if (notes != null && notes.length() > 500) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the notes under 500 characters.");
         Boolean overlaps = repo.overlaps(businessId, module, editing, starts, ends);
         if (Boolean.TRUE.equals(overlaps)) throw new UserException("This business already has a grant for these dates. Change or revoke that one first.");
-        return new Valid(module, source, price, starts, ends, notes == null || notes.isEmpty() ? null : notes);
+        return new ValidatedGrant(module, source, price, starts, ends, notes == null || notes.isEmpty() ? null : notes);
     }
 
-    public String grant(UUID businessId, GrantInput in, UUID by) {
+    public String grant(UUID businessId, GrantInput input, UUID by) {
         if (!repo.customerBusinessExists(businessId)) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
-        Valid v = validate(in, businessId, null);
+        ValidatedGrant validated = validate(input, businessId, null);
         UUID id = UUID.randomUUID();
-        repo.insert(id, businessId, v.module(), v.source(), v.pricePaise(), v.starts(), v.ends(), v.notes(), by);
+        repo.insert(id, businessId, validated.module(), validated.source(), validated.pricePaise(), validated.starts(), validated.ends(), validated.notes(), by);
         return id.toString();
     }
 
     /** Changes a grant that hasn't been revoked. Returns its business. */
-    public UUID update(String idRaw, GrantInput in) {
+    public UUID update(String idRaw, GrantInput input) {
         UUID id = Check.uuid(idRaw);
         UUID business = existing(id);
-        Valid v = validate(in, business, id);
-        repo.update(id, v.module(), v.source(), v.pricePaise(), v.starts(), v.ends(), v.notes());
+        ValidatedGrant validated = validate(input, business, id);
+        repo.update(id, validated.module(), validated.source(), validated.pricePaise(), validated.starts(), validated.ends(), validated.notes());
         return business;
     }
 

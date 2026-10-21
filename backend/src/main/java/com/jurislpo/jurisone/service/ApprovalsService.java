@@ -1,6 +1,6 @@
 package com.jurislpo.jurisone.service;
 
-import com.jurislpo.jurisone.service.AttendanceService.AttEmployee;
+import com.jurislpo.jurisone.service.AttendanceService.AttendanceEmployee;
 import com.jurislpo.jurisone.service.AttendanceService.DayView;
 import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.exception.UserException;
@@ -45,10 +45,10 @@ public class ApprovalsService {
     private final AuditService audit;
     private final NotificationService notify;
 
-    public ApprovalsService(ApprovalsRepository repo, TransactionTemplate tx, AttendanceService att, LeaveService leave, AuditService audit, NotificationService notify) {
+    public ApprovalsService(ApprovalsRepository repo, TransactionTemplate tx, AttendanceService attendance, LeaveService leave, AuditService audit, NotificationService notify) {
         this.repo = repo;
         this.tx = tx;
-        this.att = att;
+        this.att = attendance;
         this.leave = leave;
         this.audit = audit;
         this.notify = notify;
@@ -58,87 +58,87 @@ public class ApprovalsService {
 
     record Parsed(UUID id, boolean approve, String note) {}
 
-    static Parsed parse(Decision d) {
-        UUID id = com.jurislpo.jurisone.common.Check.uuid(d.id());
-        if (d.approve() == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean, received undefined");
-        String note = d.note() == null ? null : d.note().trim();
+    static Parsed parse(Decision decision) {
+        UUID id = com.jurislpo.jurisone.common.Check.uuid(decision.id());
+        if (decision.approve() == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean, received undefined");
+        String note = decision.note() == null ? null : decision.note().trim();
         if (note != null && note.length() > 300) throw new UserException(HttpStatus.BAD_REQUEST, "Too big: expected string to have <=300 characters");
-        return new Parsed(id, d.approve(), note);
+        return new Parsed(id, decision.approve(), note);
     }
 
     static String span(LocalDate f, LocalDate t) {
-        return f.equals(t) ? Format.fmtD(f) : Format.fmtD(f) + " – " + Format.fmtD(t);
+        return f.equals(t) ? Format.formatDayMonth(f) : Format.formatDayMonth(f) + " – " + Format.formatDayMonth(t);
     }
 
     /** HR (`appr.leave`; Admin too). Approving posts the used days to the ledger; any shortfall is LOP. */
-    public String decideLeave(CurrentUser u, Decision in, String ip) {
-        Parsed d = parse(in);
-        List<Map<String, Object>> rs = repo.findLeaveForDecision(d.id());
+    public String decideLeave(CurrentUser user, Decision decision, String ip) {
+        Parsed parsed = parse(decision);
+        List<Map<String, Object>> rs = repo.findLeaveForDecision(parsed.id());
         if (rs.isEmpty()) throw new UserException("Request not found.");
-        Map<String, Object> r = rs.get(0);
-        UUID employeeId = (UUID) r.get("employee_id");
-        if (employeeId.equals(u.id())) throw new UserException("You can't decide your own leave.");
-        if (!"PENDING".equals(r.get("status"))) throw new UserException("This request was already decided.");
-        LocalDate from = ((Date) r.get("from_date")).toLocalDate(), to = ((Date) r.get("to_date")).toLocalDate();
-        double lopDays = ((BigDecimal) r.get("lop_days")).doubleValue();
-        double paidDays = ((BigDecimal) r.get("days")).doubleValue() - lopDays;
-        if (d.approve()) {
-            AttEmployee emp = att.loadAttEmployees("e.id = ?", employeeId).get(0);
-            LeaveService.Preview p = leave.previewRequest(emp, (String) r.get("leave_type"), from, to, LeavePart.valueOf((String) r.get("part")), d.id(), true);
-            if (p.error() != null) throw new UserException(p.error());
-            lopDays = p.lopDays(); // balance may have changed since applying
-            paidDays = p.paidDays();
+        Map<String, Object> row = rs.get(0);
+        UUID employeeId = (UUID) row.get("employee_id");
+        if (employeeId.equals(user.id())) throw new UserException("You can't decide your own leave.");
+        if (!"PENDING".equals(row.get("status"))) throw new UserException("This request was already decided.");
+        LocalDate from = ((Date) row.get("from_date")).toLocalDate(), to = ((Date) row.get("to_date")).toLocalDate();
+        double lopDays = ((BigDecimal) row.get("lop_days")).doubleValue();
+        double paidDays = ((BigDecimal) row.get("days")).doubleValue() - lopDays;
+        if (parsed.approve()) {
+            AttendanceEmployee employee = att.loadAttendanceEmployees("e.id = ?", employeeId).get(0);
+            LeaveService.Preview preview = leave.previewRequest(employee, (String) row.get("leave_type"), from, to, LeavePart.valueOf((String) row.get("part")), parsed.id(), true);
+            if (preview.error() != null) throw new UserException(preview.error());
+            lopDays = preview.lopDays(); // balance may have changed since applying
+            paidDays = preview.paidDays();
         }
         double lop = lopDays, paid = paidDays;
         tx.executeWithoutResult(s -> {
-            int n = repo.decideLeave(d.id(), d.approve() ? "APPROVED" : "DECLINED", u.id(), Timestamp.from(Instant.now()), BigDecimal.valueOf(lop));
-            if (n == 0) throw new UserException("Someone else decided this request a moment ago.");
-            if (d.approve()) leave.postUsage(d.id(), employeeId, (String) r.get("leave_type"), paid);
+            int count = repo.decideLeave(parsed.id(), parsed.approve() ? "APPROVED" : "DECLINED", user.id(), Timestamp.from(Instant.now()), BigDecimal.valueOf(lop));
+            if (count == 0) throw new UserException("Someone else decided this request a moment ago.");
+            if (parsed.approve()) leave.postUsage(parsed.id(), employeeId, (String) row.get("leave_type"), paid);
             Map<String, Object> after = new LinkedHashMap<>();
-            after.put("status", d.approve() ? "APPROVED" : "DECLINED");
+            after.put("status", parsed.approve() ? "APPROVED" : "DECLINED");
             after.put("paidDays", paid);
             after.put("lopDays", lop);
-            if (d.note() != null) after.put("note", d.note());
-            audit.log(u.id(), d.approve() ? "leave.approve" : "leave.decline", "leave_request", d.id().toString(), Map.of("status", "PENDING"), after, ip);
+            if (parsed.note() != null) after.put("note", parsed.note());
+            audit.log(user.id(), parsed.approve() ? "leave.approve" : "leave.decline", "leave_request", parsed.id().toString(), Map.of("status", "PENDING"), after, ip);
         });
-        String typeName = (String) r.get("type_name");
-        notify.notifyDecision(employeeId, typeName + " (" + span(from, to) + ")", d.approve(), u.name(), "/leave", d.note());
-        return (d.approve() ? "Approved" : "Declined") + " " + r.get("full_name") + "’s " + typeName.toLowerCase();
+        String typeName = (String) row.get("type_name");
+        notify.notifyDecision(employeeId, typeName + " (" + span(from, to) + ")", parsed.approve(), user.name(), "/leave", parsed.note());
+        return (parsed.approve() ? "Approved" : "Declined") + " " + row.get("full_name") + "’s " + typeName.toLowerCase();
     }
 
     /**
      * Regularization goes to HR, Finance and Admin together (`appr.reg`); the first decision is final.
      * Approval effects: absent → paid day; late → mark removed; missed check-out → punch added; holiday work → comp-off credit.
      */
-    public String decideRegularization(CurrentUser u, Decision in, String ip) {
-        Parsed d = parse(in);
-        List<Map<String, Object>> rs = repo.findRegularizationForDecision(d.id());
+    public String decideRegularization(CurrentUser user, Decision decision, String ip) {
+        Parsed parsed = parse(decision);
+        List<Map<String, Object>> rs = repo.findRegularizationForDecision(parsed.id());
         if (rs.isEmpty()) throw new UserException("Request not found.");
-        Map<String, Object> r = rs.get(0);
-        UUID employeeId = (UUID) r.get("employee_id");
-        if (employeeId.equals(u.id())) throw new UserException("You can't decide your own request.");
-        if (!"PENDING".equals(r.get("status"))) throw new UserException("This request was already decided.");
-        LocalDate date = ((Date) r.get("work_date")).toLocalDate();
-        String kind = (String) r.get("kind");
-        AttendanceService.Pol policy = att.policy();
-        if (d.approve() && att.isMonthLocked(date.toString().substring(0, 7), policy, Instant.now())) {
+        Map<String, Object> row = rs.get(0);
+        UUID employeeId = (UUID) row.get("employee_id");
+        if (employeeId.equals(user.id())) throw new UserException("You can't decide your own request.");
+        if (!"PENDING".equals(row.get("status"))) throw new UserException("This request was already decided.");
+        LocalDate date = ((Date) row.get("work_date")).toLocalDate();
+        String kind = (String) row.get("kind");
+        AttendanceService.ResolvedAttendancePolicy policy = att.policy();
+        if (parsed.approve() && att.isMonthLocked(date.toString().substring(0, 7), policy, Instant.now())) {
             throw new UserException("That month's attendance is locked — decline this and adjust LOP in payroll instead.");
         }
         double compOff = 0;
-        if (d.approve() && "HOLIDAY_WORK".equals(kind)) {
-            AttEmployee emp = att.loadAttEmployees("e.id = ?", employeeId).get(0);
-            DayView day = att.attendanceFor(List.of(emp), date, date, Instant.now()).get(emp.id()).get(0);
+        if (parsed.approve() && "HOLIDAY_WORK".equals(kind)) {
+            AttendanceEmployee employee = att.loadAttendanceEmployees("e.id = ?", employeeId).get(0);
+            DayView day = att.attendanceFor(List.of(employee), date, date, Instant.now()).get(employee.id()).get(0);
             compOff = LeaveRules.compOffDays(day.r.workedMinutes, policy.engine().fullDayHours(), policy.engine().halfDayHours());
             if (compOff == 0) throw new UserException("Less than a half day was worked — no comp-off is due.");
         }
-        Timestamp proposedIn = (Timestamp) r.get("proposed_in"), proposedOut = (Timestamp) r.get("proposed_out");
-        if (d.approve() && "MISSED_CHECKOUT".equals(kind) && proposedOut == null) throw new UserException("The request has no check-out time.");
+        Timestamp proposedIn = (Timestamp) row.get("proposed_in"), proposedOut = (Timestamp) row.get("proposed_out");
+        if (parsed.approve() && "MISSED_CHECKOUT".equals(kind) && proposedOut == null) throw new UserException("The request has no check-out time.");
 
         double co = compOff;
         tx.executeWithoutResult(s -> {
-            int n = repo.decideRegularization(d.id(), d.approve() ? "APPROVED" : "DECLINED", u.id(), Timestamp.from(Instant.now()), u.roleName());
-            if (n == 0) throw new UserException("Someone else decided this request a moment ago.");
-            if (d.approve() && "MISSED_CHECKOUT".equals(kind)) {
+            int count = repo.decideRegularization(parsed.id(), parsed.approve() ? "APPROVED" : "DECLINED", user.id(), Timestamp.from(Instant.now()), user.roleName());
+            if (count == 0) throw new UserException("Someone else decided this request a moment ago.");
+            if (parsed.approve() && "MISSED_CHECKOUT".equals(kind)) {
                 if (proposedIn != null) {
                     repo.insertRegularizationPunchIn(employeeId, proposedIn);
                 }
@@ -146,59 +146,59 @@ public class ApprovalsService {
             }
             if (co > 0) {
                 Integer expiry = repo.compOffExpiryDays();
-                repo.insertCompOffCredit(employeeId, BigDecimal.valueOf(co), d.id().toString(), Date.valueOf(date.plusDays(expiry != null ? expiry : 60)), "Worked on " + date);
+                repo.insertCompOffCredit(employeeId, BigDecimal.valueOf(co), parsed.id().toString(), Date.valueOf(date.plusDays(expiry != null ? expiry : 60)), "Worked on " + date);
             }
             Map<String, Object> after = new LinkedHashMap<>();
-            after.put("status", d.approve() ? "APPROVED" : "DECLINED");
+            after.put("status", parsed.approve() ? "APPROVED" : "DECLINED");
             after.put("kind", kind);
             after.put("date", date.toString());
             after.put("compOff", co);
-            if (d.note() != null) after.put("note", d.note());
-            after.put("role", u.roleName());
-            audit.log(u.id(), d.approve() ? "regularization.approve" : "regularization.decline", "regularization", d.id().toString(), Map.of("status", "PENDING"), after, ip);
+            if (parsed.note() != null) after.put("note", parsed.note());
+            after.put("role", user.roleName());
+            audit.log(user.id(), parsed.approve() ? "regularization.approve" : "regularization.decline", "regularization", parsed.id().toString(), Map.of("status", "PENDING"), after, ip);
         });
-        notify.notifyDecision(employeeId, KIND.get(kind) + " for " + Format.fmtD(date), d.approve(), u.name() + " (" + u.roleName() + ")",
-                "/attendance?m=" + date.toString().substring(0, 7) + "&d=" + date, d.note());
-        return (d.approve() ? "Approved" : "Declined") + " " + r.get("full_name") + "’s " + KIND.get(kind).toLowerCase()
+        notify.notifyDecision(employeeId, KIND.get(kind) + " for " + Format.formatDayMonth(date), parsed.approve(), user.name() + " (" + user.roleName() + ")",
+                "/attendance?m=" + date.toString().substring(0, 7) + "&d=" + date, parsed.note());
+        return (parsed.approve() ? "Approved" : "Declined") + " " + row.get("full_name") + "’s " + KIND.get(kind).toLowerCase()
                 + (co > 0 ? " · " + LeaveService.num(co) + " comp-off credited" : "");
     }
 
     // ───────────────────────── page ─────────────────────────
 
-    public record LeaveCard(String id, String name, String dept, String type, String span, double days, String part, String reason, String impact, int overlap) {}
+    public record LeaveCard(String id, String name, String department, String type, String span, double days, String part, String reason, String impact, int overlap) {}
 
-    public record RegCard(String id, String name, String dept, String kind, String date, String detail, String reason) {}
+    public record RegularizationCard(String id, String name, String department, String kind, String date, String detail, String reason) {}
 
-    public record Decided(String id, Instant at, String when, String who, String what, boolean ok, String by) {}
+    public record Decided(String id, Instant at, String when, String employeeName, String what, boolean approved, String decidedBy) {}
 
-    static String fmt2(double d) {
+    static String formatTwoDecimals(double d) {
         return LeaveService.num(Math.round(d * 100) / 100.0);
     }
 
-    public Map<String, Object> page(CurrentUser u, Map<String, String> sp) {
-        boolean canLeave = u.can("appr.leave"), canReg = u.can("appr.reg");
-        String tab = ListParams.pick(sp, "tab", List.of("leave", "att"), canLeave ? "leave" : "att");
-        String q = ListParams.str(sp, "q", "").trim();
-        String nameFilter = q.isEmpty() ? "" : " AND e.full_name ILIKE ?";
-        Object[] nameArg = q.isEmpty() ? new Object[0] : new Object[] {PeopleQuery.like(q)};
+    public Map<String, Object> page(CurrentUser user, Map<String, String> queryParams) {
+        boolean canLeave = user.can("appr.leave"), canReg = user.can("appr.reg");
+        String tab = ListParams.pick(queryParams, "tab", List.of("leave", "regularizations"), canLeave ? "leave" : "regularizations");
+        String search = ListParams.str(queryParams, "search", "").trim();
+        String nameFilter = search.isEmpty() ? "" : " AND e.full_name ILIKE ?";
+        Object[] nameArg = search.isEmpty() ? new Object[0] : new Object[] {PeopleQuery.like(search)};
 
         List<LeaveCard> leaveCards = new ArrayList<>();
         if (canLeave) {
-            List<Object> args = new ArrayList<>(List.of(u.id()));
+            List<Object> args = new ArrayList<>(List.of(user.id()));
             args.addAll(List.of(nameArg));
             List<Map<String, Object>> leaves = repo.findPendingLeave(nameFilter, args.toArray());
             for (Map<String, Object> l : leaves) {
-                UUID empId = (UUID) l.get("employee_id");
+                UUID employeeId = (UUID) l.get("employee_id");
                 LocalDate f = ((Date) l.get("from_date")).toLocalDate(), t = ((Date) l.get("to_date")).toLocalDate();
-                LeaveService.Balance b = leave.balances(empId).stream().filter(x -> x.code().equals(l.get("leave_type"))).findFirst().orElseThrow();
+                LeaveService.Balance balance = leave.balances(employeeId).stream().filter(x -> x.code().equals(l.get("leave_type"))).findFirst().orElseThrow();
                 double days = ((BigDecimal) l.get("days")).doubleValue(), lop = ((BigDecimal) l.get("lop_days")).doubleValue();
                 double paid = days - lop;
-                double available = Math.round((b.balance() - b.pending() + paid) * 100) / 100.0; // this request's own hold added back
-                String impact = !b.needsBalance() ? "Unpaid leave" : available >= days ? "Balance " + LeaveService.num(available) + " → " + fmt2(available - days)
-                        : "Only " + LeaveService.num(Math.max(0, available)) + " available — " + fmt2(days - Math.max(0, Math.floor(available * 2) / 2)) + " day(s) become loss of pay";
+                double available = Math.round((balance.balance() - balance.pending() + paid) * 100) / 100.0; // this request's own hold added back
+                String impact = !balance.needsBalance() ? "Unpaid leave" : available >= days ? "Balance " + LeaveService.num(available) + " → " + formatTwoDecimals(available - days)
+                        : "Only " + LeaveService.num(Math.max(0, available)) + " available — " + formatTwoDecimals(days - Math.max(0, Math.floor(available * 2) / 2)) + " day(s) become loss of pay";
                 int overlap = 0;
                 if (l.get("department_id") != null) {
-                    Integer n = repo.countDepartmentOverlap(l.get("id"), empId, l.get("department_id"), f, t);
+                    Integer n = repo.countDepartmentOverlap(l.get("id"), employeeId, l.get("department_id"), f, t);
                     overlap = n == null ? 0 : n;
                 }
                 leaveCards.add(new LeaveCard(l.get("id").toString(), (String) l.get("full_name"), l.get("dept") == null ? "—" : (String) l.get("dept"),
@@ -206,71 +206,71 @@ public class ApprovalsService {
             }
         }
 
-        List<RegCard> regCards = new ArrayList<>();
+        List<RegularizationCard> regCards = new ArrayList<>();
         if (canReg) {
-            List<Object> args = new ArrayList<>(List.of(u.id()));
+            List<Object> args = new ArrayList<>(List.of(user.id()));
             args.addAll(List.of(nameArg));
-            List<Map<String, Object>> regs = repo.findPendingRegularizations(nameFilter, args.toArray());
-            for (Map<String, Object> r : regs) {
-                LocalDate date = ((Date) r.get("work_date")).toLocalDate();
-                List<AttEmployee> es = att.loadAttEmployees("e.id = ?", r.get("employee_id"));
-                DayView d = es.isEmpty() ? null : att.attendanceFor(es, date, date, Instant.now()).get(es.get(0).id()).get(0);
-                String tz = (String) r.get("time_zone");
-                Instant pin = r.get("proposed_in") == null ? null : ((Timestamp) r.get("proposed_in")).toInstant();
-                Instant pout = r.get("proposed_out") == null ? null : ((Timestamp) r.get("proposed_out")).toInstant();
-                String kind = (String) r.get("kind");
-                String firstIn = d != null && d.r.firstIn != null ? AttendanceService.fmtTime(d.r.firstIn, tz) : "—";
-                String label = d != null && d.r.label != null && !d.r.label.isEmpty() ? d.r.label : null;
+            List<Map<String, Object>> regularizations = repo.findPendingRegularizations(nameFilter, args.toArray());
+            for (Map<String, Object> regularization : regularizations) {
+                LocalDate date = ((Date) regularization.get("work_date")).toLocalDate();
+                List<AttendanceEmployee> attendanceEmployees = att.loadAttendanceEmployees("e.id = ?", regularization.get("employee_id"));
+                DayView dayView = attendanceEmployees.isEmpty() ? null : att.attendanceFor(attendanceEmployees, date, date, Instant.now()).get(attendanceEmployees.get(0).id()).get(0);
+                String timeZone = (String) regularization.get("time_zone");
+                Instant pin = regularization.get("proposed_in") == null ? null : ((Timestamp) regularization.get("proposed_in")).toInstant();
+                Instant pout = regularization.get("proposed_out") == null ? null : ((Timestamp) regularization.get("proposed_out")).toInstant();
+                String kind = (String) regularization.get("kind");
+                String firstIn = dayView != null && dayView.r.firstIn != null ? AttendanceService.formatTime(dayView.r.firstIn, timeZone) : "—";
+                String label = dayView != null && dayView.r.label != null && !dayView.r.label.isEmpty() ? dayView.r.label : null;
                 String detail = switch (kind) {
-                    case "MISSED_CHECKOUT" -> "Checked in " + firstIn + " · asks to set check-out to " + (pout != null ? AttendanceService.fmtTime(pout, tz) : "—");
-                    case "HOLIDAY_WORK" -> "Worked " + (d != null ? Format.fmtH(d.r.workedMinutes / 60.0) : "—") + " on " + (label != null ? label : "a day off") + " — credit comp-off";
-                    case "LATE_CHECKIN" -> "Checked in " + firstIn + (pin != null ? " · says " + AttendanceService.fmtTime(pin, tz) : "");
-                    default -> (label != null ? label : "Absent") + (pin != null ? " · says worked from " + AttendanceService.fmtTime(pin, tz)
-                            + (pout != null ? " to " + AttendanceService.fmtTime(pout, tz) : "") : "");
+                    case "MISSED_CHECKOUT" -> "Checked in " + firstIn + " · asks to set check-out to " + (pout != null ? AttendanceService.formatTime(pout, timeZone) : "—");
+                    case "HOLIDAY_WORK" -> "Worked " + (dayView != null ? Format.formatHours(dayView.r.workedMinutes / 60.0) : "—") + " on " + (label != null ? label : "a day off") + " — credit comp-off";
+                    case "LATE_CHECKIN" -> "Checked in " + firstIn + (pin != null ? " · says " + AttendanceService.formatTime(pin, timeZone) : "");
+                    default -> (label != null ? label : "Absent") + (pin != null ? " · says worked from " + AttendanceService.formatTime(pin, timeZone)
+                            + (pout != null ? " to " + AttendanceService.formatTime(pout, timeZone) : "") : "");
                 };
-                regCards.add(new RegCard(r.get("id").toString(), (String) r.get("full_name"), r.get("dept") == null ? "—" : (String) r.get("dept"),
-                        KIND_SHORT.get(kind), Format.fmtD(date), detail, (String) r.get("reason")));
+                regCards.add(new RegularizationCard(regularization.get("id").toString(), (String) regularization.get("full_name"), regularization.get("dept") == null ? "—" : (String) regularization.get("dept"),
+                        KIND_SHORT.get(kind), Format.formatDayMonth(date), detail, (String) regularization.get("reason")));
             }
         }
 
-        int leaveCount = canLeave ? count(repo.countPendingLeave(u.id())) : 0;
-        int regCount = canReg ? count(repo.countPendingRegularizations(u.id())) : 0;
+        int leaveCount = canLeave ? count(repo.countPendingLeave(user.id())) : 0;
+        int regCount = canReg ? count(repo.countPendingRegularizations(user.id())) : 0;
 
         Timestamp since = Timestamp.from(Instant.now().minus(30, ChronoUnit.DAYS));
         List<Decided> decided = new ArrayList<>();
         if ("leave".equals(tab) && canLeave) {
-            for (ApprovalsRepository.DecidedLeave x : repo.findDecidedLeave(since)) {
-                LocalDate f = x.from(), t = x.to();
-                Instant at = x.at();
-                decided.add(new Decided(x.id(), at, Format.fmtDateTime(at, u.timeZone()), x.name(),
-                        x.typeName() + " · " + Format.fmtD(f) + (!t.equals(f) ? " – " + Format.fmtD(t) : ""), "APPROVED".equals(x.status()),
-                        x.by() == null ? "—" : x.by()));
+            for (ApprovalsRepository.DecidedLeave decidedLeave : repo.findDecidedLeave(since)) {
+                LocalDate f = decidedLeave.from(), t = decidedLeave.to();
+                Instant at = decidedLeave.at();
+                decided.add(new Decided(decidedLeave.id(), at, Format.formatDateTime(at, user.timeZone()), decidedLeave.name(),
+                        decidedLeave.typeName() + " · " + Format.formatDayMonth(f) + (!t.equals(f) ? " – " + Format.formatDayMonth(t) : ""), "APPROVED".equals(decidedLeave.status()),
+                        decidedLeave.decidedBy() == null ? "—" : decidedLeave.decidedBy()));
             }
         }
-        if ("att".equals(tab) && canReg) {
-            for (ApprovalsRepository.DecidedReg x : repo.findDecidedRegularizations(since)) {
-                Instant at = x.at();
-                decided.add(new Decided(x.id(), at, Format.fmtDateTime(at, u.timeZone()), x.name(),
-                        KIND_SHORT.get(x.kind()) + " · " + Format.fmtD(x.workDate()), "APPROVED".equals(x.status()),
-                        (x.by() == null ? "—" : x.by()) + (x.role() != null ? " (" + x.role() + ")" : "")));
+        if ("regularizations".equals(tab) && canReg) {
+            for (ApprovalsRepository.DecidedRegularization decidedRegularization : repo.findDecidedRegularizations(since)) {
+                Instant at = decidedRegularization.at();
+                decided.add(new Decided(decidedRegularization.id(), at, Format.formatDateTime(at, user.timeZone()), decidedRegularization.name(),
+                        KIND_SHORT.get(decidedRegularization.kind()) + " · " + Format.formatDayMonth(decidedRegularization.workDate()), "APPROVED".equals(decidedRegularization.status()),
+                        (decidedRegularization.decidedBy() == null ? "—" : decidedRegularization.decidedBy()) + (decidedRegularization.role() != null ? " (" + decidedRegularization.role() + ")" : "")));
             }
         }
         decided.sort(Comparator.comparing(Decided::at).reversed());
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("tab", tab);
-        out.put("q", q);
+        out.put("search", search);
         out.put("canLeave", canLeave);
-        out.put("canReg", canReg);
+        out.put("canApproveRegularizations", canReg);
         out.put("leaveCount", leaveCount);
-        out.put("regCount", regCount);
+        out.put("regularizationCount", regCount);
         out.put("leaveCards", leaveCards);
-        out.put("regCards", regCards);
+        out.put("regularizationCards", regCards);
         out.put("decided", decided);
         return out;
     }
 
-    private static int count(Integer n) {
-        return n == null ? 0 : n;
+    private static int count(Integer count) {
+        return count == null ? 0 : count;
     }
 }

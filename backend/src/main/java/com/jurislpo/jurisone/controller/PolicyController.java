@@ -68,8 +68,8 @@ public class PolicyController {
     /** {@code {"version": n}} — "I have read and accept" version n (must be the current one). */
     @PostMapping("/{id}/acknowledgements")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Void> acknowledge(@PathVariable String id, @RequestBody AckBody body, HttpServletRequest req) {
-        RequestMeta m = RequestMeta.of(req);
+    public ApiResult<Void> acknowledge(@PathVariable String id, @RequestBody AckBody body, HttpServletRequest request) {
+        RequestMeta m = RequestMeta.of(request);
         return ApiResult.message(policies.acknowledge(auth.assertPerm(), id, body.version(), m.ip(), m.userAgent()));
     }
 
@@ -89,8 +89,8 @@ public class PolicyController {
     /** {@code {title, body, requiresAck?}} — a new draft. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Map<String, String>> create(@RequestBody PolicyService.PolicyInput body, HttpServletRequest req) {
-        String id = policies.create(manager(), body, RequestMeta.of(req).ip());
+    public ApiResult<Map<String, String>> create(@RequestBody PolicyService.PolicyInput body, HttpServletRequest request) {
+        String id = policies.create(manager(), body, RequestMeta.of(request).ip());
         return ApiResult.success("Draft saved", Map.of("id", id));
     }
 
@@ -102,29 +102,29 @@ public class PolicyController {
 
     /** Edits the draft; publishing it makes a new version. */
     @PutMapping("/{id}")
-    public ApiResult<Void> update(@PathVariable String id, @RequestBody PolicyService.PolicyInput body, HttpServletRequest req) {
-        policies.update(manager(), id, body, RequestMeta.of(req).ip());
+    public ApiResult<Void> update(@PathVariable String id, @RequestBody PolicyService.PolicyInput body, HttpServletRequest request) {
+        policies.update(manager(), id, body, RequestMeta.of(request).ip());
         return ApiResult.message("Draft saved");
     }
 
     @DeleteMapping("/{id}")
-    public ApiResult<Void> delete(@PathVariable String id, HttpServletRequest req) {
-        policies.delete(manager(), id, RequestMeta.of(req).ip());
+    public ApiResult<Void> delete(@PathVariable String id, HttpServletRequest request) {
+        policies.delete(manager(), id, RequestMeta.of(request).ip());
         return ApiResult.message("Draft deleted");
     }
 
     /** {@code {"status": "PUBLISHED" | "ARCHIVED"}} */
     @PutMapping("/{id}/status")
-    public ApiResult<Void> status(@PathVariable String id, @RequestBody StatusBody body, HttpServletRequest req) {
-        return ApiResult.message(policies.setStatus(manager(), id, body.status(), RequestMeta.of(req).ip()));
+    public ApiResult<Void> status(@PathVariable String id, @RequestBody StatusBody body, HttpServletRequest request) {
+        return ApiResult.message(policies.setStatus(manager(), id, body.status(), RequestMeta.of(request).ip()));
     }
 
     /** Multipart {@code file}: the PDF for the draft. */
     @PutMapping(value = "/{id}/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ApiResult<Map<String, String>> attach(@PathVariable String id, @RequestPart(name = "file", required = false) MultipartFile file, HttpServletRequest req) {
-        CurrentUser u = manager();
+    public ApiResult<Map<String, String>> attach(@PathVariable String id, @RequestPart(name = "file", required = false) MultipartFile file, HttpServletRequest request) {
+        CurrentUser user = manager();
         try {
-            String name = policies.attach(u, id, file == null ? null : file.getOriginalFilename(), file == null ? null : file.getBytes(), RequestMeta.of(req).ip());
+            String name = policies.attach(user, id, file == null ? null : file.getOriginalFilename(), file == null ? null : file.getBytes(), RequestMeta.of(request).ip());
             return ApiResult.success("Attached " + name, Map.of("name", name));
         } catch (IOException e) {
             throw new IllegalStateException(e);
@@ -132,8 +132,8 @@ public class PolicyController {
     }
 
     @DeleteMapping("/{id}/file")
-    public ApiResult<Void> detach(@PathVariable String id, HttpServletRequest req) {
-        policies.detach(manager(), id, RequestMeta.of(req).ip());
+    public ApiResult<Void> detach(@PathVariable String id, HttpServletRequest request) {
+        policies.detach(manager(), id, RequestMeta.of(request).ip());
         return ApiResult.message("PDF removed from the draft");
     }
 
@@ -146,29 +146,29 @@ public class PolicyController {
     /** Bell reminder to everyone who hasn't accepted the current version. */
     @PostMapping("/{id}/reminders")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Map<String, Integer>> remind(@PathVariable String id, HttpServletRequest req) {
-        int n = policies.remind(manager(), id, RequestMeta.of(req).ip());
+    public ApiResult<Map<String, Integer>> remind(@PathVariable String id, HttpServletRequest request) {
+        int n = policies.remind(manager(), id, RequestMeta.of(request).ip());
         return ApiResult.success(n == 0 ? "Everyone has already accepted it" : "Reminder sent to " + n + " " + (n == 1 ? "person" : "people"), Map.of("count", n));
     }
 
     /** The legal evidence: every acknowledgement of every version, as recorded (CSV, or {@code ?format=pdf}; audited). */
     @GetMapping("/{id}/acknowledgements/export")
     public ResponseEntity<byte[]> evidence(@PathVariable String id, @org.springframework.web.bind.annotation.RequestParam(name = "format", required = false) String format,
-                                           HttpServletRequest req) {
+                                           HttpServletRequest request) {
         if ("pdf".equals(format)) {
-            PolicyService.PolicyFile f = policies.evidencePdf(manager(), id, RequestMeta.of(req).ip());
+            PolicyService.PolicyFile file = policies.evidencePdf(manager(), id, RequestMeta.of(request).ip());
             return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF)
-                    .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(f.name(), StandardCharsets.UTF_8).build().toString())
-                    .header(HttpHeaders.CACHE_CONTROL, "private, no-store").body(f.bytes());
+                    .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(file.name(), StandardCharsets.UTF_8).build().toString())
+                    .header(HttpHeaders.CACHE_CONTROL, "private, no-store").body(file.bytes());
         }
-        PolicyService.Export e = policies.evidence(manager(), id, RequestMeta.of(req).ip());
+        PolicyService.Export e = policies.evidence(manager(), id, RequestMeta.of(request).ip());
         return PeopleController.csv(e.filename(), e.body());
     }
 
-    static ResponseEntity<byte[]> pdf(PolicyService.PolicyFile f) {
-        if (f == null) throw new UserException(HttpStatus.NOT_FOUND, "File not found.");
+    static ResponseEntity<byte[]> pdf(PolicyService.PolicyFile file) {
+        if (file == null) throw new UserException(HttpStatus.NOT_FOUND, "File not found.");
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().filename(f.name(), StandardCharsets.UTF_8).build().toString())
-                .header(HttpHeaders.CACHE_CONTROL, "private, no-store").header("X-Content-Type-Options", "nosniff").body(f.bytes());
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().filename(file.name(), StandardCharsets.UTF_8).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store").header("X-Content-Type-Options", "nosniff").body(file.bytes());
     }
 }

@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
@@ -26,8 +27,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /** REST conventions: resource paths, methods and status codes (MIGRATION_PLAN §14). */
 class RestEndpointsTest extends IntegrationTest {
-
-    static final String PW = "correct-horse-battery-7";
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -53,8 +52,8 @@ class RestEndpointsTest extends IntegrationTest {
 
     Person person(UUID role) throws Exception {
         String c = "JC-" + (++seq) + (int) (Math.random() * 1000);
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}"))
+        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
+        String set = SignIn.session(mvc, c.toLowerCase() + "@example.com")
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -76,7 +75,7 @@ class RestEndpointsTest extends IntegrationTest {
         mvc.perform(write(patch("/api/notifications")).cookie(p.cookie()).content("{\"read\":true}")).andExpect(status().isOk());
         mvc.perform(write(patch("/api/notifications")).cookie(p.cookie()).content("{\"read\":false}")).andExpect(status().isBadRequest());
         // reads are GETs now; the old POST answers 405 with Allow
-        mvc.perform(write(post("/api/leave/preview")).cookie(p.cookie()).content("{}"))
+        mvc.perform(write(post("/api/leave/previews")).cookie(p.cookie()).content("{}"))
                 .andExpect(status().isMethodNotAllowed()).andExpect(header().string("Allow", org.hamcrest.Matchers.containsString("GET")))
                 .andExpect(jsonPath("$.detail").value("Method not allowed."));
         mvc.perform(write(post("/api/notifications/read")).cookie(p.cookie())).andExpect(status().isMethodNotAllowed()); // now /{id}, PATCH only
@@ -85,20 +84,20 @@ class RestEndpointsTest extends IntegrationTest {
 
     @Test
     void payrollAdjustmentsAndStatusAreResources() throws Exception {
-        Person fin = person(finRole), emp = person(empRole);
+        Person fin = person(finRole), employee = person(empRole);
         // closing needs {"status":"CLOSED"} and pay.close
         mvc.perform(write(put("/api/payroll/2026-09/status")).cookie(fin.cookie()).content("{\"status\":\"OPEN\"}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Invalid option: expected \"CLOSED\""));
-        mvc.perform(write(put("/api/payroll/2026-09/status")).cookie(emp.cookie()).content("{\"status\":\"CLOSED\"}")).andExpect(status().isForbidden());
+        mvc.perform(write(put("/api/payroll/2026-09/status")).cookie(employee.cookie()).content("{\"status\":\"CLOSED\"}")).andExpect(status().isForbidden());
         // the employee id comes from the path
         mvc.perform(write(put("/api/payroll/2026-09/adjustments/not-a-uuid")).cookie(fin.cookie()).content("{\"lopDays\":null,\"bonus\":0,\"otherDeduction\":0,\"note\":\"\"}"))
                 .andExpect(status().isBadRequest());
-        mvc.perform(write(delete("/api/payroll/2026-09/adjustments/" + emp.id())).cookie(emp.cookie())).andExpect(status().isForbidden());
+        mvc.perform(write(delete("/api/payroll/2026-09/adjustments/" + employee.id())).cookie(employee.cookie())).andExpect(status().isForbidden());
 
         // a new salary structure is created → 201
-        mvc.perform(write(post("/api/structures")).cookie(fin.cookie()).content("{\"employeeId\":\"" + emp.id() + "\",\"effectiveFrom\":\"2031-04-01\",\"reason\":\"APPRAISAL\","
+        mvc.perform(write(post("/api/structures")).cookie(fin.cookie()).content("{\"employeeId\":\"" + employee.id() + "\",\"effectiveFrom\":\"2031-04-01\",\"reason\":\"APPRAISAL\","
                 + "\"basic\":50000,\"hra\":20000,\"lta\":5000,\"special\":25000}")).andExpect(status().isCreated());
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM salary_structures WHERE employee_id = ?", Integer.class, emp.id())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM salary_structures WHERE employee_id = ?", Integer.class, employee.id())).isEqualTo(1);
     }
 
     @Test
@@ -107,9 +106,7 @@ class RestEndpointsTest extends IntegrationTest {
         String nobody = UUID.randomUUID().toString();
         mvc.perform(get("/api/people/" + nobody + "/contact").cookie(hr.cookie()))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't view this person's contact details."));
-        mvc.perform(write(post("/api/people/" + nobody + "/invitations")).cookie(hr.cookie()))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't send an invite for this person."));
-        mvc.perform(write(put("/api/people/" + nobody + "/exit")).cookie(hr.cookie()).content("{\"exitDate\":\"2031-01-01\"}"))
+        mvc.perform(write(put("/api/people/" + nobody + "/status")).cookie(hr.cookie()).content("{\"status\":\"EXITED\",\"exitDate\":\"2031-01-01\"}"))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't change this person's record."));
         mvc.perform(get("/api/people/form-options").cookie(hr.cookie())).andExpect(status().isUnprocessableEntity()); // this role may assign no roles
         mvc.perform(write(post("/api/people/" + nobody + "/reveal-contact")).cookie(hr.cookie())).andExpect(status().isNotFound());
@@ -117,7 +114,7 @@ class RestEndpointsTest extends IntegrationTest {
 
     @Test
     void assignableRolesAreGrantedAndRevoked() throws Exception {
-        Person admin = person(adminRole);
+        Person admin = person(data.role("rest-super", "dir", "roles.manage", "platform.manage", "people.view")); // roles are changed by the platform super admin only
         UUID role = data.role("rest-custom-" + UUID.randomUUID().toString().substring(0, 6), "self");
         mvc.perform(write(put("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(admin.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.containsString("can now add")));
@@ -125,5 +122,9 @@ class RestEndpointsTest extends IntegrationTest {
         mvc.perform(write(delete("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(admin.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.containsString("can no longer add")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM role_assignable_roles WHERE role_id = ? AND assignable_role_id = ?", Integer.class, role, empRole)).isZero();
+        // a business admin (roles.manage without platform.manage) can look but not change
+        Person owner = person(adminRole);
+        mvc.perform(write(put("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(owner.cookie())).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("Roles are set up for your business by JurisOne."));
     }
 }

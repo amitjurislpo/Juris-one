@@ -15,8 +15,8 @@ public class AuditRepository {
         this.em = em;
     }
 
-    public void persist(AuditLog a) {
-        em.persist(a);
+    public void persist(AuditLog auditLog) {
+        em.persist(auditLog);
     }
 
     /**

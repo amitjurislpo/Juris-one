@@ -15,7 +15,7 @@ public class SessionRepository {
     private static final String USER_SQL = """
         SELECT s.id AS sid, s.employee_id AS session_employee, s.expires_at, s.revoked_at, s.last_seen_at,
                e.id, e.business_id, e.code, e.full_name, e.email, e.designation, e.role_id, e.portal_access, e.status::text AS status,
-               e.region::text AS region, e.time_zone, u.is_super_admin, u.employee_id AS user_id, r.key AS role_key, r.name AS role_name,
+               e.region::text AS region, e.time_zone, e.photo_updated_at, u.is_super_admin, u.employee_id AS user_id, r.key AS role_key, r.name AS role_name,
                EXISTS (SELECT 1 FROM employees d WHERE d.reporting_manager_id = e.id AND d.status <> 'EXITED') AS has_reports,
                (SELECT b.status FROM businesses b WHERE b.id = e.business_id) AS business_status
         FROM sessions s

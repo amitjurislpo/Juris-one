@@ -17,7 +17,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Every email is recorded in {@code email_outbox}. With SMTP configured it is sent; without it (dev)
- * it is logged so invite / reset links can be copied. A failed send is recorded and never thrown.
+ * it is logged so sign-in codes and links can be copied. A failed send is recorded and never thrown.
  */
 @Service
 public class MailService {
@@ -41,19 +41,26 @@ public class MailService {
         this.from = from;
     }
 
-    public void send(String to, MailTemplates.Content c) {
+    /** A file sent with the mail (kept out of the outbox table: only the text is recorded there). */
+    public record Attachment(String filename, byte[] data, String contentType) {}
+
+    public void send(String to, MailTemplates.Content content) {
+        send(to, content, null);
+    }
+
+    public void send(String to, MailTemplates.Content content, Attachment file) {
         java.util.UUID id = tx.execute(s -> {
             EmailOutbox row = new EmailOutbox();
             row.setTo(to);
-            row.setSubject(c.subject());
-            row.setText(c.text());
-            row.setHtml(c.html());
+            row.setSubject(content.subject());
+            row.setText(content.text());
+            row.setHtml(content.html());
             repo.insert(row);
             return row.getId();
         });
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         if (host == null || host.isBlank()) {
-            log.info("\n✉  [email:dev] to={}\n   subject={}\n   {}\n", to, c.subject(), c.text().replace("\n", "\n   "));
+            log.info("\n✉  [email:dev] to={}\n   subject={}\n   {}\n", to, content.subject(), content.text().replace("\n", "\n   "));
             repo.markDone(id, EmailStatus.LOGGED, java.sql.Timestamp.from(now));
             return;
         }
@@ -65,18 +72,19 @@ public class MailService {
                 sender.setUsername(user);
                 sender.setPassword(pass);
             }
-            Properties p = sender.getJavaMailProperties();
-            p.put("mail.smtp.auth", String.valueOf(!user.isBlank()));
-            if (port == 465) p.put("mail.smtp.ssl.enable", "true");
-            else p.put("mail.smtp.starttls.enable", "true");
-            MimeMessage m = sender.createMimeMessage();
-            MimeMessageHelper h = new MimeMessageHelper(m, c.html() != null, "UTF-8");
-            h.setFrom(from);
-            h.setTo(to);
-            h.setSubject(c.subject());
-            if (c.html() != null) h.setText(c.text(), c.html());
-            else h.setText(c.text());
-            sender.send(m);
+            Properties properties = sender.getJavaMailProperties();
+            properties.put("mail.smtp.auth", String.valueOf(!user.isBlank()));
+            if (port == 465) properties.put("mail.smtp.ssl.enable", "true");
+            else properties.put("mail.smtp.starttls.enable", "true");
+            MimeMessage mimeMessage = sender.createMimeMessage();
+            MimeMessageHelper mimeMessageHelper = new MimeMessageHelper(mimeMessage, content.html() != null || file != null, "UTF-8");
+            mimeMessageHelper.setFrom(from);
+            mimeMessageHelper.setTo(to);
+            mimeMessageHelper.setSubject(content.subject());
+            if (content.html() != null) mimeMessageHelper.setText(content.text(), content.html());
+            else mimeMessageHelper.setText(content.text());
+            if (file != null) mimeMessageHelper.addAttachment(file.filename(), new org.springframework.core.io.ByteArrayResource(file.data()), file.contentType());
+            sender.send(mimeMessage);
             repo.markDone(id, EmailStatus.SENT, java.sql.Timestamp.from(Instant.now().truncatedTo(ChronoUnit.MICROS)));
         } catch (Exception err) {
             String msg = String.valueOf(err);

@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
@@ -27,8 +28,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** The asset register: HR manages it, everyone sees their own assets, each business sees only its own. */
 class AssetApiTest extends IntegrationTest {
 
-    static final String PW = "correct-horse-battery-7";
-
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper json;
@@ -42,7 +41,7 @@ class AssetApiTest extends IntegrationTest {
     }
 
     Cookie signIn(String email) throws Exception {
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + email + "\",\"password\":\"" + PW + "\"}"))
+        String set = SignIn.session(mvc, email)
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -55,11 +54,11 @@ class AssetApiTest extends IntegrationTest {
         TestData t = new TestData(jdbc).inBusiness("assets-" + s);
         UUID hrRole = t.role("hrm", "self", "dir", "people.view", "assets.manage");
         UUID empRole = t.role("employee", "self", "dir");
-        t.employee("AH-" + s, "hr." + s + "@example.com", hrRole, PW);
-        employeeId = t.employee("AE-" + s, "emp." + s + "@example.com", empRole, PW);
-        otherId = t.employee("AX-" + s, "other." + s + "@example.com", empRole, PW);
+        t.employee("AH-" + s, "hr." + s + "@example.com", hrRole);
+        employeeId = t.employee("AE-" + s, "emp." + s + "@example.com", empRole);
+        otherId = t.employee("AX-" + s, "other." + s + "@example.com", empRole);
         TestData t2 = new TestData(jdbc).inBusiness("assets2-" + s);
-        t2.employee("BH-" + s, "hr2." + s + "@example.com", t2.role("hrm", "self", "dir", "assets.manage"), PW);
+        t2.employee("BH-" + s, "hr2." + s + "@example.com", t2.role("hrm", "self", "dir", "assets.manage"));
         hr = signIn("hr." + s + "@example.com");
         employee = signIn("emp." + s + "@example.com");
         other = signIn("other." + s + "@example.com");
