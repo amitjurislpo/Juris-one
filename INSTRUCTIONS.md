@@ -1,0 +1,64 @@
+# Owner's instructions
+
+This file is for the project owner to write requirements and working rules in. It is loaded automatically at the start of
+every Claude Code session (through `CLAUDE.md`), so whatever is written here is followed without being repeated.
+Add new lines at the bottom of the right section. Hindi, Hinglish or English are all fine. If two lines disagree, the newer one wins.
+
+## How to work with me (git and PRs)
+
+- Create every pull request against the `dev` branch first, never `main`. New feature branches are cut from `dev`.
+- Never merge a pull request yourself. Open it, share the link and stop.
+- Commit and push only when asked. Do not push on your own.
+- Never put `.idea/` (or other IDE folders) in a commit; they are git-ignored.
+- Commit messages end with the Claude co-author line given by the harness.
+
+## Communication
+
+- Reply in Hindi/Hinglish (the owner writes in Hindi). Keep answers short: what changed, what was checked, what is left.
+- Say plainly when something was not tested or could not be done. Do not claim a check that was not run.
+- Ask before deleting things that cannot be recovered (files outside git, local data). Explain what and why.
+
+## Project structure
+
+- Two repositories: this one is the **backend** (`Juris-one`: Spring Boot API in `backend/`, Postgres, jobs) and `juris-one-frontend` is the **web app** (React + Vite). Frontend code lives only in the frontend repo; backend code only here.
+- The frontend repo's browser tests (`scripts/e2e-env.mjs` there) build and start this API from a checkout next to it; keep `./mvnw -DskipTests package` and the `reset` / `jobs` commands working.
+
+## Code and configuration rules
+
+- The repo must stay clean: no unused files, no dead code, no leftover references to removed things (Next.js, Prisma, `.env`, exit/F&F, Form 16).
+- Configuration is one file per environment: `backend/src/main/resources/application.properties` and `application-dev|sqe|uat|prd.properties`. Do not add `.env` files or separate templates. Secrets of sqe/uat/prd are `${ENV_VARS}` from the server and are never committed.
+- Config files live under `src/` (resources), not in the repository root. Generated and uploaded files live outside the project (`jurisone.storage-dir`).
+- The backend is a pure Java project: no Node, no `package.json`.
+- Verify before saying "done": backend `./mvnw test` (in `backend/`); frontend `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, and `npm run test:e2e` for anything the UI or API contract touches.
+
+## Naming and REST standards (mandatory for all new code; fix old code when you touch it)
+
+**Names (both repos)**
+- Names say what a thing is, in full words: `AttendancePolicy`, not `Pol`; `departmentId`, not `dept`; `month`, not `ym`. No cryptic abbreviations in class, type, function, field, variable, file, route, query-parameter or JSON names.
+- Single-letter names only for a loop index (`i`, `j`), an exception or event (`e`), the translate function `t`, and a tiny one-expression lambda. Never for domain values.
+- Booleans read as a question (`isActive`, `hasPhoto`, `canEdit`). Functions are verbs (`loadEmployees`, `confirmEmployee`); classes, records and types are nouns.
+- Casing: classes, records, enums, React components and TypeScript types are `PascalCase`; methods, variables, fields, JSON fields and query parameters are `camelCase`; constants are `UPPER_SNAKE_CASE`; URL path segments are `kebab-case`; database tables and columns are `snake_case`.
+- Java packages are lowercase and follow the layers already used (`controller`, `service`, `repository`, `entity`, `engine`, `security`). A file holds the one class it is named after.
+
+**REST API (backend, and the frontend calls that use it)**
+- A URL names a resource, never an action: plural nouns for collections (`/api/leave/requests`), the id in the path (`/api/people/{id}`), sub-resources for what belongs to it (`/api/people/{id}/photo`). No verbs in paths. An action that has no resource of its own is modelled as creating one (`POST /api/auth/otp-requests`, `POST /api/policies/{id}/acknowledgements`), or as setting a state (`PUT /api/people/{id}/status`).
+- Methods: `GET` reads and never changes anything; `POST` creates (answer `201` with the new id); `PUT` sets or replaces and is idempotent; `PATCH` changes part of a resource; `DELETE` removes. Do not tunnel changes through `GET`.
+- Collections take their filters, sorting and paging as camelCase query parameters (`status`, `departmentId`, `month`, `search`, `sortBy`, `page`), always descriptive. The current user's own collection is `/mine` everywhere.
+- Status codes mean what they say: `200`, `201`, `204`, `400` bad input, `401` not signed in, `402` subscription, `403` not allowed, `404` not found, `409` conflict, `422` a business rule refused it, `429` too many requests. Errors use the one error shape the API already has (RFC 7807 problem details); never invent another.
+- A new endpoint is added together with its integration test, its entry in `references/REQUIREMENTS.md` where it changes a rule, and (for a write) an audit entry.
+- Screens that need several things at once (`/api/home`, `/api/overview`, `/api/team`, `/api/shell`) are view models, not resources. Keep them few; do not add more where a resource will do.
+- Do not rename or remove an endpoint, parameter or JSON field without changing every caller (the other repo, the tests) in the same change.
+
+**Backend specifics**
+- Controllers only map HTTP to a service call and shape the response; rules live in `service` and `engine`. A request or response body is a `record` named after what it carries (`EmployeeInput`, `PayrollRow`), never `Dto1` or an abbreviation.
+- Never edit a migration that has been applied; add a new `V<n>__<what_it_does>.sql` with its `U<n>` rollback.
+
+## Requirements (add yours here)
+
+- 
+
+## Decisions already taken
+
+- Sign-in is by emailed code only (fixed code `000000` only in dev).
+- The identity provider (IAM JCG / Sita) is not to be worked on until the owner says so.
+- Exit / full & final settlement and Form 16 were removed on purpose.

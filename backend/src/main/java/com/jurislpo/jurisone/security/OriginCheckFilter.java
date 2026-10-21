@@ -1,0 +1,63 @@
+package com.jurislpo.jurisone.security;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jurislpo.jurisone.exception.Problems;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.net.URI;
+import java.util.Set;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+/**
+ * CSRF guard (assertSameOrigin): a mutating /api request must carry an Origin whose host equals
+ * X-Forwarded-Host, or Host. Together with SameSite=Lax session cookies this is the app's CSRF defence.
+ */
+@Component
+public class OriginCheckFilter extends OncePerRequestFilter {
+
+    static final String MESSAGE = "Cross-site request blocked.";
+    private static final Set<String> SAFE = Set.of("GET", "HEAD", "OPTIONS");
+
+    private final ObjectMapper json;
+
+    public OriginCheckFilter(ObjectMapper json) {
+        this.json = json;
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return SAFE.contains(request.getMethod()) || !request.getRequestURI().startsWith("/api/");
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
+        String origin = request.getHeader("origin");
+        String host = request.getHeader("x-forwarded-host") != null ? request.getHeader("x-forwarded-host") : request.getHeader("host");
+        if (origin == null || host == null || !host.equalsIgnoreCase(hostOf(origin))) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+            json.writeValue(response.getOutputStream(), Problems.of(HttpStatus.FORBIDDEN, "CROSS_SITE_BLOCKED", MESSAGE, request.getRequestURI()));
+            return;
+        }
+        chain.doFilter(request, response);
+    }
+
+    /** {@code new URL(origin).host}: host plus a non-default port. */
+    static String hostOf(String origin) {
+        try {
+            URI uRI = URI.create(origin);
+            if (uRI.getHost() == null) return "";
+            int port = uRI.getPort();
+            boolean defaultValue = port == -1 || ("http".equals(uRI.getScheme()) && port == 80) || ("https".equals(uRI.getScheme()) && port == 443);
+            return defaultValue ? uRI.getHost() : uRI.getHost() + ":" + port;
+        } catch (IllegalArgumentException e) {
+            return "";
+        }
+    }
+}
