@@ -44,8 +44,13 @@ public class LettersService {
     private final BusinessRepository business;
     private final NotificationService notifications;
     private final AuditService audit;
+    private final MailService mail;
+    private final String appUrl;
 
-    public LettersService(LettersRepository repo, BusinessRepository business, NotificationService notifications, AuditService audit) {
+    public LettersService(LettersRepository repo, BusinessRepository business, NotificationService notifications, AuditService audit, MailService mail,
+                          @org.springframework.beans.factory.annotation.Value("${jurisone.app-url:http://localhost:3005}") String appUrl) {
+        this.mail = mail;
+        this.appUrl = appUrl.replaceAll("/$", "");
         this.repo = repo;
         this.business = business;
         this.notifications = notifications;
@@ -260,6 +265,12 @@ public class LettersService {
                 Boolean.TRUE.equals(tpl.get("needs_salary")), (UUID) emp.get("id"), (String) emp.get("code"), (String) emp.get("full_name"), r.subject(), r.text(), hash, pdf,
                 PolicyService.sha256(pdf), u.id(), u.name());
         notifications.notify((UUID) emp.get("id"), "A letter was issued to you: " + r.subject() + " (" + reference + ")", "/my-letters");
+        // by email too (a PDF attached); without mail settings it is only logged, and a failed send never fails the issue
+        String to = (String) emp.get("email");
+        if (to != null && !to.isBlank()) {
+            mail.send(to, MailTemplates.letter((String) emp.get("full_name"), (String) biz.get("name"), r.subject(), reference, appUrl + "/my-letters"),
+                    new MailService.Attachment(reference.replace('/', '-') + ".pdf", pdf, "application/pdf"));
+        }
         audit.log(u.id(), "letter.issue", "issued_letter", id.toString(), null,
                 Map.of("reference", reference, "type", tpl.get("type"), "employee", emp.get("code"), "sha256", hash), ip);
         Map<String, Object> out = new LinkedHashMap<>();

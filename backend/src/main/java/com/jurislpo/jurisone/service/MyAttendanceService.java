@@ -214,6 +214,7 @@ public class MyAttendanceService {
             throw new UserException("Just recorded — give it a few seconds.");
         }
         repo.insertWebPunch(u.id(), now, expect, ip);
+        audit.log(u.id(), "attendance.punch", "punch", u.id().toString(), null, Map.of("kind", expect, "at", now.toString()), ip);
         if ("IN".equals(expect)) return new PunchResult("Checked in. Have a productive shift.", "IN");
 
         LocalDate wd = AttendanceEngine.workDateOf(now, emp.shift().def(), emp.tz());

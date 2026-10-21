@@ -137,21 +137,17 @@ public class SeedRepository {
                 bankLast4, bankName, bankIfsc);
     }
 
-    /** password_hash and is_super_admin of the employee's user (zero or one row). */
+    /** is_super_admin of the employee's user (zero or one row). */
     public List<Map<String, Object>> findUser(UUID employeeId) {
-        return jdbc.queryForList("SELECT password_hash, is_super_admin FROM users WHERE employee_id = ?", employeeId);
+        return jdbc.queryForList("SELECT is_super_admin FROM users WHERE employee_id = ?", employeeId);
     }
 
     public void markSuperAdmin(UUID employeeId) {
         jdbc.update("UPDATE users SET is_super_admin = true WHERE employee_id = ?", employeeId);
     }
 
-    /** Inserts the user, or overwrites its password and super admin flag. */
-    public void upsertUser(UUID employeeId, String passwordHash, Timestamp passwordSetAt, boolean superAdmin) {
-        jdbc.update("""
-            INSERT INTO users (employee_id, password_hash, password_set_at, is_super_admin) VALUES (?, ?, ?, ?)
-            ON CONFLICT (employee_id) DO UPDATE SET password_hash = EXCLUDED.password_hash, password_set_at = EXCLUDED.password_set_at, is_super_admin = EXCLUDED.is_super_admin""",
-                employeeId, passwordHash, passwordSetAt, superAdmin);
+    public void insertUser(UUID employeeId, boolean superAdmin) {
+        jdbc.update("INSERT INTO users (employee_id, is_super_admin) VALUES (?, ?)", employeeId, superAdmin);
     }
 
     // ── demo attendance, payroll, proofs, requests ──

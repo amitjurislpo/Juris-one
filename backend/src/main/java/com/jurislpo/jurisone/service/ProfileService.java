@@ -42,6 +42,7 @@ public class ProfileService {
         String[] emergency = splitPhone((String) e.get("emergency_phone"));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("code", e.get("code"));
+        out.put("photo", PhotoService.version(e.get("photo_updated_at")));
         out.put("fullName", e.get("full_name"));
         out.put("firstName", names[0]);
         out.put("middleName", names[1]);
@@ -105,7 +106,7 @@ public class ProfileService {
             } catch (java.time.DateTimeException e) {
                 throw bad("Check your date of birth.");
             }
-            if (birth.isAfter(LocalDate.now().minusYears(14)) || birth.isBefore(LocalDate.now().minusYears(100))) throw bad("Check your date of birth.");
+            if (birth.isAfter(LocalDate.now().minusYears(14)) || birth.isBefore(LocalDate.now().minusYears(100))) throw bad("Date of birth isn't valid: you must be at least 14 years old.");
         }
         String current = text(in.currentAddress(), 500, "address");
         String permanent = text(in.permanentAddress(), 500, "address");

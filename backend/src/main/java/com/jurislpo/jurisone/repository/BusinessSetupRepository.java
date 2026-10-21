@@ -1,8 +1,6 @@
 package com.jurislpo.jurisone.repository;
 
 import java.sql.Date;
-import java.sql.Timestamp;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +34,15 @@ public class BusinessSetupRepository {
     /** Inserts a built-in role. */
     public void insertRole(UUID id, String key, String name, boolean locked) {
         jdbc.update("INSERT INTO roles (id, key, name, is_builtin, is_locked) VALUES (?, ?, ?, true, ?)", id, key, name, locked);
+    }
+
+    /** id and key of every role of the current business. */
+    public List<Map<String, Object>> findRoleKeys() {
+        return jdbc.queryForList("SELECT id, key FROM roles");
+    }
+
+    public void addAssignableRole(UUID roleId, UUID assignableRoleId) {
+        jdbc.update("INSERT INTO role_assignable_roles (role_id, assignable_role_id) VALUES (?, ?) ON CONFLICT DO NOTHING", roleId, assignableRoleId);
     }
 
     public long countPermissions(UUID roleId) {
@@ -108,9 +115,8 @@ public class BusinessSetupRepository {
                 id, code, fullName, email, designation, roleId, Date.valueOf(joined), timeZone, region, createdBy);
     }
 
-    /** Inserts a (non super admin) user; {@code passwordHash} and {@code passwordSetAt} null until they set one. */
-    public void insertUser(UUID employeeId, String passwordHash, Instant passwordSetAt) {
-        jdbc.update("INSERT INTO users (employee_id, password_hash, password_set_at, is_super_admin) VALUES (?, ?, ?, false)",
-                employeeId, passwordHash, passwordSetAt == null ? null : Timestamp.from(passwordSetAt));
+    /** Inserts a (non super admin) user. */
+    public void insertUser(UUID employeeId) {
+        jdbc.update("INSERT INTO users (employee_id, is_super_admin) VALUES (?, false)", employeeId);
     }
 }

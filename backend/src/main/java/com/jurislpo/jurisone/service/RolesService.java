@@ -24,7 +24,7 @@ public class RolesService {
     public record Member(String id, String name) {}
 
     public record RoleView(String id, String key, String name, boolean builtin, boolean locked, List<String> perms, List<String> assign,
-                           List<Member> members, int totalEver) {}
+                           List<Member> members, int totalEver, boolean canEdit) {}
 
     private final RolesRepository repo;
     private final AuditService audit;
@@ -34,7 +34,8 @@ public class RolesService {
         this.audit = audit;
     }
 
-    public List<RoleView> list() {
+    /** {@code canEdit}: whether the caller may change roles (only the platform super admin; business owners see them read-only). */
+    public List<RoleView> list(boolean canEdit) {
         List<Map<String, Object>> roles = repo.findAll();
         List<RoleView> out = new ArrayList<>();
         for (Map<String, Object> r : roles) {
@@ -44,7 +45,7 @@ public class RolesService {
             List<Member> members = repo.findCurrentMembers(id);
             Integer total = repo.countEmployees(id);
             out.add(new RoleView(id.toString(), (String) r.get("key"), (String) r.get("name"), (Boolean) r.get("is_builtin"), (Boolean) r.get("is_locked"),
-                    perms, assign, members, total == null ? 0 : total));
+                    perms, assign, members, total == null ? 0 : total, canEdit));
         }
         out.sort((a, b) -> rank(a.key()) - rank(b.key())); // stable: keeps builtin/created order among equals
         return out;

@@ -17,7 +17,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Every email is recorded in {@code email_outbox}. With SMTP configured it is sent; without it (dev)
- * it is logged so invite / reset links can be copied. A failed send is recorded and never thrown.
+ * it is logged so sign-in codes and links can be copied. A failed send is recorded and never thrown.
  */
 @Service
 public class MailService {
@@ -41,7 +41,14 @@ public class MailService {
         this.from = from;
     }
 
+    /** A file sent with the mail (kept out of the outbox table: only the text is recorded there). */
+    public record Attachment(String filename, byte[] data, String contentType) {}
+
     public void send(String to, MailTemplates.Content c) {
+        send(to, c, null);
+    }
+
+    public void send(String to, MailTemplates.Content c, Attachment file) {
         java.util.UUID id = tx.execute(s -> {
             EmailOutbox row = new EmailOutbox();
             row.setTo(to);
@@ -70,12 +77,13 @@ public class MailService {
             if (port == 465) p.put("mail.smtp.ssl.enable", "true");
             else p.put("mail.smtp.starttls.enable", "true");
             MimeMessage m = sender.createMimeMessage();
-            MimeMessageHelper h = new MimeMessageHelper(m, c.html() != null, "UTF-8");
+            MimeMessageHelper h = new MimeMessageHelper(m, c.html() != null || file != null, "UTF-8");
             h.setFrom(from);
             h.setTo(to);
             h.setSubject(c.subject());
             if (c.html() != null) h.setText(c.text(), c.html());
             else h.setText(c.text());
+            if (file != null) h.addAttachment(file.filename(), new org.springframework.core.io.ByteArrayResource(file.data()), file.contentType());
             sender.send(m);
             repo.markDone(id, EmailStatus.SENT, java.sql.Timestamp.from(Instant.now().truncatedTo(ChronoUnit.MICROS)));
         } catch (Exception err) {

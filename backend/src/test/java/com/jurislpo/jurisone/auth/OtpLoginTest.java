@@ -14,12 +14,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** Email one-time-code sign-in. The default code is the fixed 000000 (jurisone.otp.fixed-code) until the identity provider is connected. */
+@TestPropertySource(properties = {"jurisone.otp.requests-per-ip=10", "jurisone.otp.requests-per-email=5"})
 class OtpLoginTest extends IntegrationTest {
-
-    static final String PW = "correct-horse-battery-7";
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -36,7 +36,7 @@ class OtpLoginTest extends IntegrationTest {
 
     String newEmployee() {
         String code = "JC-" + (100 + (int) (Math.random() * 899_000));
-        data.employee(code, code.toLowerCase() + "@example.com", role, PW);
+        data.employee(code, code.toLowerCase() + "@example.com", role);
         return code.toLowerCase() + "@example.com";
     }
 
@@ -139,8 +139,9 @@ class OtpLoginTest extends IntegrationTest {
     }
 
     @Test
-    void passwordSignInStillWorks() throws Exception {
+    void passwordsAreNotAcceptedAnyMore() throws Exception {
         String email = newEmployee();
-        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + email + "\",\"password\":\"" + PW + "\"}")).andExpect(status().isCreated());
+        mvc.perform(api("/api/auth/session", "{\"identifier\":\"" + email + "\",\"password\":\"anything-at-all-1\"}")).andExpect(status().isBadRequest());
+        mvc.perform(api("/api/auth/password-resets", "{\"identifier\":\"" + email + "\"}")).andExpect(status().is4xxClientError());
     }
 }

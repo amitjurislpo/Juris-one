@@ -42,10 +42,10 @@ public class BusinessAdminRepository {
     /** The business's owners by name. */
     public List<Owner> findOwners(UUID businessId) {
         return jdbc.query("""
-            SELECT e.id::text, e.code, e.full_name, e.email, e.portal_access, u.password_hash IS NOT NULL AS activated, e.status::text
-            FROM employees e JOIN roles r ON r.id = e.role_id LEFT JOIN users u ON u.employee_id = e.id
+            SELECT e.id::text, e.code, e.full_name, e.email, e.portal_access, e.status::text
+            FROM employees e JOIN roles r ON r.id = e.role_id
             WHERE e.business_id = ? AND r.key = 'owner' ORDER BY e.full_name""",
-                (rs, i) -> new Owner(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getBoolean(5), rs.getBoolean(6), rs.getString(7)), businessId);
+                (rs, i) -> new Owner(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getBoolean(5), rs.getString(6)), businessId);
     }
 
     /** Ids of businesses (other than {@code editing}, when given) using the code. */
@@ -64,6 +64,20 @@ public class BusinessAdminRepository {
     }
 
     /** Whether a customer (non-platform) business with this id exists. */
+    public record BusinessRole(String id, String key, String name, long employees) {}
+
+    /** The business's roles (system mode), oldest first, with how many people hold each. */
+    public List<BusinessRole> findRoles(UUID businessId) {
+        return jdbc.query("""
+            SELECT r.id::text, r.key, r.name, (SELECT count(*) FROM employees e WHERE e.role_id = r.id) AS employees
+            FROM roles r WHERE r.business_id = ? ORDER BY r.created_at, r.name""",
+                (rs, i) -> new BusinessRole(rs.getString(1), rs.getString(2), rs.getString(3), rs.getLong(4)), businessId);
+    }
+
+    public void deleteRole(UUID businessId, UUID roleId) {
+        jdbc.update("DELETE FROM roles WHERE id = ? AND business_id = ?", roleId, businessId);
+    }
+
     public boolean customerBusinessExists(UUID id) {
         return !jdbc.queryForList("SELECT 1 FROM businesses WHERE id = ? AND NOT is_platform", id).isEmpty();
     }

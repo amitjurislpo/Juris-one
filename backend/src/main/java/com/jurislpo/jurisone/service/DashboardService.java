@@ -267,7 +267,7 @@ public class DashboardService {
 
     // ───────────────────────── my team ─────────────────────────
 
-    public record TeamRow(String id, String code, String fullName, String designation, String shift, TodayStatus st) {}
+    public record TeamRow(String id, String code, String fullName, String designation, String shift, TodayStatus st, Long photo) {}
 
     public record Away(String id, String fullName, List<String> cells) {}
 
@@ -288,7 +288,7 @@ public class DashboardService {
         List<Holiday> holidays = repo.holidays(days.get(0), days.get(4));
 
         String q = ls.q().toLowerCase();
-        List<TeamRow> all = team.stream().map(m -> new TeamRow(m.id().toString(), m.code(), m.fullName(), m.designation(), m.shift(), status.get(m.id()))).toList();
+        List<TeamRow> all = team.stream().map(m -> new TeamRow(m.id().toString(), m.code(), m.fullName(), m.designation(), m.shift(), status.get(m.id()), m.photo())).toList();
         List<TeamRow> rows = new ArrayList<>(all.stream().filter(m -> q.isEmpty() || (m.fullName() + " " + m.code() + " " + m.designation()).toLowerCase().contains(q)).toList());
         Map<String, Function<TeamRow, String>> keys = Map.of("name", TeamRow::fullName, "id", TeamRow::code, "title", TeamRow::designation, "st", r -> r.st().label());
         Comparator<TeamRow> cmp = Comparator.comparing(keys.get(ls.sort()), LOCALE);

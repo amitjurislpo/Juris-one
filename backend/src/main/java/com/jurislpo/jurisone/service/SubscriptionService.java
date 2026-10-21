@@ -75,16 +75,26 @@ public class SubscriptionService {
         return repo.findGrantedModules(businessId, day);
     }
 
-    /** Modules the business can use today: none while its subscription isn't active. */
+    /** Modules the business can use today: none before its subscription starts or without one; an ended one keeps them view-only. */
     public java.util.Set<String> activeModules(UUID businessId) {
         if (businessId == null) return java.util.Set.of();
         Current c = current(businessId);
-        return c.active() ? java.util.Set.copyOf(c.modules()) : java.util.Set.of();
+        return c.active() || "EXPIRED".equals(c.state()) ? java.util.Set.copyOf(c.modules()) : java.util.Set.of(); // an ended subscription keeps them view-only
     }
 
     /** The JurisOne operator's own business (needs no subscription). */
     boolean isPlatform(UUID businessId) {
         return Boolean.TRUE.equals(repo.isPlatform(businessId));
+    }
+
+    /** ACTIVE, UPCOMING, EXPIRED or NONE (the platform company is always ACTIVE). Needs no tenant context. */
+    public String state(UUID businessId) {
+        return current(businessId).state();
+    }
+
+    /** The subscription has ended: the business can still sign in, view and export, but nothing can be changed. */
+    public boolean isReadOnly(UUID businessId) {
+        return !isActive(businessId) && "EXPIRED".equals(state(businessId));
     }
 
     public boolean isActive(UUID businessId) {

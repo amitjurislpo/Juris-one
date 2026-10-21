@@ -2,6 +2,7 @@ package com.jurislpo.jurisone.controller;
 
 import com.jurislpo.jurisone.service.BusinessAdminService;
 import com.jurislpo.jurisone.service.ModuleGrantService;
+import com.jurislpo.jurisone.service.RoleTemplateService;
 import com.jurislpo.jurisone.service.SubscriptionService;
 import com.jurislpo.jurisone.common.ApiResult;
 import com.jurislpo.jurisone.common.RequestMeta;
@@ -32,13 +33,18 @@ public class PlatformController {
 
     public record AccessBody(Boolean on) {}
 
+    public record TemplateKeyBody(String templateKey) {}
+
     private final Auth auth;
     private final BusinessAdminService businesses;
     private final SubscriptionService subscriptions;
     private final ModuleGrantService grants;
     private final AuditService audit;
+    private final RoleTemplateService roleTemplates;
 
-    public PlatformController(Auth auth, BusinessAdminService businesses, SubscriptionService subscriptions, ModuleGrantService grants, AuditService audit) {
+    public PlatformController(Auth auth, BusinessAdminService businesses, SubscriptionService subscriptions, ModuleGrantService grants, AuditService audit,
+                              RoleTemplateService roleTemplates) {
+        this.roleTemplates = roleTemplates;
         this.auth = auth;
         this.businesses = businesses;
         this.subscriptions = subscriptions;
@@ -67,7 +73,7 @@ public class PlatformController {
         });
     }
 
-    /** {@code {business:{...}, subscription?:{planId, startsOn?, endsOn?, price?, notes?}, owner?:{name, email, password?}}} */
+    /** {@code {business:{...}, subscription?:{planId, startsOn?, endsOn?, price?, notes?}, owner?:{name, email}, roles?:["hre", ...]}} — mandatory roles are always added. */
     @PostMapping("/businesses")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> create(@RequestBody BusinessAdminService.CreateInput body, HttpServletRequest req) {
@@ -101,8 +107,63 @@ public class PlatformController {
         });
     }
 
+    // roles of a business (from the role templates)
+    /** {@code {templateKey}} — adds the role to the business. */
+    @PostMapping("/businesses/{id}/roles")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Map<String, String>> addRole(@PathVariable String id, @RequestBody TemplateKeyBody body, HttpServletRequest req) {
+        return sys(() -> ApiResult.success("Role added", businesses.addRole(admin(), id, body.templateKey(), RequestMeta.of(req).ip())));
+    }
+
+    @DeleteMapping("/businesses/{id}/roles/{roleId}")
+    public ApiResult<Void> removeRole(@PathVariable String id, @PathVariable String roleId, HttpServletRequest req) {
+        return sys(() -> {
+            businesses.removeRole(admin(), id, roleId, RequestMeta.of(req).ip());
+            return ApiResult.message("Role removed");
+        });
+    }
+
+    /** Copies the template's current permissions over the business's role. */
+    @PostMapping("/businesses/{id}/roles/{roleId}/sync")
+    public ApiResult<Void> syncRole(@PathVariable String id, @PathVariable String roleId, HttpServletRequest req) {
+        return sys(() -> ApiResult.message(businesses.syncRole(admin(), id, roleId, RequestMeta.of(req).ip())));
+    }
+
+    // role templates
+    @GetMapping("/role-templates")
+    public ApiResult<Map<String, Object>> roleTemplates() {
+        return sys(() -> {
+            admin();
+            return ApiResult.success(roleTemplates.list());
+        });
+    }
+
+    /** {@code {name, permissions[], assignable[]}} — the key is made from the name. */
+    @PostMapping("/role-templates")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Map<String, String>> createRoleTemplate(@RequestBody RoleTemplateService.TemplateInput body, HttpServletRequest req) {
+        return sys(() -> ApiResult.success("Role template created", roleTemplates.create(admin(), body, RequestMeta.of(req).ip())));
+    }
+
+    /** {@code {name, permissions[], assignable[], active}} — businesses that already have the role keep their copy until it is synced. */
+    @PutMapping("/role-templates/{key}")
+    public ApiResult<Void> updateRoleTemplate(@PathVariable String key, @RequestBody RoleTemplateService.TemplateInput body, HttpServletRequest req) {
+        return sys(() -> {
+            roleTemplates.update(admin(), key, body, RequestMeta.of(req).ip());
+            return ApiResult.message("Role template saved");
+        });
+    }
+
+    @DeleteMapping("/role-templates/{key}")
+    public ApiResult<Void> deleteRoleTemplate(@PathVariable String key, HttpServletRequest req) {
+        return sys(() -> {
+            roleTemplates.delete(admin(), key, RequestMeta.of(req).ip());
+            return ApiResult.message("Role template deleted");
+        });
+    }
+
     // sub admins
-    /** {@code {name, email, password?}} — without a password an invite email is sent. */
+    /** {@code {name, email}} — the sub admin signs in with the code emailed to them. */
     @PostMapping("/businesses/{id}/owners")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> addOwner(@PathVariable String id, @RequestBody BusinessAdminService.OwnerInput body, HttpServletRequest req) {

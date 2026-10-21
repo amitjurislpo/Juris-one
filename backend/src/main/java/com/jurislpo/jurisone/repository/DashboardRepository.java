@@ -20,7 +20,7 @@ public class DashboardRepository {
 
     public record Member(UUID id, String name, String title) {}
 
-    public record TeamMember(UUID id, String code, String fullName, String designation, String region, String shift) {}
+    public record TeamMember(UUID id, String code, String fullName, String designation, String region, String shift, Long photo) {}
 
     public record TeamLeave(UUID employeeId, LocalDate from, LocalDate to, String status) {}
 
@@ -94,10 +94,10 @@ public class DashboardRepository {
     /** Active direct reports with their shift label (My team). */
     public List<TeamMember> teamMembers(UUID managerId) {
         return jdbc.query("""
-            SELECT e.id, e.code, e.full_name, e.designation, e.region::text, s.code AS s_code, s.start_local, s.end_local
+            SELECT e.id, e.code, e.full_name, e.designation, e.region::text, s.code AS s_code, s.start_local, s.end_local, e.photo_updated_at
             FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.reporting_manager_id = ? AND e.status <> 'EXITED'""",
                 (rs, i) -> new TeamMember((UUID) rs.getObject(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5),
-                        Shifts.label(rs.getString(6), rs.getString(7), rs.getString(8))), managerId);
+                        Shifts.label(rs.getString(6), rs.getString(7), rs.getString(8)), com.jurislpo.jurisone.service.PhotoService.version(rs.getTimestamp(9))), managerId);
     }
 
     /** Approved or pending leaves of these employees overlapping [from, to]. */

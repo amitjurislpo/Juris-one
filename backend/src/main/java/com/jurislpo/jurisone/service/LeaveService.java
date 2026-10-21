@@ -62,6 +62,8 @@ public class LeaveService {
         return repo.holidays(region, from, to);
     }
 
+    static final String EL_ON_PROBATION = "Earned leave isn't available during probation. Choose another leave type.";
+
     public record Skipped(String date, String name) {}
 
     public record Preview(String from, String to, List<String> dates, List<Skipped> skipped, double days, double available, double paidDays, double lopDays,
@@ -87,6 +89,7 @@ public class LeaveService {
         Preview base = new Preview(from.toString(), to.toString(), List.of(), List.of(), 0, 0, 0, 0, null, null);
         if (types.isEmpty() || !Boolean.TRUE.equals(types.get(0).get("active"))) return base.withError("Pick a leave type.");
         Map<String, Object> type = types.get(0);
+        if (!forDecision && "EL".equals(typeCode) && repo.onProbation(emp.id())) return base.withError(EL_ON_PROBATION);
         Map<LocalDate, String> hol = holidayMap(emp.region(), from, to);
         LeaveRules.WorkingDays wd = LeaveRules.workingDays(from, to, policy.engine().weeklyOffs(), hol);
         double days = LeaveRules.requestDays(wd.dates(), wd.dates().size() == 1 ? part : LeavePart.FULL);
@@ -209,7 +212,8 @@ public class LeaveService {
     public record ReqRow(String id, String typeName, String leaveType, String from, String to, String part, double days, double lopDays, String applied,
                          String reason, String status, String decidedBy, Instant appliedAt) {}
 
-    public record TypeOption(String code, String name, boolean paid, Double available) {}
+    /** {@code lockedReason}: why this type can't be applied for right now (null = it can). */
+    public record TypeOption(String code, String name, boolean paid, Double available, String lockedReason) {}
 
     public record HolidayView(String id, String date, String name) {}
 
@@ -240,7 +244,8 @@ public class LeaveService {
         }
         List<HolidayView> hols = repo.findHolidayViews(u.region(), Date.valueOf(LocalDate.of(year, 1, 1)), Date.valueOf(LocalDate.of(year, 12, 31)));
         Map<String, String> upcoming = repo.upcomingHolidays(u.region(), Date.valueOf(today));
-        List<TypeOption> types = bals.stream().map(b -> new TypeOption(b.code(), b.name(), b.paid(), b.needsBalance() ? round2(b.balance() - b.pending()) : null)).toList();
+        boolean probation = repo.onProbation(u.id());
+        List<TypeOption> types = bals.stream().map(b -> new TypeOption(b.code(), b.name(), b.paid(), b.needsBalance() ? round2(b.balance() - b.pending()) : null, "EL".equals(b.code()) && probation ? EL_ON_PROBATION : null)).toList();
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("tab", tab);

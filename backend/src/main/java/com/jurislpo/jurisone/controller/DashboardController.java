@@ -7,6 +7,7 @@ import com.jurislpo.jurisone.security.Auth;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Home, company overview, My team and the audit log (read-only pages). */
@@ -42,5 +43,22 @@ public class DashboardController {
     @GetMapping("/api/audit")
     public ApiResult<Map<String, Object>> audit(@RequestParam Map<String, String> sp) {
         return ApiResult.success(audit.rows(auth.requirePage("audit"), sp));
+    }
+
+    /** The audit log as CSV (same filters, up to 50,000 rows). */
+    @GetMapping("/api/audit/export")
+    public ResponseEntity<byte[]> auditExport(@RequestParam Map<String, String> sp) {
+        return PeopleController.csv("audit-log.csv", audit.exportCsv(auth.requirePage("audit"), sp, false));
+    }
+
+    /** The super admin's audit log: every business and the platform itself. Filters: days, ev, actor, biz (a business id, or "platform"), q, page. */
+    @GetMapping("/api/platform/audit")
+    public ApiResult<Map<String, Object>> platformAudit(@RequestParam Map<String, String> sp) {
+        return ApiResult.success(audit.platformRows(auth.requirePage("platform-audit"), sp));
+    }
+
+    @GetMapping("/api/platform/audit/export")
+    public ResponseEntity<byte[]> platformAuditExport(@RequestParam Map<String, String> sp) {
+        return PeopleController.csv("platform-audit-log.csv", audit.exportCsv(auth.requirePage("platform-audit"), sp, true));
     }
 }

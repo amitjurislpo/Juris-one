@@ -2,9 +2,9 @@ package com.jurislpo.jurisone.service;
 
 import com.jurislpo.jurisone.common.Check;
 import com.jurislpo.jurisone.exception.UserException;
-import com.jurislpo.jurisone.crypto.Passwords;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.PeopleRules;
+import com.jurislpo.jurisone.engine.Phones;
 import com.jurislpo.jurisone.repository.BusinessAdminRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
 import com.jurislpo.jurisone.tenancy.TenantContext;
@@ -26,19 +26,19 @@ public class BusinessAdminService {
 
     private final BusinessAdminRepository repo;
     private final BusinessSetupService setup;
+    private final RoleTemplateService roleTemplates;
     private final SubscriptionService subscriptions;
     private final ModuleGrantService grants;
-    private final AuthTokenService tokens;
     private final SessionService sessions;
     private final AuditService audit;
 
-    public BusinessAdminService(BusinessAdminRepository repo, BusinessSetupService setup, SubscriptionService subscriptions, ModuleGrantService grants,
-                                AuthTokenService tokens, SessionService sessions, AuditService audit) {
+    public BusinessAdminService(BusinessAdminRepository repo, BusinessSetupService setup, RoleTemplateService roleTemplates, SubscriptionService subscriptions,
+                                ModuleGrantService grants, SessionService sessions, AuditService audit) {
+        this.roleTemplates = roleTemplates;
         this.grants = grants;
         this.repo = repo;
         this.setup = setup;
         this.subscriptions = subscriptions;
-        this.tokens = tokens;
         this.sessions = sessions;
         this.audit = audit;
     }
@@ -52,7 +52,7 @@ public class BusinessAdminService {
         return repo.findAll(subscriptions::current);
     }
 
-    public record Owner(String id, String code, String name, String email, boolean access, boolean activated, String status) {}
+    public record Owner(String id, String code, String name, String email, boolean access, String status) {}
 
     public Map<String, Object> detail(String idRaw) {
         UUID id = Check.uuid(idRaw);
@@ -76,6 +76,7 @@ public class BusinessAdminService {
         profile.put("createdAt", b.get("created_at"));
         out.put("business", profile);
         out.put("owners", repo.findOwners(id));
+        out.put("roles", roles(id));
         out.put("subscription", subscriptions.current(id));
         out.put("subscriptions", subscriptions.history(id));
         out.put("modules", grants.list(id));
@@ -87,9 +88,9 @@ public class BusinessAdminService {
     public record ProfileInput(String name, String legalName, String code, String employeePrefix, String timeZone, String contactEmail, String contactPhone,
                                String address, String gstin) {}
 
-    public record OwnerInput(String name, String email, String password) {}
+    public record OwnerInput(String name, String email) {}
 
-    public record CreateInput(ProfileInput business, SubscriptionService.SubscriptionInput subscription, OwnerInput owner) {}
+    public record CreateInput(ProfileInput business, SubscriptionService.SubscriptionInput subscription, OwnerInput owner, List<String> roles) {}
 
     record ValidProfile(String name, String legalName, String code, String prefix, String timeZone, String contactEmail, String contactPhone, String address,
                         String gstin) {}
@@ -100,6 +101,17 @@ public class BusinessAdminService {
         if (t.isEmpty()) return null;
         if (t.length() > max) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the " + field + " under " + max + " characters.");
         return t;
+    }
+
+    /** Optional contact phone as "+<country code> <national number>"; stored normalised, e.g. "+91 8888788888". */
+    static String phone(String v) {
+        String t = opt(v, 30, "phone");
+        if (t == null) return null;
+        int sp = t.indexOf(' ');
+        String code = sp < 0 ? t : t.substring(0, sp);
+        String problem = sp < 0 ? "Enter the phone as the country code, a space and the number, e.g. +91 8888788888." : Phones.problem(code, t.substring(sp + 1));
+        if (problem != null) throw new UserException(HttpStatus.BAD_REQUEST, problem);
+        return code + " " + t.substring(sp + 1).replaceAll("\\D", "");
     }
 
     ValidProfile validate(ProfileInput in, UUID editing) {
@@ -130,7 +142,7 @@ public class BusinessAdminService {
             if (!prefix.equals(before) && people > 0) throw new UserException("The employee ID prefix can't change once the business has people.");
         }
         return new ValidProfile(name, opt(in.legalName(), 160, "legal name"), code, prefix, tz, email == null ? null : email.toLowerCase(Locale.ROOT),
-                opt(in.contactPhone(), 30, "phone"), opt(in.address(), 400, "address"), gstin);
+                phone(in.contactPhone()), opt(in.address(), 400, "address"), gstin);
     }
 
     /** Creates a business with its defaults, optionally its first subscription and first sub admin. */
@@ -138,7 +150,7 @@ public class BusinessAdminService {
         ValidProfile p = validate(in.business(), null);
         if (in.owner() != null) validateOwner(in.owner());
         UUID id = setup.create(new BusinessSetupService.NewBusiness(p.name(), p.legalName(), p.code(), p.prefix(), p.timeZone(), p.contactEmail(), p.contactPhone(),
-                p.address(), p.gstin()), u.id());
+                p.address(), p.gstin()), u.id(), in.roles());
         if (in.subscription() != null && in.subscription().planId() != null && !in.subscription().planId().isBlank()) {
             subscriptions.addSubscription(id, in.subscription(), u.id());
         }
@@ -180,30 +192,79 @@ public class BusinessAdminService {
         if (Boolean.TRUE.equals(repo.emailInUse(email))) {
             throw new UserException("That email is already in use.");
         }
-        if (o.password() != null && !o.password().isEmpty()) {
-            String problem = Passwords.problem(o.password());
-            if (problem != null) throw new UserException(HttpStatus.BAD_REQUEST, problem);
-        }
     }
 
-    /** Adds a sub admin: with a password they can sign in at once; without one they get an invite email. */
+    /** Adds a sub admin; they sign in with the code emailed to them. */
     public Map<String, String> addOwner(CurrentUser u, String businessIdRaw, OwnerInput o, String ip) {
         UUID business = Check.uuid(businessIdRaw);
         if (!repo.customerBusinessExists(business)) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         validateOwner(o);
-        String password = o.password() == null || o.password().isEmpty() ? null : o.password();
         UUID owner = TenantContext.call(business, () -> {
             subscriptions.checkRoomForOneMore();
-            UUID id = setup.addOwner(new BusinessSetupService.NewOwner(o.name().trim(), o.email().trim(), password, null), u.id());
-            if (password == null) tokens.sendInvite(id);
-            return id;
+            return setup.addOwner(new BusinessSetupService.NewOwner(o.name().trim(), o.email().trim(), null), u.id());
         });
         String code = repo.findEmployeeCode(owner);
-        audit.log(u.id(), "business.owner_add", "employee", owner.toString(), null, Map.of("business", business.toString(), "invited", password == null), ip);
+        audit.log(u.id(), "business.owner_add", "employee", owner.toString(), null, Map.of("business", business.toString()), ip);
         Map<String, String> out = new LinkedHashMap<>();
         out.put("id", owner.toString());
         out.put("code", code);
         return out;
+    }
+
+    // ───────────────────────── roles (from the super admin's role templates) ─────────────────────────
+
+    public record RoleRow(String id, String key, String name, long employees, boolean mandatory) {}
+
+    /** The business's roles; {@code mandatory}: the role's template is part of every business. */
+    List<RoleRow> roles(UUID business) {
+        return repo.findRoles(business).stream().map(r -> {
+            var t = roleTemplates.any(r.key());
+            return new RoleRow(r.id(), r.key(), r.name(), r.employees(), t != null && t.mandatory());
+        }).toList();
+    }
+
+    private UUID customerBusiness(String idRaw) {
+        UUID business = Check.uuid(idRaw);
+        if (!repo.customerBusinessExists(business)) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
+        return business;
+    }
+
+    private BusinessAdminRepository.BusinessRole roleOf(UUID business, String roleIdRaw) {
+        String id = Check.uuid(roleIdRaw).toString();
+        return repo.findRoles(business).stream().filter(r -> r.id().equals(id)).findFirst()
+                .orElseThrow(() -> new UserException(HttpStatus.NOT_FOUND, "That role isn't part of this business."));
+    }
+
+    /** Gives an existing business one more role from the catalogue. */
+    public Map<String, String> addRole(CurrentUser u, String businessIdRaw, String templateKey, String ip) {
+        UUID business = customerBusiness(businessIdRaw);
+        var t = roleTemplates.any(templateKey == null ? "" : templateKey);
+        if (t == null || !t.active()) throw new UserException("Unknown or switched-off role: " + templateKey + ".");
+        UUID id = TenantContext.call(business, () -> setup.addRole(t));
+        audit.log(u.id(), "business.role_add", "role", id.toString(), null, Map.of("business", business.toString(), "template", t.key()), ip);
+        return Map.of("id", id.toString());
+    }
+
+    /** Takes a role away from a business: not a mandatory one, and only while nobody (past employees included) holds it. */
+    public void removeRole(CurrentUser u, String businessIdRaw, String roleIdRaw, String ip) {
+        UUID business = customerBusiness(businessIdRaw);
+        var role = roleOf(business, roleIdRaw);
+        var t = roleTemplates.any(role.key());
+        if (t != null && t.mandatory()) throw new UserException(role.name() + " is part of every business and can't be removed.");
+        if (role.employees() > 0) throw new UserException("Move everyone (including past employees) out of " + role.name() + " first.");
+        repo.deleteRole(business, UUID.fromString(role.id()));
+        audit.log(u.id(), "business.role_remove", "role", role.id(), Map.of("business", business.toString(), "role", role.key()), null, ip);
+    }
+
+    /** Copies the template's current permissions and assignable roles over the business's role. */
+    public String syncRole(CurrentUser u, String businessIdRaw, String roleIdRaw, String ip) {
+        UUID business = customerBusiness(businessIdRaw);
+        var role = roleOf(business, roleIdRaw);
+        var t = roleTemplates.any(role.key());
+        if (t == null) throw new UserException(role.name() + " isn't made from a role template, so there is nothing to copy.");
+        TenantContext.run(business, () -> setup.syncRole(UUID.fromString(role.id()), t));
+        audit.log(u.id(), "business.role_sync", "role", role.id(), null, Map.of("business", business.toString(), "template", t.key(), "permissions", t.permissions()), ip);
+        return role.name() + " now matches its template";
     }
 
     /** Turns a sub admin's portal access on or off (off ends their sessions). */

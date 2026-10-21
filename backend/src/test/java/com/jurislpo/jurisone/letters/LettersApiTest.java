@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import com.jurislpo.jurisone.service.BusinessSetupService;
 import com.jurislpo.jurisone.service.PolicyService;
@@ -40,7 +41,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  */
 class LettersApiTest extends IntegrationTest {
 
-    static final String PW = "correct-horse-battery-7";
     static final Pattern REF = Pattern.compile("^HRL/\\d{4}-\\d{2}/(\\d{4})$");
 
     @Autowired MockMvc mvc;
@@ -57,7 +57,7 @@ class LettersApiTest extends IntegrationTest {
     }
 
     Cookie signIn(String email) throws Exception {
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + email + "\",\"password\":\"" + PW + "\"}"))
+        String set = SignIn.session(mvc, email)
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -77,12 +77,12 @@ class LettersApiTest extends IntegrationTest {
         UUID ownerRole = t.role("owner", "dir", "roles.manage", "letters.manage", "struct.manage", "business.manage");
         UUID finRole = t.role("fm", "self", "dir", "pay.view", "struct.manage");
         UUID empRole = t.role("employee", "self", "dir");
-        t.employee("L-HR-" + suffix, "hr." + suffix + "@example.com", hrRole, PW);
-        t.employee("L-OW-" + suffix, "owner." + suffix + "@example.com", ownerRole, PW);
-        t.employee("L-FM-" + suffix, "fin." + suffix + "@example.com", finRole, PW);
+        t.employee("L-HR-" + suffix, "hr." + suffix + "@example.com", hrRole);
+        t.employee("L-OW-" + suffix, "owner." + suffix + "@example.com", ownerRole);
+        t.employee("L-FM-" + suffix, "fin." + suffix + "@example.com", finRole);
         e1Code = "L-E1-" + suffix;
-        e1 = t.employee(e1Code, "e1." + suffix + "@example.com", empRole, PW);
-        e2 = t.employee("L-E2-" + suffix, "e2." + suffix + "@example.com", empRole, PW);
+        e1 = t.employee(e1Code, "e1." + suffix + "@example.com", empRole);
+        e2 = t.employee("L-E2-" + suffix, "e2." + suffix + "@example.com", empRole);
         dept = UUID.randomUUID();
         jdbc.update("INSERT INTO departments (id, business_id, name) VALUES (?, ?, 'Operations')", dept, business);
         jdbc.update("UPDATE employees SET department_id = ? WHERE id IN (?, ?)", dept, e1, e2);
@@ -191,6 +191,8 @@ class LettersApiTest extends IntegrationTest {
 
         // the employee is told, sees it under "my letters" and downloads the PDF
         assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE employee_id = ? AND text LIKE ?", Integer.class, e1, "%" + row.get("reference_no") + "%")).isEqualTo(1);
+        // ...and gets it by email too (with no mail server set up the mail is only logged, and issuing still succeeds)
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ? AND subject LIKE ?", Integer.class, "e1." + suffix + "@example.com", "%" + row.get("reference_no") + "%")).isEqualTo(1);
         mvc.perform(get("/api/letters/mine").cookie(emp1)).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].body").doesNotExist()).andExpect(jsonPath("$.data[?(@.id == '" + id + "')].reference").value(row.get("reference_no")));
         byte[] pdf = mvc.perform(get("/api/letters/" + id + "/pdf").cookie(emp1)).andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF))
@@ -321,8 +323,8 @@ class LettersApiTest extends IntegrationTest {
         String s2 = TestData.letters(8);
         TestData other = new TestData(jdbc).inBusiness("letters2-" + s2);
         UUID hrRole = other.role("hrm", "self", "dir", "letters.manage");
-        other.employee("M-HR-" + s2, "hr2." + s2 + "@example.com", hrRole, PW);
-        UUID oe = other.employee("M-E1-" + s2, "oe." + s2 + "@example.com", other.role("employee", "self", "dir"), PW);
+        other.employee("M-HR-" + s2, "hr2." + s2 + "@example.com", hrRole);
+        UUID oe = other.employee("M-E1-" + s2, "oe." + s2 + "@example.com", other.role("employee", "self", "dir"));
         UUID d2 = UUID.randomUUID();
         jdbc.update("INSERT INTO departments (id, business_id, name) VALUES (?, ?, 'Sales')", d2, other.business());
         jdbc.update("UPDATE employees SET department_id = ?, exit_date = ? WHERE id = ?", d2, Date.valueOf(LocalDate.of(2026, 3, 31)), oe);

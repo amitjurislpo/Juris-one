@@ -32,6 +32,22 @@ public final class PeopleRules {
         return isAdminRole(a.roleKey()); // the business owner (sub admin), or the super admin in the platform company
     }
 
+    /** The HR Manager role (built into every business). */
+    public static boolean isHr(Actor a) {
+        return "hrm".equals(a.roleKey());
+    }
+
+    /** Only the business admin (owner) and HR may change an employee's status (confirmation) or role. */
+    public static boolean canManageStatusAndRole(Actor a) {
+        return isAdmin(a) || isHr(a);
+    }
+
+    /** Make a probation / onboarding employee permanent: admin or HR with people.add; never yourself, never the super admin. */
+    public static boolean canConfirm(Actor a, Target t) {
+        return a.perms().contains(Permissions.PEOPLE_ADD) && canManageStatusAndRole(a) && !a.id().equals(t.id()) && !t.isSuperAdmin()
+                && (t.status() == EmployeeStatus.PROBATION || t.status() == EmployeeStatus.ONBOARDING);
+    }
+
     /** People ops can add employees only if their role can assign at least one role. */
     public static boolean canAddEmployees(Actor a) {
         return a.perms().contains(Permissions.PEOPLE_ADD) && (isAdmin(a) || !a.assignable().isEmpty());

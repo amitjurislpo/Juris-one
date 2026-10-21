@@ -108,6 +108,7 @@ public class PolicyService {
         int n = repo.insertAcknowledgement(policyId, v.get("id"), version, v.get("title"), v.get("body_sha256"), v.get("file_sha256"),
                 u.id(), me.get("code"), me.get("full_name"), me.get("email"), ip, userAgent == null ? null : userAgent.substring(0, Math.min(400, userAgent.length())));
         notifications.clearPolicy(u.id(), policyId);
+        if (n > 0) audit.log(u.id(), "policy.acknowledge", "policy", policyId.toString(), null, Map.of("version", version, "title", String.valueOf(v.get("title"))), ip);
                 return n == 0 ? "Already accepted" : "Thank you — \"" + v.get("title") + "\" accepted";
     }
 

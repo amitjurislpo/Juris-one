@@ -4,6 +4,7 @@ import com.jurislpo.jurisone.service.ProfileService;
 import com.jurislpo.jurisone.common.ApiResult;
 import com.jurislpo.jurisone.common.RequestMeta;
 import com.jurislpo.jurisone.service.OnboardingService;
+import com.jurislpo.jurisone.service.PhotoService;
 import com.jurislpo.jurisone.security.Auth;
 import com.jurislpo.jurisone.security.CurrentUser;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,10 +15,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 /** The signed-in person's own profile and documents (everyone in a business). */
@@ -27,8 +30,10 @@ public class ProfileController {
     private final Auth auth;
     private final ProfileService profiles;
     private final OnboardingService onboarding;
+    private final PhotoService photos;
 
-    public ProfileController(Auth auth, ProfileService profiles, OnboardingService onboarding) {
+    public ProfileController(Auth auth, ProfileService profiles, OnboardingService onboarding, PhotoService photos) {
+        this.photos = photos;
         this.auth = auth;
         this.profiles = profiles;
         this.onboarding = onboarding;
@@ -46,6 +51,19 @@ public class ProfileController {
     @PutMapping("/api/profile")
     public ApiResult<Void> update(@RequestBody ProfileService.ProfileInput body, HttpServletRequest req) {
         return ApiResult.message(profiles.update(auth.requirePage("profile"), body, RequestMeta.of(req).ip()));
+    }
+
+    /** My own photo: the raw image bytes (JPEG, PNG or WebP, at most 400 KB) as the request body. Answers {@code {photo: <version>}}. */
+    @PutMapping("/api/profile/photo")
+    public ApiResult<Map<String, Long>> setPhoto(@RequestBody(required = false) byte[] body, @RequestHeader(value = HttpHeaders.CONTENT_TYPE, required = false) String type, HttpServletRequest req) {
+        long v = photos.setOwn(auth.requirePage("profile"), type, body, RequestMeta.of(req).ip());
+        return ApiResult.success("Photo saved", Map.of("photo", v));
+    }
+
+    @DeleteMapping("/api/profile/photo")
+    public ApiResult<Void> removePhoto(HttpServletRequest req) {
+        photos.removeOwn(auth.requirePage("profile"), RequestMeta.of(req).ip());
+        return ApiResult.message("Photo removed");
     }
 
     @GetMapping("/api/profile/documents/{docId}/file")

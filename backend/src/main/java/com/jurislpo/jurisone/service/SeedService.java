@@ -1,7 +1,6 @@
 package com.jurislpo.jurisone.service;
 
 import com.jurislpo.jurisone.config.JurisOneProperties;
-import com.jurislpo.jurisone.crypto.Passwords;
 import com.jurislpo.jurisone.crypto.PiiCrypto;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.engine.Permissions;
@@ -32,11 +31,10 @@ import org.springframework.stereotype.Service;
 
 /**
  * Seed — idempotent (safe to re-run).
- *   Platform: shifts, leave types, FY 2026-27 tax tables and the super admin (jurisone.seed.super-admin-email / super-admin-password;
- *             an existing password is never changed). Businesses are created by the super admin.
+ *   Platform: shifts, leave types, FY 2026-27 tax tables and the super admin (jurisone.seed.super-admin-email). Businesses are created by the super admin.
  *   Demo (jurisone.seed.demo=true, development and tests only): a "Juris Consultants" business with the prototype's people,
  *             holidays, salary structures, declarations, punches, requests and closed Apr–Aug 2026 payroll. Its owner
- *             (JC-002) signs in with jurisone.seed.owner-password, everyone else with jurisone.seed.demo-password.
+ *             is JC-002. Everyone signs in with their email and an emailed code (fixed 000000 in dev).
  */
 @Service
 public class SeedService {
@@ -45,7 +43,6 @@ public class SeedService {
 
     private final SeedRepository repo;
     private final PiiCrypto pii;
-    private final Passwords passwords;
     private final PayrollOpsService payrollOps;
     private final JobsService jobs;
     private final BusinessSetupService setup;
@@ -54,12 +51,11 @@ public class SeedService {
 
     private final com.jurislpo.jurisone.service.PlatformCompanyService platformCompany;
 
-    public SeedService(SeedRepository repo, PiiCrypto pii, Passwords passwords, PayrollOpsService payrollOps, JobsService jobs, BusinessSetupService setup,
+    public SeedService(SeedRepository repo, PiiCrypto pii, PayrollOpsService payrollOps, JobsService jobs, BusinessSetupService setup,
                        com.jurislpo.jurisone.service.PlatformCompanyService platformCompany, Environment env, JurisOneProperties props) {
         this.platformCompany = platformCompany;
         this.repo = repo;
         this.pii = pii;
-        this.passwords = passwords;
         this.payrollOps = payrollOps;
         this.jobs = jobs;
         this.setup = setup;
@@ -182,9 +178,9 @@ public class SeedService {
 
     /**
      * The super admin: a platform user with no business. An existing super admin (found by email) is moved onto the
-     * platform role; their password is never changed.
+     * platform role.
      */
-    UUID upsertSuperAdmin(UUID platformRole, String password) {
+    UUID upsertSuperAdmin(UUID platformRole) {
         String email = adminEmail();
         List<UUID> existing = repo.findEmployeeIdsByEmail(email);
         UUID id;
@@ -195,7 +191,7 @@ public class SeedService {
             id = existing.get(0);
             repo.moveToPlatformRole(id, platformRole);
         }
-        setPassword(id, password, true);
+        ensureUser(id, true);
         return id;
     }
 
@@ -220,15 +216,10 @@ public class SeedService {
         return id;
     }
 
-    void setPassword(UUID employeeId, String password, boolean superAdmin) {
+    void ensureUser(UUID employeeId, boolean superAdmin) {
         List<Map<String, Object>> existing = repo.findUser(employeeId);
-        if (!existing.isEmpty() && existing.get(0).get("password_hash") != null) {
-            if (superAdmin && !Boolean.TRUE.equals(existing.get(0).get("is_super_admin"))) repo.markSuperAdmin(employeeId);
-            return; // never overwrite a password someone has already set
-        }
-        String hash = password == null ? null : passwords.hash(password);
-        Timestamp setAt = password == null ? null : Timestamp.from(Instant.now());
-        repo.upsertUser(employeeId, hash, setAt, superAdmin);
+        if (existing.isEmpty()) repo.insertUser(employeeId, superAdmin);
+        else if (superAdmin && !Boolean.TRUE.equals(existing.get(0).get("is_super_admin"))) repo.markSuperAdmin(employeeId);
     }
 
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ demo attendance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -360,15 +351,12 @@ public class SeedService {
     }
 
     public void run() throws IOException {
-        String adminPw = env.getProperty("jurisone.seed.super-admin-password", "");
-        if (adminPw.isBlank()) throw new IllegalStateException("Set jurisone.seed.super-admin-password (application-<env>.properties or the environment) before seeding.");
-
         // platform: shared shifts, leave types and tax tables, and the super admin (no business)
         UUID platformRole = seedPlatformRole();
         Map<String, UUID> shiftIds = seedShifts();
         seedLeaveTypes();
         seedTax();
-        UUID superAdminId = upsertSuperAdmin(platformRole, adminPw);
+        UUID superAdminId = upsertSuperAdmin(platformRole);
         platformCompany.ensure(); // the operator's own company; the super admin belongs to it
         seedPlans();
 
@@ -395,7 +383,7 @@ public class SeedService {
 
         long[] counts = {count("businesses"), count("employees"), count("roles"), count("departments"), count("holidays")};
         log.info("Seed complete — businesses {}, employees {}, roles {}, departments {}, holidays {}", counts[0], counts[1], counts[2], counts[3], counts[4]);
-        log.info("Super admin: {}{}", adminEmail(), demo ? " · demo business \"Juris Consultants\": owner JC-002 (jurisone.seed.owner-password), others (jurisone.seed.demo-password)" : "");
+        log.info("Super admin: {}{}", adminEmail(), demo ? " · demo business \"Juris Consultants\": owner JC-002" : "");
     }
 
     /**
@@ -442,12 +430,7 @@ public class SeedService {
             String[][] heads = {{"Human Resources", "JC-012"}, {"Finance", "JC-004"}, {"Technology", "JC-035"}, {"Litigation Support", "JC-035"}, {"Client Services", "JC-091"}};
             for (String[] h : heads) repo.updateDepartmentHead(h[0], codeToId.get(h[1]));
 
-            String demoPw = env.getProperty("jurisone.seed.demo-password", "");
-            String ownerPw = env.getProperty("jurisone.seed.owner-password", "");
-            for (Person p : PEOPLE) {
-                String pw = "owner".equals(p.role()) ? ownerPw : demoPw;
-                setPassword(codeToId.get(p.code()), pw.isEmpty() ? null : pw, false);
-            }
+            for (Person p : PEOPLE) ensureUser(codeToId.get(p.code()), false);
 
             // 2026 holidays (prototype calendar), added by the HR Manager
             String[][] hol = {{"2026-01-26", "Republic Day", "IN"}, {"2026-03-04", "Holi", "IN"}, {"2026-08-15", "Independence Day", "IN"}, {"2026-09-07", "Labor Day", "US"},

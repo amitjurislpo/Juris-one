@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
@@ -33,8 +34,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** Policies are versioned, must be accepted before anything else, and every acceptance is a permanent record. */
 class PolicyApiTest extends IntegrationTest {
 
-    static final String PW = "correct-horse-battery-7";
-
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper json;
@@ -48,7 +47,7 @@ class PolicyApiTest extends IntegrationTest {
     }
 
     Cookie signIn(String email) throws Exception {
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + email + "\",\"password\":\"" + PW + "\"}"))
+        String set = SignIn.session(mvc, email)
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -64,9 +63,9 @@ class PolicyApiTest extends IntegrationTest {
         UUID empRole = t.role("employee", "self", "dir");
         UUID ownerRole = t.role("owner", "dir", "roles.manage", "policies.manage", "business.manage");
         employeeCode = "PE-" + s;
-        t.employee("PH-" + s, "hr." + s + "@example.com", hrRole, PW);
-        t.employee(employeeCode, "emp." + s + "@example.com", empRole, PW);
-        t.employee("PO-" + s, "owner." + s + "@example.com", ownerRole, PW);
+        t.employee("PH-" + s, "hr." + s + "@example.com", hrRole);
+        t.employee(employeeCode, "emp." + s + "@example.com", empRole);
+        t.employee("PO-" + s, "owner." + s + "@example.com", ownerRole);
         hr = signIn("hr." + s + "@example.com");
         employee = signIn("emp." + s + "@example.com");
         owner = signIn("owner." + s + "@example.com");

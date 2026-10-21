@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
@@ -30,7 +31,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** HR invites a candidate by link; the candidate fills in details and documents; HR verifies, adds the employee, then enables access. */
 class OnboardingApiTest extends IntegrationTest {
 
-    static final String PW = "correct-horse-battery-7";
     static final byte[] PDF = "%PDF-1.4\n%doc\n".getBytes(StandardCharsets.US_ASCII);
 
     @Autowired MockMvc mvc;
@@ -46,7 +46,7 @@ class OnboardingApiTest extends IntegrationTest {
     }
 
     Cookie signIn(String email) throws Exception {
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + email + "\",\"password\":\"" + PW + "\"}"))
+        String set = SignIn.session(mvc, email)
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -66,7 +66,7 @@ class OnboardingApiTest extends IntegrationTest {
         }
         dept = UUID.randomUUID();
         jdbc.update("INSERT INTO departments (id, name, business_id) VALUES (?, 'Litigation', ?)", dept, t.business());
-        hrId = t.employee("OH-" + s, "hr." + s + "@example.com", hrRole, PW);
+        hrId = t.employee("OH-" + s, "hr." + s + "@example.com", hrRole);
         hr = signIn("hr." + s + "@example.com");
     }
 
@@ -161,10 +161,10 @@ class OnboardingApiTest extends IntegrationTest {
         mvc.perform(get("/api/people/" + emp + "/documents").cookie(hr)).andExpect(jsonPath("$.data.length()").value(7)); // the rejected one stays behind
         mvc.perform(get("/api/onboarding/" + token2)).andExpect(status().isNotFound());
 
-        // HR turns access on: the invite goes to the work email
+        // HR turns access on: no invite, they sign in with the emailed code
         mvc.perform(write(put("/api/people/" + emp + "/access")).cookie(hr).content("{\"on\":true}")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.endsWith("invite sent to their work email")));
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ?", Integer.class, work)).isEqualTo(1);
+                .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.endsWith("they sign in with the code emailed to their work email")));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ?", Integer.class, work)).isZero();
     }
 
     @Test
@@ -182,7 +182,7 @@ class OnboardingApiTest extends IntegrationTest {
                 .andExpect(jsonPath("$.data.requiredDocs[1]").value("PHOTO"));
         // other businesses keep theirs
         TestData other = new TestData(jdbc).inBusiness("onboard-def-" + s);
-        other.employee("DH-" + s, "dhr." + s + "@example.com", other.role("hrm", "self", "dir", "people.view", "people.add"), PW);
+        other.employee("DH-" + s, "dhr." + s + "@example.com", other.role("hrm", "self", "dir", "people.view", "people.add"));
         mvc.perform(get("/api/onboardings/defaults").cookie(signIn("dhr." + s + "@example.com"))).andExpect(jsonPath("$.data.requiredDocs.length()").value(5));
     }
 
@@ -200,7 +200,7 @@ class OnboardingApiTest extends IntegrationTest {
         // another business's HR doesn't see it
         TestData other = new TestData(jdbc).inBusiness("onboard-other-" + s);
         UUID role = other.role("hrm", "self", "dir", "people.view", "people.add");
-        other.employee("XH-" + s, "xhr." + s + "@example.com", role, PW);
+        other.employee("XH-" + s, "xhr." + s + "@example.com", role);
         Cookie otherHr = signIn("xhr." + s + "@example.com");
         mvc.perform(get("/api/onboardings/" + id).cookie(otherHr)).andExpect(status().isNotFound());
         // and employees without people.add can't open the list

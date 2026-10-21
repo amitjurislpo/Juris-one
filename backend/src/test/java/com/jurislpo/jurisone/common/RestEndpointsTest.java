@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
@@ -26,8 +27,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /** REST conventions: resource paths, methods and status codes (MIGRATION_PLAN §14). */
 class RestEndpointsTest extends IntegrationTest {
-
-    static final String PW = "correct-horse-battery-7";
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -53,8 +52,8 @@ class RestEndpointsTest extends IntegrationTest {
 
     Person person(UUID role) throws Exception {
         String c = "JC-" + (++seq) + (int) (Math.random() * 1000);
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}"))
+        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
+        String set = SignIn.session(mvc, c.toLowerCase() + "@example.com")
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -107,8 +106,6 @@ class RestEndpointsTest extends IntegrationTest {
         String nobody = UUID.randomUUID().toString();
         mvc.perform(get("/api/people/" + nobody + "/contact").cookie(hr.cookie()))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't view this person's contact details."));
-        mvc.perform(write(post("/api/people/" + nobody + "/invitations")).cookie(hr.cookie()))
-                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't send an invite for this person."));
         mvc.perform(write(put("/api/people/" + nobody + "/exit")).cookie(hr.cookie()).content("{\"exitDate\":\"2031-01-01\"}"))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't change this person's record."));
         mvc.perform(get("/api/people/form-options").cookie(hr.cookie())).andExpect(status().isUnprocessableEntity()); // this role may assign no roles
@@ -117,7 +114,7 @@ class RestEndpointsTest extends IntegrationTest {
 
     @Test
     void assignableRolesAreGrantedAndRevoked() throws Exception {
-        Person admin = person(adminRole);
+        Person admin = person(data.role("rest-super", "dir", "roles.manage", "platform.manage", "people.view")); // roles are changed by the platform super admin only
         UUID role = data.role("rest-custom-" + UUID.randomUUID().toString().substring(0, 6), "self");
         mvc.perform(write(put("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(admin.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.containsString("can now add")));
@@ -125,5 +122,9 @@ class RestEndpointsTest extends IntegrationTest {
         mvc.perform(write(delete("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(admin.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.containsString("can no longer add")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM role_assignable_roles WHERE role_id = ? AND assignable_role_id = ?", Integer.class, role, empRole)).isZero();
+        // a business admin (roles.manage without platform.manage) can look but not change
+        Person owner = person(adminRole);
+        mvc.perform(write(put("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(owner.cookie())).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("Roles are set up for your business by JurisOne."));
     }
 }

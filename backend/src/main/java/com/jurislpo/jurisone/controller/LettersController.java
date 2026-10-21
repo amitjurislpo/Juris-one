@@ -101,7 +101,7 @@ public class LettersController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, Object>> issue(@RequestBody LettersService.IssueInput body, HttpServletRequest req) {
         Map<String, Object> out = letters.issue(auth.requirePage("letters"), body, RequestMeta.of(req).ip());
-        return ApiResult.success("Letter " + out.get("reference") + " issued", out);
+        return ApiResult.success("Letter " + out.get("reference") + " issued · emailed to the employee and added to their My letters", out);
     }
 
     @GetMapping

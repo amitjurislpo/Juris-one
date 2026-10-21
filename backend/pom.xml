@@ -19,7 +19,6 @@
   <properties>
     <java.version>17</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <bouncycastle.version>1.86</bouncycastle.version>
     <pdfbox.version>3.0.8</pdfbox.version>
     <poi.version>5.4.1</poi.version>
   </properties>
@@ -38,8 +37,6 @@
     <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-postgresql</artifactId></dependency>
     <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
 
-    <!-- argon2id (Spring Security's Argon2PasswordEncoder) -->
-    <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk18on</artifactId><version>${bouncycastle.version}</version></dependency>
     <!-- employee export (.xlsx) -->
     <dependency>
       <groupId>org.apache.poi</groupId><artifactId>poi-ooxml</artifactId><version>${poi.version}</version>

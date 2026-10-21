@@ -40,11 +40,10 @@ public class PeopleService {
     private final AuditService audit;
     private final PiiCrypto pii;
     private final SessionService sessions;
-    private final AuthTokenService tokens;
     private final com.jurislpo.jurisone.service.SubscriptionService subscriptions;
 
     public PeopleService(PeopleRepository repo, TransactionTemplate tx, ActorService actors, AuditService audit, PiiCrypto pii, SessionService sessions,
-                         AuthTokenService tokens, com.jurislpo.jurisone.service.SubscriptionService subscriptions) {
+                         com.jurislpo.jurisone.service.SubscriptionService subscriptions) {
         this.subscriptions = subscriptions;
         this.repo = repo;
         this.tx = tx;
@@ -52,13 +51,12 @@ public class PeopleService {
         this.audit = audit;
         this.pii = pii;
         this.sessions = sessions;
-        this.tokens = tokens;
     }
 
     // ───────────────────────── list ─────────────────────────
 
     public record PersonRow(String id, String code, String name, String title, String dept, String manager, String loc, boolean india, String role,
-                            String status, boolean access, String doj, boolean canToggle) {}
+                            String status, boolean access, String doj, boolean canToggle, Long photo) {}
 
     public record Dept(String id, String name) {}
 
@@ -76,7 +74,7 @@ public class PeopleService {
 
     // ───────────────────────── directory (dir, everyone) ─────────────────────────
 
-    public record DirRow(String id, String name, String email, String title, String status) {}
+    public record DirRow(String id, String name, String email, String title, String status, Long photo) {}
 
     public record Directory(List<DirRow> rows, int total, int page, int take, int nActive, List<Dept> depts) {}
 
@@ -114,8 +112,8 @@ public class PeopleService {
 
     public record Profile(String id, String code, String name, String father, String email, String phone, String address, String pan, String aadhaar,
                           String uan, String designation, String department, String manager, List<String> reports, String doj, String exit, String location,
-                          boolean india, String shift, String role, String status, boolean access, boolean invitePending, Long gross, boolean canEdit,
-                          boolean canToggle) {}
+                          boolean india, String shift, String role, String status, boolean access, Long gross, boolean canEdit,
+                          boolean canToggle, boolean canConfirm, Long photo) {}
 
     static String maskAddress(String a) {
         if (a == null || a.isEmpty()) return "—";
@@ -148,8 +146,8 @@ public class PeopleService {
                 india ? Masks.uan((String) e.get("uan_last4")) : "—", (String) e.get("designation"), e.get("dept") == null ? "—" : (String) e.get("dept"),
                 e.get("manager") == null ? "—" : (String) e.get("manager"), reports, ((Date) e.get("date_of_joining")).toLocalDate().toString(),
                 exit == null ? null : exit.toLocalDate().toString(), PeopleRules.locationOfTz((String) e.get("time_zone")).l(), india, shift,
-                (String) e.get("role_name"), status.name(), Boolean.TRUE.equals(e.get("portal_access")), e.get("password_hash") == null, gross,
-                PeopleRules.canEditEmployee(actor, target) && status != EmployeeStatus.EXITED, PeopleRules.canToggleAccess(actor, target));
+                (String) e.get("role_name"), status.name(), Boolean.TRUE.equals(e.get("portal_access")), gross,
+                PeopleRules.canEditEmployee(actor, target) && status != EmployeeStatus.EXITED, PeopleRules.canToggleAccess(actor, target), PeopleRules.canConfirm(actor, target), PhotoService.version(e.get("photo_updated_at")));
     }
 
     /** Full phone + address for people who may edit the record. Every reveal is audited. */
@@ -176,10 +174,20 @@ public class PeopleService {
             audit.log(u.id(), "employee.access_toggle", "employee", id.toString(), Map.of("portalAccess", e.get("portal_access")), Map.of("portalAccess", on), ip);
         });
         String name = (String) e.get("full_name");
-        // someone who has never set a password (e.g. added from onboarding) gets the invite on their work email now
-        boolean invite = on && repo.hasNoPassword(id);
-        if (invite) tokens.sendInvite(id);
-        return on ? "Portal access enabled for " + name + (invite ? " · invite sent to their work email" : "") : name + " can no longer sign in";
+        return on ? "Portal access enabled for " + name + " · they sign in with the code emailed to their work email" : name + " can no longer sign in";
+    }
+
+    /** Probation → permanent. Admin (owner) and HR only; the daily job would do it after the probation period anyway. */
+    public String confirmEmployee(CurrentUser u, String idRaw, String ip) {
+        UUID id = Check.uuid(idRaw);
+        Target t = actors.target(id);
+        if (t == null || !PeopleRules.canConfirm(actors.actor(u), t)) throw new UserException("You can't make this person permanent.");
+        String name = (String) repo.findNameAndAccess(id).get("full_name");
+        tx.executeWithoutResult(s -> {
+            repo.markConfirmed(id);
+            audit.log(u.id(), "employee.confirm", "employee", id.toString(), Map.of("status", t.status().name()), Map.of("status", "ACTIVE"), ip);
+        });
+        return name + " is now a permanent employee";
     }
 
     public String markExited(CurrentUser u, String idRaw, String exitDate, String ip) {
@@ -219,19 +227,6 @@ public class PeopleService {
             audit.log(actorId, "employee.exit", "employee", id.toString(), before, after, ip);
         });
         return e.get("full_name") + " marked as a past employee · access removed";
-    }
-
-    public String resendInvite(CurrentUser u, String idRaw, String ip) {
-        UUID id = Check.uuid(idRaw);
-        Target t = actors.target(id);
-        if (t == null || !PeopleRules.canEditEmployee(actors.actor(u), t) || t.status() == EmployeeStatus.EXITED) {
-            throw new UserException("You can't send an invite for this person.");
-        }
-        List<String> hash = repo.findPasswordHash(id);
-        if (!hash.isEmpty() && hash.get(0) != null) throw new UserException("This person has already set a password.");
-        tokens.sendInvite(id);
-        audit.log(u.id(), "employee.invite_sent", "employee", id.toString(), ip);
-        return "Invite sent to their official email";
     }
 
     // ───────────────────────── add / edit ─────────────────────────
@@ -285,7 +280,9 @@ public class PeopleService {
         List<Manager> managers = repo.findManagerOptions(editId);
         List<RoleRow> roles = repo.findRoles();
         String currentRole = current == null ? null : current.get("role_id").toString();
-        List<RoleRow> allowed = roles.stream().filter(r -> roleAllowed(actor, r, currentRole)).toList();
+        // changing a role is for the admin and HR only: anyone else editing sees just the person's current role
+        boolean editingOne = current != null;
+        List<RoleRow> allowed = roles.stream().filter(r -> roleAllowed(actor, r, currentRole) && (!editingOne || PeopleRules.canManageStatusAndRole(actor) || r.id().equals(currentRole))).toList();
         RoleRow employeeRole = roles.stream().filter(r -> "employee".equals(r.key())).findFirst().orElse(null);
         Map<String, String> shiftCodes = repo.findShiftCodesById();
 
@@ -412,6 +409,7 @@ public class PeopleService {
         String currentRole = current == null ? null : current.get("role_id").toString();
         boolean ok = PeopleRules.canAssignRole(actor, f.roleId(), currentRole) || (PeopleRules.isAdmin(actor) && !PeopleRules.isAdminRole((String) role.get("key")));
         if (!ok) throw new UserException("You can't give people the " + role.get("name") + " role.");
+        if (current != null && !f.roleId().equals(currentRole) && !PeopleRules.canManageStatusAndRole(actor)) throw new UserException("Only the admin or HR can change someone's role.");
 
         // Department: must exist; locked to the actor's own department where the rule applies.
         List<Map<String, Object>> dept = repo.findDepartmentArchivedAt(f.departmentId());
@@ -550,9 +548,8 @@ public class PeopleService {
                 }
             }
         });
-        if (access) tokens.sendInvite(id);
         return new Saved(id.toString(), codeOut[0], fullName + " added as " + codeOut[0] + " · " + role.get("name")
-                + (india ? " · salary structure pending with Finance" : "") + (access ? " · invite sent" : " · portal access is off until you turn it on"));
+                + (india ? " · salary structure pending with Finance" : "") + (access ? " · they sign in with the code emailed to their work email" : " · portal access is off until you turn it on"));
     }
 
     private static String str(Object o) {

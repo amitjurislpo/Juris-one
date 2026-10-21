@@ -3,6 +3,7 @@ package com.jurislpo.jurisone.security;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.exception.Problems;
 import com.jurislpo.jurisone.service.PolicyService;
+import com.jurislpo.jurisone.service.SubscriptionService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,16 +28,22 @@ public class PolicyGateFilter extends OncePerRequestFilter {
 
     public static final String MESSAGE = "Please read and accept the company policies first.";
 
-    static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell", "/api/notifications", "/api/policies/pending", "/api/policies/mine",
+    static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell", "/api/notifications", "/api/policies/pending", "/api/policies/mine", "/api/audit/page-views",
             "/api/onboarding/"); // a candidate's link (checked by the service)
     static final Pattern OPEN_POLICY = Pattern.compile("^/api/policies/[^/]+/(acknowledgements|versions/\\d+/file)$");
 
     private final PolicyService policies;
+    private final SubscriptionService subscriptions;
     private final ObjectMapper json;
 
-    public PolicyGateFilter(PolicyService policies, ObjectMapper json) {
+    public PolicyGateFilter(PolicyService policies, SubscriptionService subscriptions, ObjectMapper json) {
         this.policies = policies;
+        this.subscriptions = subscriptions;
         this.json = json;
+    }
+
+    private boolean readOnly(CurrentUser u) {
+        return u.businessId() != null && subscriptions.isReadOnly(u.businessId());
     }
 
     @Override
@@ -48,7 +55,8 @@ public class PolicyGateFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain) throws ServletException, IOException {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
-        if (a != null && a.getPrincipal() instanceof CurrentUser u && PolicyService.mustAcknowledge(u) && policies.hasPending(u.id())) {
+        // accepting a policy is a write, so a business whose subscription has ended (read-only) is never asked
+        if (a != null && a.getPrincipal() instanceof CurrentUser u && PolicyService.mustAcknowledge(u) && !readOnly(u) && policies.hasPending(u.id())) {
             res.setStatus(HttpStatus.PRECONDITION_REQUIRED.value());
             res.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
             json.writeValue(res.getOutputStream(), Problems.of(HttpStatus.PRECONDITION_REQUIRED, "POLICY_ACK_REQUIRED", MESSAGE, req.getRequestURI()));

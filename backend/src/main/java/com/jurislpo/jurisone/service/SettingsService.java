@@ -24,7 +24,7 @@ public class SettingsService {
             "employee.policy", """
                 {"probationMonths":6}""",
             "auth.policy", """
-                {"maxFailedAttempts":5,"lockMinutes":15,"ipWindowMinutes":15,"ipMaxAttempts":30,"inviteTtlHours":72,"resetTtlMinutes":60}""",
+                {"maxFailedAttempts":5,"lockMinutes":15,"ipWindowMinutes":15,"ipMaxAttempts":30}""",
             "payroll.policy", """
                 {"pfRate":0.12,"pfWageCeiling":15000,"professionalTax":{"state":"Default","monthly":200}}""",
             "tax.policy", """
@@ -37,7 +37,7 @@ public class SettingsService {
     public static final List<String> KEYS = List.of("attendance.policy", "employee.policy", "auth.policy", "payroll.policy", "tax.policy", "company",
             "onboarding.policy");
 
-    public record AuthPolicy(int maxFailedAttempts, int lockMinutes, int ipWindowMinutes, int ipMaxAttempts, int inviteTtlHours, int resetTtlMinutes) {}
+    public record AuthPolicy(int maxFailedAttempts, int lockMinutes, int ipWindowMinutes, int ipMaxAttempts) {}
 
     public record AttendancePolicy(double fullDayHours, double halfDayHours, int graceMinutes, int lateMarksPerHalfDayLop, List<Integer> weeklyOffs,
                                    int absenceJobBufferMinutes, int lockDayOfNextMonth, String lockTime, double shiftTargetHours, String trackingStartDate) {}

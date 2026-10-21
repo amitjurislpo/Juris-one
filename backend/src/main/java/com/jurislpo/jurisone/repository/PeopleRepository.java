@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.repository;
 
+import com.jurislpo.jurisone.service.PhotoService;
 import com.jurislpo.jurisone.engine.PeopleRules;
 import com.jurislpo.jurisone.engine.PeopleRules.Target;
 import com.jurislpo.jurisone.entity.EmployeeStatus;
@@ -41,7 +42,7 @@ public class PeopleRepository {
         return jdbc.query("""
             SELECT e.id::text AS id, e.code, e.full_name, e.designation, e.status::text AS status, e.portal_access, e.time_zone, e.region::text AS region,
                    e.role_id::text AS role_id, e.date_of_joining, d.name AS dept, m.full_name AS manager, r.name AS role_name, r.key AS role_key,
-                   (SELECT u.is_super_admin FROM users u WHERE u.employee_id = e.id) AS super_admin
+                   (SELECT u.is_super_admin FROM users u WHERE u.employee_id = e.id) AS super_admin, e.photo_updated_at
             """ + PeopleQuery.FROM + pq.where + pq.orderBy + " LIMIT ? OFFSET ?",
                 (rs, i) -> {
                     Target t = new Target(rs.getString("id"), rs.getString("role_id"), rs.getString("role_key"), EmployeeStatus.valueOf(rs.getString("status")),
@@ -50,7 +51,7 @@ public class PeopleRepository {
                             rs.getString("dept") == null ? "—" : rs.getString("dept"), rs.getString("manager") == null ? "—" : rs.getString("manager"),
                             PeopleRules.locationOfTz(rs.getString("time_zone")).l(), "IN".equals(rs.getString("region")), rs.getString("role_name"),
                             rs.getString("status"), rs.getBoolean("portal_access"), rs.getDate("date_of_joining").toLocalDate().toString(),
-                            canToggle.test(t));
+                            canToggle.test(t), PhotoService.version(rs.getTimestamp("photo_updated_at")));
                 }, args.toArray());
     }
 
@@ -84,8 +85,8 @@ public class PeopleRepository {
         List<Object> pageArgs = new ArrayList<>(args);
         pageArgs.add(take);
         pageArgs.add(skip);
-        return jdbc.query("SELECT id::text, full_name, email, designation, status::text FROM employees" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
-                (rs, i) -> new DirRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)), pageArgs.toArray());
+        return jdbc.query("SELECT id::text, full_name, email, designation, status::text, photo_updated_at FROM employees" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
+                (rs, i) -> new DirRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), PhotoService.version(rs.getTimestamp(6))), pageArgs.toArray());
     }
 
     public Integer countDirectory(String where, List<Object> args) {
@@ -102,7 +103,7 @@ public class PeopleRepository {
     public List<Map<String, Object>> findProfile(UUID id) {
         return jdbc.queryForList("""
             SELECT e.*, e.status::text AS status_s, e.region::text AS region_s, d.name AS dept, m.full_name AS manager, r.name AS role_name, r.key AS role_key,
-                   s.code AS shift_code, s.start_local, s.end_local, us.is_super_admin, us.password_hash
+                   s.code AS shift_code, s.start_local, s.end_local, us.is_super_admin
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees m ON m.id = e.reporting_manager_id
             JOIN roles r ON r.id = e.role_id LEFT JOIN shifts s ON s.id = e.shift_id LEFT JOIN users us ON us.employee_id = e.id WHERE e.id = ?""", id);
     }
@@ -132,17 +133,17 @@ public class PeopleRepository {
         jdbc.update("UPDATE employees SET portal_access = ?, updated_at = now() WHERE id = ?", on, id);
     }
 
-    /** True when the employee's user has never set a password. */
-    public boolean hasNoPassword(UUID employeeId) {
-        return jdbc.queryForList("SELECT 1 FROM users WHERE employee_id = ? AND password_hash IS NULL", employeeId).size() > 0;
-    }
-
     /** full_name, date_of_joining, status, portal_access and the count of current direct reports. */
     public Map<String, Object> findForExit(UUID id) {
         return jdbc.queryForMap("""
             SELECT full_name, date_of_joining, status::text AS status, portal_access,
                    (SELECT count(*) FROM employees r WHERE r.reporting_manager_id = e.id AND r.status <> 'EXITED') AS reports
             FROM employees e WHERE id = ?""", id);
+    }
+
+    /** Probation / onboarding → permanent (Active). */
+    public void markConfirmed(UUID id) {
+        jdbc.update("UPDATE employees SET status = 'ACTIVE', updated_at = now() WHERE id = ?", id);
     }
 
     /** Marks the employee exited on {@code exitDate} with portal access off. */
@@ -153,11 +154,6 @@ public class PeopleRepository {
     /** Clears the employee as head of any department. */
     public void clearDepartmentHead(UUID employeeId) {
         jdbc.update("UPDATE departments SET head_employee_id = NULL WHERE head_employee_id = ?", employeeId);
-    }
-
-    /** The user's password hash (empty when there is no user row). */
-    public List<String> findPasswordHash(UUID employeeId) {
-        return jdbc.queryForList("SELECT password_hash FROM users WHERE employee_id = ?", String.class, employeeId);
     }
 
     // ── add / edit ──
@@ -280,7 +276,7 @@ public class PeopleRepository {
                 timeZone, region, shiftId, status, access, createdBy);
     }
 
-    /** The new employee's user row (no password yet). */
+    /** The new employee's user row. */
     public void insertUser(UUID employeeId) {
         jdbc.update("INSERT INTO users (employee_id, failed_attempts, is_super_admin) VALUES (?, 0, false)", employeeId);
     }

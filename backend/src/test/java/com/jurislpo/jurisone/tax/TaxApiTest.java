@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
@@ -27,7 +28,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** Declarations → proof upload → submit → Finance decision, and who may see a proof. */
 class TaxApiTest extends IntegrationTest {
 
-    static final String PW = "correct-horse-battery-7";
     static final byte[] PDF = "%PDF-1.4 test".getBytes();
 
     @Autowired MockMvc mvc;
@@ -52,8 +52,8 @@ class TaxApiTest extends IntegrationTest {
 
     Person person(UUID role) throws Exception {
         String c = "JC-" + (++seq) + (int) (Math.random() * 1000);
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
+        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
+        String set = SignIn.session(mvc, c.toLowerCase() + "@example.com").andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
         return new Person(id, new Cookie("jo_at", m.group(1)));

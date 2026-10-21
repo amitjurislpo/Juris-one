@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.service.JobsService;
@@ -32,8 +33,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /** Check-in/out, regularization requests, the register and the jobs through the API. */
 class AttendanceApiTest extends IntegrationTest {
-
-    static final String PW = "correct-horse-battery-7";
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -70,9 +69,9 @@ class AttendanceApiTest extends IntegrationTest {
 
     Person person(UUID role) throws Exception {
         String c = code();
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
+        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
         jdbc.update("UPDATE employees SET shift_id = ? WHERE id = ?", nightShift, id);
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}"))
+        String set = SignIn.session(mvc, c.toLowerCase() + "@example.com")
                 .andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();

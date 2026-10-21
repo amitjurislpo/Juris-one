@@ -19,7 +19,6 @@ class EnvironmentGuardTest {
         m.put("jurisone.app-url", "https://people.example.com");
         m.put("jurisone.security.jwt-secret", "x".repeat(40));
         m.put("jurisone.security.pii-encryption-key", "k".repeat(44));
-        m.put("jurisone.seed.super-admin-password", "s3cret-pass");
         m.put("spring.datasource.password", "db-password");
         return m;
     }

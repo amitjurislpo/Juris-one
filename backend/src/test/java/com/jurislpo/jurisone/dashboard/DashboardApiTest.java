@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.util.UUID;
@@ -21,8 +22,6 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /** Home, overview, My team and the audit log through the API. */
 class DashboardApiTest extends IntegrationTest {
-
-    static final String PW = "correct-horse-battery-7";
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -46,10 +45,9 @@ class DashboardApiTest extends IntegrationTest {
 
     Person person(UUID role) throws Exception {
         String c = "JC-" + (++seq) + (int) (Math.random() * 1000);
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
+        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
         jdbc.update("UPDATE employees SET shift_id = (SELECT id FROM shifts WHERE code = 'IN_DAY') WHERE id = ?", id);
-        String set = mvc.perform(post("/api/auth/session").header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
+        String set = SignIn.session(mvc, c.toLowerCase() + "@example.com").andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
         return new Person(id, new Cookie("jo_at", m.group(1)));

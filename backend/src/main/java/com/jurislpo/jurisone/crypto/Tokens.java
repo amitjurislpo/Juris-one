@@ -7,7 +7,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HexFormat;
 
-/** Session / invite / reset tokens: random base64url in the cookie or link, only sha256 hex in the DB. */
+/** Session tokens: random base64url in the cookie or link, only sha256 hex in the DB. */
 public final class Tokens {
     private Tokens() {}
 

@@ -1732,12 +1732,12 @@ The 7 file routes the browser opens directly keep their original paths, methods 
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /api/auth/session` (sign in, 201 + cookies) · `POST /api/auth/session/refresh` · `DELETE /api/auth/session` (sign out) · `POST /api/auth/password-resets` · `GET /api/auth/tokens/{purpose}/{token}` · `PUT /api/auth/password` |
+| Auth | `POST /api/auth/session` (sign in, 201 + cookies) · `POST /api/auth/session/refresh` · `DELETE /api/auth/session` (sign out) · `POST /api/auth/otp-requests` (email a sign-in code). Passwords, reset and invite links were removed (V16). |
 | Me & shell | `GET /api/me` · `GET /api/shell` · `PATCH /api/notifications` |
 | Roles | `GET /api/roles` · `POST /api/roles` · `DELETE /api/roles/{id}` · `PUT`/`DELETE /api/roles/{id}/permissions/{perm}` · `PUT`/`DELETE /api/roles/{id}/assignable-roles/{roleId}` |
 | Policies | `GET /api/settings/access` · `GET /api/settings/leave` · `GET /api/settings/holidays?year=` · `GET`/`PUT /api/settings/attendance` |
 | Departments & holidays | `GET`/`POST /api/departments` · `DELETE /api/departments/{id}` · `GET`/`POST /api/holidays` · `DELETE /api/holidays/{id}` |
-| People | `GET /api/people` · `POST /api/people` · `GET`/`PUT /api/people/{id}` · `GET /api/people/{id}/contact` · `PUT /api/people/{id}/access` · `PUT /api/people/{id}/exit` · `POST /api/people/{id}/invitations` · `GET /api/people/form-options` · `GET /api/directory` · `GET /api/people/export` |
+| People | `GET /api/people` · `POST /api/people` · `GET`/`PUT /api/people/{id}` · `GET /api/people/{id}/contact` · `PUT /api/people/{id}/access` · `PUT /api/people/{id}/exit` · `GET /api/people/form-options` · `GET /api/directory` · `GET /api/people/export` |
 | Attendance | `GET /api/attendance/me` · `POST /api/attendance/punches` · `POST /api/attendance/regularizations` · `DELETE /api/attendance/regularizations/{id}` · `PUT /api/attendance/regularizations/{id}/decision` · `GET /api/register` · `GET /api/attendance/register` (CSV) |
 | Leave & approvals | `GET /api/leave` · `GET /api/leave/preview` · `POST /api/leave/requests` · `DELETE /api/leave/requests/{id}` · `PUT /api/leave/requests/{id}/decision` · `GET /api/approvals` |
 | Payroll | `GET /api/payroll?m=` · `PUT`/`DELETE /api/payroll/{month}/adjustments/{employeeId}` · `PUT /api/payroll/{month}/status` · `GET`/`POST /api/structures` · `GET /api/payslips` · `GET /api/payslips/{month}/{code}` · `GET /api/payroll/export` |

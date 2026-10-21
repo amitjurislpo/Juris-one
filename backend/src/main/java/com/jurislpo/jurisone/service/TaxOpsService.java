@@ -163,6 +163,8 @@ public class TaxOpsService {
         if (c != null && ((Number) c.get("amount")).longValue() == amount) return null;
         if (c != null && "PENDING".equals(c.get("status"))) throw new UserException("This item is waiting for Finance — you can change it after they decide.");
         repo.upsertItemAmount(UUID.randomUUID(), user.id(), m.policy().fy(), TaxCatalogue.ITEM_SECTION.get(f.key()), f.key(), amount);
+        audit.log(user.id(), "declaration.save", "declaration_item", user.id() + ":" + m.policy().fy() + ":" + f.key(),
+                c == null ? null : Map.of("amount", ((Number) c.get("amount")).longValue()), Map.of("amount", amount), null);
         if (c != null && "APPROVED".equals(c.get("status"))) {
             Map<String, Object> before = new LinkedHashMap<>();
             before.put("amount", ((Number) c.get("amount")).longValue());
@@ -234,6 +236,7 @@ public class TaxOpsService {
         String rel = storageDir.relativize(abs).toString();
         boolean reopen = "APPROVED".equals(status) || "REJECTED".equals(status);
         repo.upsertItemProof(UUID.randomUUID(), u.id(), policy.fy(), TaxCatalogue.ITEM_SECTION.get(itemKey), itemKey, rel, name, reopen);
+        audit.log(u.id(), "declaration.proof_upload", "declaration_item", u.id() + ":" + policy.fy() + ":" + itemKey, null, Map.of("file", name, "bytes", bytes.length), null);
         return name;
     }
 

@@ -19,6 +19,11 @@ public class LeaveRepository {
 
     private final JdbcTemplate jdbc;
 
+    /** Still on probation (or not yet joined): earned leave isn't available. */
+    public boolean onProbation(UUID employeeId) {
+        return !jdbc.queryForList("SELECT 1 FROM employees WHERE id = ? AND status IN ('PROBATION', 'ONBOARDING')", employeeId).isEmpty();
+    }
+
     public LeaveRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }

@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import com.jurislpo.jurisone.security.JwtService;
 import jakarta.servlet.http.Cookie;
@@ -29,8 +30,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /** JWT access tokens (5 min) + rotating refresh tokens; revocation on the next request; problem+json errors. */
 class JwtSessionTest extends IntegrationTest {
-
-    static final String PW = "correct-horse-battery-7";
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -62,8 +61,8 @@ class JwtSessionTest extends IntegrationTest {
 
     Signed signIn() throws Exception {
         String c = "JC-J" + (int) (Math.random() * 1_000_000);
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
-        MockHttpServletResponse res = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}"))
+        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
+        MockHttpServletResponse res = SignIn.session(mvc, c.toLowerCase() + "@example.com")
                 .andExpect(status().isCreated()).andReturn().getResponse();
         List<String> headers = res.getHeaders("Set-Cookie");
         assertThat(headers).anyMatch(h -> h.startsWith("jo_at=") && h.contains("HttpOnly") && h.contains("SameSite=Lax"));

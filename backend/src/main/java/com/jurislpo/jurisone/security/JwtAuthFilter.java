@@ -61,6 +61,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     if (u != null) {
                         List<SimpleGrantedAuthority> auth = u.perms().stream().map(SimpleGrantedAuthority::new).toList();
                         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(u, null, auth));
+                        req.setAttribute(AuditTrail.USER_ATTR, u); // the audit trail reads the actor after this chain has ended
                         TenantContext.set(u.businessId()); // null for the super admin: platform requests run in system mode
                     }
                 } catch (JwtService.ExpiredException e) {
@@ -106,6 +107,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 (UUID) r.get("id"), (String) r.get("code"), (String) r.get("full_name"), (String) r.get("email"), (String) r.get("designation"),
                 roleId, (String) r.get("role_key"), (String) r.get("role_name"), java.util.Set.copyOf(new HashSet<>(perms)),
                 Boolean.TRUE.equals(r.get("is_super_admin")), (String) r.get("region"), (String) r.get("time_zone"),
-                Boolean.TRUE.equals(r.get("has_reports")), claims.sessionId(), (UUID) r.get("business_id"));
+                Boolean.TRUE.equals(r.get("has_reports")), claims.sessionId(), (UUID) r.get("business_id"),
+                com.jurislpo.jurisone.service.PhotoService.version(r.get("photo_updated_at")));
     }
 }

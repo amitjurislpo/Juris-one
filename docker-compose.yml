@@ -43,9 +43,6 @@ services:
       # secrets of sqe / uat / prd (dev has its own values in application-dev.properties)
       PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-}
-      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}
-      SEED_OWNER_PASSWORD: ${SEED_OWNER_PASSWORD:-}
-      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
     ports:

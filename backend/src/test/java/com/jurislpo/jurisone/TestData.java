@@ -1,6 +1,5 @@
 package com.jurislpo.jurisone;
 
-import com.jurislpo.jurisone.crypto.Passwords;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
@@ -17,7 +16,6 @@ public final class TestData {
 
     private final JdbcTemplate jdbc;
     private final UUID business;
-    private static final Passwords PASSWORDS = new Passwords();
 
     public TestData(JdbcTemplate jdbc) {
         this(jdbc, DEFAULT_BUSINESS);
@@ -75,14 +73,14 @@ public final class TestData {
         return id;
     }
 
-    /** An India employee with a password (null = invited, not activated). */
-    public UUID employee(String code, String email, UUID roleId, String password) {
+    /** An India employee with portal access (signs in with the emailed code). */
+    public UUID employee(String code, String email, UUID roleId) {
         UUID id = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO employees (id, business_id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, updated_at)
             VALUES (?, ?, ?, ?, ?, 'Associate', ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, now())""",
                 id, business, code, "Person " + code, email, roleId, Date.valueOf(LocalDate.of(2025, 1, 1)));
-        jdbc.update("INSERT INTO users (employee_id, password_hash) VALUES (?, ?)", id, password == null ? null : PASSWORDS.hash(password));
+        jdbc.update("INSERT INTO users (employee_id) VALUES (?)", id);
         return id;
     }
 }

@@ -1,10 +1,10 @@
 package com.jurislpo.jurisone.service;
 
-import com.jurislpo.jurisone.crypto.Passwords;
-import com.jurislpo.jurisone.engine.Permissions;
 import com.jurislpo.jurisone.repository.BusinessSetupRepository;
+import com.jurislpo.jurisone.repository.RoleTemplateRepository;
 import com.jurislpo.jurisone.tenancy.TenantContext;
-import java.time.Instant;
+import com.jurislpo.jurisone.exception.UserException;
+import org.springframework.http.HttpStatus;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.HashMap;
@@ -24,32 +24,17 @@ public class BusinessSetupService {
 
     public static final String OWNER = "owner";
 
-    /** A role every new business starts with. Owner: everything a business admin needs, but no attendance of their own. */
-    public record RoleTemplate(String key, String name, boolean locked, List<String> perms, List<String> assign) {}
-
-    public static final List<RoleTemplate> ROLES = List.of(
-            new RoleTemplate(OWNER, "Owner", true, java.util.stream.Stream.concat(Permissions.KEYS.stream().filter(p -> !Permissions.SELF.equals(p)),
-                    java.util.stream.Stream.of(Permissions.BUSINESS_MANAGE)).toList(),
-                    List.of("hrm", "hre", "fm", "fe", "employee")),
-            new RoleTemplate("hrm", "HR Manager", false, List.of("self", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle",
-                    "dept.manage", "holidays.manage", "policies.manage", "assets.manage", "announcements.manage", "exit.manage", "letters.manage"), List.of("hre", "employee")),
-            new RoleTemplate("hre", "HR Executive", false, List.of("self", "dir", "att.all", "appr.leave", "appr.reg", "people.view"), List.of()),
-            new RoleTemplate("fm", "Finance Manager", false, List.of("self", "dir", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage",
-                    "pay.view", "pay.close", "struct.manage", "tax.view", "proofs.verify"), List.of("fe")),
-            new RoleTemplate("fe", "Finance Executive", false, List.of("self", "dir", "appr.reg", "pay.view", "tax.view", "proofs.verify"), List.of()),
-            new RoleTemplate("employee", "Employee", false, List.of("self", "dir"), List.of()));
-
     public record NewBusiness(String name, String legalName, String code, String employeePrefix, String timeZone, String contactEmail,
                               String contactPhone, String address, String gstin) {}
 
     private final BusinessSetupRepository repo;
-    private final Passwords passwords;
     private final TransactionTemplate tx;
+    private final RoleTemplateService templates;
 
-    public BusinessSetupService(BusinessSetupRepository repo, Passwords passwords, TransactionTemplate tx) {
+    public BusinessSetupService(BusinessSetupRepository repo, TransactionTemplate tx, RoleTemplateService templates) {
         this.repo = repo;
-        this.passwords = passwords;
         this.tx = tx;
+        this.templates = templates;
     }
 
     /** A URL-safe code from a name: "Juris Consultants" → "juris-consultants". */
@@ -67,21 +52,34 @@ public class BusinessSetupService {
         return p.substring(0, Math.min(5, p.length()));
     }
 
-    /** Creates the business (system mode) and its defaults (inside the business). Returns its id. */
+    /** Creates the business with every active role template (the demo seed and the platform company). */
     public UUID create(NewBusiness b, UUID createdBy) {
+        return createWith(b, createdBy, templates.allActive());
+    }
+
+    /** Creates the business with the mandatory role templates plus the chosen optional ones (unknown or switched-off keys → 422, before anything is created). */
+    public UUID create(NewBusiness b, UUID createdBy, List<String> roleKeys) {
+        return createWith(b, createdBy, templates.forNewBusiness(roleKeys));
+    }
+
+    private UUID createWith(NewBusiness b, UUID createdBy, List<RoleTemplateRepository.Template> roles) {
         UUID id = UUID.randomUUID();
         TenantContext.run(null, () -> repo.insertBusiness(
                 id, b.name(), b.legalName(), b.code(), b.employeePrefix(), b.timeZone() == null ? "Asia/Kolkata" : b.timeZone(), b.contactEmail(),
                 b.contactPhone(), b.address(), b.gstin(), createdBy));
-        TenantContext.run(id, () -> initDefaults(createdBy));
+        TenantContext.run(id, () -> initDefaults(createdBy, roles));
         return id;
     }
 
-    /** Roles, policies and the HR / Finance departments of the current business (idempotent). */
+    /** Roles (every active template), policies and the HR / Finance departments of the current business (idempotent). */
     public Map<String, UUID> initDefaults(UUID createdBy) {
+        return initDefaults(createdBy, templates.allActive());
+    }
+
+    private Map<String, UUID> initDefaults(UUID createdBy, List<RoleTemplateRepository.Template> roles) {
         requireBusiness();
         Map<String, UUID> ids = new HashMap<>();
-        for (RoleTemplate r : ROLES) {
+        for (RoleTemplateRepository.Template r : roles) {
             List<UUID> existing = repo.findRoleIds(r.key());
             UUID id = existing.isEmpty() ? UUID.randomUUID() : existing.get(0);
             if (existing.isEmpty()) {
@@ -89,18 +87,21 @@ public class BusinessSetupService {
             }
             ids.put(r.key(), id);
         }
-        for (RoleTemplate r : ROLES) {
+        for (RoleTemplateRepository.Template r : roles) {
             UUID id = ids.get(r.key());
-            // defaults are written only to a role without permissions yet; the owner role is locked and always complete
+            // a role's permissions and assignable roles are written only when it has none yet (the owner role is locked and always complete)
             long has = repo.countPermissions(id);
             if (has == 0 || r.locked()) {
                 repo.deletePermissions(id);
-                for (String p : r.perms()) repo.insertPermission(id, p);
+                for (String p : r.permissions()) repo.insertPermission(id, p);
             }
             long hasAssign = repo.countAssignableRoles(id);
             if (hasAssign == 0 || r.locked()) {
                 repo.deleteAssignableRoles(id);
-                for (String a : r.assign()) repo.insertAssignableRole(id, ids.get(a));
+                for (String a : r.assignable()) {
+                    UUID target = ids.containsKey(a) ? ids.get(a) : repo.findRoleIds(a).stream().findFirst().orElse(null);
+                    if (target != null) repo.insertAssignableRole(id, target);
+                }
             }
         }
         for (Map.Entry<String, String> e : SettingsService.DEFAULTS.entrySet()) {
@@ -113,11 +114,41 @@ public class BusinessSetupService {
         return ids;
     }
 
-    public record NewOwner(String name, String email, String password, String designation) {}
+    /**
+     * Gives the current business a role made from {@code t}: a snapshot of its permissions and assignable roles. Roles the
+     * business already has whose template lets them add this one get linked to it too.
+     */
+    public UUID addRole(RoleTemplateRepository.Template t) {
+        requireBusiness();
+        if (!repo.findRoleIds(t.key()).isEmpty()) throw new UserException(HttpStatus.CONFLICT, "This business already has the " + t.name() + " role.");
+        UUID id = UUID.randomUUID();
+        repo.insertRole(id, t.key(), t.name(), t.locked());
+        copyTemplate(id, t);
+        for (Map<String, Object> r : repo.findRoleKeys()) {
+            RoleTemplateRepository.Template other = templates.any((String) r.get("key"));
+            if (other != null && other.assignable().contains(t.key())) repo.addAssignableRole((UUID) r.get("id"), id);
+        }
+        return id;
+    }
+
+    /** Replaces the role's permissions and assignable roles with the template's current ones. */
+    public void syncRole(UUID roleId, RoleTemplateRepository.Template t) {
+        requireBusiness();
+        repo.deletePermissions(roleId);
+        repo.deleteAssignableRoles(roleId);
+        copyTemplate(roleId, t);
+    }
+
+    private void copyTemplate(UUID roleId, RoleTemplateRepository.Template t) {
+        for (String p : t.permissions()) repo.insertPermission(roleId, p);
+        for (String a : t.assignable()) repo.findRoleIds(a).stream().findFirst().ifPresent(target -> repo.addAssignableRole(roleId, target));
+    }
+
+    public record NewOwner(String name, String email, String designation) {}
 
     /**
      * Adds a sub admin (owner) to the current business: an employee with the owner role and portal access, and a
-     * user with {@code password} (null = they set it from an invite link). Returns the employee id.
+     * user row (they sign in with the emailed code). Returns the employee id.
      */
     public UUID addOwner(NewOwner o, UUID createdBy) {
         requireBusiness();
@@ -135,7 +166,7 @@ public class BusinessSetupService {
         UUID id = UUID.randomUUID();
         repo.insertOwnerEmployee(id, code, o.name(), o.email().trim().toLowerCase(Locale.ROOT), o.designation() == null ? "Owner" : o.designation(), role,
                 LocalDate.now(ZoneId.of(tz)), tz, "Asia/Kolkata".equals(tz) ? "IN" : "US", createdBy);
-        repo.insertUser(id, o.password() == null ? null : passwords.hash(o.password()), o.password() == null ? null : Instant.now());
+        repo.insertUser(id);
         return id;
     }
 

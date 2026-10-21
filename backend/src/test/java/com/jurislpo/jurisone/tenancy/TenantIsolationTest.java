@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.sql.Date;
@@ -28,8 +29,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /** Two businesses in one database: neither can see or change the other's data (row-level security). */
 class TenantIsolationTest extends IntegrationTest {
-
-    static final String PW = "correct-horse-battery-7";
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -58,8 +57,8 @@ class TenantIsolationTest extends IntegrationTest {
     /** Same employee code in both businesses on purpose: codes are unique per business only. */
     Person person(TestData t, UUID role, String code) throws Exception {
         String email = code.toLowerCase() + "." + UUID.randomUUID().toString().substring(0, 6) + "@" + t.business().toString().substring(0, 8) + ".test";
-        UUID id = t.employee(code, email, role, PW);
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + email + "\",\"password\":\"" + PW + "\"}"))
+        UUID id = t.employee(code, email, role);
+        String set = SignIn.session(mvc, email)
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();

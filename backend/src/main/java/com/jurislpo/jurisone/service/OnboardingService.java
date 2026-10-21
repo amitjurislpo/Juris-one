@@ -587,7 +587,7 @@ public class OnboardingService {
         if (!f.dateOfBirth().matches("^\\d{4}-\\d{2}-\\d{2}$")) return "Enter your date of birth.";
         try {
             LocalDate dob = LocalDate.parse(f.dateOfBirth());
-            if (dob.isAfter(LocalDate.now().minusYears(14)) || dob.isBefore(LocalDate.now().minusYears(100))) return "Check your date of birth.";
+            if (dob.isAfter(LocalDate.now().minusYears(14)) || dob.isBefore(LocalDate.now().minusYears(100))) return "Date of birth isn't valid: you must be at least 14 years old.";
         } catch (java.time.DateTimeException e) {
             return "Check your date of birth.";
         }

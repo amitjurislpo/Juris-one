@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
 import jakarta.servlet.http.Cookie;
@@ -30,8 +31,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /** Apply / cancel leave and the approvals flows through the API. */
 class LeaveApiTest extends IntegrationTest {
-
-    static final String PW = "correct-horse-battery-7";
 
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
@@ -71,9 +70,9 @@ class LeaveApiTest extends IntegrationTest {
 
     Person person(UUID role) throws Exception {
         String c = "JC-" + (++seq) + (int) (Math.random() * 1000);
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role, PW);
+        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
         jdbc.update("UPDATE employees SET shift_id = (SELECT id FROM shifts WHERE code = 'IN_DAY') WHERE id = ?", id);
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + c.toLowerCase() + "@example.com\",\"password\":\"" + PW + "\"}")).andReturn().getResponse().getHeader("Set-Cookie");
+        String set = SignIn.session(mvc, c.toLowerCase() + "@example.com").andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
         return new Person(id, c, new Cookie("jo_at", m.group(1)));
@@ -166,5 +165,21 @@ class LeaveApiTest extends IntegrationTest {
         mvc.perform(write(put("/api/attendance/regularizations/" + hw + "/decision")).cookie(fin.cookie()).content("{\"approve\":true}"))
                 .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.endsWith("comp-off request · 0.5 comp-off credited")));
         assertThat(jdbc.queryForObject("SELECT expires_on FROM leave_ledger WHERE ref_id = ?", Date.class, hw.toString()).toLocalDate()).isEqualTo(sat.plusDays(60));
+    }
+
+    @Test
+    void earnedLeaveIsNotAvailableDuringProbation() throws Exception {
+        Person e = person(empRole);
+        credit(e.id(), "EL", 5);
+        LocalDate mon = nextMonday();
+        jdbc.update("UPDATE employees SET status = 'PROBATION' WHERE id = ?", e.id());
+        mvc.perform(preview(e, "EL", mon, mon))
+                .andExpect(jsonPath("$.data.error").value("Earned leave isn't available during probation. Choose another leave type."));
+        mvc.perform(write(post("/api/leave/requests")).cookie(e.cookie()).content("{\"type\":\"EL\",\"from\":\"" + mon + "\",\"to\":\"" + mon + "\",\"part\":\"FULL\"}"))
+                .andExpect(status().isUnprocessableEntity());
+        mvc.perform(get("/api/leave").cookie(e.cookie())).andExpect(jsonPath("$.data.types[?(@.code=='EL')].lockedReason").value("Earned leave isn't available during probation. Choose another leave type."));
+        // once permanent, the same request is fine
+        jdbc.update("UPDATE employees SET status = 'ACTIVE' WHERE id = ?", e.id());
+        mvc.perform(preview(e, "EL", mon, mon)).andExpect(jsonPath("$.data.error").doesNotExist());
     }
 }

@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.IntegrationTest;
+import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import jakarta.servlet.http.Cookie;
 import java.sql.Timestamp;
@@ -29,8 +30,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** Notifications stay until read one by one; a policy notification stays until the policy is accepted. */
 class NotificationApiTest extends IntegrationTest {
 
-    static final String PW = "correct-horse-battery-7";
-
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper json;
@@ -43,7 +42,7 @@ class NotificationApiTest extends IntegrationTest {
     }
 
     Cookie signIn(String email) throws Exception {
-        String set = mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + email + "\",\"password\":\"" + PW + "\"}"))
+        String set = SignIn.session(mvc, email)
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(m.find()).isTrue();
@@ -55,8 +54,8 @@ class NotificationApiTest extends IntegrationTest {
         String s = TestData.letters(8);
         TestData t = new TestData(jdbc).inBusiness("inbox-" + s);
         UUID ownerRole = t.role("owner", "dir", "roles.manage", "policies.manage", "business.manage");
-        employeeId = t.employee("NE-" + s, "emp." + s + "@example.com", t.role("employee", "self", "dir"), PW);
-        t.employee("NO-" + s, "owner." + s + "@example.com", ownerRole, PW);
+        employeeId = t.employee("NE-" + s, "emp." + s + "@example.com", t.role("employee", "self", "dir"));
+        t.employee("NO-" + s, "owner." + s + "@example.com", ownerRole);
         owner = signIn("owner." + s + "@example.com");
         employee = signIn("emp." + s + "@example.com");
     }

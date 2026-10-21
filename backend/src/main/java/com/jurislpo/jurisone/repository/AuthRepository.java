@@ -1,6 +1,5 @@
 package com.jurislpo.jurisone.repository;
 
-import com.jurislpo.jurisone.entity.AuthToken;
 import com.jurislpo.jurisone.entity.Employee;
 import com.jurislpo.jurisone.entity.LoginHistory;
 import com.jurislpo.jurisone.entity.User;
@@ -9,7 +8,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Repository;
 
-/** Accounts behind sign-in, forgot password and invite / reset links: employees by email, users, login history. */
+/** Accounts behind sign-in: employees by email, users, login history. */
 @Repository
 public class AuthRepository {
 
@@ -39,10 +38,6 @@ public class AuthRepository {
 
     public void persistLoginHistory(LoginHistory h) {
         em.persist(h);
-    }
-
-    public AuthToken findAuthToken(UUID id) {
-        return em.find(AuthToken.class, id);
     }
 
     /** The permission keys of a role. */
