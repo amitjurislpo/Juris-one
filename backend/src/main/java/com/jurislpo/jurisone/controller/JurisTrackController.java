@@ -28,8 +28,8 @@ public class JurisTrackController {
 
     @GetMapping("/api/juris-track")
     public ApiResult<Map<String, Object>> get() {
-        CurrentUser u = auth.requirePage("juris-track");
-        if (!subscriptions.activeModules(u.businessId()).contains(Nav.JURIS_TRACK)) throw new UserException(HttpStatus.NOT_FOUND, "Not found.");
+        CurrentUser user = auth.requirePage("juris-track");
+        if (!subscriptions.activeModules(user.businessId()).contains(Nav.JURIS_TRACK)) throw new UserException(HttpStatus.NOT_FOUND, "Not found.");
         return ApiResult.success(Map.of("module", Nav.JURIS_TRACK, "status", "COMING_SOON"));
     }
 }

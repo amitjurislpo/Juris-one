@@ -212,7 +212,7 @@ class RoleTemplatesApiTest extends IntegrationTest {
         mvc.perform(write(put("/api/platform/role-templates/" + lead)).cookie(admin)
                 .content("{\"name\":\"Desk Lead " + suffix + "\",\"permissions\":[\"self\",\"dir\",\"att.all\"],\"assignable\":[\"employee\"],\"active\":true}")).andExpect(status().isOk());
         assertThat(jdbc.queryForList("SELECT permission_key FROM role_permissions WHERE role_id = ?::uuid", String.class, leadId)).containsExactlyInAnyOrder("self", "dir");
-        mvc.perform(write(post("/api/platform/businesses/" + biz + "/roles/" + leadId + "/sync")).cookie(admin)).andExpect(status().isOk());
+        mvc.perform(write(post("/api/platform/businesses/" + biz + "/roles/" + leadId + "/template-syncs")).cookie(admin)).andExpect(status().isCreated());
         assertThat(jdbc.queryForList("SELECT permission_key FROM role_permissions WHERE role_id = ?::uuid", String.class, leadId)).containsExactlyInAnyOrder("self", "dir", "att.all");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM role_assignable_roles WHERE role_id = ?::uuid", Integer.class, leadId)).isEqualTo(1);
         assertThat(jdbc.queryForList("SELECT action FROM audit_log WHERE entity_id = ? ORDER BY at", String.class, leadId)).contains("business.role_add", "business.role_sync");

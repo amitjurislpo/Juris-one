@@ -383,4 +383,4 @@ To add the licensed font:
 
 ### Table conventions
 
-List pages keep search, filters, sorting and paging in the URL (`?q=&sort=&dir=&page=`). The API runs the query, so lists stay fast as the company grows. The shared pieces are `common/ListParams.java` here and the table components in the frontend repo.
+List pages keep search, filters, sorting and paging in the URL (`?search=&sort=&sortDirection=&page=`). The API runs the query, so lists stay fast as the company grows. The shared pieces are `common/ListParams.java` here and the table components in the frontend repo.

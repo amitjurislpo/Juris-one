@@ -65,8 +65,8 @@ public final class LetterTemplateEngine {
     /** The field names used, trimmed, distinct, in order of first use (known or not). */
     public static List<String> fieldsIn(String text) {
         Set<String> out = new LinkedHashSet<>();
-        Matcher m = TOKEN.matcher(text == null ? "" : text);
-        while (m.find()) out.add(m.group(1).strip());
+        Matcher matcher = TOKEN.matcher(text == null ? "" : text);
+        while (matcher.find()) out.add(matcher.group(1).strip());
         return new ArrayList<>(out);
     }
 
@@ -103,39 +103,39 @@ public final class LetterTemplateEngine {
         }
         if (!missing.isEmpty()) throw new MissingFieldsException(missing);
         StringBuilder out = new StringBuilder();
-        Matcher m = TOKEN.matcher(text);
+        Matcher matcher = TOKEN.matcher(text);
         int last = 0;
-        while (m.find()) {
-            out.append(lit(text.substring(last, m.start()), mode));
-            out.append(lit(clean(values.get(m.group(1).strip())), mode));
-            last = m.end();
+        while (matcher.find()) {
+            out.append(lit(text.substring(last, matcher.start()), mode));
+            out.append(lit(clean(values.get(matcher.group(1).strip())), mode));
+            last = matcher.end();
         }
         out.append(lit(text.substring(last), mode));
         return out.toString();
     }
 
     /** Values are single-line: control characters (new lines included) become spaces. */
-    static String clean(String v) {
-        return v.replaceAll("\\p{Cntrl}", " ").strip();
+    static String clean(String value) {
+        return value.replaceAll("\\p{Cntrl}", " ").strip();
     }
 
-    private static String lit(String s, Mode mode) {
-        return mode == Mode.HTML ? escapeHtml(s) : s;
+    private static String lit(String text, Mode mode) {
+        return mode == Mode.HTML ? escapeHtml(text) : text;
     }
 
-    public static String escapeHtml(String s) {
-        StringBuilder b = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '&' -> b.append("&amp;");
-                case '<' -> b.append("&lt;");
-                case '>' -> b.append("&gt;");
-                case '"' -> b.append("&quot;");
-                case '\'' -> b.append("&#39;");
-                default -> b.append(c);
+    public static String escapeHtml(String text) {
+        StringBuilder builder = new StringBuilder(text.length() + 16);
+        for (int i = 0; i < text.length(); i++) {
+            char character = text.charAt(i);
+            switch (character) {
+                case '&' -> builder.append("&amp;");
+                case '<' -> builder.append("&lt;");
+                case '>' -> builder.append("&gt;");
+                case '"' -> builder.append("&quot;");
+                case '\'' -> builder.append("&#39;");
+                default -> builder.append(character);
             }
         }
-        return b.toString();
+        return builder.toString();
     }
 }

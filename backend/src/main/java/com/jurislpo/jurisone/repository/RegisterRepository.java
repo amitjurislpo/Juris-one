@@ -1,6 +1,6 @@
 package com.jurislpo.jurisone.repository;
 
-import com.jurislpo.jurisone.service.RegisterService.Dept;
+import com.jurislpo.jurisone.service.RegisterService.DepartmentSummary;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -16,7 +16,7 @@ public class RegisterRepository {
     }
 
     /** Departments not archived, by name (the register's department filter). */
-    public List<Dept> activeDepartments() {
-        return jdbc.query("SELECT id::text, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (rs, i) -> new Dept(rs.getString(1), rs.getString(2)));
+    public List<DepartmentSummary> activeDepartments() {
+        return jdbc.query("SELECT id::text, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (rs, i) -> new DepartmentSummary(rs.getString(1), rs.getString(2)));
     }
 }

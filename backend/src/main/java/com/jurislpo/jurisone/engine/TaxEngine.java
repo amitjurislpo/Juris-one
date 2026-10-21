@@ -42,28 +42,28 @@ public final class TaxEngine {
     public record SlabTax(double tax, List<SlabLine> lines) {}
 
     public static SlabTax slabTax(double taxable, List<Slab> slabs) {
-        double prev = 0, tax = 0;
+        double previous = 0, tax = 0;
         List<SlabLine> lines = new ArrayList<>();
-        for (Slab s : slabs) {
-            double top = s.upto() == null ? Double.POSITIVE_INFINITY : s.upto();
-            double amt = taxable > prev ? (Math.min(taxable, top) - prev) * s.rate() : 0;
-            lines.add(new SlabLine(prev, s.upto(), s.rate(), amt));
+        for (Slab slab : slabs) {
+            double top = slab.upto() == null ? Double.POSITIVE_INFINITY : slab.upto();
+            double amt = taxable > previous ? (Math.min(taxable, top) - previous) * slab.rate() : 0;
+            lines.add(new SlabLine(previous, slab.upto(), slab.rate(), amt));
             tax += amt;
             if (taxable <= top) break;
-            prev = top;
+            previous = top;
         }
         return new SlabTax(tax, lines);
     }
 
-    private static double surchargeOn(double taxable, double base, TaxYearConfig c) {
-        List<Surcharge> tiers = new ArrayList<>(c.surcharge());
+    private static double surchargeOn(double taxable, double base, TaxYearConfig taxYearConfig) {
+        List<Surcharge> tiers = new ArrayList<>(taxYearConfig.surcharge());
         tiers.sort(Comparator.comparingDouble(Surcharge::above));
         tiers.removeIf(t -> !(taxable > t.above()));
         if (tiers.isEmpty()) return 0;
         Surcharge tier = tiers.get(tiers.size() - 1);
         double s = base * tier.rate();
         // marginal relief: tax + surcharge may not exceed tax at the threshold + income above it
-        double atT = slabTax(tier.above(), c.slabs()).tax();
+        double atT = slabTax(tier.above(), taxYearConfig.slabs()).tax();
         double prevRate = tiers.size() > 1 ? tiers.get(tiers.size() - 2).rate() : 0;
         double capAtThreshold = atT * (1 + prevRate) + (taxable - tier.above());
         if (base + s > capAtThreshold) s = Math.max(0, capAtThreshold - base);
@@ -71,28 +71,28 @@ public final class TaxEngine {
     }
 
     /** Annual tax on {@code gross} income after the standard deduction and {@code deductions}. */
-    public static TaxResult computeTax(double gross, double deductions, TaxYearConfig c) {
-        double std = Math.min(c.stdDeduction(), Math.max(0, gross));
+    public static TaxResult computeTax(double gross, double deductions, TaxYearConfig taxYearConfig) {
+        double std = Math.min(taxYearConfig.stdDeduction(), Math.max(0, gross));
         long taxable = Math.max(0, Math.round(gross - std - deductions));
-        SlabTax st = slabTax(taxable, c.slabs());
+        SlabTax st = slabTax(taxable, taxYearConfig.slabs());
         double tax = st.tax();
         double base = tax;
         double rebate = 0;
-        if (taxable <= c.rebateLimit()) {
+        if (taxable <= taxYearConfig.rebateLimit()) {
             rebate = tax;
             base = 0;
-        } else if (c.marginalRelief() && tax > taxable - c.rebateLimit()) {
-            rebate = tax - (taxable - c.rebateLimit());
-            base = taxable - c.rebateLimit();
+        } else if (taxYearConfig.marginalRelief() && tax > taxable - taxYearConfig.rebateLimit()) {
+            rebate = tax - (taxable - taxYearConfig.rebateLimit());
+            base = taxable - taxYearConfig.rebateLimit();
         }
-        double surcharge = surchargeOn(taxable, base, c);
-        double cess = (base + surcharge) * c.cessRate();
-        return new TaxResult(c.regime(), gross, std, deductions, taxable, tax, rebate, base, surcharge, cess, Math.round(base + surcharge + cess), st.lines());
+        double surcharge = surchargeOn(taxable, base, taxYearConfig);
+        double cess = (base + surcharge) * taxYearConfig.cessRate();
+        return new TaxResult(taxYearConfig.regime(), gross, std, deductions, taxable, tax, rebate, base, surcharge, cess, Math.round(base + surcharge + cess), st.lines());
     }
 
     // ───────────────────────── old-regime deductions ─────────────────────────
 
-    public record Caps(double c80C, double c80CCD1B, double c80DSelf, double c80DParents, double c80DParentsSenior, double c24B, double c80TTA) {}
+    public record DeductionCaps(double c80C, double c80CCD1B, double c80DSelf, double c80DParents, double c80DParentsSenior, double c24B, double c80TTA) {}
 
     /** Declared amounts in rupees (the TS {@code Declared}); starts as NO_DECLARATIONS. */
     public static final class Declared {
@@ -121,36 +121,36 @@ public final class TaxEngine {
 
     /** A {@code [label, amount]} pair — serialised as a 2-element JSON array like the TS tuple. */
     @JsonFormat(shape = JsonFormat.Shape.ARRAY)
-    public record Line(String label, long amount) {}
+    public record DeductionLine(String label, long amount) {}
 
-    public record Deductions(long total, List<Line> lines, long hraExemption, long c80C) {}
+    public record Deductions(long total, List<DeductionLine> lines, long hraExemption, long c80C) {}
 
     /** HRA exemption = least of (HRA received, rent − 10% of Basic, 50% metro / 40% of Basic); caps per section. */
-    public static Deductions oldRegimeDeductions(double basicAnnual, double hraAnnual, double epfAnnual, Declared d, Caps caps, Map<String, String> labels) {
+    public static Deductions oldRegimeDeductions(double basicAnnual, double hraAnnual, double epfAnnual, Declared declared, DeductionCaps caps, Map<String, String> labels) {
         Map<String, String> lb = labels == null ? Map.of() : labels;
-        double hra = d.rent != 0 ? Math.max(0, Math.min(Math.min(hraAnnual, d.rent - 0.1 * basicAnnual), (d.metro ? 0.5 : 0.4) * basicAnnual)) : 0;
-        double c80C = Math.min(caps.c80C(), epfAnnual + d.ppf + d.elss + d.lic + d.ssy + d.tuition + d.hlp + d.nsc);
-        double nps = Math.min(caps.c80CCD1B(), d.nps);
-        double med = Math.min(caps.c80DSelf(), d.medSelf) + Math.min(d.parentsSenior ? caps.c80DParentsSenior() : caps.c80DParents(), d.medParents);
-        double hli = Math.min(caps.c24B(), d.hli);
-        double sav = Math.min(caps.c80TTA(), d.sav);
+        double hra = declared.rent != 0 ? Math.max(0, Math.min(Math.min(hraAnnual, declared.rent - 0.1 * basicAnnual), (declared.metro ? 0.5 : 0.4) * basicAnnual)) : 0;
+        double c80C = Math.min(caps.c80C(), epfAnnual + declared.ppf + declared.elss + declared.lic + declared.ssy + declared.tuition + declared.hlp + declared.nsc);
+        double nps = Math.min(caps.c80CCD1B(), declared.nps);
+        double med = Math.min(caps.c80DSelf(), declared.medSelf) + Math.min(declared.parentsSenior ? caps.c80DParentsSenior() : caps.c80DParents(), declared.medParents);
+        double hli = Math.min(caps.c24B(), declared.hli);
+        double sav = Math.min(caps.c80TTA(), declared.sav);
         Object[][] raw = {
             {lb.getOrDefault("HRA", "HRA") + " exemption", hra},
             {lb.getOrDefault("80C", "80C") + " (incl. PF)", c80C},
             {lb.getOrDefault("80CCD1B", "80CCD(1B)") + " NPS", nps},
             {lb.getOrDefault("80D_SELF", "80D") + " medical", med},
             {lb.getOrDefault("24B", "24(b)") + " home loan interest", hli},
-            {lb.getOrDefault("80E", "80E") + " education loan", d.edu},
-            {lb.getOrDefault("80G", "80G") + " donations", d.don},
+            {lb.getOrDefault("80E", "80E") + " education loan", declared.edu},
+            {lb.getOrDefault("80G", "80G") + " donations", declared.don},
             {lb.getOrDefault("80TTA", "80TTA") + " savings interest", sav},
         };
         double sum = 0;
-        List<Line> lines = new ArrayList<>();
+        List<DeductionLine> lines = new ArrayList<>();
         for (Object[] r : raw) {
             double v = (double) r[1];
             if (v > 0) {
                 sum += v;
-                lines.add(new Line((String) r[0], Math.round(v)));
+                lines.add(new DeductionLine((String) r[0], Math.round(v)));
             }
         }
         return new Deductions(Math.round(sum), lines, Math.round(hra), Math.round(c80C));
@@ -158,14 +158,14 @@ public final class TaxEngine {
 
     // ───────────────────────── monthly TDS ─────────────────────────
 
-    public record Fy(String fy, int index, int remainingInclCurrent) {}
+    public record FinancialYear(String financialYear, int index, int remainingInclCurrent) {}
 
     /** FY months from April: "2026-09" → index 5; remaining months including the current one. */
-    public static Fy fyOf(String ym) {
-        int y = Integer.parseInt(ym.substring(0, 4)), m = Integer.parseInt(ym.substring(5, 7));
+    public static FinancialYear financialYearOf(String yearMonth) {
+        int y = Integer.parseInt(yearMonth.substring(0, 4)), m = Integer.parseInt(yearMonth.substring(5, 7));
         int start = m >= 4 ? y : y - 1;
         int index = (m - 4 + 12) % 12;
-        return new Fy(start + "-" + String.format(java.util.Locale.ROOT, "%02d", (start + 1) % 100), index, 12 - index);
+        return new FinancialYear(start + "-" + String.format(java.util.Locale.ROOT, "%02d", (start + 1) % 100), index, 12 - index);
     }
 
     /**

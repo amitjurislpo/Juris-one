@@ -8,9 +8,9 @@ import java.util.Map;
 public final class TaxCatalogue {
     private TaxCatalogue() {}
 
-    record Item(String k, String label, boolean auto) {}
+    record Item(String key, String label, boolean auto) {}
 
-    record Section(String sec, String key, List<Item> items) {}
+    record Section(String label, String key, List<Item> items) {}
 
     static final List<Section> DECL = List.of(
             new Section("HRA", "HRA", List.of(new Item("rent", "Annual rent paid", false))),
@@ -30,11 +30,11 @@ public final class TaxCatalogue {
     public static final Map<String, String> SECTION_OF_ITEM = new LinkedHashMap<>();
 
     static {
-        for (Section s : DECL) {
-            for (Item i : s.items()) {
-                ITEM_LABEL.put(i.k(), i.label());
-                SECTION_OF_ITEM.put(i.k(), s.sec());
-                if (!i.auto()) ITEM_SECTION.put(i.k(), "medParents".equals(i.k()) ? "80D_PARENTS" : s.key());
+        for (Section section : DECL) {
+            for (Item i : section.items()) {
+                ITEM_LABEL.put(i.key(), i.label());
+                SECTION_OF_ITEM.put(i.key(), section.label());
+                if (!i.auto()) ITEM_SECTION.put(i.key(), "medParents".equals(i.key()) ? "80D_PARENTS" : section.key());
             }
         }
     }

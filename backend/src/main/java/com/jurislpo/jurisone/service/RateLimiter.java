@@ -46,8 +46,8 @@ public class RateLimiter {
 
     /** Counts every call (used for endpoints like "forgot password"); {@code limited=false} means allowed. */
     public synchronized Result rateLimit(String key, int max, long windowMs) {
-        Result l = limited(key, max);
-        if (l.limited()) return l;
+        Result result = limited(key, max);
+        if (result.limited()) return result;
         hit(key, windowMs);
         return new Result(false, 0);
     }

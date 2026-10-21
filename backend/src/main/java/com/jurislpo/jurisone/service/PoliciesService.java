@@ -77,45 +77,45 @@ public class PoliciesService {
 
     // ── attendance policy ──
 
-    private static void range(Number v, double min, double max) {
-        if (v == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected number, received undefined");
-        if (v.doubleValue() < min) throw new UserException(HttpStatus.BAD_REQUEST, "Too small: expected number to be >=" + fmt(min));
-        if (v.doubleValue() > max) throw new UserException(HttpStatus.BAD_REQUEST, "Too big: expected number to be <=" + fmt(max));
+    private static void range(Number number, double min, double max) {
+        if (number == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected number, received undefined");
+        if (number.doubleValue() < min) throw new UserException(HttpStatus.BAD_REQUEST, "Too small: expected number to be >=" + fmt(min));
+        if (number.doubleValue() > max) throw new UserException(HttpStatus.BAD_REQUEST, "Too big: expected number to be <=" + fmt(max));
     }
 
     private static String fmt(double d) {
         return d == Math.rint(d) ? Long.toString((long) d) : Double.toString(d);
     }
 
-    static void validate(AttendancePolicyInput f) {
-        range(f.fullDayHours(), 1, 14);
-        range(f.halfDayHours(), 0.5, 12);
-        range(f.graceMinutes(), 0, 120);
-        range(f.lateMarksPerHalfDayLop(), 1, 31);
-        if (f.weeklyOffs() == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected array, received undefined");
-        for (Integer d : f.weeklyOffs()) range(d, 0, 6);
-        if (f.weeklyOffs().size() > 6) throw new UserException(HttpStatus.BAD_REQUEST, "Too big: expected array to have <=6 items");
-        range(f.absenceJobBufferMinutes(), 0, 720);
-        range(f.lockDayOfNextMonth(), 1, 28);
-        if (f.lockTime() == null || !f.lockTime().matches("^\\d{2}:\\d{2}$")) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid string: must match pattern /^\\d{2}:\\d{2}$/");
-        if (f.trackingStartDate() == null || !f.trackingStartDate().matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+    static void validate(AttendancePolicyInput input) {
+        range(input.fullDayHours(), 1, 14);
+        range(input.halfDayHours(), 0.5, 12);
+        range(input.graceMinutes(), 0, 120);
+        range(input.lateMarksPerHalfDayLop(), 1, 31);
+        if (input.weeklyOffs() == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected array, received undefined");
+        for (Integer d : input.weeklyOffs()) range(d, 0, 6);
+        if (input.weeklyOffs().size() > 6) throw new UserException(HttpStatus.BAD_REQUEST, "Too big: expected array to have <=6 items");
+        range(input.absenceJobBufferMinutes(), 0, 720);
+        range(input.lockDayOfNextMonth(), 1, 28);
+        if (input.lockTime() == null || !input.lockTime().matches("^\\d{2}:\\d{2}$")) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid string: must match pattern /^\\d{2}:\\d{2}$/");
+        if (input.trackingStartDate() == null || !input.trackingStartDate().matches("^\\d{4}-\\d{2}-\\d{2}$")) {
             throw new UserException(HttpStatus.BAD_REQUEST, "Invalid string: must match pattern /^\\d{4}-\\d{2}-\\d{2}$/");
         }
-        if (!(f.halfDayHours() < f.fullDayHours())) throw new UserException(HttpStatus.BAD_REQUEST, "Half-day hours must be less than full-day hours.");
+        if (!(input.halfDayHours() < input.fullDayHours())) throw new UserException(HttpStatus.BAD_REQUEST, "Half-day hours must be less than full-day hours.");
     }
 
     @Transactional
-    public void updateAttendancePolicy(CurrentUser u, AttendancePolicyInput f, String ip) {
-        validate(f);
+    public void updateAttendancePolicy(CurrentUser user, AttendancePolicyInput input, String ip) {
+        validate(input);
         ObjectNode before = settings.get("attendance.policy");
-        if (!f.trackingStartDate().equals(before.path("trackingStartDate").asText()) && lockedRuns() > 0) {
+        if (!input.trackingStartDate().equals(before.path("trackingStartDate").asText()) && lockedRuns() > 0) {
             throw new UserException("The go-live date can't change once a month has been locked.");
         }
         ObjectNode value = before.deepCopy();
-        value.setAll((ObjectNode) json.valueToTree(f));
+        value.setAll((ObjectNode) json.valueToTree(input));
         repo.upsertAttendancePolicy(value.toString());
         // grace minutes live in the business's policy (shifts are shared templates and are not changed)
-        audit.log(u.id(), "policy.attendance_change", "setting", "attendance.policy", before, value, ip);
+        audit.log(user.id(), "policy.attendance_change", "setting", "attendance.policy", before, value, ip);
     }
 
     public Map<String, Object> attendance() {

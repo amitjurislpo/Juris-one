@@ -11,40 +11,40 @@ import org.springframework.http.HttpStatus;
 public final class Check {
     private Check() {}
 
-    public static UUID uuid(String v) {
-        if (v == null || !PeopleRules.UUID_RE.matcher(v).matches()) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid UUID");
-        return UUID.fromString(v);
+    public static UUID uuid(String value) {
+        if (value == null || !PeopleRules.UUID_RE.matcher(value).matches()) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid UUID");
+        return UUID.fromString(value);
     }
 
     /** {@code z.string().uuid(message)}. */
-    public static UUID uuid(String v, String message) {
-        if (v == null || !PeopleRules.UUID_RE.matcher(v).matches()) throw new UserException(HttpStatus.BAD_REQUEST, message);
-        return UUID.fromString(v);
+    public static UUID uuid(String value, String message) {
+        if (value == null || !PeopleRules.UUID_RE.matcher(value).matches()) throw new UserException(HttpStatus.BAD_REQUEST, message);
+        return UUID.fromString(value);
     }
 
-    public static String oneOf(String v, List<String> allowed) {
-        if (v == null || !allowed.contains(v)) {
+    public static String oneOf(String value, List<String> allowed) {
+        if (value == null || !allowed.contains(value)) {
             throw new UserException(HttpStatus.BAD_REQUEST,
                     "Invalid option: expected one of " + allowed.stream().map(a -> "\"" + a + "\"").collect(Collectors.joining("|")));
         }
-        return v;
+        return value;
     }
 
-    public static String str(String v) {
-        if (v == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected string, received undefined");
-        return v;
+    public static String str(String value) {
+        if (value == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected string, received undefined");
+        return value;
     }
 
     /** {@code z.string().trim().min(n, msg).max(m, msg2)}. */
-    public static String trimmed(String v, int min, String minMsg, int max, String maxMsg) {
-        String s = str(v).trim();
-        if (s.length() < min) throw new UserException(HttpStatus.BAD_REQUEST, minMsg);
-        if (s.length() > max) throw new UserException(HttpStatus.BAD_REQUEST, maxMsg);
-        return s;
+    public static String trimmed(String value, int min, String minMsg, int max, String maxMsg) {
+        String text = str(value).trim();
+        if (text.length() < min) throw new UserException(HttpStatus.BAD_REQUEST, minMsg);
+        if (text.length() > max) throw new UserException(HttpStatus.BAD_REQUEST, maxMsg);
+        return text;
     }
 
-    public static String isoDate(String v, String message) {
-        if (v == null || !v.matches("^\\d{4}-\\d{2}-\\d{2}$")) throw new UserException(HttpStatus.BAD_REQUEST, message);
-        return v;
+    public static String isoDate(String value, String message) {
+        if (value == null || !value.matches("^\\d{4}-\\d{2}-\\d{2}$")) throw new UserException(HttpStatus.BAD_REQUEST, message);
+        return value;
     }
 }

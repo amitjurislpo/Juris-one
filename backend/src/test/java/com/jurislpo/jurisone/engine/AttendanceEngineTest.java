@@ -25,37 +25,37 @@ class AttendanceEngineTest {
 
     static LocalDate d(String iso) { return LocalDate.parse(iso); }
     static Instant at(String date, String hm) { return atLocal(d(date), hm, IST); }
-    static Instant at(String date, String hm, String tz) { return atLocal(d(date), hm, tz); }
+    static Instant at(String date, String hm, String timeZone) { return atLocal(d(date), hm, timeZone); }
     static Punch p(String date, String hm, PunchKind kind) { return new Punch(at(date, hm), kind); }
-    static Punch p(String date, String hm, PunchKind kind, String tz) { return new Punch(at(date, hm, tz), kind); }
+    static Punch p(String date, String hm, PunchKind kind, String timeZone) { return new Punch(at(date, hm, timeZone), kind); }
     static final PunchKind IN = PunchKind.IN, OUT = PunchKind.OUT;
 
     /** The TS `day({...})` helper: defaults, overridable per field. */
     static final class Day {
         LocalDate date = d("2026-09-16");
         Instant now = at("2026-10-06", "12:00");
-        String tz = IST;
+        String timeZone = IST;
         ShiftDef shift = NIGHT;
-        LocalDate doj = d("2025-01-01");
+        LocalDate dateOfJoining = d("2025-01-01");
         LocalDate exitDate = null;
         String holiday = null;
         Leave leave = null;
         List<Punch> punches = List.of();
-        Reg reg = Reg.NONE;
+        Regularization regularization = Regularization.NONE;
 
         Day date(String v) { date = d(v); return this; }
         Day now(Instant v) { now = v; return this; }
-        Day tz(String v) { tz = v; return this; }
+        Day timeZone(String v) { timeZone = v; return this; }
         Day shift(ShiftDef v) { shift = v; return this; }
-        Day doj(String v) { doj = d(v); return this; }
-        Day exit(String v) { exitDate = d(v); return this; }
+        Day dateOfJoining(String v) { dateOfJoining = d(v); return this; }
+        Day exitDate(String v) { exitDate = d(v); return this; }
         Day holiday(String v) { holiday = v; return this; }
         Day leave(Leave v) { leave = v; return this; }
         Day punches(Punch... v) { punches = List.of(v); return this; }
-        Day reg(boolean absent, boolean lateWaived) { reg = new Reg(absent, lateWaived); return this; }
+        Day regularization(boolean absent, boolean lateWaived) { regularization = new Regularization(absent, lateWaived); return this; }
 
         DayResult compute() {
-            return computeDay(new DayInput(date, now, tz, shift, POLICY, doj, exitDate, d("2026-04-01"), holiday, leave, punches, reg));
+            return computeDay(new DayInput(date, now, timeZone, shift, POLICY, dateOfJoining, exitDate, d("2026-04-01"), holiday, leave, punches, regularization));
         }
     }
 
@@ -131,7 +131,7 @@ class AttendanceEngineTest {
         @Test
         @DisplayName("a regularized late mark is waived")
         void lateWaived() {
-            DayResult r = day().punches(p("2026-09-16", "20:10", IN), p("2026-09-17", "05:00", OUT)).reg(false, true).compute();
+            DayResult r = day().punches(p("2026-09-16", "20:10", IN), p("2026-09-17", "05:00", OUT)).regularization(false, true).compute();
             assertThat(r.late).isFalse();
             assertThat(r.lateWaived).isTrue();
         }
@@ -160,7 +160,7 @@ class AttendanceEngineTest {
         @Test
         @DisplayName("an approved absence regularization makes the day paid")
         void absenceRegularized() {
-            DayResult r = day().reg(true, false).compute();
+            DayResult r = day().regularization(true, false).compute();
             assertThat(r.status).isEqualTo(DayStatus.PRESENT);
             assertThat(r.lopDays).isZero();
             assertThat(r.regularized).isTrue();
@@ -230,8 +230,8 @@ class AttendanceEngineTest {
         @Test
         @DisplayName("before joining, after exit and before go-live")
         void outsideEmployment() {
-            assertThat(day().date("2026-09-07").doj("2026-09-08").compute().status).isEqualTo(DayStatus.BEFORE_JOINING);
-            assertThat(day().date("2026-09-01").exit("2026-08-31").compute().status).isEqualTo(DayStatus.AFTER_EXIT);
+            assertThat(day().date("2026-09-07").dateOfJoining("2026-09-08").compute().status).isEqualTo(DayStatus.BEFORE_JOINING);
+            assertThat(day().date("2026-09-01").exitDate("2026-08-31").compute().status).isEqualTo(DayStatus.AFTER_EXIT);
             assertThat(day().date("2026-03-31").compute().status).isEqualTo(DayStatus.NOT_TRACKED);
         }
 
@@ -253,7 +253,7 @@ class AttendanceEngineTest {
         void dst() {
             assertThat(shiftWindow(d("2026-09-16"), US, NY).start()).isEqualTo(Instant.parse("2026-09-16T13:00:00Z")); // EDT
             assertThat(shiftWindow(d("2026-12-16"), US, NY).start()).isEqualTo(Instant.parse("2026-12-16T14:00:00Z")); // EST
-            DayResult r = day().tz(NY).shift(US).punches(p("2026-09-16", "09:20", IN, NY), p("2026-09-16", "18:05", OUT, NY)).compute();
+            DayResult r = day().timeZone(NY).shift(US).punches(p("2026-09-16", "09:20", IN, NY), p("2026-09-16", "18:05", OUT, NY)).compute();
             assertThat(r.status).isEqualTo(DayStatus.PRESENT);
             assertThat(r.late).isTrue();
         }

@@ -156,7 +156,7 @@ The super admin keeps a catalogue of **role templates** (Platform → role templ
   - Onboarding if joining is in the future
   - Probation, then Active
   - Exited, which needs a last working day
-  - **Probation → permanent:** automatic after the probation period (default 6 months), or earlier when the business admin (owner) or HR clicks **Make permanent** on the employee's profile (`PUT /api/people/{id}/confirm`, needs `people.add`; audited as `employee.confirm`). Nobody else can change an employee's status.
+  - **Probation → permanent:** automatic after the probation period (default 6 months), or earlier when the business admin (owner) or HR clicks **Make permanent** on the employee's profile (`PUT /api/people/{id}/status` with `{"status": "ACTIVE"}`, needs `people.add`; audited as `employee.confirm`). Nobody else can change an employee's status.
   - **Role changes:** only the business admin and HR may change an existing employee's role; anyone else who can edit the person sees just the current role, and the API refuses a change.
 
 **Sensitive data:**

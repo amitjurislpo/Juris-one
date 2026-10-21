@@ -35,7 +35,7 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
 
     /** Reachable with no usable subscription at all (not started / none). */
     static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell",
-            "/api/onboarding/"); // a candidate link: the service checks that business itself
+            "/api/public/onboardings/"); // a candidate link: the service checks that business itself
     /** Still writable once the subscription has ended. */
     static final List<String> WRITABLE_WHEN_ENDED = List.of("/api/auth/", "/api/notifications", "/api/audit/page-views"); // page views are only recorded
 
@@ -48,37 +48,37 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected boolean shouldNotFilter(HttpServletRequest req) {
-        String uri = req.getRequestURI();
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String uri = request.getRequestURI();
         return !uri.startsWith("/api/") || OPEN.stream().anyMatch(uri::startsWith);
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain) throws ServletException, IOException {
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         UUID business = TenantContext.current();
         if (business != null && !subscriptions.isActive(business)) {
             if (subscriptions.isReadOnly(business)) {
-                if (isRead(req) || WRITABLE_WHEN_ENDED.stream().anyMatch(req.getRequestURI()::startsWith)) {
-                    chain.doFilter(req, res);
+                if (isRead(request) || WRITABLE_WHEN_ENDED.stream().anyMatch(request.getRequestURI()::startsWith)) {
+                    chain.doFilter(request, response);
                     return;
                 }
-                refuse(req, res, READ_ONLY_MESSAGE);
+                refuse(request, response, READ_ONLY_MESSAGE);
                 return;
             }
-            refuse(req, res, MESSAGE);
+            refuse(request, response, MESSAGE);
             return;
         }
-        chain.doFilter(req, res);
+        chain.doFilter(request, response);
     }
 
-    private static boolean isRead(HttpServletRequest req) {
-        String m = req.getMethod();
+    private static boolean isRead(HttpServletRequest request) {
+        String m = request.getMethod();
         return "GET".equals(m) || "HEAD".equals(m) || "OPTIONS".equals(m);
     }
 
-    private void refuse(HttpServletRequest req, HttpServletResponse res, String message) throws IOException {
-        res.setStatus(HttpStatus.PAYMENT_REQUIRED.value());
-        res.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-        json.writeValue(res.getOutputStream(), Problems.of(HttpStatus.PAYMENT_REQUIRED, "SUBSCRIPTION_INACTIVE", message, req.getRequestURI()));
+    private void refuse(HttpServletRequest request, HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpStatus.PAYMENT_REQUIRED.value());
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+        json.writeValue(response.getOutputStream(), Problems.of(HttpStatus.PAYMENT_REQUIRED, "SUBSCRIPTION_INACTIVE", message, request.getRequestURI()));
     }
 }

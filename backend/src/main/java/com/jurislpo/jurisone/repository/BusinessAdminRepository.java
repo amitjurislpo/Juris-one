@@ -29,7 +29,7 @@ public class BusinessAdminRepository {
                    (SELECT count(*) FROM employees e JOIN roles r ON r.id = e.role_id WHERE e.business_id = b.id AND r.key = 'owner') AS owners
             FROM businesses b WHERE NOT b.is_platform ORDER BY b.name""",
                 (rs, i) -> new BusinessRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getLong(7), rs.getLong(8),
-                        Format.jsIso(rs.getTimestamp(6).toInstant()), subscription.apply((UUID) rs.getObject(1))));
+                        Format.isoTimestamp(rs.getTimestamp(6).toInstant()), subscription.apply((UUID) rs.getObject(1))));
     }
 
     /** The profile row of a customer business (zero or one). */

@@ -1718,7 +1718,7 @@ Every endpoint lives under `/api` on the Spring Boot API. The browser reaches it
 |---|---|
 | Nouns, not verbs, in paths | `/api/leave/requests`, `/api/attendance/punches`, `/api/declarations/submissions`, `/api/auth/session` |
 | The resource id is in the path, never only in the body | `PUT /api/tax/{employeeId}/regime`, `PUT /api/payroll/{month}/adjustments/{employeeId}` |
-| `GET` reads and never changes data (audited reads are the only side effect) | `GET /api/leave/preview?type=&from=&to=&part=`, `GET /api/people/{id}/contact` |
+| `GET` reads and never changes data (audited reads are the only side effect) | `GET /api/leave/previews?type=&from=&to=&part=`, `GET /api/people/{id}/contact` |
 | `POST` creates → **201 Created** | person, role, department, holiday, leave request, regularization, punch, salary structure, invitation, declaration submission, session, password-reset request |
 | `PUT` sets a value or a state (idempotent) | access on/off, regime, profile, declared amount, decisions, payroll status, a granted permission |
 | `PATCH` changes part of a resource | `PATCH /api/notifications {"read": true}` |
@@ -1726,22 +1726,22 @@ Every endpoint lives under `/api` on the Spring Boot API. The browser reaches it
 | Status codes | 200 · 201 · 400 invalid input · 401 signed out · 403 not allowed · 404 not found · 405 wrong method (with `Allow`) · 409 duplicate · 410 used/expired link · 415 · 422 business rule · 429 throttled · 500 |
 | Body | success: `{ "ok": true, "msg"?, "data"? }`; errors: `application/problem+json` (`status`, `title`, `detail`, `instance`, `code`, `errors`?) — `detail` keeps the exact texts the app showed before the migration |
 
-The 7 file routes the browser opens directly keep their original paths, methods and status codes. They are linked from pages, may be bookmarked and are covered by the unchanged Playwright tests: `GET /api/people/export`, `GET /api/attendance/register` (CSV), `GET /api/payroll/export`, `GET /api/payslips/{month}/{code}` (PDF), `POST /api/declarations/proof` (multipart upload), `GET /api/declarations/proof/{id}`, `GET /api/tax/export`.
+The file routes the browser opens directly are linked from pages and may be bookmarked: `GET /api/people/export`, `GET /api/attendance/register/export` (CSV), `GET /api/payroll/export`, `GET /api/payslips/{month}/{code}` (PDF), `POST /api/declarations/proofs` (multipart upload, 201 `{data:{name}}`), `GET /api/declarations/proofs/{id}`, `GET /api/tax/export`.
 
 ### 14.2 Endpoints
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /api/auth/session` (sign in, 201 + cookies) · `POST /api/auth/session/refresh` · `DELETE /api/auth/session` (sign out) · `POST /api/auth/otp-requests` (email a sign-in code). Passwords, reset and invite links were removed (V16). |
+| Auth | `POST /api/auth/session` (sign in, 201 + cookies) · `POST /api/auth/session-refreshes` (201 + new cookies) · `DELETE /api/auth/session` (sign out) · `POST /api/auth/otp-requests` (email a sign-in code). Passwords, reset and invite links were removed (V16). |
 | Me & shell | `GET /api/me` · `GET /api/shell` · `PATCH /api/notifications` |
 | Roles | `GET /api/roles` · `POST /api/roles` · `DELETE /api/roles/{id}` · `PUT`/`DELETE /api/roles/{id}/permissions/{perm}` · `PUT`/`DELETE /api/roles/{id}/assignable-roles/{roleId}` |
 | Policies | `GET /api/settings/access` · `GET /api/settings/leave` · `GET /api/settings/holidays?year=` · `GET`/`PUT /api/settings/attendance` |
 | Departments & holidays | `GET`/`POST /api/departments` · `DELETE /api/departments/{id}` · `GET`/`POST /api/holidays` · `DELETE /api/holidays/{id}` |
-| People | `GET /api/people` · `POST /api/people` · `GET`/`PUT /api/people/{id}` · `GET /api/people/{id}/contact` · `PUT /api/people/{id}/access` · `PUT /api/people/{id}/exit` · `GET /api/people/form-options` · `GET /api/directory` · `GET /api/people/export` |
-| Attendance | `GET /api/attendance/me` · `POST /api/attendance/punches` · `POST /api/attendance/regularizations` · `DELETE /api/attendance/regularizations/{id}` · `PUT /api/attendance/regularizations/{id}/decision` · `GET /api/register` · `GET /api/attendance/register` (CSV) |
-| Leave & approvals | `GET /api/leave` · `GET /api/leave/preview` · `POST /api/leave/requests` · `DELETE /api/leave/requests/{id}` · `PUT /api/leave/requests/{id}/decision` · `GET /api/approvals` |
-| Payroll | `GET /api/payroll?m=` · `PUT`/`DELETE /api/payroll/{month}/adjustments/{employeeId}` · `PUT /api/payroll/{month}/status` · `GET`/`POST /api/structures` · `GET /api/payslips` · `GET /api/payslips/{month}/{code}` · `GET /api/payroll/export` |
-| Tax | `GET /api/declarations` · `PUT /api/declarations/regime` · `PUT /api/declarations/profile` · `PUT /api/declarations/items/{key}` · `POST /api/declarations/submissions` · `POST /api/declarations/proof` · `GET /api/declarations/proof/{id}` · `GET /api/proofs` · `GET /api/proofs/{employeeId}` · `PUT /api/proofs/items/{id}/decision` · `PUT /api/proofs/{employeeId}/decision` · `GET /api/tax` · `GET /api/tax/{employeeId}` · `PUT /api/tax/{employeeId}/regime` · `PUT /api/tax/{employeeId}/previous-employer` · `GET /api/tax/export` |
+| People | `GET /api/people` · `POST /api/people` · `GET`/`PUT /api/people/{id}` · `GET /api/people/{id}/contact` · `PUT /api/people/{id}/access` · `PUT /api/people/{id}/status` (`{status:"ACTIVE"}` makes a probation employee permanent, `{status:"EXITED", exitDate}` marks them exited) · `GET /api/people/form-options` · `GET /api/directory` · `GET /api/people/export` |
+| Attendance | `GET /api/attendance/mine` · `POST /api/attendance/punches` · `POST /api/attendance/regularizations` · `DELETE /api/attendance/regularizations/{id}` · `PUT /api/attendance/regularizations/{id}/decision` · `GET /api/attendance/register` · `GET /api/attendance/register/export` (CSV) |
+| Leave & approvals | `GET /api/leave` · `GET /api/leave/previews` · `POST /api/leave/requests` · `DELETE /api/leave/requests/{id}` · `PUT /api/leave/requests/{id}/decision` · `GET /api/approvals` |
+| Payroll | `GET /api/payroll?month=` · `PUT`/`DELETE /api/payroll/{month}/adjustments/{employeeId}` · `PUT /api/payroll/{month}/status` · `GET`/`POST /api/structures` · `GET /api/payslips` · `GET /api/payslips/{month}/{code}` · `GET /api/payroll/export` |
+| Tax | `GET /api/declarations` · `PUT /api/declarations/regime` · `PUT /api/declarations/profile` · `PUT /api/declarations/items/{key}` · `POST /api/declarations/submissions` · `POST /api/declarations/proofs` · `GET /api/declarations/proofs/{id}` · `GET /api/proofs` · `GET /api/proofs/{employeeId}` · `PUT /api/proofs/items/{id}/decision` · `PUT /api/proofs/{employeeId}/decision` · `GET /api/tax` · `GET /api/tax/{employeeId}` · `PUT /api/tax/{employeeId}/regime` · `PUT /api/tax/{employeeId}/previous-employer` · `GET /api/tax/export` |
 | Dashboards | `GET /api/home` · `GET /api/overview` · `GET /api/team` · `GET /api/audit` |
 | Health | `GET /actuator/health` |
 

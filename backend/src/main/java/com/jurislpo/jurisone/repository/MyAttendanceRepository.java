@@ -3,7 +3,7 @@ package com.jurislpo.jurisone.repository;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Punch;
 import com.jurislpo.jurisone.entity.PunchKind;
 import com.jurislpo.jurisone.service.MyAttendanceService.HolidayView;
-import com.jurislpo.jurisone.service.MyAttendanceService.RegView;
+import com.jurislpo.jurisone.service.MyAttendanceService.RegularizationView;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -25,11 +25,11 @@ public class MyAttendanceRepository {
     }
 
     /** An employee's regularization requests for work dates in [first, last], newest first. */
-    public List<RegView> regularizations(UUID employeeId, LocalDate first, LocalDate last) {
+    public List<RegularizationView> regularizations(UUID employeeId, LocalDate first, LocalDate last) {
         return jdbc.query("""
             SELECT r.id::text, r.work_date, r.kind::text, r.status::text, d.full_name AS by, r.reason FROM regularization_requests r
             LEFT JOIN employees d ON d.id = r.decided_by WHERE r.employee_id = ? AND r.work_date >= ? AND r.work_date <= ? ORDER BY r.created_at DESC""",
-                (rs, i) -> new RegView(rs.getString(1), rs.getDate(2).toLocalDate().toString(), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6)),
+                (rs, i) -> new RegularizationView(rs.getString(1), rs.getDate(2).toLocalDate().toString(), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6)),
                 employeeId, Date.valueOf(first), Date.valueOf(last));
     }
 

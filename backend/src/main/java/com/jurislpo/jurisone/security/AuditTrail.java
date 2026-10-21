@@ -41,7 +41,7 @@ public final class AuditTrail {
     private static final String[] SKIP = {"/api/audit/page-views"};
 
     /** A candidate's one-time link: that path segment is a credential and is stored as {token}. */
-    private static final Pattern TOKEN_PATH = Pattern.compile("^(/api/onboarding/)[^/]+(.*)$");
+    private static final Pattern TOKEN_PATH = Pattern.compile("^(/api/public/onboardings/)[^/]+(.*)$");
 
     public static boolean isRecorded(String method, String path) {
         if (!path.startsWith("/api/")) return false;
@@ -69,10 +69,10 @@ public final class AuditTrail {
 
     /** Adds a fact to this request's audit row. */
     @SuppressWarnings("unchecked")
-    public static void hint(HttpServletRequest req, String key, Object value) {
-        Object h = req.getAttribute(HINT_ATTR);
-        Map<String, Object> m = h instanceof Map<?, ?> ? (Map<String, Object>) h : new LinkedHashMap<>();
-        m.put(key, value);
-        req.setAttribute(HINT_ATTR, m);
+    public static void hint(HttpServletRequest request, String key, Object value) {
+        Object h = request.getAttribute(HINT_ATTR);
+        Map<String, Object> view = h instanceof Map<?, ?> ? (Map<String, Object>) h : new LinkedHashMap<>();
+        view.put(key, value);
+        request.setAttribute(HINT_ATTR, view);
     }
 }

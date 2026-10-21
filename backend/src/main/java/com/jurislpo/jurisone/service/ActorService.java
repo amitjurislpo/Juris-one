@@ -21,18 +21,18 @@ public class ActorService {
         this.repo = repo;
     }
 
-    public Actor actor(CurrentUser u) {
-        List<String> assign = repo.findAssignableRoleIds(u.roleId());
-        String dept = repo.findDepartmentId(u.id());
-        List<String> emp = repo.findEmployeeRoleIds();
-        return new Actor(u.id().toString(), u.roleKey(), u.perms(), new HashSet<>(assign), dept, emp.isEmpty() ? "" : emp.get(0));
+    public Actor actor(CurrentUser user) {
+        List<String> assign = repo.findAssignableRoleIds(user.roleId());
+        String department = repo.findDepartmentId(user.id());
+        List<String> employee = repo.findEmployeeRoleIds();
+        return new Actor(user.id().toString(), user.roleKey(), user.perms(), new HashSet<>(assign), department, employee.isEmpty() ? "" : employee.get(0));
     }
 
     public Target target(UUID id) {
         List<Map<String, Object>> rs = repo.findTarget(id);
         if (rs.isEmpty()) return null;
-        Map<String, Object> r = rs.get(0);
-        return new Target((String) r.get("id"), (String) r.get("role_id"), (String) r.get("role_key"), EmployeeStatus.valueOf((String) r.get("status")),
-                Boolean.TRUE.equals(r.get("is_super_admin")));
+        Map<String, Object> row = rs.get(0);
+        return new Target((String) row.get("id"), (String) row.get("role_id"), (String) row.get("role_key"), EmployeeStatus.valueOf((String) row.get("status")),
+                Boolean.TRUE.equals(row.get("is_super_admin")));
     }
 }

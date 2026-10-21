@@ -32,12 +32,12 @@ public class AuthRepository {
         return em.find(User.class, employeeId);
     }
 
-    public void persistUser(User u) {
-        em.persist(u);
+    public void persistUser(User user) {
+        em.persist(user);
     }
 
-    public void persistLoginHistory(LoginHistory h) {
-        em.persist(h);
+    public void persistLoginHistory(LoginHistory loginHistory) {
+        em.persist(loginHistory);
     }
 
     /** The permission keys of a role. */

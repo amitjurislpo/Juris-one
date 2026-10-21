@@ -42,20 +42,20 @@ public class OnboardingRepository {
                    (SELECT count(*) FROM onboarding_documents x WHERE x.onboarding_id = o.id AND x.status = 'VERIFIED') AS verified, e.code
             FROM onboardings o LEFT JOIN departments d ON d.id = o.department_id LEFT JOIN employees e ON e.id = o.employee_id
             ORDER BY o.status IN ('ADDED', 'CANCELLED'), o.updated_at DESC""", (rs, i) -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", rs.getString(1));
-            m.put("candidateName", rs.getString(2));
-            m.put("personalEmail", rs.getString(3));
-            m.put("designation", rs.getString(4));
-            m.put("department", rs.getString(5));
-            m.put("joiningDate", rs.getDate(6) == null ? null : rs.getDate(6).toLocalDate().toString());
-            m.put("status", rs.getString(7));
-            m.put("updatedAt", iso(rs.getTimestamp(8)));
-            m.put("linkExpiresAt", iso(rs.getTimestamp(9)));
-            m.put("documents", rs.getLong(10));
-            m.put("verified", rs.getLong(11));
-            m.put("employeeCode", rs.getString(12));
-            return m;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", rs.getString(1));
+            row.put("candidateName", rs.getString(2));
+            row.put("personalEmail", rs.getString(3));
+            row.put("designation", rs.getString(4));
+            row.put("department", rs.getString(5));
+            row.put("joiningDate", rs.getDate(6) == null ? null : rs.getDate(6).toLocalDate().toString());
+            row.put("status", rs.getString(7));
+            row.put("updatedAt", iso(rs.getTimestamp(8)));
+            row.put("linkExpiresAt", iso(rs.getTimestamp(9)));
+            row.put("documents", rs.getLong(10));
+            row.put("verified", rs.getLong(11));
+            row.put("employeeCode", rs.getString(12));
+            return row;
         });
     }
 
@@ -194,19 +194,19 @@ public class OnboardingRepository {
         return jdbc.query("""
             SELECT d.id::text, d.kind, d.file_name, d.mime, d.size_bytes, d.status, d.comment, d.uploaded_at, e.full_name AS verified_by, d.verified_at
             FROM onboarding_documents d LEFT JOIN employees e ON e.id = d.verified_by WHERE d.onboarding_id = ? ORDER BY d.uploaded_at""", (rs, i) -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", rs.getString(1));
-            m.put("kind", rs.getString(2));
-            m.put("label", KINDS.get(rs.getString(2)));
-            m.put("fileName", rs.getString(3));
-            m.put("mime", rs.getString(4));
-            m.put("size", rs.getInt(5));
-            m.put("status", rs.getString(6));
-            m.put("comment", rs.getString(7));
-            m.put("uploadedAt", iso(rs.getTimestamp(8)));
-            m.put("verifiedBy", rs.getString(9));
-            m.put("verifiedAt", iso(rs.getTimestamp(10)));
-            return m;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", rs.getString(1));
+            row.put("kind", rs.getString(2));
+            row.put("label", KINDS.get(rs.getString(2)));
+            row.put("fileName", rs.getString(3));
+            row.put("mime", rs.getString(4));
+            row.put("size", rs.getInt(5));
+            row.put("status", rs.getString(6));
+            row.put("comment", rs.getString(7));
+            row.put("uploadedAt", iso(rs.getTimestamp(8)));
+            row.put("verifiedBy", rs.getString(9));
+            row.put("verifiedAt", iso(rs.getTimestamp(10)));
+            return row;
         }, onboardingId);
     }
 
@@ -229,13 +229,13 @@ public class OnboardingRepository {
     /** Documents on an employee's record, by kind then upload time. */
     public List<Map<String, Object>> findEmployeeDocuments(UUID employeeId) {
         return jdbc.query("SELECT id::text, kind, file_name, uploaded_at FROM onboarding_documents WHERE employee_id = ? ORDER BY kind, uploaded_at", (rs, i) -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", rs.getString(1));
-            m.put("kind", rs.getString(2));
-            m.put("label", KINDS.get(rs.getString(2)));
-            m.put("fileName", rs.getString(3));
-            m.put("uploadedAt", iso(rs.getTimestamp(4)));
-            return m;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", rs.getString(1));
+            row.put("kind", rs.getString(2));
+            row.put("label", KINDS.get(rs.getString(2)));
+            row.put("fileName", rs.getString(3));
+            row.put("uploadedAt", iso(rs.getTimestamp(4)));
+            return row;
         }, employeeId);
     }
 

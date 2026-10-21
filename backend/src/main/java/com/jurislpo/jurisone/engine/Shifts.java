@@ -7,9 +7,9 @@ import java.util.Map;
 public final class Shifts {
     private Shifts() {}
 
-    static String t12(String hm) {
-        String[] p = hm.split(":");
-        int h = Integer.parseInt(p[0]), m = Integer.parseInt(p[1]);
+    static String t12(String time) {
+        String[] parts = time.split(":");
+        int h = Integer.parseInt(parts[0]), m = Integer.parseInt(parts[1]);
         return ((h + 11) % 12 + 1) + ":" + String.format(java.util.Locale.ROOT, "%02d", m) + " " + (h < 12 ? "AM" : "PM");
     }
 
@@ -20,7 +20,7 @@ public final class Shifts {
         return shortName + " · " + t12(startLocal) + " – " + t12(endLocal) + ("US_DAY".equals(code) ? " local" : " IST");
     }
 
-    public record Option(String v, String l) {}
+    public record Option(String value, String label) {}
 
     public static final Map<String, List<Option>> OPTIONS = Map.of(
             "IN", List.of(new Option("IN_NIGHT", "Night · 7:30 PM – 4:30 AM IST"), new Option("IN_DAY", "Day · 9:30 AM – 6:30 PM IST")),

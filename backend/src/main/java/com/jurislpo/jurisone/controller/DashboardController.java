@@ -36,29 +36,29 @@ public class DashboardController {
     }
 
     @GetMapping("/api/team")
-    public ApiResult<Map<String, Object>> team(@RequestParam Map<String, String> sp) {
-        return ApiResult.success(dash.team(auth.requirePage("team"), sp));
+    public ApiResult<Map<String, Object>> team(@RequestParam Map<String, String> queryParams) {
+        return ApiResult.success(dash.team(auth.requirePage("team"), queryParams));
     }
 
     @GetMapping("/api/audit")
-    public ApiResult<Map<String, Object>> audit(@RequestParam Map<String, String> sp) {
-        return ApiResult.success(audit.rows(auth.requirePage("audit"), sp));
+    public ApiResult<Map<String, Object>> audit(@RequestParam Map<String, String> queryParams) {
+        return ApiResult.success(audit.rows(auth.requirePage("audit"), queryParams));
     }
 
     /** The audit log as CSV (same filters, up to 50,000 rows). */
     @GetMapping("/api/audit/export")
-    public ResponseEntity<byte[]> auditExport(@RequestParam Map<String, String> sp) {
-        return PeopleController.csv("audit-log.csv", audit.exportCsv(auth.requirePage("audit"), sp, false));
+    public ResponseEntity<byte[]> auditExport(@RequestParam Map<String, String> queryParams) {
+        return PeopleController.csv("audit-log.csv", audit.exportCsv(auth.requirePage("audit"), queryParams, false));
     }
 
     /** The super admin's audit log: every business and the platform itself. Filters: days, ev, actor, biz (a business id, or "platform"), q, page. */
     @GetMapping("/api/platform/audit")
-    public ApiResult<Map<String, Object>> platformAudit(@RequestParam Map<String, String> sp) {
-        return ApiResult.success(audit.platformRows(auth.requirePage("platform-audit"), sp));
+    public ApiResult<Map<String, Object>> platformAudit(@RequestParam Map<String, String> queryParams) {
+        return ApiResult.success(audit.platformRows(auth.requirePage("platform-audit"), queryParams));
     }
 
     @GetMapping("/api/platform/audit/export")
-    public ResponseEntity<byte[]> platformAuditExport(@RequestParam Map<String, String> sp) {
-        return PeopleController.csv("platform-audit-log.csv", audit.exportCsv(auth.requirePage("platform-audit"), sp, true));
+    public ResponseEntity<byte[]> platformAuditExport(@RequestParam Map<String, String> queryParams) {
+        return PeopleController.csv("platform-audit-log.csv", audit.exportCsv(auth.requirePage("platform-audit"), queryParams, true));
     }
 }

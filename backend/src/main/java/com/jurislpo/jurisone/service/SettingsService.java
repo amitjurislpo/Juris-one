@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,7 +49,7 @@ public class SettingsService {
 
     public record PayrollPolicy(double pfRate, double pfWageCeiling, ProfessionalTax professionalTax) {}
 
-    public record TaxPolicy(String fy, String regimeChangeUntil, String proofWindowFrom, String proofWindowUntil, double maxProofMb) {}
+    public record TaxPolicy(@JsonProperty("fy") String financialYear, String regimeChangeUntil, String proofWindowFrom, String proofWindowUntil, double maxProofMb) {}
 
     /** {@code tan} / {@code pan}: the deductor's tax numbers for Form 16 (optional; absent until Finance sets them). */
     public record Company(String name, String address, String tan, String pan) {}

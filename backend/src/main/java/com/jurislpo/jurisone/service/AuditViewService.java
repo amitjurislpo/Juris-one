@@ -49,7 +49,7 @@ public class AuditViewService {
     public record Row(String id, String at, String actor, String actorCode, String action, String entity, String entityId, String subject, String ip,
                       JsonNode before, JsonNode after, boolean redacted, String method, String path, Integer status, Integer durationMs, String business) {}
 
-    public record Option(String v, String l) {}
+    public record Option(String value, String label) {}
 
     private final AuditViewRepository repo;
     private final ObjectMapper json;
@@ -60,30 +60,30 @@ public class AuditViewService {
     }
 
     /** Prisma {@code contains}: the search text is literal (LIKE wildcards escaped). */
-    static String like(String q) {
-        return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+    static String like(String search) {
+        return "%" + search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
     }
 
     /** The business owner's audit log (row-level security limits it to their business). */
-    public Map<String, Object> rows(CurrentUser u, Map<String, String> sp) {
-        return query(u, sp, false);
+    public Map<String, Object> rows(CurrentUser user, Map<String, String> queryParams) {
+        return query(user, queryParams, false);
     }
 
     /** The super admin's audit log: every business and the platform itself, filterable by business ({@code biz}). */
-    public Map<String, Object> platformRows(CurrentUser u, Map<String, String> sp) {
-        return query(u, sp, true);
+    public Map<String, Object> platformRows(CurrentUser user, Map<String, String> queryParams) {
+        return query(user, queryParams, true);
     }
 
-    private record Q(String fromWhere, String order, List<Object> args, ListParams ls) {}
+    private record AuditQuery(String fromWhere, String order, List<Object> args, ListParams listParams) {}
 
-    private Q build(Map<String, String> sp, boolean platform, int pageSize) {
-        ListParams ls = ListParams.of(sp, SORTS, "at", pageSize, "desc");
+    private AuditQuery build(Map<String, String> queryParams, boolean platform, int pageSize) {
+        ListParams listParams = ListParams.of(queryParams, SORTS, "at", pageSize, "desc");
         List<String> groups = new ArrayList<>(List.of("All"));
         groups.addAll(GROUPS.keySet());
-        String group = ListParams.pick(sp, "ev", groups, "All");
-        String period = ListParams.pick(sp, "days", PERIODS, "30");
-        String actorId = ListParams.str(sp, "actor", "");
-        String biz = ListParams.str(sp, "biz", "");
+        String group = ListParams.pick(queryParams, "eventGroup", groups, "All");
+        String period = ListParams.pick(queryParams, "periodDays", PERIODS, "30");
+        String actorId = ListParams.str(queryParams, "actorId", "");
+        String biz = ListParams.str(queryParams, "businessId", "");
 
         List<String> and = new ArrayList<>();
         List<Object> args = new ArrayList<>();
@@ -109,50 +109,50 @@ public class AuditViewService {
         } else if (platform && "platform".equals(biz)) {
             and.add("a.business_id IS NULL");
         }
-        if (!ls.q().isEmpty()) {
-            String l = like(ls.q());
+        if (!listParams.search().isEmpty()) {
+            String l = like(listParams.search());
             and.add("(a.action ILIKE ? OR a.entity ILIKE ? OR a.entity_id ILIKE ? OR a.path ILIKE ? OR e.full_name ILIKE ? OR e.code ILIKE ?" + (platform ? " OR b.name ILIKE ?)" : ")"));
             for (int i = 0; i < (platform ? 7 : 6); i++) args.add(l);
         }
         String where = and.isEmpty() ? "" : " WHERE " + String.join(" AND ", and);
-        String dir = ls.asc() ? "ASC" : "DESC";
-        String order = switch (ls.sort()) {
+        String dir = listParams.asc() ? "ASC" : "DESC";
+        String order = switch (listParams.sort()) {
             case "actor" -> "e.full_name " + dir + ", a.at DESC";
             case "action" -> "a.action " + dir + ", a.at DESC";
             default -> "a.at " + dir;
         };
         String from = " FROM audit_log a LEFT JOIN employees e ON e.id = a.actor_id" + (platform ? " LEFT JOIN businesses b ON b.id = a.business_id" : "");
-        return new Q(from + where, order, args, ls);
+        return new AuditQuery(from + where, order, args, listParams);
     }
 
-    private List<Row> rowsOf(CurrentUser u, List<LogRow> logs, boolean platform) {
+    private List<Row> rowsOf(CurrentUser user, List<LogRow> logs, boolean platform) {
         // Name the employee an entry is about (entity ids are employee uuids for these entities).
-        String[] empIds = logs.stream().filter(l -> ("employee".equals(l.entity()) || "user".equals(l.entity())) && l.entityId() != null)
+        String[] employeeIds = logs.stream().filter(l -> ("employee".equals(l.entity()) || "user".equals(l.entity())) && l.entityId() != null)
                 .map(LogRow::entityId).distinct().filter(id -> id.matches(UUIDISH)).toArray(String[]::new);
-        Map<String, String> subjects = empIds.length > 0 ? repo.employeeLabels(empIds) : new LinkedHashMap<>();
+        Map<String, String> subjects = employeeIds.length > 0 ? repo.employeeLabels(employeeIds) : new LinkedHashMap<>();
 
-        boolean seePay = platform || u.can("pay.view", "struct.manage", "tax.view", "proofs.verify");
+        boolean seePay = platform || user.can("pay.view", "struct.manage", "tax.view", "proofs.verify");
         return logs.stream().map(l -> {
             boolean redacted = !seePay && SALARY_PREFIXES.stream().anyMatch(p -> l.action().startsWith(p));
-            return new Row(l.id(), Format.jsIso(l.at()), l.actor() == null ? "System" : l.actor(), l.actorCode(), l.action(), l.entity(), l.entityId(),
+            return new Row(l.id(), Format.isoTimestamp(l.at()), l.actor() == null ? "System" : l.actor(), l.actorCode(), l.action(), l.entity(), l.entityId(),
                     l.entityId() == null ? null : subjects.get(l.entityId()), l.ip(), redacted ? null : parse(l.before()), redacted ? null : parse(l.after()), redacted,
                     l.method(), l.path(), l.status(), l.durationMs(), platform ? (l.business() == null ? "Platform" : l.business()) : null);
         }).toList();
     }
 
-    private Map<String, Object> query(CurrentUser u, Map<String, String> sp, boolean platform) {
-        Q q = build(sp, platform, 50);
-        List<Object> pageArgs = new ArrayList<>(q.args());
-        pageArgs.add(q.ls().skip());
-        pageArgs.add(q.ls().take());
-        List<LogRow> logs = repo.findPage(q.fromWhere(), q.order(), pageArgs.toArray());
-        long total = repo.count(q.fromWhere(), q.args().toArray());
+    private Map<String, Object> query(CurrentUser user, Map<String, String> queryParams, boolean platform) {
+        AuditQuery query = build(queryParams, platform, 50);
+        List<Object> pageArgs = new ArrayList<>(query.args());
+        pageArgs.add(query.listParams().skip());
+        pageArgs.add(query.listParams().take());
+        List<LogRow> logs = repo.findPage(query.fromWhere(), query.order(), pageArgs.toArray());
+        long total = repo.count(query.fromWhere(), query.args().toArray());
 
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("page", q.ls().page());
-        out.put("take", q.ls().take());
+        out.put("page", query.listParams().page());
+        out.put("take", query.listParams().take());
         out.put("total", total);
-        out.put("rows", rowsOf(u, logs, platform));
+        out.put("rows", rowsOf(user, logs, platform));
         out.put("actors", repo.actorOptions());
         if (platform) out.put("businesses", repo.businessOptions());
         return out;
@@ -161,34 +161,34 @@ public class AuditViewService {
     public static final int EXPORT_MAX = 50_000;
 
     /** Every row of the filter (at most {@link #EXPORT_MAX}) as CSV: the same columns and redaction as the page. */
-    public String exportCsv(CurrentUser u, Map<String, String> sp, boolean platform) {
-        Q q = build(sp, platform, EXPORT_MAX);
-        List<Object> args = new ArrayList<>(q.args());
+    public String exportCsv(CurrentUser user, Map<String, String> queryParams, boolean platform) {
+        AuditQuery query = build(queryParams, platform, EXPORT_MAX);
+        List<Object> args = new ArrayList<>(query.args());
         args.add(0);
         args.add(EXPORT_MAX);
-        List<Row> rows = rowsOf(u, repo.findPage(q.fromWhere(), q.order(), args.toArray()), platform);
-        StringBuilder b = new StringBuilder("At (UTC),Business,Actor,Actor code,Action,Entity,Entity id,Method,Path,Status,Duration ms,IP,Before,After\n");
-        for (Row r : rows) {
-            b.append(String.join(",", cell(r.at()), cell(r.business()), cell(r.actor()), cell(r.actorCode()), cell(r.action()), cell(r.entity()), cell(r.entityId()),
-                    cell(r.method()), cell(r.path()), cell(r.status() == null ? null : r.status().toString()),
-                    cell(r.durationMs() == null ? null : r.durationMs().toString()), cell(r.ip()),
-                    cell(r.before() == null ? null : r.before().toString()), cell(r.after() == null ? null : r.after().toString()))).append('\n');
+        List<Row> rows = rowsOf(user, repo.findPage(query.fromWhere(), query.order(), args.toArray()), platform);
+        StringBuilder builder = new StringBuilder("At (UTC),Business,Actor,Actor code,Action,Entity,Entity id,Method,Path,Status,Duration ms,IP,Before,After\n");
+        for (Row row : rows) {
+            builder.append(String.join(",", cell(row.at()), cell(row.business()), cell(row.actor()), cell(row.actorCode()), cell(row.action()), cell(row.entity()), cell(row.entityId()),
+                    cell(row.method()), cell(row.path()), cell(row.status() == null ? null : row.status().toString()),
+                    cell(row.durationMs() == null ? null : row.durationMs().toString()), cell(row.ip()),
+                    cell(row.before() == null ? null : row.before().toString()), cell(row.after() == null ? null : row.after().toString()))).append('\n');
         }
-        return b.toString();
+        return builder.toString();
     }
 
     /** CSV cell; a value that starts like a formula is prefixed so a spreadsheet won't run it. */
-    static String cell(String v) {
-        if (v == null) return "";
-        String x = v.replace("\"", "\"\"");
+    static String cell(String value) {
+        if (value == null) return "";
+        String x = value.replace("\"", "\"\"");
         if (!x.isEmpty() && "=+-@".indexOf(x.charAt(0)) >= 0) x = "'" + x;
         return "\"" + x + "\"";
     }
 
-    private JsonNode parse(String s) {
-        if (s == null) return null;
+    private JsonNode parse(String text) {
+        if (text == null) return null;
         try {
-            return json.readTree(s);
+            return json.readTree(text);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException(e);
         }

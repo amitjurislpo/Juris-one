@@ -68,8 +68,8 @@ public class AuthService {
         return repo.findBusinessStatus(businessId);
     }
 
-    static long minutes(long ms) {
-        return Math.max(1, (long) Math.ceil(ms / 60_000.0));
+    static long minutes(long millis) {
+        return Math.max(1, (long) Math.ceil(millis / 60_000.0));
     }
 
     /** Signed in: where to go, and the cookies (JWT access token + refresh token). */
@@ -90,18 +90,18 @@ public class AuthService {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    private void history(Employee emp, String identifier, boolean success, String reason, RequestMeta meta) {
+    private void history(Employee employee, String identifier, boolean success, String reason, RequestMeta meta) {
         tx.executeWithoutResult(s -> {
-            LoginHistory h = new LoginHistory();
-            h.setEmployeeId(emp != null ? emp.getId() : null);
-            h.setIdentifier(identifier.substring(0, Math.min(200, identifier.length())));
-            h.setSuccess(success);
-            h.setReason(reason);
-            h.setIp(meta.ip());
-            h.setUserAgent(meta.userAgent());
-            repo.persistLoginHistory(h);
+            LoginHistory loginHistory = new LoginHistory();
+            loginHistory.setEmployeeId(employee != null ? employee.getId() : null);
+            loginHistory.setIdentifier(identifier.substring(0, Math.min(200, identifier.length())));
+            loginHistory.setSuccess(success);
+            loginHistory.setReason(reason);
+            loginHistory.setIp(meta.ip());
+            loginHistory.setUserAgent(meta.userAgent());
+            repo.persistLoginHistory(loginHistory);
             if (!success) { // every refused or failed sign-in step is in the audit trail too (identifier masked)
-                audit.log(emp != null ? emp.getId() : null, "auth.login_failed", "session", emp != null ? emp.getId().toString() : null, null,
+                audit.log(employee != null ? employee.getId() : null, "auth.login_failed", "session", employee != null ? employee.getId().toString() : null, null,
                         java.util.Map.of("reason", reason, "identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(identifier)), meta.ip());
             }
         });
@@ -111,24 +111,24 @@ public class AuthService {
      * Last step of every sign-in, once the person has proved who they are (emailed code): blocked
      * accounts get their specific message, then the session, history and audit rows are written.
      */
-    private LoginResult completeSignIn(Employee emp, String identifier, boolean remember, String next, RequestMeta meta) {
+    private LoginResult completeSignIn(Employee employee, String identifier, boolean remember, String next, RequestMeta meta) {
         // Blocked accounts get their specific message only after the person is proved (no enumeration).
-        if (emp.getStatus() == EmployeeStatus.EXITED) {
-            history(emp, identifier, false, "exited", meta);
+        if (employee.getStatus() == EmployeeStatus.EXITED) {
+            history(employee, identifier, false, "exited", meta);
             throw fail(MSG_EXITED);
         }
-        if (!Boolean.TRUE.equals(emp.getPortalAccess())) {
-            history(emp, identifier, false, "access_disabled", meta);
+        if (!Boolean.TRUE.equals(employee.getPortalAccess())) {
+            history(employee, identifier, false, "access_disabled", meta);
             throw fail(MSG_DISABLED);
         }
-        if (emp.getBusinessId() != null && "SUSPENDED".equals(jdbcStatus(emp.getBusinessId()))) {
-            history(emp, identifier, false, "business_suspended", meta);
+        if (employee.getBusinessId() != null && "SUSPENDED".equals(jdbcStatus(employee.getBusinessId()))) {
+            history(employee, identifier, false, "business_suspended", meta);
             throw fail(MSG_SUSPENDED);
         }
-        if (emp.getBusinessId() != null) { // no subscription yet, or none at all: no sign-in (an ended one signs in read-only)
-            SubscriptionService.Current sub = TenantContext.call(null, () -> subscriptions.current(emp.getBusinessId()));
+        if (employee.getBusinessId() != null) { // no subscription yet, or none at all: no sign-in (an ended one signs in read-only)
+            SubscriptionService.Current sub = TenantContext.call(null, () -> subscriptions.current(employee.getBusinessId()));
             if ("UPCOMING".equals(sub.state()) || "NONE".equals(sub.state())) {
-                history(emp, identifier, false, "subscription_" + sub.state().toLowerCase(), meta);
+                history(employee, identifier, false, "subscription_" + sub.state().toLowerCase(), meta);
                 String when = "UPCOMING".equals(sub.state())
                         ? java.time.LocalDate.parse(sub.startsOn()).format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH)) : null;
                 throw new ApiException(HttpStatus.PAYMENT_REQUIRED, "SUBSCRIPTION_INACTIVE", when != null
@@ -138,31 +138,31 @@ public class AuthService {
         }
 
         SessionService.Issued issued = tx.execute(s -> {
-            User u = repo.findUser(emp.getId());
-            if (u == null) { // first sign-in
-                u = new User();
-                u.setEmployeeId(emp.getId());
-                repo.persistUser(u);
+            User user = repo.findUser(employee.getId());
+            if (user == null) { // first sign-in
+                user = new User();
+                user.setEmployeeId(employee.getId());
+                repo.persistUser(user);
             }
-            u.setFailedAttempts(0);
-            u.setLockedUntil(null);
-            u.setLastLoginAt(Instant.now().truncatedTo(ChronoUnit.MILLIS));
-            return sessions.create(emp.getId(), remember, meta);
+            user.setFailedAttempts(0);
+            user.setLockedUntil(null);
+            user.setLastLoginAt(Instant.now().truncatedTo(ChronoUnit.MILLIS));
+            return sessions.create(employee.getId(), remember, meta);
         });
-        history(emp, identifier, true, "ok", meta);
+        history(employee, identifier, true, "ok", meta);
         Map<String, Object> after = new java.util.HashMap<>();
         after.put("userAgent", meta.userAgent());
-        audit.log(emp.getId(), "auth.login", "session", emp.getId().toString(), null, after, meta.ip());
+        audit.log(employee.getId(), "auth.login", "session", employee.getId().toString(), null, after, meta.ip());
 
-        Set<String> perms = new HashSet<>(repo.findPermissionKeys(emp.getRoleId()));
+        Set<String> perms = new HashSet<>(repo.findPermissionKeys(employee.getRoleId()));
         String target = next != null && next.startsWith("/") && !next.startsWith("//") ? next : Nav.landingFor(perms);
         return new LoginResult(target, issued.cookies());
     }
 
     /** Whether this account may sign in at all right now (exists, active, portal access on, business not suspended). */
-    private boolean canReceiveOtp(Employee emp) {
-        return emp != null && emp.getStatus() != EmployeeStatus.EXITED && Boolean.TRUE.equals(emp.getPortalAccess())
-                && !(emp.getBusinessId() != null && "SUSPENDED".equals(jdbcStatus(emp.getBusinessId())));
+    private boolean canReceiveOtp(Employee employee) {
+        return employee != null && employee.getStatus() != EmployeeStatus.EXITED && Boolean.TRUE.equals(employee.getPortalAccess())
+                && !(employee.getBusinessId() != null && "SUSPENDED".equals(jdbcStatus(employee.getBusinessId())));
     }
 
     /** Emails a sign-in code. Always the same answer, so it doesn't reveal who has an account. */
@@ -176,16 +176,16 @@ public class AuthService {
         if (byIp.limited() || byMail.limited()) {
             throw new UserException(HttpStatus.TOO_MANY_REQUESTS, "Too many code requests. Try again in " + minutes(Math.max(byIp.retryInMs(), byMail.retryInMs())) + " minute(s).");
         }
-        Employee emp = findByIdentifier(email);
-        if (canReceiveOtp(emp)) {
-            otps.issue(email, emp.getFullName(), meta.ip());
-            audit.log(emp.getId(), "auth.otp_requested", "session", emp.getId().toString(), null,
+        Employee employee = findByIdentifier(email);
+        if (canReceiveOtp(employee)) {
+            otps.issue(email, employee.getFullName(), meta.ip());
+            audit.log(employee.getId(), "auth.otp_requested", "session", employee.getId().toString(), null,
                     java.util.Map.of("identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(email)), meta.ip());
         }
-        else if (emp != null) { // the person is told by email why no code comes (the page still answers the same for everyone)
-            history(emp, email, false, emp.getStatus() == EmployeeStatus.EXITED ? "exited" : !Boolean.TRUE.equals(emp.getPortalAccess()) ? "access_disabled" : "business_suspended", meta);
-            mail.send(email, MailTemplates.noCode(emp.getFullName(), emp.getStatus() == EmployeeStatus.EXITED ? MSG_EXITED
-                    : !Boolean.TRUE.equals(emp.getPortalAccess()) ? MSG_DISABLED : MSG_SUSPENDED));
+        else if (employee != null) { // the person is told by email why no code comes (the page still answers the same for everyone)
+            history(employee, email, false, employee.getStatus() == EmployeeStatus.EXITED ? "exited" : !Boolean.TRUE.equals(employee.getPortalAccess()) ? "access_disabled" : "business_suspended", meta);
+            mail.send(email, MailTemplates.noCode(employee.getFullName(), employee.getStatus() == EmployeeStatus.EXITED ? MSG_EXITED
+                    : !Boolean.TRUE.equals(employee.getPortalAccess()) ? MSG_DISABLED : MSG_SUSPENDED));
         }
         return "If that account exists and is active, a 6-digit code is on its way to the email.";
     }
@@ -197,29 +197,29 @@ public class AuthService {
         if (code == null || !code.trim().matches("[0-9]{6}")) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the 6-digit code.");
         AuthPolicy policy = settings.auth();
         String ipKey = "login:" + (meta.ip() != null ? meta.ip() : "unknown");
-        RateLimiter.Result rl = limiter.limited(ipKey, policy.ipMaxAttempts());
-        if (rl.limited()) {
-            throw new UserException(HttpStatus.TOO_MANY_REQUESTS, "Too many failed sign-in attempts. Try again in " + minutes(rl.retryInMs()) + " minute(s).");
+        RateLimiter.Result result = limiter.limited(ipKey, policy.ipMaxAttempts());
+        if (result.limited()) {
+            throw new UserException(HttpStatus.TOO_MANY_REQUESTS, "Too many failed sign-in attempts. Try again in " + minutes(result.retryInMs()) + " minute(s).");
         }
-        Employee emp = findByIdentifier(email);
-        User user = emp == null ? null : repo.findUser(emp.getId());
+        Employee employee = findByIdentifier(email);
+        User user = employee == null ? null : repo.findUser(employee.getId());
         if (user != null && user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
-            history(emp, email, false, "locked", meta);
+            history(employee, email, false, "locked", meta);
             throw fail("This account is locked after repeated failed sign-ins. Try again in "
                     + minutes(user.getLockedUntil().toEpochMilli() - System.currentTimeMillis()) + " minute(s).");
         }
-        if (emp == null || !otps.verify(email, code.trim())) {
+        if (employee == null || !otps.verify(email, code.trim())) {
             limiter.hit(ipKey, policy.ipWindowMinutes() * 60_000L);
-            history(emp, email, false, "bad_otp", meta);
+            history(employee, email, false, "bad_otp", meta);
             throw fail(BAD_OTP);
         }
-        return completeSignIn(emp, email, remember, next, meta);
+        return completeSignIn(employee, email, remember, next, meta);
     }
 
     /** Ends this device's session: the one in the access token, else the refresh cookie's. */
-    public void logout(CurrentUser u, String refreshToken, RequestMeta meta) {
-        if (u != null) sessions.revoke(u.sessionId(), "logout");
+    public void logout(CurrentUser user, String refreshToken, RequestMeta meta) {
+        if (user != null) sessions.revoke(user.sessionId(), "logout");
         else sessions.revokeByRefreshToken(refreshToken, "logout");
-        if (u != null) audit.log(u.id(), "auth.logout", "session", u.id().toString(), meta.ip());
+        if (user != null) audit.log(user.id(), "auth.logout", "session", user.id().toString(), meta.ip());
     }
 }

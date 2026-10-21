@@ -20,9 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class DepartmentsService {
 
-    static final List<String> SORTS = List.of("name", "head", "n", "by", "on");
+    static final List<String> SORTS = List.of("name", "head", "employeeCount", "createdBy", "createdOn");
 
-    public record Row(String id, String name, String note, String head, int n, String by, String on) {}
+    public record Row(String id, String name, String note, String head, int employeeCount, String createdBy, String createdOn) {}
 
     public record Person(String id, String name, String title) {}
 
@@ -36,20 +36,20 @@ public class DepartmentsService {
         this.audit = audit;
     }
 
-    public Page page(CurrentUser u, Map<String, String> sp) {
-        ListParams ls = ListParams.of(sp, SORTS, "name");
-        List<Row> all = repo.findActive(u.timeZone());
-        String q = ls.q().toLowerCase();
+    public Page page(CurrentUser user, Map<String, String> queryParams) {
+        ListParams listParams = ListParams.of(queryParams, SORTS, "name");
+        List<Row> all = repo.findActive(user.timeZone());
+        String search = listParams.search().toLowerCase();
         List<Row> rows = new ArrayList<>(all.stream()
-                .filter(r -> q.isEmpty() || (r.name() + " " + r.head() + " " + r.by() + " " + r.note()).toLowerCase().contains(q)).toList());
-        Map<String, Function<Row, ? extends Comparable>> keys = Map.of("name", Row::name, "head", Row::head, "n", Row::n, "by", Row::by, "on", Row::on);
-        rows.sort(ls.comparator(keys));
+                .filter(r -> search.isEmpty() || (r.name() + " " + r.head() + " " + r.createdBy() + " " + r.note()).toLowerCase().contains(search)).toList());
+        Map<String, Function<Row, ? extends Comparable>> keys = Map.of("name", Row::name, "head", Row::head, "employeeCount", Row::employeeCount, "createdBy", Row::createdBy, "createdOn", Row::createdOn);
+        rows.sort(listParams.comparator(keys));
         List<Person> heads = repo.findHeadCandidates();
         return new Page(rows, heads);
     }
 
     @Transactional
-    public String create(CurrentUser u, String nameRaw, String headIdRaw, String descRaw, String ip) {
+    public String create(CurrentUser user, String nameRaw, String headIdRaw, String descRaw, String ip) {
         String name = Check.trimmed(nameRaw, 2, "Department name is required.", 80, "Keep the name under 80 characters.");
         UUID headId = headIdRaw == null || headIdRaw.isEmpty() ? null : Check.uuid(headIdRaw);
         String description = descRaw == null ? null : descRaw.trim();
@@ -67,38 +67,38 @@ public class DepartmentsService {
         if (restore) {
             // A previously archived department with the same name is brought back rather than duplicated.
             id = (UUID) existing.get(0).get("id");
-            repo.restore(id, name, headId, desc, u.id(), new Timestamp(System.currentTimeMillis()));
+            repo.restore(id, name, headId, desc, user.id(), new Timestamp(System.currentTimeMillis()));
         } else {
             id = UUID.randomUUID();
-            repo.insert(id, name, headId, desc, u.id());
+            repo.insert(id, name, headId, desc, user.id());
         }
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("name", name);
         after.put("headEmployeeId", headId == null ? null : headId.toString());
         if (description != null) after.put("description", description);
-        audit.log(u.id(), restore ? "department.restore" : "department.create", "department", id.toString(), null, after, ip);
+        audit.log(user.id(), restore ? "department.restore" : "department.create", "department", id.toString(), null, after, ip);
         return "Department “" + name + "” created";
     }
 
     @Transactional
-    public String delete(CurrentUser u, String idRaw, String ip) {
+    public String delete(CurrentUser user, String idRaw, String ip) {
         UUID id = Check.uuid(idRaw);
         List<Map<String, Object>> ds = repo.findForDelete(id);
         if (ds.isEmpty() || ds.get(0).get("archived_at") != null) throw new UserException("That department no longer exists.");
-        Map<String, Object> d = ds.get(0);
+        Map<String, Object> row = ds.get(0);
         Integer total = repo.countEmployees(id);
         Integer current = repo.countCurrentEmployees(id);
         if (current != null && current > 0) {
-            throw new UserException(d.get("name") + " still has " + current + " current employee" + (current == 1 ? "" : "s") + ". Move them first.");
+            throw new UserException(row.get("name") + " still has " + current + " current employee" + (current == 1 ? "" : "s") + ". Move them first.");
         }
         // Past employees still point at it, so it is archived to keep their records intact.
         boolean archive = total != null && total > 0;
         if (archive) repo.archive(id);
         else repo.delete(id);
         Map<String, Object> before = new LinkedHashMap<>();
-        before.put("name", d.get("name"));
-        before.put("description", d.get("description"));
-        audit.log(u.id(), "department.delete", "department", id.toString(), before, archive ? Map.of("archived", true) : null, ip);
-        return "Department “" + d.get("name") + "” removed";
+        before.put("name", row.get("name"));
+        before.put("description", row.get("description"));
+        audit.log(user.id(), "department.delete", "department", id.toString(), before, archive ? Map.of("archived", true) : null, ip);
+        return "Department “" + row.get("name") + "” removed";
     }
 }

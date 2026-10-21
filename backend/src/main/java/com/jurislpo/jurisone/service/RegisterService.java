@@ -1,6 +1,6 @@
 package com.jurislpo.jurisone.service;
 
-import com.jurislpo.jurisone.service.AttendanceService.AttEmployee;
+import com.jurislpo.jurisone.service.AttendanceService.AttendanceEmployee;
 import com.jurislpo.jurisone.service.AttendanceService.DayView;
 import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
@@ -31,71 +31,71 @@ import org.springframework.stereotype.Service;
 @Service
 public class RegisterService {
 
-    public record Zone(String v, String l) {}
+    public record ZoneOption(String value, String label) {}
 
-    public static final List<Zone> ZONES = List.of(new Zone("Asia/Kolkata", "IST · India"), new Zone("America/New_York", "ET · New York"),
-            new Zone("America/Chicago", "CT · Chicago"), new Zone("America/Los_Angeles", "PT · Los Angeles"), new Zone("UTC", "UTC"),
-            new Zone("local", "Each employee’s local time"));
+    public static final List<ZoneOption> ZONES = List.of(new ZoneOption("Asia/Kolkata", "IST · India"), new ZoneOption("America/New_York", "ET · New York"),
+            new ZoneOption("America/Chicago", "CT · Chicago"), new ZoneOption("America/Los_Angeles", "PT · Los Angeles"), new ZoneOption("UTC", "UTC"),
+            new ZoneOption("local", "Each employee’s local time"));
     public static final List<String> DAY_STATUSES = List.of("All", "Present", "Working", "Not checked in", "Absent", "On leave", "Holiday", "Weekly off", "Half day");
-    static final List<String> DAY_SORTS = List.of("name", "loc", "st", "inn", "out", "h");
-    static final List<String> MONTH_SORTS = List.of("name", "P", "A", "L");
+    static final List<String> DAY_SORTS = List.of("name", "location", "status", "checkIn", "checkOut", "hours");
+    static final List<String> MONTH_SORTS = List.of("name", "present", "absent", "leave");
 
     /** registerParams. */
-    public record Params(String view, LocalDate day, String ym, String tz, LocalDate today, String region, String dept, String st, ListParams ls) {}
+    public record RegisterParams(String view, LocalDate day, String month, String timeZone, LocalDate today, String region, String department, String status, ListParams listParams) {}
 
     private final AttendanceService att;
     private final RegisterRepository repo;
     private final AuditService audit;
 
-    public RegisterService(AttendanceService att, RegisterRepository repo, AuditService audit) {
-        this.att = att;
+    public RegisterService(AttendanceService attendance, RegisterRepository repo, AuditService audit) {
+        this.att = attendance;
         this.repo = repo;
         this.audit = audit;
     }
 
-    public static Params params(Map<String, String> sp, String viewerTz) {
+    public static RegisterParams params(Map<String, String> queryParams, String viewerTimeZone) {
         LocalDate today = Format.todayIn("Asia/Kolkata");
-        String view = ListParams.pick(sp, "view", List.of("day", "month"), "day");
-        String dayS = ListParams.str(sp, "day", today.toString());
+        String view = ListParams.pick(queryParams, "view", List.of("day", "month"), "day");
+        String dayS = ListParams.str(queryParams, "date", today.toString());
         LocalDate day = dayS.matches("^\\d{4}-\\d{2}-\\d{2}$") && dayS.compareTo(today.toString()) <= 0 ? LocalDate.parse(dayS) : today;
-        String ym = ListParams.str(sp, "ym", today.toString().substring(0, 7));
-        if (!ym.matches("^\\d{4}-\\d{2}$") || ym.compareTo(today.toString().substring(0, 7)) > 0) ym = today.toString().substring(0, 7);
-        List<String> zones = ZONES.stream().map(Zone::v).toList();
-        String tz = ListParams.pick(sp, "tz", zones, zones.contains(viewerTz) ? viewerTz : "Asia/Kolkata");
-        ListParams ls = "day".equals(view) ? ListParams.of(sp, DAY_SORTS, "name", 50, "asc") : ListParams.of(sp, MONTH_SORTS, "name", 50, "asc");
-        return new Params(view, day, ym, tz, today, ListParams.pick(sp, "region", List.of("All", "IN", "US"), "All"), ListParams.str(sp, "dept", "All"),
-                ListParams.pick(sp, "st", DAY_STATUSES, "All"), ls);
+        String yearMonth = ListParams.str(queryParams, "month", today.toString().substring(0, 7));
+        if (!yearMonth.matches("^\\d{4}-\\d{2}$") || yearMonth.compareTo(today.toString().substring(0, 7)) > 0) yearMonth = today.toString().substring(0, 7);
+        List<String> zones = ZONES.stream().map(ZoneOption::value).toList();
+        String timeZone = ListParams.pick(queryParams, "timeZone", zones, zones.contains(viewerTimeZone) ? viewerTimeZone : "Asia/Kolkata");
+        ListParams listParams = "day".equals(view) ? ListParams.of(queryParams, DAY_SORTS, "name", 50, "asc") : ListParams.of(queryParams, MONTH_SORTS, "name", 50, "asc");
+        return new RegisterParams(view, day, yearMonth, timeZone, today, ListParams.pick(queryParams, "region", List.of("All", "IN", "US"), "All"), ListParams.str(queryParams, "departmentId", "All"),
+                ListParams.pick(queryParams, "status", DAY_STATUSES, "All"), listParams);
     }
 
-    private List<AttEmployee> employees(Params p, LocalDate from, LocalDate to) {
+    private List<AttendanceEmployee> employees(RegisterParams registerParams, LocalDate from, LocalDate to) {
         List<String> and = new ArrayList<>(List.of("e.date_of_joining <= ?", "(e.exit_date IS NULL OR e.exit_date >= ?)"));
         List<Object> args = new ArrayList<>(List.of(Date.valueOf(to), Date.valueOf(from)));
-        if (!"All".equals(p.region())) {
+        if (!"All".equals(registerParams.region())) {
             and.add("e.region = ?::\"Region\"");
-            args.add(p.region());
+            args.add(registerParams.region());
         }
-        if (!"All".equals(p.dept()) && p.dept().matches("^[0-9a-f-]{36}$")) {
+        if (!"All".equals(registerParams.department()) && registerParams.department().matches("^[0-9a-f-]{36}$")) {
             and.add("e.department_id = ?::uuid");
-            args.add(p.dept());
+            args.add(registerParams.department());
         }
-        if (!p.ls().q().isEmpty()) {
+        if (!registerParams.listParams().search().isEmpty()) {
             and.add("(e.full_name ILIKE ? OR e.code ILIKE ? OR e.designation ILIKE ?)");
-            for (int i = 0; i < 3; i++) args.add(PeopleQuery.like(p.ls().q()));
+            for (int i = 0; i < 3; i++) args.add(PeopleQuery.like(registerParams.listParams().search()));
         }
-        return att.loadAttEmployees(String.join(" AND ", and), args.toArray());
+        return att.loadAttendanceEmployees(String.join(" AND ", and), args.toArray());
     }
 
     /** Daily-log status wording (prototype register). */
-    public static String dayStatusLabel(DayView v) {
-        return switch (v.r.status) {
+    public static String dayStatusLabel(DayView dayView) {
+        return switch (dayView.r.status) {
             case PRESENT -> "Present";
             case HALF_DAY -> "Half day";
             case ABSENT -> "Absent";
             case LEAVE -> "On leave";
             case HOLIDAY -> "Holiday";
             case WEEKLY_OFF -> "Weekly off";
-            case PENDING -> v.r.openSince != null ? "Working" : !v.punches.isEmpty() ? "Present" : "Not checked in";
-            default -> v.r.label == null || v.r.label.isEmpty() ? "—" : v.r.label;
+            case PENDING -> dayView.r.openSince != null ? "Working" : !dayView.punches.isEmpty() ? "Present" : "Not checked in";
+            default -> dayView.r.label == null || dayView.r.label.isEmpty() ? "—" : dayView.r.label;
         };
     }
 
@@ -105,172 +105,172 @@ public class RegisterService {
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("h:mm a z", Locale.US);
 
     /** Intl en-US {hour, minute, timeZoneName short} with "GMT+5:30" shown as "IST". */
-    static String clockText(Instant at, String tz) {
-        return CLOCK.format(at.atZone(ZoneId.of(tz))).replace("GMT+05:30", "IST");
+    static String clockText(Instant at, String timeZone) {
+        return CLOCK.format(at.atZone(ZoneId.of(timeZone))).replace("GMT+05:30", "IST");
     }
 
-    public static Clock clock(Instant at, String zone, AttEmployee e, LocalDate rowDay) {
+    public static Clock clock(Instant at, String zone, AttendanceEmployee employee, LocalDate rowDay) {
         if (at == null) return null;
-        String z = "local".equals(zone) ? e.tz() : zone;
+        String z = "local".equals(zone) ? employee.timeZone() : zone;
         LocalDate day = AttendanceEngine.localParts(at, z).date();
         String shift = day.equals(rowDay) ? "" : day.isAfter(rowDay) ? " (+1)" : " (−1)";
-        return new Clock(clockText(at, z) + shift, !"local".equals(zone) && !z.equals(e.tz()) ? clockText(at, e.tz()) : null);
+        return new Clock(clockText(at, z) + shift, !"local".equals(zone) && !z.equals(employee.timeZone()) ? clockText(at, employee.timeZone()) : null);
     }
 
-    public record DailyRow(String id, String code, String name, String department, String region, String tz, String loc, String shiftName, String st,
-                           boolean late, Clock inn, Clock out, double h, Instant firstIn, Instant lastOut) {}
+    public record DailyRow(String id, String code, String name, String department, String region, String timeZone, String location, String shiftName, String status,
+                           boolean late, Clock checkIn, Clock checkOut, double hours, Instant firstIn, Instant lastOut) {}
 
-    public record Sum(int t, int p, int n, int l, int a) {}
+    public record DailySummary(int total, int present, int notCheckedIn, int onLeave, int absent) {}
 
-    public record Daily(List<DailyRow> rows, Sum sum) {}
+    public record Daily(List<DailyRow> rows, DailySummary summary) {}
 
-    public Daily dailyLog(Params p) {
-        List<AttEmployee> emps = employees(p, p.day(), p.day());
-        Map<UUID, List<DayView>> all = att.attendanceFor(emps, p.day(), p.day(), Instant.now());
+    public Daily dailyLog(RegisterParams registerParams) {
+        List<AttendanceEmployee> employees = employees(registerParams, registerParams.day(), registerParams.day());
+        Map<UUID, List<DayView>> all = att.attendanceFor(employees, registerParams.day(), registerParams.day(), Instant.now());
         List<DailyRow> rows = new ArrayList<>();
-        for (AttEmployee e : emps) {
-            DayView d = all.get(e.id()).get(0);
-            rows.add(new DailyRow(e.id().toString(), e.code(), e.name(), e.department(), e.region(), e.tz(), PeopleRules.locationOfTz(e.tz()).l(),
-                    e.shift().name(), dayStatusLabel(d), d.r.late, clock(d.r.firstIn, p.tz(), e, p.day()), clock(d.r.lastOut, p.tz(), e, p.day()),
-                    d.r.workedMinutes / 60.0, d.r.firstIn, d.r.lastOut));
+        for (AttendanceEmployee employee : employees) {
+            DayView dayView = all.get(employee.id()).get(0);
+            rows.add(new DailyRow(employee.id().toString(), employee.code(), employee.name(), employee.department(), employee.region(), employee.timeZone(), PeopleRules.locationOfTimeZone(employee.timeZone()).label(),
+                    employee.shift().name(), dayStatusLabel(dayView), dayView.r.late, clock(dayView.r.firstIn, registerParams.timeZone(), employee, registerParams.day()), clock(dayView.r.lastOut, registerParams.timeZone(), employee, registerParams.day()),
+                    dayView.r.workedMinutes / 60.0, dayView.r.firstIn, dayView.r.lastOut));
         }
-        Sum sum = new Sum(rows.size(), (int) rows.stream().filter(r -> List.of("Present", "Working", "Half day").contains(r.st())).count(),
-                (int) rows.stream().filter(r -> r.st().equals("Not checked in")).count(), (int) rows.stream().filter(r -> r.st().equals("On leave")).count(),
-                (int) rows.stream().filter(r -> r.st().equals("Absent")).count());
+        DailySummary sum = new DailySummary(rows.size(), (int) rows.stream().filter(r -> List.of("Present", "Working", "Half day").contains(r.status())).count(),
+                (int) rows.stream().filter(r -> r.status().equals("Not checked in")).count(), (int) rows.stream().filter(r -> r.status().equals("On leave")).count(),
+                (int) rows.stream().filter(r -> r.status().equals("Absent")).count());
         List<DailyRow> filtered = new ArrayList<>(rows.stream()
-                .filter(r -> "All".equals(p.st()) || r.st().equals(p.st()) || ("Present".equals(p.st()) && r.st().equals("Working"))).toList());
+                .filter(r -> "All".equals(registerParams.status()) || r.status().equals(registerParams.status()) || ("Present".equals(registerParams.status()) && r.status().equals("Working"))).toList());
         Map<String, Function<DailyRow, ? extends Comparable>> keys = Map.of(
-                "name", DailyRow::name, "loc", r -> r.region() + r.tz(), "st", DailyRow::st,
-                "inn", r -> r.firstIn() == null ? 9e15 : (double) r.firstIn().toEpochMilli(),
-                "out", r -> r.lastOut() == null ? 9e15 : (double) r.lastOut().toEpochMilli(), "h", DailyRow::h);
-        filtered.sort(p.ls().comparator(keys));
+                "name", DailyRow::name, "location", r -> r.region() + r.timeZone(), "status", DailyRow::status,
+                "checkIn", r -> r.firstIn() == null ? 9e15 : (double) r.firstIn().toEpochMilli(),
+                "checkOut", r -> r.lastOut() == null ? 9e15 : (double) r.lastOut().toEpochMilli(), "hours", DailyRow::hours);
+        filtered.sort(registerParams.listParams().comparator(keys));
         return new Daily(filtered, sum);
     }
 
-    public record Cell(String c, String cls) {}
+    public record Cell(String code, String tone) {}
 
     static final Map<DayStatus, String[]> CODE = Map.of(DayStatus.PRESENT, new String[] {"P", "ok"}, DayStatus.HALF_DAY, new String[] {"½", "warn"},
             DayStatus.ABSENT, new String[] {"A", "bad"}, DayStatus.LEAVE, new String[] {"L", "info"}, DayStatus.HOLIDAY, new String[] {"H", "gold"},
             DayStatus.WEEKLY_OFF, new String[] {"", "off"});
 
-    public static Cell cellCode(DayView d) {
-        if (d.r.future) return new Cell("", "none");
-        if (d.r.status == DayStatus.PENDING) return !d.punches.isEmpty() ? new Cell("P", "ok") : d.r.live ? new Cell("–", "warn") : new Cell("", "none");
-        String[] c = CODE.get(d.r.status);
+    public static Cell cellCode(DayView dayView) {
+        if (dayView.r.future) return new Cell("", "none");
+        if (dayView.r.status == DayStatus.PENDING) return !dayView.punches.isEmpty() ? new Cell("P", "ok") : dayView.r.live ? new Cell("–", "warn") : new Cell("", "none");
+        String[] c = CODE.get(dayView.r.status);
         return c != null ? new Cell(c[0], c[1]) : new Cell("", "none");
     }
 
-    public record GridDay(String k, int d, String dow, boolean wk) {}
+    public record GridDay(String date, int day, String weekday, boolean weeklyOff) {}
 
     /** {@code days}: per-cell tooltip data (date, label, worked minutes). */
     public record DayTip(String date, String label, int workedMinutes) {}
 
-    public record GridRow(String id, String code, String name, String department, String region, List<Cell> cells, List<DayTip> days, double P, double A, double L) {}
+    public record GridRow(String id, String code, String name, String department, String region, List<Cell> cells, List<DayTip> days, double present, double absent, double leave) {}
 
     public record Monthly(List<GridRow> rows, List<GridDay> days, String from, String to) {}
 
-    public Monthly monthlyGrid(Params p) {
-        AttendanceService.Pol policy = att.policy();
-        YearMonth ym = YearMonth.parse(p.ym());
-        LocalDate from = ym.atDay(1), to = ym.atEndOfMonth();
-        List<AttEmployee> emps = employees(p, from, to);
-        Map<UUID, List<DayView>> all = att.attendanceFor(emps, from, to, Instant.now());
+    public Monthly monthlyGrid(RegisterParams registerParams) {
+        AttendanceService.ResolvedAttendancePolicy policy = att.policy();
+        YearMonth yearMonth = YearMonth.parse(registerParams.month());
+        LocalDate from = yearMonth.atDay(1), to = yearMonth.atEndOfMonth();
+        List<AttendanceEmployee> employees = employees(registerParams, from, to);
+        Map<UUID, List<DayView>> all = att.attendanceFor(employees, from, to, Instant.now());
         List<GridDay> days = new ArrayList<>();
         for (LocalDate k = from; !k.isAfter(to); k = k.plusDays(1)) {
             int dow = AttendanceEngine.dowOf(k);
             days.add(new GridDay(k.toString(), k.getDayOfMonth(), String.valueOf("SMTWTFS".charAt(dow)), policy.engine().weeklyOffs().contains(dow)));
         }
         List<GridRow> rows = new ArrayList<>();
-        for (AttEmployee e : emps) {
-            List<DayView> ds = all.get(e.id());
-            MonthSummary s = AttendanceEngine.summarize(ds.stream().filter(x -> !x.r.future).map(x -> x.r).toList(), policy.engine());
-            rows.add(new GridRow(e.id().toString(), e.code(), e.name(), e.department(), e.region(), ds.stream().map(RegisterService::cellCode).toList(),
-                    ds.stream().map(x -> new DayTip(x.r.date.toString(), x.r.label, x.r.workedMinutes)).toList(), s.present, s.absent, s.leave));
+        for (AttendanceEmployee employee : employees) {
+            List<DayView> dayViews = all.get(employee.id());
+            MonthSummary summary = AttendanceEngine.summarize(dayViews.stream().filter(x -> !x.r.future).map(x -> x.r).toList(), policy.engine());
+            rows.add(new GridRow(employee.id().toString(), employee.code(), employee.name(), employee.department(), employee.region(), dayViews.stream().map(RegisterService::cellCode).toList(),
+                    dayViews.stream().map(x -> new DayTip(x.r.date.toString(), x.r.label, x.r.workedMinutes)).toList(), summary.present, summary.absent, summary.leave));
         }
-        Map<String, Function<GridRow, ? extends Comparable>> keys = Map.of("name", GridRow::name, "P", GridRow::P, "A", GridRow::A, "L", GridRow::L);
-        rows.sort(p.ls().comparator(keys));
+        Map<String, Function<GridRow, ? extends Comparable>> keys = Map.of("name", GridRow::name, "present", GridRow::present, "absent", GridRow::absent, "leave", GridRow::leave);
+        rows.sort(registerParams.listParams().comparator(keys));
         return new Monthly(rows, days, from.toString(), to.toString());
     }
 
     public static List<String> months(LocalDate trackingStart, LocalDate today) {
         List<String> out = new ArrayList<>();
-        for (YearMonth ym = YearMonth.from(trackingStart); !ym.isAfter(YearMonth.from(today)); ym = ym.plusMonths(1)) out.add(ym.toString());
+        for (YearMonth yearMonth = YearMonth.from(trackingStart); !yearMonth.isAfter(YearMonth.from(today)); yearMonth = yearMonth.plusMonths(1)) out.add(yearMonth.toString());
         java.util.Collections.reverse(out);
         return out;
     }
 
     // ── page + export ──
 
-    public record Dept(String id, String name) {}
+    public record DepartmentSummary(String id, String name) {}
 
-    public Map<String, Object> page(CurrentUser u, Map<String, String> sp) {
-        Params p = params(sp, u.timeZone());
+    public Map<String, Object> page(CurrentUser user, Map<String, String> queryParams) {
+        RegisterParams registerParams = params(queryParams, user.timeZone());
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("view", p.view());
-        out.put("day", p.day().toString());
-        out.put("ym", p.ym());
-        out.put("tz", p.tz());
-        out.put("today", p.today().toString());
-        out.put("page", p.ls().page());
-        out.put("take", p.ls().take());
-        out.put("depts", repo.activeDepartments());
+        out.put("view", registerParams.view());
+        out.put("date", registerParams.day().toString());
+        out.put("month", registerParams.month());
+        out.put("timeZone", registerParams.timeZone());
+        out.put("today", registerParams.today().toString());
+        out.put("page", registerParams.listParams().page());
+        out.put("take", registerParams.listParams().take());
+        out.put("departments", repo.activeDepartments());
         out.put("zones", ZONES);
         out.put("statuses", DAY_STATUSES);
-        if ("day".equals(p.view())) {
-            Daily d = dailyLog(p);
-            out.put("total", d.rows().size());
-            out.put("rows", d.rows().subList(Math.min(p.ls().skip(), d.rows().size()), Math.min(p.ls().skip() + p.ls().take(), d.rows().size())));
-            out.put("sum", d.sum());
+        if ("day".equals(registerParams.view())) {
+            Daily daily = dailyLog(registerParams);
+            out.put("total", daily.rows().size());
+            out.put("rows", daily.rows().subList(Math.min(registerParams.listParams().skip(), daily.rows().size()), Math.min(registerParams.listParams().skip() + registerParams.listParams().take(), daily.rows().size())));
+            out.put("summary", daily.summary());
         } else {
-            Monthly m = monthlyGrid(p);
-            out.put("total", m.rows().size());
-            out.put("rows", m.rows().subList(Math.min(p.ls().skip(), m.rows().size()), Math.min(p.ls().skip() + p.ls().take(), m.rows().size())));
-            out.put("days", m.days());
-            out.put("months", months(att.policy().trackingStart(), p.today()));
+            Monthly monthly = monthlyGrid(registerParams);
+            out.put("total", monthly.rows().size());
+            out.put("rows", monthly.rows().subList(Math.min(registerParams.listParams().skip(), monthly.rows().size()), Math.min(registerParams.listParams().skip() + registerParams.listParams().take(), monthly.rows().size())));
+            out.put("days", monthly.days());
+            out.put("months", months(att.policy().trackingStart(), registerParams.today()));
         }
         return out;
     }
 
     public record Export(String filename, String body) {}
 
-    public Export export(CurrentUser u, Map<String, String> sp) {
-        Params p = params(sp, u.timeZone());
+    public Export export(CurrentUser user, Map<String, String> queryParams) {
+        RegisterParams registerParams = params(queryParams, user.timeZone());
         Map<String, Object> after = new LinkedHashMap<>();
-        after.put("view", p.view());
-        after.put("day", p.day().toString());
-        after.put("ym", p.ym());
-        after.put("filters", sp);
-        audit.log(u.id(), "attendance.export", "attendance", null, null, after, null);
-        if ("day".equals(p.view())) {
-            Daily d = dailyLog(p);
-            String tzName = "local".equals(p.tz()) ? "employee local" : p.tz();
+        after.put("view", registerParams.view());
+        after.put("date", registerParams.day().toString());
+        after.put("month", registerParams.month());
+        after.put("filters", queryParams);
+        audit.log(user.id(), "attendance.export", "attendance", null, null, after, null);
+        if ("day".equals(registerParams.view())) {
+            Daily daily = dailyLog(registerParams);
+            String tzName = "local".equals(registerParams.timeZone()) ? "employee local" : registerParams.timeZone();
             List<List<Object>> rows = new ArrayList<>();
-            for (DailyRow r : d.rows()) {
-                rows.add(List.of(p.day().toString(), r.code(), r.name(), r.department(), "IN".equals(r.region()) ? "India" : "US", r.shiftName(), r.st(),
-                        r.late() ? "Yes" : "", r.inn() == null ? "" : r.inn().text(), r.out() == null ? "" : r.out().text(),
-                        r.inn() == null ? "" : r.inn().local() != null ? r.inn().local() : r.inn().text(),
-                        r.out() == null ? "" : r.out().local() != null ? r.out().local() : r.out().text(),
-                        r.h() != 0 ? String.format(Locale.ROOT, "%.2f", r.h()) : ""));
+            for (DailyRow dailyRow : daily.rows()) {
+                rows.add(List.of(registerParams.day().toString(), dailyRow.code(), dailyRow.name(), dailyRow.department(), "IN".equals(dailyRow.region()) ? "India" : "US", dailyRow.shiftName(), dailyRow.status(),
+                        dailyRow.late() ? "Yes" : "", dailyRow.checkIn() == null ? "" : dailyRow.checkIn().text(), dailyRow.checkOut() == null ? "" : dailyRow.checkOut().text(),
+                        dailyRow.checkIn() == null ? "" : dailyRow.checkIn().local() != null ? dailyRow.checkIn().local() : dailyRow.checkIn().text(),
+                        dailyRow.checkOut() == null ? "" : dailyRow.checkOut().local() != null ? dailyRow.checkOut().local() : dailyRow.checkOut().text(),
+                        dailyRow.hours() != 0 ? String.format(Locale.ROOT, "%.2f", dailyRow.hours()) : ""));
             }
-            return new Export("jurisone-attendance-" + p.day() + ".csv", Csv.toCsv(List.of("Date", "Employee ID", "Name", "Department", "Team", "Shift", "Status", "Late",
+            return new Export("jurisone-attendance-" + registerParams.day() + ".csv", Csv.toCsv(List.of("Date", "Employee ID", "Name", "Department", "Team", "Shift", "Status", "Late",
                     "Check-in (" + tzName + ")", "Check-out (" + tzName + ")", "Check-in (local)", "Check-out (local)", "Worked hours"), rows));
         }
-        Monthly m = monthlyGrid(p);
+        Monthly monthly = monthlyGrid(registerParams);
         List<String> header = new ArrayList<>(List.of("Employee ID", "Name", "Department", "Team"));
-        m.days().forEach(d -> header.add(d.k()));
+        monthly.days().forEach(day -> header.add(day.date()));
         header.addAll(List.of("Present", "Absent / LOP", "Leave"));
         List<List<Object>> rows = new ArrayList<>();
-        for (GridRow r : m.rows()) {
-            List<Object> row = new ArrayList<>(List.of(r.code(), r.name(), r.department(), "IN".equals(r.region()) ? "India" : "US"));
-            for (int i = 0; i < r.cells().size(); i++) {
-                String c = r.cells().get(i).c();
-                row.add(!c.isEmpty() ? c : m.days().get(i).wk() ? "WO" : "");
+        for (GridRow gridRow : monthly.rows()) {
+            List<Object> row = new ArrayList<>(List.of(gridRow.code(), gridRow.name(), gridRow.department(), "IN".equals(gridRow.region()) ? "India" : "US"));
+            for (int i = 0; i < gridRow.cells().size(); i++) {
+                String code = gridRow.cells().get(i).code();
+                row.add(!code.isEmpty() ? code : monthly.days().get(i).weeklyOff() ? "WO" : "");
             }
-            row.add(r.P());
-            row.add(r.A());
-            row.add(r.L());
+            row.add(gridRow.present());
+            row.add(gridRow.absent());
+            row.add(gridRow.leave());
             rows.add(row);
         }
-        return new Export("jurisone-attendance-" + p.ym() + ".csv", Csv.toCsv(header, rows));
+        return new Export("jurisone-attendance-" + registerParams.month() + ".csv", Csv.toCsv(header, rows));
     }
 }

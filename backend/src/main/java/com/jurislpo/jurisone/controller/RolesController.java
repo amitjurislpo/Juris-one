@@ -39,9 +39,9 @@ public class RolesController {
 
     /** Roles are set up for a business by the platform super admin (from the role templates); its owner can only look at them. */
     private CurrentUser editor() {
-        CurrentUser u = auth.assertPerm("roles.manage");
-        if (!u.can(Permissions.PLATFORM_MANAGE)) throw new UserException(HttpStatus.FORBIDDEN, "Roles are set up for your business by JurisOne.");
-        return u;
+        CurrentUser user = auth.assertPerm("roles.manage");
+        if (!user.can(Permissions.PLATFORM_MANAGE)) throw new UserException(HttpStatus.FORBIDDEN, "Roles are set up for your business by JurisOne.");
+        return user;
     }
 
     @GetMapping
@@ -52,25 +52,25 @@ public class RolesController {
 
     /** Grant a permission to the role. */
     @PutMapping("/{id}/permissions/{perm}")
-    public ApiResult<Void> grant(@PathVariable String id, @PathVariable String perm, HttpServletRequest req) {
-        return ApiResult.message(roles.setPermission(editor(), id, perm, true, RequestMeta.of(req).ip()));
+    public ApiResult<Void> grant(@PathVariable String id, @PathVariable String perm, HttpServletRequest request) {
+        return ApiResult.message(roles.setPermission(editor(), id, perm, true, RequestMeta.of(request).ip()));
     }
 
     /** Take a permission away from the role. */
     @DeleteMapping("/{id}/permissions/{perm}")
-    public ApiResult<Void> revoke(@PathVariable String id, @PathVariable String perm, HttpServletRequest req) {
-        return ApiResult.message(roles.setPermission(editor(), id, perm, false, RequestMeta.of(req).ip()));
+    public ApiResult<Void> revoke(@PathVariable String id, @PathVariable String perm, HttpServletRequest request) {
+        return ApiResult.message(roles.setPermission(editor(), id, perm, false, RequestMeta.of(request).ip()));
     }
 
     /** Let people with this role assign {@code roleId} to others. */
     @PutMapping("/{id}/assignable-roles/{roleId}")
-    public ApiResult<Void> allowAssign(@PathVariable String id, @PathVariable String roleId, HttpServletRequest req) {
-        return ApiResult.message(roles.setAssignable(editor(), id, roleId, true, RequestMeta.of(req).ip()));
+    public ApiResult<Void> allowAssign(@PathVariable String id, @PathVariable String roleId, HttpServletRequest request) {
+        return ApiResult.message(roles.setAssignable(editor(), id, roleId, true, RequestMeta.of(request).ip()));
     }
 
     @DeleteMapping("/{id}/assignable-roles/{roleId}")
-    public ApiResult<Void> disallowAssign(@PathVariable String id, @PathVariable String roleId, HttpServletRequest req) {
-        return ApiResult.message(roles.setAssignable(editor(), id, roleId, false, RequestMeta.of(req).ip()));
+    public ApiResult<Void> disallowAssign(@PathVariable String id, @PathVariable String roleId, HttpServletRequest request) {
+        return ApiResult.message(roles.setAssignable(editor(), id, roleId, false, RequestMeta.of(request).ip()));
     }
 
     @PostMapping
@@ -81,7 +81,7 @@ public class RolesController {
     }
 
     @DeleteMapping("/{id}")
-    public ApiResult<Void> delete(@PathVariable String id, HttpServletRequest req) {
-        return ApiResult.message(roles.delete(editor(), id, RequestMeta.of(req).ip()));
+    public ApiResult<Void> delete(@PathVariable String id, HttpServletRequest request) {
+        return ApiResult.message(roles.delete(editor(), id, RequestMeta.of(request).ip()));
     }
 }

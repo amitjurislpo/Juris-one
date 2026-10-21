@@ -16,7 +16,7 @@ public class DashboardRepository {
 
     public record CurrentEmployee(UUID id, String region, boolean portalAccess, UUID departmentId) {}
 
-    public record Dept(UUID id, String name) {}
+    public record DepartmentRow(UUID id, String name) {}
 
     public record Member(UUID id, String name, String title) {}
 
@@ -53,8 +53,8 @@ public class DashboardRepository {
                 (rs, i) -> new CurrentEmployee((UUID) rs.getObject(1), rs.getString(2), rs.getBoolean(3), (UUID) rs.getObject(4)));
     }
 
-    public List<Dept> activeDepartments() {
-        return jdbc.query("SELECT id, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (rs, i) -> new Dept((UUID) rs.getObject(1), rs.getString(2)));
+    public List<DepartmentRow> activeDepartments() {
+        return jdbc.query("SELECT id, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (rs, i) -> new DepartmentRow((UUID) rs.getObject(1), rs.getString(2)));
     }
 
     /** India employees on the books by {@code lastDay} without a salary structure effective by then. */

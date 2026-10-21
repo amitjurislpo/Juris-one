@@ -20,8 +20,8 @@ class PeopleRulesTest {
 
     static final Map<String, String> R = Map.of("owner", "r-admin", "hrm", "r-hrm", "hre", "r-hre", "fm", "r-fm", "fe", "r-fe", "emp", "r-emp");
 
-    static Actor actor(String key, Set<String> perms, Set<String> assign, String dept) {
-        return new Actor("me", key.equals("emp") ? "employee" : key, perms, assign.stream().map(R::get).collect(Collectors.toSet()), dept, R.get("emp"));
+    static Actor actor(String key, Set<String> perms, Set<String> assign, String department) {
+        return new Actor("me", key.equals("emp") ? "employee" : key, perms, assign.stream().map(R::get).collect(Collectors.toSet()), department, R.get("emp"));
     }
 
     static Target target(String key) { return target(key, "t", EmployeeStatus.ACTIVE, false); }
@@ -167,7 +167,7 @@ class PeopleRulesTest {
                     Map.entry("fatherName", b.fatherName()), Map.entry("email", b.email()), Map.entry("phoneCountry", b.phoneCountry()), Map.entry("phone", b.phone()),
                     Map.entry("location", b.location()), Map.entry("joiningOffice", b.joiningOffice()), Map.entry("pan", b.pan()), Map.entry("aadhaar", b.aadhaar()),
                     Map.entry("uan", b.uan()), Map.entry("address", b.address()), Map.entry("designation", b.designation()), Map.entry("departmentId", b.departmentId()),
-                    Map.entry("managerId", b.managerId()), Map.entry("doj", b.doj()), Map.entry("shift", b.shift()), Map.entry("roleId", b.roleId())));
+                    Map.entry("managerId", b.managerId()), Map.entry("doj", b.dateOfJoining()), Map.entry("shift", b.shift()), Map.entry("roleId", b.roleId())));
             Stream.of(field.split(",")).forEach(f -> v.put(f, value));
             return new EmployeeInput(v.get("firstName"), v.get("middleName"), v.get("lastName"), v.get("fatherName"), v.get("email"), v.get("phoneCountry"),
                     v.get("phone"), v.get("location"), v.get("joiningOffice"), v.get("pan"), v.get("aadhaar"), v.get("uan"), v.get("address"), v.get("designation"),
@@ -203,7 +203,7 @@ class PeopleRulesTest {
         void usAndEdit() {
             EmployeeInput us = with("location", "US_ET");
             us = new EmployeeInput(us.firstName(), us.middleName(), us.lastName(), us.fatherName(), us.email(), us.phoneCountry(), us.phone(), "US_ET",
-                    us.joiningOffice(), "bad", "bad", us.uan(), us.address(), us.designation(), us.departmentId(), us.managerId(), us.doj(), us.shift(), us.roleId());
+                    us.joiningOffice(), "bad", "bad", us.uan(), us.address(), us.designation(), us.departmentId(), us.managerId(), us.dateOfJoining(), us.shift(), us.roleId());
             assertThat(stepErrors(2, us, false)).isEmpty();
             assertThat(stepErrors(1, with("phone", ""), true)).isEmpty();
             assertThat(with("location", "").locationOrDefault()).isEqualTo("IN_IST");

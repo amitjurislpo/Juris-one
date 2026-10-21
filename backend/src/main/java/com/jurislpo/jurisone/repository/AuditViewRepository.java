@@ -48,11 +48,11 @@ public class AuditViewRepository {
     }
 
     /** "Name (code)" by employee id (text). */
-    public Map<String, String> employeeLabels(String[] empIds) {
+    public Map<String, String> employeeLabels(String[] employeeIds) {
         Map<String, String> subjects = new LinkedHashMap<>();
         jdbc.query("SELECT id::text, full_name, code FROM employees WHERE id::text = ANY (?)", rs -> {
             subjects.put(rs.getString(1), rs.getString(2) + " (" + rs.getString(3) + ")");
-        }, (Object) empIds);
+        }, (Object) employeeIds);
         return subjects;
     }
 }

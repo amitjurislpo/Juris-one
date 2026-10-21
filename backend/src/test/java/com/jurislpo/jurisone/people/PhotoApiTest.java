@@ -138,15 +138,15 @@ class PhotoApiTest extends IntegrationTest {
 
     @Test
     void hrSetsAndRemovesAPhotoForSomeoneTheyMayEditAndNobodyElseDoes() throws Exception {
-        Person hr = person(data, hrmRole), emp = person(data, empRole), other = person(data, empRole), fin = person(data, finRole);
+        Person hr = person(data, hrmRole), employee = person(data, empRole), other = person(data, empRole), fin = person(data, finRole);
 
-        mvc.perform(putFor(hr, emp.id(), "image/png", PNG)).andExpect(status().isOk()).andExpect(jsonPath("$.data.photo").isNumber());
-        mvc.perform(get("/api/people/" + emp.id() + "/photo").cookie(other.cookie())).andExpect(status().isOk()).andExpect(content().contentType(MediaType.IMAGE_PNG));
-        assertThat(jdbc.queryForObject("SELECT actor_id FROM audit_log WHERE action = 'employee.photo_set' AND entity_id = ?", UUID.class, emp.id().toString())).isEqualTo(hr.id());
+        mvc.perform(putFor(hr, employee.id(), "image/png", PNG)).andExpect(status().isOk()).andExpect(jsonPath("$.data.photo").isNumber());
+        mvc.perform(get("/api/people/" + employee.id() + "/photo").cookie(other.cookie())).andExpect(status().isOk()).andExpect(content().contentType(MediaType.IMAGE_PNG));
+        assertThat(jdbc.queryForObject("SELECT actor_id FROM audit_log WHERE action = 'employee.photo_set' AND entity_id = ?", UUID.class, employee.id().toString())).isEqualTo(hr.id());
 
         // a plain employee can't set a colleague's photo (no people.add), nor can HR reach a role outside their list
-        mvc.perform(putFor(other, emp.id(), "image/png", PNG)).andExpect(status().isForbidden());
-        mvc.perform(write(delete("/api/people/" + emp.id() + "/photo")).cookie(other.cookie())).andExpect(status().isForbidden());
+        mvc.perform(putFor(other, employee.id(), "image/png", PNG)).andExpect(status().isForbidden());
+        mvc.perform(write(delete("/api/people/" + employee.id() + "/photo")).cookie(other.cookie())).andExpect(status().isForbidden());
         mvc.perform(putFor(hr, fin.id(), "image/png", PNG)).andExpect(status().isForbidden());
         // the same checks on the bytes apply
         mvc.perform(putFor(hr, other.id(), "image/jpeg", PNG)).andExpect(status().isUnprocessableEntity());
@@ -156,39 +156,39 @@ class PhotoApiTest extends IntegrationTest {
         jdbc.update("UPDATE employees SET status = 'EXITED', exit_date = current_date WHERE id = ?", other.id());
         mvc.perform(putFor(hr, other.id(), "image/png", PNG)).andExpect(status().isForbidden());
 
-        mvc.perform(write(delete("/api/people/" + emp.id() + "/photo")).cookie(hr.cookie())).andExpect(status().isOk());
-        mvc.perform(get("/api/people/" + emp.id() + "/photo").cookie(hr.cookie())).andExpect(status().isNotFound());
+        mvc.perform(write(delete("/api/people/" + employee.id() + "/photo")).cookie(hr.cookie())).andExpect(status().isOk());
+        mvc.perform(get("/api/people/" + employee.id() + "/photo").cookie(hr.cookie())).andExpect(status().isNotFound());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'employee.photo_remove' AND entity_id = ? AND actor_id = ?", Integer.class,
-                emp.id().toString(), hr.id())).isEqualTo(1);
+                employee.id().toString(), hr.id())).isEqualTo(1);
     }
 
     @Test
     void anotherBusinessCanNeitherSeeNorChangeThePhoto() throws Exception {
-        Person emp = person(data, empRole);
-        mvc.perform(putOwn(emp, "image/png", PNG)).andExpect(status().isOk());
+        Person employee = person(data, empRole);
+        mvc.perform(putOwn(employee, "image/png", PNG)).andExpect(status().isOk());
 
         TestData t2 = new TestData(jdbc).inBusiness("photo2-" + suffix);
         UUID hr2 = t2.role("hrm", "self", "dir", "people.view", "people.add");
         UUID emp2 = t2.role("employee", "self", "dir");
         jdbc.update("INSERT INTO role_assignable_roles (role_id, assignable_role_id) VALUES (?, ?) ON CONFLICT DO NOTHING", hr2, emp2);
         Person outsider = person(t2, emp2), hrOutside = person(t2, hr2);
-        mvc.perform(get("/api/people/" + emp.id() + "/photo").cookie(outsider.cookie())).andExpect(status().isNotFound());
-        mvc.perform(putFor(hrOutside, emp.id(), "image/png", PNG)).andExpect(status().isForbidden());
-        mvc.perform(write(delete("/api/people/" + emp.id() + "/photo")).cookie(hrOutside.cookie())).andExpect(status().isForbidden());
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM employee_photos WHERE employee_id = ?", Integer.class, emp.id())).isEqualTo(1);
+        mvc.perform(get("/api/people/" + employee.id() + "/photo").cookie(outsider.cookie())).andExpect(status().isNotFound());
+        mvc.perform(putFor(hrOutside, employee.id(), "image/png", PNG)).andExpect(status().isForbidden());
+        mvc.perform(write(delete("/api/people/" + employee.id() + "/photo")).cookie(hrOutside.cookie())).andExpect(status().isForbidden());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM employee_photos WHERE employee_id = ?", Integer.class, employee.id())).isEqualTo(1);
     }
 
     @Test
     void thePeopleProfileAndTeamPayloadsCarryThePhotoVersion() throws Exception {
-        Person hr = person(data, hrmRole), emp = person(data, empRole);
-        mvc.perform(putOwn(emp, "image/png", PNG)).andExpect(status().isOk());
-        Long v = jdbc.queryForObject("SELECT photo_updated_at FROM employees WHERE id = ?", java.sql.Timestamp.class, emp.id()).getTime();
+        Person hr = person(data, hrmRole), employee = person(data, empRole);
+        mvc.perform(putOwn(employee, "image/png", PNG)).andExpect(status().isOk());
+        Long v = jdbc.queryForObject("SELECT photo_updated_at FROM employees WHERE id = ?", java.sql.Timestamp.class, employee.id()).getTime();
         String list = mvc.perform(get("/api/people").cookie(hr.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(list).contains("\"photo\":" + v);
-        String profile = mvc.perform(get("/api/people/" + emp.id()).cookie(hr.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String profile = mvc.perform(get("/api/people/" + employee.id()).cookie(hr.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(profile).contains("\"photo\":" + v);
         // My team: a manager sees their report's photo version
-        jdbc.update("UPDATE employees SET reporting_manager_id = ? WHERE id = ?", hr.id(), emp.id());
+        jdbc.update("UPDATE employees SET reporting_manager_id = ? WHERE id = ?", hr.id(), employee.id());
         mvc.perform(get("/api/team").cookie(hr.cookie())).andExpect(status().isOk()).andExpect(jsonPath("$.data.rows[0].photo").value(v));
     }
 }

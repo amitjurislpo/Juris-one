@@ -41,11 +41,11 @@ public class RoleTemplateService {
         List<TemplateView> templates = repo.findAll().stream().map(t -> new TemplateView(t.key(), t.name(), t.locked(), t.mandatory(), t.active(),
                 t.permissions(), t.assignable(), repo.businessesUsing(t.key()))).toList();
         List<Map<String, Object>> groups = new ArrayList<>();
-        for (Permissions.Group g : Permissions.GROUPS) {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("name", g.name());
-            m.put("permissions", g.keys().stream().map(k -> Map.of("key", k, "label", Permissions.LABELS.get(k))).toList());
-            groups.add(m);
+        for (Permissions.Group group : Permissions.GROUPS) {
+            Map<String, Object> view = new LinkedHashMap<>();
+            view.put("name", group.name());
+            view.put("permissions", group.keys().stream().map(k -> Map.of("key", k, "label", Permissions.LABELS.get(k))).toList());
+            groups.add(view);
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("templates", templates);
@@ -54,9 +54,9 @@ public class RoleTemplateService {
     }
 
     static String slug(String name) {
-        String s = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_").replaceAll("(^_|_$)", "");
-        if (s.isEmpty() || !Character.isLetter(s.charAt(0))) s = "r_" + s;
-        return s.substring(0, Math.min(40, s.length()));
+        String text = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_").replaceAll("(^_|_$)", "");
+        if (text.isEmpty() || !Character.isLetter(text.charAt(0))) text = "r_" + text;
+        return text.substring(0, Math.min(40, text.length()));
     }
 
     private List<String> permissions(String name, String key, List<String> in) {
@@ -84,40 +84,40 @@ public class RoleTemplateService {
         return name;
     }
 
-    public Map<String, String> create(CurrentUser u, TemplateInput in, String ip) {
-        if (in == null) throw new UserException(HttpStatus.BAD_REQUEST, "Role details are missing.");
-        String name = name(in.name(), null);
+    public Map<String, String> create(CurrentUser user, TemplateInput input, String ip) {
+        if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Role details are missing.");
+        String name = name(input.name(), null);
         String key = slug(name);
         if (!repo.find(key).isEmpty() || "super_admin".equals(key)) throw new UserException(HttpStatus.CONFLICT, "A role template with that name already exists.");
-        List<String> perms = permissions(name, key, in.permissions());
-        List<String> assign = assignable(key, in.assignable());
+        List<String> perms = permissions(name, key, input.permissions());
+        List<String> assign = assignable(key, input.assignable());
         repo.insert(key, name, perms, assign, repo.nextSortOrder());
-        audit.log(u.id(), "role_template.create", "role_template", key, null, Map.of("name", name, "permissions", perms, "assignable", assign), ip);
+        audit.log(user.id(), "role_template.create", "role_template", key, null, Map.of("name", name, "permissions", perms, "assignable", assign), ip);
         return Map.of("key", key);
     }
 
-    public void update(CurrentUser u, String key, TemplateInput in, String ip) {
-        if (in == null) throw new UserException(HttpStatus.BAD_REQUEST, "Role details are missing.");
-        Template t = repo.find(key).stream().findFirst().orElseThrow(() -> new UserException(HttpStatus.NOT_FOUND, "Role template not found."));
-        if (t.locked()) throw new UserException(t.name() + " is fixed and can't be changed.");
-        String name = name(in.name(), key);
-        boolean active = in.active() == null ? t.active() : in.active();
-        if (t.mandatory() && !active) throw new UserException(t.name() + " is part of every business and can't be switched off.");
-        List<String> perms = permissions(name, key, in.permissions());
-        List<String> assign = assignable(key, in.assignable());
+    public void update(CurrentUser user, String key, TemplateInput input, String ip) {
+        if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Role details are missing.");
+        Template template = repo.find(key).stream().findFirst().orElseThrow(() -> new UserException(HttpStatus.NOT_FOUND, "Role template not found."));
+        if (template.locked()) throw new UserException(template.name() + " is fixed and can't be changed.");
+        String name = name(input.name(), key);
+        boolean active = input.active() == null ? template.active() : input.active();
+        if (template.mandatory() && !active) throw new UserException(template.name() + " is part of every business and can't be switched off.");
+        List<String> perms = permissions(name, key, input.permissions());
+        List<String> assign = assignable(key, input.assignable());
         repo.update(key, name, perms, assign, active);
-        audit.log(u.id(), "role_template.update", "role_template", key,
-                Map.of("name", t.name(), "permissions", t.permissions(), "assignable", t.assignable(), "active", t.active()),
+        audit.log(user.id(), "role_template.update", "role_template", key,
+                Map.of("name", template.name(), "permissions", template.permissions(), "assignable", template.assignable(), "active", template.active()),
                 Map.of("name", name, "permissions", perms, "assignable", assign, "active", active), ip);
     }
 
-    public void delete(CurrentUser u, String key, String ip) {
-        Template t = repo.find(key).stream().findFirst().orElseThrow(() -> new UserException(HttpStatus.NOT_FOUND, "Role template not found."));
-        if (t.locked() || t.mandatory()) throw new UserException(t.name() + " is part of every business and can't be deleted.");
-        int n = repo.businessesUsing(key);
-        if (n > 0) throw new UserException(t.name() + " is used by " + n + " business" + (n == 1 ? "" : "es") + ". Remove it from them first, or switch it off.");
+    public void delete(CurrentUser user, String key, String ip) {
+        Template template = repo.find(key).stream().findFirst().orElseThrow(() -> new UserException(HttpStatus.NOT_FOUND, "Role template not found."));
+        if (template.locked() || template.mandatory()) throw new UserException(template.name() + " is part of every business and can't be deleted.");
+        int count = repo.businessesUsing(key);
+        if (count > 0) throw new UserException(template.name() + " is used by " + count + " business" + (count == 1 ? "" : "es") + ". Remove it from them first, or switch it off.");
         repo.delete(key);
-        audit.log(u.id(), "role_template.delete", "role_template", key, Map.of("name", t.name()), null, ip);
+        audit.log(user.id(), "role_template.delete", "role_template", key, Map.of("name", template.name()), null, ip);
     }
 
     /** Active templates for a new business: every mandatory one plus the chosen optional keys (unknown or inactive keys are refused). */

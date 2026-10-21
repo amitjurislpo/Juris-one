@@ -177,7 +177,7 @@ class SubscriptionApiTest extends IntegrationTest {
         mvc.perform(write(put("/api/roles/anything")).cookie(owner).content("{}")).andExpect(status().isPaymentRequired());
         mvc.perform(write(delete("/api/departments/" + UUID.randomUUID())).cookie(owner)).andExpect(status().isPaymentRequired());
         // signing out and marking notifications read are still allowed
-        mvc.perform(write(post("/api/auth/session/refresh")).cookie(owner)).andExpect(status().is(org.hamcrest.Matchers.not(402)));
+        mvc.perform(write(post("/api/auth/session-refreshes")).cookie(owner)).andExpect(status().is(org.hamcrest.Matchers.not(402)));
 
         // the owner can still take the employee list out
         byte[] xlsx = mvc.perform(get("/api/business/employees/export").cookie(owner)).andExpect(status().isOk())

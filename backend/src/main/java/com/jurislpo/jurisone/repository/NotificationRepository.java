@@ -16,8 +16,8 @@ public class NotificationRepository {
         this.em = em;
     }
 
-    public void persist(Notification n) {
-        em.persist(n);
+    public void persist(Notification notification) {
+        em.persist(notification);
     }
 
     /** Flushes pending inserts, then marks the policy's unread notifications read for one employee (null = everyone). */

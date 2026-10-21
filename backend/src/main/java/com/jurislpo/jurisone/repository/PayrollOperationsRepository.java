@@ -1,6 +1,6 @@
 package com.jurislpo.jurisone.repository;
 
-import com.jurislpo.jurisone.service.PayrollOpsService.Rev;
+import com.jurislpo.jurisone.service.PayrollOperationsService.SalaryRevision;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
@@ -12,13 +12,13 @@ import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** Data access for {@code PayrollOpsService}: runs, adjustments, close & publish, salary structures, payslips and exports. */
+/** Data access for {@code PayrollOperationsService}: runs, adjustments, close & publish, salary structures, payslips and exports. */
 @Repository
-public class PayrollOpsRepository {
+public class PayrollOperationsRepository {
 
     private final JdbcTemplate jdbc;
 
-    public PayrollOpsRepository(JdbcTemplate jdbc) {
+    public PayrollOperationsRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
@@ -41,8 +41,8 @@ public class PayrollOpsRepository {
     }
 
     /** id, attendance_locked_at, approved_by, approved_at of the month's run (empty when there is none). */
-    public List<Map<String, Object>> runForClose(String ym) {
-        return jdbc.queryForList("SELECT id, attendance_locked_at, approved_by, approved_at FROM payroll_runs WHERE month = ?", ym);
+    public List<Map<String, Object>> runForClose(String yearMonth) {
+        return jdbc.queryForList("SELECT id, attendance_locked_at, approved_by, approved_at FROM payroll_runs WHERE month = ?", yearMonth);
     }
 
     /** Closes the run if it is still open; returns the rows updated (0 = already closed). */
@@ -128,16 +128,16 @@ public class PayrollOpsRepository {
     // ── salary structures ──
 
     /** India employees not exited, optionally in one department ({@code deptId} null = all). */
-    public List<Map<String, Object>> structureEmployees(String deptId) {
-        boolean byDept = deptId != null;
+    public List<Map<String, Object>> structureEmployees(String departmentId) {
+        boolean byDepartment = departmentId != null;
         return jdbc.queryForList("SELECT id, code, full_name, designation, date_of_joining FROM employees WHERE region = 'IN' AND status <> 'EXITED'"
-                + (byDept ? " AND department_id = ?::uuid" : ""), byDept ? new Object[] {deptId} : new Object[0]);
+                + (byDepartment ? " AND department_id = ?::uuid" : ""), byDepartment ? new Object[] {departmentId} : new Object[0]);
     }
 
     /** An employee's salary revisions, newest first. */
-    public List<Rev> revisions(Object employeeId) {
+    public List<SalaryRevision> revisions(Object employeeId) {
         return jdbc.query("SELECT effective_from, basic, hra, lta, special, reason::text FROM salary_structures WHERE employee_id = ? ORDER BY effective_from DESC",
-                (rs, i) -> new Rev(rs.getDate(1).toLocalDate().toString(), rs.getLong(2), rs.getLong(3), rs.getLong(4), rs.getLong(5), rs.getString(6)), employeeId);
+                (rs, i) -> new SalaryRevision(rs.getDate(1).toLocalDate().toString(), rs.getLong(2), rs.getLong(3), rs.getLong(4), rs.getLong(5), rs.getString(6)), employeeId);
     }
 
     public List<Map<String, Object>> activeDepartments() {

@@ -51,9 +51,9 @@ public class AuthController {
      * 400 invalid input, 401 wrong credentials / blocked, 429 throttled.
      */
     @PostMapping("/session")
-    public ResponseEntity<ApiResult<Map<String, String>>> login(@RequestBody LoginRequest body, HttpServletRequest req) {
-        RequestMeta meta = RequestMeta.of(req);
-        com.jurislpo.jurisone.security.AuditTrail.hint(req, "identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(body.identifier()));
+    public ResponseEntity<ApiResult<Map<String, String>>> login(@RequestBody LoginRequest body, HttpServletRequest request) {
+        RequestMeta meta = RequestMeta.of(request);
+        com.jurislpo.jurisone.security.AuditTrail.hint(request, "identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(body.identifier()));
         boolean remember = Boolean.TRUE.equals(body.remember());
         AuthService.LoginResult r = auth.loginWithOtp(body.identifier(), body.otp(), remember, body.next(), meta);
         return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.SET_COOKIE, setCookies(r.cookies())).body(ApiResult.success(Map.of("redirect", r.redirect())));
@@ -62,30 +62,30 @@ public class AuthController {
     /** Email a 6-digit sign-in code (always the same answer, so it doesn't reveal who has an account). */
     @PostMapping("/otp-requests")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Void> requestOtp(@RequestBody OtpRequest body, HttpServletRequest req) {
-        com.jurislpo.jurisone.security.AuditTrail.hint(req, "identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(body.email()));
-        return ApiResult.message(auth.requestOtp(body.email(), RequestMeta.of(req)));
+    public ApiResult<Void> requestOtp(@RequestBody OtpRequest body, HttpServletRequest request) {
+        com.jurislpo.jurisone.security.AuditTrail.hint(request, "identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(body.email()));
+        return ApiResult.message(auth.requestOtp(body.email(), RequestMeta.of(request)));
     }
 
     /**
-     * Renew the access token with the refresh cookie (rotates the refresh token). 200 + new cookies, or 401 and the
+     * Renew the access token with the refresh cookie (rotates the refresh token). 201 + new cookies, or 401 and the
      * cookies cleared when the session has ended, was revoked or the refresh token was replayed.
      */
-    @PostMapping("/session/refresh")
-    public ResponseEntity<?> refresh(HttpServletRequest req) {
+    @PostMapping("/session-refreshes")
+    public ResponseEntity<?> refresh(HttpServletRequest request) {
         try {
-            SessionService.Issued issued = sessions.refresh(JwtAuthFilter.cookie(req, SessionService.REFRESH_COOKIE), RequestMeta.of(req));
-            return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, setCookies(issued.cookies())).body(ApiResult.success());
+            SessionService.Issued issued = sessions.refresh(JwtAuthFilter.cookie(request, SessionService.REFRESH_COOKIE), RequestMeta.of(request));
+            return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.SET_COOKIE, setCookies(issued.cookies())).body(ApiResult.success());
         } catch (SessionService.RefreshRefused e) {
-            ProblemDetail p = Problems.of(HttpStatus.UNAUTHORIZED, Problems.UNAUTHENTICATED, UnauthenticatedException.MESSAGE, req.getRequestURI());
+            ProblemDetail p = Problems.of(HttpStatus.UNAUTHORIZED, Problems.UNAUTHENTICATED, UnauthenticatedException.MESSAGE, request.getRequestURI());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).header(HttpHeaders.SET_COOKIE, setCookies(sessions.clearCookies())).body(p);
         }
     }
 
     /** Sign out: always 200; ends this session and clears the cookies. */
     @DeleteMapping("/session")
-    public ResponseEntity<ApiResult<Map<String, String>>> logout(HttpServletRequest req) {
-        auth.logout(current.current(), JwtAuthFilter.cookie(req, SessionService.REFRESH_COOKIE), RequestMeta.of(req));
+    public ResponseEntity<ApiResult<Map<String, String>>> logout(HttpServletRequest request) {
+        auth.logout(current.current(), JwtAuthFilter.cookie(request, SessionService.REFRESH_COOKIE), RequestMeta.of(request));
         return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, setCookies(sessions.clearCookies()))
                 .body(ApiResult.success(Map.of("redirect", "/login?signedout=1")));
     }

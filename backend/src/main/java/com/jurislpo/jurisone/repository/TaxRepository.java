@@ -17,33 +17,33 @@ public class TaxRepository {
     }
 
     /** Both regimes' tax tables for a financial year (slabs and surcharge as JSON text). */
-    public List<Map<String, Object>> taxYears(String fy) {
-        return jdbc.queryForList("SELECT regime::text AS regime, std_deduction, rebate_limit, marginal_relief, cess_rate, slabs::text AS slabs, surcharge::text AS surcharge FROM tax_years WHERE fy = ?", fy);
+    public List<Map<String, Object>> taxYears(String financialYear) {
+        return jdbc.queryForList("SELECT regime::text AS regime, std_deduction, rebate_limit, marginal_relief, cess_rate, slabs::text AS slabs, surcharge::text AS surcharge FROM tax_years WHERE fy = ?", financialYear);
     }
 
-    public List<Map<String, Object>> taxSections(String fy) {
-        return jdbc.queryForList("SELECT key, label, cap FROM tax_sections WHERE fy = ?", fy);
+    public List<Map<String, Object>> taxSections(String financialYear) {
+        return jdbc.queryForList("SELECT key, label, cap FROM tax_sections WHERE fy = ?", financialYear);
     }
 
-    public List<Map<String, Object>> declarationItems(UUID employeeId, String fy) {
-        return jdbc.queryForList("SELECT item_key, amount, status::text AS status FROM declaration_items WHERE employee_id = ? AND fy = ?", employeeId, fy);
+    public List<Map<String, Object>> declarationItems(UUID employeeId, String financialYear) {
+        return jdbc.queryForList("SELECT item_key, amount, status::text AS status FROM declaration_items WHERE employee_id = ? AND fy = ?", employeeId, financialYear);
     }
 
     /** metro and parents_senior of the employee's tax profile (empty when none). */
-    public List<Map<String, Object>> profileFlags(UUID employeeId, String fy) {
-        return jdbc.queryForList("SELECT metro, parents_senior FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, fy);
+    public List<Map<String, Object>> profileFlags(UUID employeeId, String financialYear) {
+        return jdbc.queryForList("SELECT metro, parents_senior FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, financialYear);
     }
 
     /** Regime and previous-employer figures of the employee's tax profile (empty when none). */
-    public List<Map<String, Object>> profileRegime(UUID employeeId, String fy) {
-        return jdbc.queryForList("SELECT regime::text AS regime, regime_overridden, prev_employer_income, prev_employer_tds FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, fy);
+    public List<Map<String, Object>> profileRegime(UUID employeeId, String financialYear) {
+        return jdbc.queryForList("SELECT regime::text AS regime, regime_overridden, prev_employer_income, prev_employer_tds FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, financialYear);
     }
 
     /** Snapshots of the employee's closed payslips for months in [fromYm, beforeYm). */
-    public List<Map<String, Object>> closedPayslipSnapshots(UUID employeeId, String fromYm, String beforeYm) {
+    public List<Map<String, Object>> closedPayslipSnapshots(UUID employeeId, String fromMonth, String beforeMonth) {
         return jdbc.queryForList("""
             SELECT p.snapshot::text AS snapshot, r.month FROM payslips p JOIN payroll_runs r ON r.id = p.run_id
-            WHERE p.employee_id = ? AND r.status = 'CLOSED' AND r.month >= ? AND r.month < ?""", employeeId, fromYm, beforeYm);
+            WHERE p.employee_id = ? AND r.status = 'CLOSED' AND r.month >= ? AND r.month < ?""", employeeId, fromMonth, beforeMonth);
     }
 
     public Map<String, Object> employmentDates(UUID employeeId) {

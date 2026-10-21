@@ -93,10 +93,15 @@ class AuditTrailApiTest extends IntegrationTest {
         return "{\"name\":\"Dept " + UUID.randomUUID().toString().substring(0, 8) + "\"}";
     }
 
+    /** The database clock: audit rows are stamped by the database, so comparing with the JVM clock can be off by a few milliseconds. */
+    /** The same clock the audit filter stamps its rows with (the JVM's), so "rows since now" never depends on drift between the JVM and the database container. */
+    Instant startOfTest() {
+        return Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    }
+
     @Test
     void everyWriteLeavesARowWhateverTheOutcome() throws Exception {
-        Person owner = person(data, ownerRole), emp = person(data, empRole);
-        Instant t0 = Instant.now();
+        Person owner = person(data, ownerRole), employee = person(data, empRole);
 
         // success: the row names the actor and business, how it ended, how long it took, and its id is in the response header
         MvcResult ok = mvc.perform(write(post("/api/departments")).cookie(owner.cookie()).content(dept())).andReturn();
@@ -114,22 +119,33 @@ class AuditTrailApiTest extends IntegrationTest {
         assertThat(row.get("at")).isNotNull();
 
         // a business rule refuses it (the service rolls back): still recorded
-        int bad = mvc.perform(write(post("/api/departments")).cookie(owner.cookie()).content("{\"name\":\"\"}")).andReturn().getResponse().getStatus();
+        MvcResult refused = mvc.perform(write(post("/api/departments")).cookie(owner.cookie()).content("{\"name\":\"\"}")).andReturn();
+        int bad = refused.getResponse().getStatus();
         assertThat(bad).isGreaterThanOrEqualTo(400);
         // no permission: 403
-        assertThat(mvc.perform(write(post("/api/departments")).cookie(emp.cookie()).content(dept())).andReturn().getResponse().getStatus()).isEqualTo(403);
+        MvcResult forbidden = mvc.perform(write(post("/api/departments")).cookie(employee.cookie()).content(dept())).andReturn();
+        assertThat(forbidden.getResponse().getStatus()).isEqualTo(403);
         // not signed in: 401, no actor
-        assertThat(mvc.perform(write(post("/api/departments")).content(dept())).andReturn().getResponse().getStatus()).isEqualTo(401);
+        MvcResult unauthenticated = mvc.perform(write(post("/api/departments")).content(dept())).andReturn();
+        assertThat(unauthenticated.getResponse().getStatus()).isEqualTo(401);
         // a request from another origin is turned away before any controller: recorded too
-        assertThat(mvc.perform(post("/api/departments").header("origin", "http://evil.example").header("host", "localhost:3005")
-                .contentType(MediaType.APPLICATION_JSON).cookie(owner.cookie()).content(dept())).andReturn().getResponse().getStatus()).isEqualTo(403);
+        MvcResult otherOrigin = mvc.perform(post("/api/departments").header("origin", "http://evil.example").header("host", "localhost:3005")
+                .contentType(MediaType.APPLICATION_JSON).cookie(owner.cookie()).content(dept())).andReturn();
+        assertThat(otherOrigin.getResponse().getStatus()).isEqualTo(403);
 
-        List<Map<String, Object>> posts = jdbc.queryForList("SELECT status, actor_id FROM audit_log WHERE path = '/api/departments' AND at >= ? ORDER BY at",
-                java.sql.Timestamp.from(t0));
-        assertThat(posts).hasSize(5);
-        assertThat(posts.stream().map(r -> r.get("status")).toList()).containsExactly(ok.getResponse().getStatus(), bad, 403, 401, 403);
+        // looked up by the request ids the API handed back, so the check does not depend on clocks or on other tests' rows
+        List<MvcResult> requests = List.of(ok, refused, forbidden, unauthenticated, otherOrigin);
+        List<Map<String, Object>> posts = new java.util.ArrayList<>();
+        for (MvcResult request : requests) {
+            String requestId = request.getResponse().getHeader("X-Request-Id");
+            assertThat(requestId).as("every response carries its request id").isNotNull();
+            List<Map<String, Object>> recorded = jdbc.queryForList("SELECT status, actor_id FROM audit_log WHERE request_id = ?", requestId);
+            assertThat(recorded).as("one audit row for request " + requestId).hasSize(1);
+            posts.add(recorded.get(0));
+        }
+        assertThat(posts.stream().map(row2 -> row2.get("status")).toList()).containsExactly(ok.getResponse().getStatus(), bad, 403, 401, 403);
         assertThat(posts.get(3).get("actor_id")).isNull();
-        assertThat(posts.get(2).get("actor_id")).isEqualTo(emp.id());
+        assertThat(posts.get(2).get("actor_id")).isEqualTo(employee.id());
     }
 
     @Test
@@ -149,7 +165,7 @@ class AuditTrailApiTest extends IntegrationTest {
     @Test
     void onlySensitiveReadsAreRecorded() throws Exception {
         Person owner = person(data, ownerRole);
-        Instant t0 = Instant.now();
+        Instant t0 = startOfTest();
         mvc.perform(get("/api/me").cookie(owner.cookie())).andExpect(status().isOk());
         mvc.perform(get("/api/departments").cookie(owner.cookie()));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE method = 'GET' AND at >= ? AND path IN ('/api/me', '/api/departments')",
@@ -178,29 +194,29 @@ class AuditTrailApiTest extends IntegrationTest {
 
     @Test
     void pageViewsAreRecordedForAnySignedInUser() throws Exception {
-        Person emp = person(data, empRole);
-        Instant t0 = Instant.now();
-        mvc.perform(write(post("/api/audit/page-views")).cookie(emp.cookie()).content("{\"path\":\"/leave?apply=1#x\"}")).andExpect(status().isOk());
-        List<Map<String, Object>> v = jdbc.queryForList("SELECT * FROM audit_log WHERE action = 'page.view' AND actor_id = ? AND at >= ?", emp.id(), java.sql.Timestamp.from(t0));
+        Person employee = person(data, empRole);
+        Instant t0 = startOfTest();
+        mvc.perform(write(post("/api/audit/page-views")).cookie(employee.cookie()).content("{\"path\":\"/leave?apply=1#x\"}")).andExpect(status().isCreated());
+        List<Map<String, Object>> v = jdbc.queryForList("SELECT * FROM audit_log WHERE action = 'page.view' AND actor_id = ? AND at >= ?", employee.id(), java.sql.Timestamp.from(t0));
         assertThat(v).hasSize(1);
         assertThat(v.get(0).get("entity")).isEqualTo("page");
         assertThat(v.get(0).get("entity_id")).isEqualTo("/leave");
         assertThat(v.get(0).get("business_id")).isEqualTo(data.business());
         // not a request row on top of it, and bad input is refused
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE path = '/api/audit/page-views'", Integer.class)).isZero();
-        mvc.perform(write(post("/api/audit/page-views")).cookie(emp.cookie()).content("{\"path\":\"leave\"}")).andExpect(status().isBadRequest());
+        mvc.perform(write(post("/api/audit/page-views")).cookie(employee.cookie()).content("{\"path\":\"leave\"}")).andExpect(status().isBadRequest());
         mvc.perform(write(post("/api/audit/page-views")).content("{\"path\":\"/leave\"}")).andExpect(status().isUnauthorized());
     }
 
     @Test
     void signInStepsAreRecordedWithoutSecrets() throws Exception {
-        Person emp = person(data, empRole); // signing in already happened once
-        Instant t0 = Instant.now();
-        mvc.perform(write(post("/api/auth/otp-requests")).content("{\"email\":\"" + emp.email() + "\"}")).andExpect(status().isCreated());
-        mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + emp.email() + "\",\"otp\":\"123456\"}")).andExpect(status().isUnauthorized());
+        Person employee = person(data, empRole); // signing in already happened once
+        Instant t0 = startOfTest();
+        mvc.perform(write(post("/api/auth/otp-requests")).content("{\"email\":\"" + employee.email() + "\"}")).andExpect(status().isCreated());
+        mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"" + employee.email() + "\",\"otp\":\"123456\"}")).andExpect(status().isUnauthorized());
         mvc.perform(write(post("/api/auth/session")).content("{\"identifier\":\"nobody@example.com\",\"otp\":\"123456\"}")).andExpect(status().isUnauthorized());
         java.sql.Timestamp since = java.sql.Timestamp.from(t0.minusSeconds(2));
-        List<String> mine = jdbc.queryForList("SELECT action FROM audit_log WHERE actor_id = ? AND at >= ? ORDER BY at", String.class, emp.id(), since);
+        List<String> mine = jdbc.queryForList("SELECT action FROM audit_log WHERE actor_id = ? AND at >= ? ORDER BY at", String.class, employee.id(), since);
         assertThat(mine).contains("auth.otp_requested", "auth.login_failed");
         // the request rows carry the status and a masked identifier, never the address in full or any code
         List<Map<String, Object>> req = new java.util.ArrayList<>(jdbc.queryForList(
@@ -209,13 +225,13 @@ class AuditTrailApiTest extends IntegrationTest {
         assertThat(req).hasSize(3);
         assertThat(req.get(0).get("path")).isEqualTo("/api/auth/otp-requests");
         assertThat(req.stream().map(r -> r.get("status")).toList()).containsExactly(201, 401, 401);
-        assertThat(req.get(1).get("after").toString()).contains("\"identifier\"").doesNotContain(emp.email());
+        assertThat(req.get(1).get("after").toString()).contains("\"identifier\"").doesNotContain(employee.email());
         assertThat(req.get(2).get("after").toString()).contains("n***@example.com");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE at >= ? AND (\"after\"::text LIKE '%123456%' OR \"after\"::text LIKE '%000000%')", Integer.class, since)).isZero();
         // a successful sign-in: the semantic row and the request row
-        int before = jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'auth.login'", Integer.class, emp.id());
-        SignIn.session(mvc, emp.email()).andExpect(status().isCreated());
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'auth.login'", Integer.class, emp.id())).isEqualTo(before + 1);
+        int before = jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'auth.login'", Integer.class, employee.id());
+        SignIn.session(mvc, employee.email()).andExpect(status().isCreated());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'auth.login'", Integer.class, employee.id())).isEqualTo(before + 1);
     }
 
     @Test
@@ -228,7 +244,7 @@ class AuditTrailApiTest extends IntegrationTest {
         mvc.perform(write(post("/api/departments")).cookie(ownerA.cookie()).content(dept())).andReturn();
         mvc.perform(write(post("/api/departments")).cookie(ownerB.cookie()).content(dept())).andReturn();
 
-        JsonNode all = json.readTree(mvc.perform(get("/api/platform/audit").param("days", "All").param("ev", "requests").param("take", "500").cookie(sa.cookie()))
+        JsonNode all = json.readTree(mvc.perform(get("/api/platform/audit").param("periodDays", "All").param("eventGroup", "requests").param("take", "500").cookie(sa.cookie()))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).get("data");
         assertThat(all.get("rows").toString()).contains("Business " + code).contains("Business " + otherCode);
         JsonNode first = all.get("rows").get(0);
@@ -237,7 +253,7 @@ class AuditTrailApiTest extends IntegrationTest {
         assertThat(all.get("businesses").toString()).contains(other.business().toString());
 
         // filter by business
-        JsonNode onlyB = json.readTree(mvc.perform(get("/api/platform/audit").param("days", "All").param("biz", other.business().toString()).cookie(sa.cookie()))
+        JsonNode onlyB = json.readTree(mvc.perform(get("/api/platform/audit").param("periodDays", "All").param("businessId", other.business().toString()).cookie(sa.cookie()))
                 .andReturn().getResponse().getContentAsString()).get("data");
         assertThat(onlyB.get("total").asInt()).isGreaterThan(0);
         for (JsonNode r : onlyB.get("rows")) assertThat(r.get("business").asText()).isEqualTo("Business " + otherCode);

@@ -36,24 +36,24 @@ public class InboxService {
     }
 
     /** {@code unreadOnly}: just the unread ones; {@code limit} (≤ 100) overrides the page size for cards; {@code page} from 1. */
-    public Page list(CurrentUser u, boolean unreadOnly, Integer limit, Integer page) {
+    public Page list(CurrentUser user, boolean unreadOnly, Integer limit, Integer page) {
         int size = limit == null ? PAGE : Math.max(1, Math.min(100, limit));
         int p = page == null || page < 1 ? 1 : page;
-        int total = repo.count(u.id(), unreadOnly);
-        List<Item> items = repo.page(u.id(), unreadOnly, size, (p - 1) * size);
-        return new Page(items, unread(u.id()), total, p, Math.max(1, (total + size - 1) / size));
+        int total = repo.count(user.id(), unreadOnly);
+        List<Item> items = repo.page(user.id(), unreadOnly, size, (p - 1) * size);
+        return new Page(items, unread(user.id()), total, p, Math.max(1, (total + size - 1) / size));
     }
 
     public static Item item(String id, String text, String link, Timestamp created, Timestamp read, String kind) {
-        return new Item(id, text, link, Format.jsIso(created.toInstant()), read == null ? null : Format.jsIso(read.toInstant()),
+        return new Item(id, text, link, Format.isoTimestamp(created.toInstant()), read == null ? null : Format.isoTimestamp(read.toInstant()),
                 read == null && NotificationService.KIND_POLICY.equals(kind));
     }
 
     /** Marks one of the user's notifications read or unread. A pending policy notification can't be marked read. */
-    public String mark(CurrentUser u, String idRaw, Boolean read) {
+    public String mark(CurrentUser user, String idRaw, Boolean read) {
         UUID id = Check.uuid(idRaw);
         if (read == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean");
-        List<Map<String, Object>> rows = repo.findKindAndReadAt(id, u.id());
+        List<Map<String, Object>> rows = repo.findKindAndReadAt(id, user.id());
         if (rows.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Notification not found.");
         boolean sticky = NotificationService.KIND_POLICY.equals(rows.get(0).get("kind")) && rows.get(0).get("read_at") == null;
         if (read && sticky) throw new UserException("This stays until you accept the policy.");
@@ -63,12 +63,12 @@ public class InboxService {
     }
 
     /** Marks all of the user's notifications read, except policies still to accept. Returns how many. */
-    public int markAll(CurrentUser u) {
-        return repo.markAllRead(u.id());
+    public int markAll(CurrentUser user) {
+        return repo.markAllRead(user.id());
     }
 
     /** Newest notifications for the bell: unread first. */
-    public List<Item> recent(UUID employeeId, int n) {
-        return repo.recent(employeeId, n);
+    public List<Item> recent(UUID employeeId, int count) {
+        return repo.recent(employeeId, count);
     }
 }

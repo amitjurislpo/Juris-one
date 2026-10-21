@@ -64,7 +64,7 @@ class ProfileAndListApiTest extends IntegrationTest {
     void theListLeavesOutYourselfAndTheOwner() throws Exception {
         String hrList = mvc.perform(get("/api/people").cookie(hr)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(hrList).contains("LX-" + s, "LE-" + s).doesNotContain("LH-" + s, "LO-" + s);
-        mvc.perform(get("/api/people").cookie(hr)).andExpect(jsonPath("$.data.total").value(2)).andExpect(jsonPath("$.data.counts.cur").value(2));
+        mvc.perform(get("/api/people").cookie(hr)).andExpect(jsonPath("$.data.total").value(2)).andExpect(jsonPath("$.data.counts.current").value(2));
         String ownerList = mvc.perform(get("/api/people").cookie(owner)).andReturn().getResponse().getContentAsString();
         assertThat(ownerList).contains("LH-" + s, "LX-" + s, "LE-" + s).doesNotContain("LO-" + s);
         // the export has everyone but the owner (including the person exporting)

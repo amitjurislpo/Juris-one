@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** /api/departments (dept.manage) and /api/holidays (holidays.manage). */
 @RestController
-public class OrgController {
+public class OrganisationController {
 
     public record CreateDepartment(String name, String headId, String description) {}
 
@@ -29,41 +29,41 @@ public class OrgController {
     private final DepartmentsService departments;
     private final HolidaysService holidays;
 
-    public OrgController(Auth auth, DepartmentsService departments, HolidaysService holidays) {
+    public OrganisationController(Auth auth, DepartmentsService departments, HolidaysService holidays) {
         this.auth = auth;
         this.departments = departments;
         this.holidays = holidays;
     }
 
     @GetMapping("/api/departments")
-    public ApiResult<DepartmentsService.Page> departments(@RequestParam Map<String, String> sp) {
-        return ApiResult.success(departments.page(auth.requirePage("departments"), sp));
+    public ApiResult<DepartmentsService.Page> departments(@RequestParam Map<String, String> queryParams) {
+        return ApiResult.success(departments.page(auth.requirePage("departments"), queryParams));
     }
 
     @PostMapping("/api/departments")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Void> createDepartment(@RequestBody CreateDepartment body, HttpServletRequest req) {
-        return ApiResult.message(departments.create(auth.assertPerm("dept.manage"), body.name(), body.headId(), body.description(), RequestMeta.of(req).ip()));
+    public ApiResult<Void> createDepartment(@RequestBody CreateDepartment body, HttpServletRequest request) {
+        return ApiResult.message(departments.create(auth.assertPerm("dept.manage"), body.name(), body.headId(), body.description(), RequestMeta.of(request).ip()));
     }
 
     @DeleteMapping("/api/departments/{id}")
-    public ApiResult<Void> deleteDepartment(@PathVariable String id, HttpServletRequest req) {
-        return ApiResult.message(departments.delete(auth.assertPerm("dept.manage"), id, RequestMeta.of(req).ip()));
+    public ApiResult<Void> deleteDepartment(@PathVariable String id, HttpServletRequest request) {
+        return ApiResult.message(departments.delete(auth.assertPerm("dept.manage"), id, RequestMeta.of(request).ip()));
     }
 
     @GetMapping("/api/holidays")
-    public ApiResult<HolidaysService.Page> holidays(@RequestParam Map<String, String> sp) {
-        return ApiResult.success(holidays.page(auth.requirePage("holidays"), sp));
+    public ApiResult<HolidaysService.Page> holidays(@RequestParam Map<String, String> queryParams) {
+        return ApiResult.success(holidays.page(auth.requirePage("holidays"), queryParams));
     }
 
     @PostMapping("/api/holidays")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Void> addHoliday(@RequestBody AddHoliday body, HttpServletRequest req) {
-        return ApiResult.message(holidays.add(auth.assertPerm("holidays.manage"), body.date(), body.name(), body.region(), RequestMeta.of(req).ip()));
+    public ApiResult<Void> addHoliday(@RequestBody AddHoliday body, HttpServletRequest request) {
+        return ApiResult.message(holidays.add(auth.assertPerm("holidays.manage"), body.date(), body.name(), body.region(), RequestMeta.of(request).ip()));
     }
 
     @DeleteMapping("/api/holidays/{id}")
-    public ApiResult<Void> deleteHoliday(@PathVariable String id, HttpServletRequest req) {
-        return ApiResult.message(holidays.delete(auth.assertPerm("holidays.manage"), id, RequestMeta.of(req).ip()));
+    public ApiResult<Void> deleteHoliday(@PathVariable String id, HttpServletRequest request) {
+        return ApiResult.message(holidays.delete(auth.assertPerm("holidays.manage"), id, RequestMeta.of(request).ip()));
     }
 }

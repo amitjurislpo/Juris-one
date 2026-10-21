@@ -49,7 +49,7 @@ class LettersApiTest extends IntegrationTest {
     @Autowired BusinessSetupService setup;
 
     String suffix, e1Code;
-    UUID business, e1, e2, dept;
+    UUID business, e1, e2, department;
     Cookie hr, owner, fin, emp1, emp2;
 
     static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder b) {
@@ -83,9 +83,9 @@ class LettersApiTest extends IntegrationTest {
         e1Code = "L-E1-" + suffix;
         e1 = t.employee(e1Code, "e1." + suffix + "@example.com", empRole);
         e2 = t.employee("L-E2-" + suffix, "e2." + suffix + "@example.com", empRole);
-        dept = UUID.randomUUID();
-        jdbc.update("INSERT INTO departments (id, business_id, name) VALUES (?, ?, 'Operations')", dept, business);
-        jdbc.update("UPDATE employees SET department_id = ? WHERE id IN (?, ?)", dept, e1, e2);
+        department = UUID.randomUUID();
+        jdbc.update("INSERT INTO departments (id, business_id, name) VALUES (?, ?, 'Operations')", department, business);
+        jdbc.update("UPDATE employees SET department_id = ? WHERE id IN (?, ?)", department, e1, e2);
         seed(business);
         hr = signIn("hr." + suffix + "@example.com");
         owner = signIn("owner." + suffix + "@example.com");

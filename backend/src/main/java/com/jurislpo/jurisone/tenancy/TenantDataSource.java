@@ -32,17 +32,17 @@ public class TenantDataSource extends DelegatingDataSource {
         return apply(super.getConnection(username, password));
     }
 
-    private static Connection apply(Connection c) throws SQLException {
+    private static Connection apply(Connection connection) throws SQLException {
         UUID business = TenantContext.current();
-        try (Statement s = c.createStatement()) {
+        try (Statement s = connection.createStatement()) {
             // the UUID's own toString() is the only value interpolated — no user text reaches this SQL
             if (business == null) s.execute("RESET ROLE; SELECT set_config('app.business_id', '', false)");
             else s.execute("SET ROLE " + TENANT_ROLE + "; SELECT set_config('app.business_id', '" + business + "', false)");
         } catch (SQLException e) {
-            c.close();
+            connection.close();
             throw e;
         }
-        return c;
+        return connection;
     }
 
     /** Wraps the application's DataSource (Hikari) — Flyway, JDBC and JPA all go through it. */

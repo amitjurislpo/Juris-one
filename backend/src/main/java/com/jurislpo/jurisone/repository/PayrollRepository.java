@@ -19,8 +19,8 @@ public class PayrollRepository {
     }
 
     /** The id of the month's payroll run (empty when there is none). */
-    public List<Map<String, Object>> runIds(String ym) {
-        return jdbc.queryForList("SELECT id FROM payroll_runs WHERE month = ?", ym);
+    public List<Map<String, Object>> runIds(String yearMonth) {
+        return jdbc.queryForList("SELECT id FROM payroll_runs WHERE month = ?", yearMonth);
     }
 
     public List<Map<String, Object>> adjustments(Object runId) {
@@ -53,13 +53,13 @@ public class PayrollRepository {
     }
 
     /** (employee id, snapshot JSON text) of every payslip in the month's run. */
-    public List<Map.Entry<UUID, String>> payslipSnapshots(String ym) {
+    public List<Map.Entry<UUID, String>> payslipSnapshots(String yearMonth) {
         return jdbc.query("SELECT p.employee_id, p.snapshot::text FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE r.month = ?",
-                (rs, i) -> Map.entry((UUID) rs.getObject(1), rs.getString(2)), ym);
+                (rs, i) -> Map.entry((UUID) rs.getObject(1), rs.getString(2)), yearMonth);
     }
 
-    public List<Map<String, Object>> findRun(String ym) {
-        return jdbc.queryForList("SELECT id, month, status::text AS status, approved_at, closed_at, pay_date, attendance_locked_at, approved_by FROM payroll_runs WHERE month = ?", ym);
+    public List<Map<String, Object>> findRun(String yearMonth) {
+        return jdbc.queryForList("SELECT id, month, status::text AS status, approved_at, closed_at, pay_date, attendance_locked_at, approved_by FROM payroll_runs WHERE month = ?", yearMonth);
     }
 
     /** month and status of every run, oldest first. */

@@ -35,9 +35,9 @@ public class ProfileRepository {
 
     /** Removes the photo; true when there was one. */
     public boolean deletePhoto(UUID id) {
-        int n = jdbc.update("DELETE FROM employee_photos WHERE employee_id = ?", id);
+        int count = jdbc.update("DELETE FROM employee_photos WHERE employee_id = ?", id);
         jdbc.update("UPDATE employees SET photo_updated_at = NULL WHERE id = ?", id);
-        return n > 0;
+        return count > 0;
     }
 
     /** content_type, data and updated_at of the employee's photo (empty when none). */

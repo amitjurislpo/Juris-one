@@ -6,19 +6,19 @@ public final class MailTemplates {
 
     public record Content(String subject, String text, String html) {}
 
-    static String esc(String s) {
-        StringBuilder b = new StringBuilder();
-        for (char c : s.toCharArray()) {
-            switch (c) {
-                case '&' -> b.append("&amp;");
-                case '<' -> b.append("&lt;");
-                case '>' -> b.append("&gt;");
-                case '"' -> b.append("&quot;");
-                case '\'' -> b.append("&#39;");
-                default -> b.append(c);
+    static String esc(String text) {
+        StringBuilder builder = new StringBuilder();
+        for (char character : text.toCharArray()) {
+            switch (character) {
+                case '&' -> builder.append("&amp;");
+                case '<' -> builder.append("&lt;");
+                case '>' -> builder.append("&gt;");
+                case '"' -> builder.append("&quot;");
+                case '\'' -> builder.append("&#39;");
+                default -> builder.append(character);
             }
         }
-        return b.toString();
+        return builder.toString();
     }
 
     static String shell(String title, String body) {

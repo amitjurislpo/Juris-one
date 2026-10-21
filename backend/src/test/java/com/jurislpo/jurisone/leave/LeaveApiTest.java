@@ -59,9 +59,9 @@ class LeaveApiTest extends IntegrationTest {
         return b.header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON);
     }
 
-    /** GET /api/leave/preview for a full-day request. */
+    /** GET /api/leave/previews for a full-day request. */
     static MockHttpServletRequestBuilder preview(Person p, String type, LocalDate from, LocalDate to) {
-        return get("/api/leave/preview").cookie(p.cookie()).param("type", type).param("from", from.toString()).param("to", to.toString()).param("part", "FULL");
+        return get("/api/leave/previews").cookie(p.cookie()).param("type", type).param("from", from.toString()).param("to", to.toString()).param("part", "FULL");
     }
 
     static int seq = 7000;
@@ -78,8 +78,8 @@ class LeaveApiTest extends IntegrationTest {
         return new Person(id, c, new Cookie("jo_at", m.group(1)));
     }
 
-    void credit(UUID emp, String type, double days) {
-        jdbc.update("INSERT INTO leave_ledger (id, employee_id, leave_type, delta, reason, at) VALUES (?, ?, ?, ?, 'ADJUSTMENT', now())", UUID.randomUUID(), emp, type, BigDecimal.valueOf(days));
+    void credit(UUID employee, String type, double days) {
+        jdbc.update("INSERT INTO leave_ledger (id, employee_id, leave_type, delta, reason, at) VALUES (?, ?, ?, ?, 'ADJUSTMENT', now())", UUID.randomUUID(), employee, type, BigDecimal.valueOf(days));
     }
 
     /** The next Mon–Wed run at least a week out (no holidays in the test DB). */
@@ -130,7 +130,7 @@ class LeaveApiTest extends IntegrationTest {
         String id = jdbc.queryForObject("SELECT id::text FROM leave_requests WHERE employee_id = ?", String.class, e.id());
         mvc.perform(write(delete("/api/leave/requests/" + id)).cookie(other.cookie())).andExpect(jsonPath("$.detail").value("Only your pending requests can be cancelled."));
         mvc.perform(write(delete("/api/leave/requests/" + id)).cookie(e.cookie())).andExpect(jsonPath("$.msg").value("Leave request cancelled"));
-        mvc.perform(get("/api/leave?st=CANCELLED").cookie(e.cookie())).andExpect(jsonPath("$.data.requests[0].status").value("CANCELLED"));
+        mvc.perform(get("/api/leave?status=CANCELLED").cookie(e.cookie())).andExpect(jsonPath("$.data.requests[0].status").value("CANCELLED"));
     }
 
     @Test
@@ -146,7 +146,7 @@ class LeaveApiTest extends IntegrationTest {
         UUID reg = UUID.randomUUID();
         jdbc.update("INSERT INTO regularization_requests (id, employee_id, work_date, kind, proposed_out, status) VALUES (?, ?, ?, 'MISSED_CHECKOUT', ?, 'PENDING')",
                 reg, e.id(), Date.valueOf(day), Timestamp.from(AttendanceEngine.atLocal(day, "18:45", "Asia/Kolkata")));
-        mvc.perform(get("/api/approvals?tab=att").cookie(fin.cookie())).andExpect(jsonPath("$.data.regCards[?(@.id == '" + reg + "')].detail")
+        mvc.perform(get("/api/approvals?tab=regularizations").cookie(fin.cookie())).andExpect(jsonPath("$.data.regularizationCards[?(@.id == '" + reg + "')].detail")
                 .value(org.hamcrest.Matchers.hasItem("Checked in 9:30 AM · asks to set check-out to 6:45 PM")));
         mvc.perform(write(put("/api/attendance/regularizations/" + reg + "/decision")).cookie(fin.cookie()).content("{\"approve\":true}"))
                 .andExpect(jsonPath("$.msg").value("Approved Person " + e.code() + "’s missed check-out regularization"));

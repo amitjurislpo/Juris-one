@@ -13,9 +13,9 @@ public final class Tokens {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    public static String sha256(String s) {
+    public static String sha256(String text) {
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }

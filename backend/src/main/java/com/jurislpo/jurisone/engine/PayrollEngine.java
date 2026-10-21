@@ -41,12 +41,12 @@ public final class PayrollEngine {
     public static PayResult computePay(PayInput i) {
         double lop = Math.min(Math.max(0, i.lopDays()), i.eligibleDays());
         double paidDays = Math.max(0, i.eligibleDays() - lop);
-        Structure s = i.structure();
+        Structure structure = i.structure();
         List<PayLine> components = List.of(
-                new PayLine("Basic", s.basic(), earned(s.basic(), paidDays, i.daysInMonth())),
-                new PayLine("House rent allowance", s.hra(), earned(s.hra(), paidDays, i.daysInMonth())),
-                new PayLine("Leave travel allowance", s.lta(), earned(s.lta(), paidDays, i.daysInMonth())),
-                new PayLine("Special allowance", s.special(), earned(s.special(), paidDays, i.daysInMonth())));
+                new PayLine("Basic", structure.basic(), earned(structure.basic(), paidDays, i.daysInMonth())),
+                new PayLine("House rent allowance", structure.hra(), earned(structure.hra(), paidDays, i.daysInMonth())),
+                new PayLine("Leave travel allowance", structure.lta(), earned(structure.lta(), paidDays, i.daysInMonth())),
+                new PayLine("Special allowance", structure.special(), earned(structure.special(), paidDays, i.daysInMonth())));
         long grossEarned = components.stream().mapToLong(PayLine::earned).sum() + i.bonus();
         long pf = Math.round(i.pfRate() * Math.min(components.get(0).earned(), i.pfWageCeiling()));
         long pt = grossEarned > 0 ? i.professionalTax() : 0;
@@ -61,16 +61,16 @@ public final class PayrollEngine {
     }
 
     /** Days in [max(doj, 1st), min(exit, month end)] — 0 if not employed that month. */
-    public static int eligibleDays(YearMonth ym, LocalDate doj, LocalDate exit) {
-        LocalDate first = ym.atDay(1), last = ym.atEndOfMonth();
-        LocalDate from = doj.isAfter(first) ? doj : first;
+    public static int eligibleDays(YearMonth yearMonth, LocalDate dateOfJoining, LocalDate exit) {
+        LocalDate first = yearMonth.atDay(1), last = yearMonth.atEndOfMonth();
+        LocalDate from = dateOfJoining.isAfter(first) ? dateOfJoining : first;
         LocalDate to = exit != null && exit.isBefore(last) ? exit : last;
         if (from.isAfter(to)) return 0;
         return (int) ChronoUnit.DAYS.between(from, to) + 1;
     }
 
-    public static int daysInMonth(YearMonth ym) {
-        return ym.lengthOfMonth();
+    public static int daysInMonth(YearMonth yearMonth) {
+        return yearMonth.lengthOfMonth();
     }
 
     /** "Split" helper: Basic 50% · HRA 20% · LTA 5% · Special = the rest (paise, rupee-rounded). */

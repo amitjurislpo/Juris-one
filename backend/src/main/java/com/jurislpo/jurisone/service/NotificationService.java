@@ -24,23 +24,23 @@ public class NotificationService {
 
     /** In-app notification (bell); text is cut to 300 characters. Joins the caller's transaction. */
     public void notify(UUID employeeId, String text, String link) {
-        Notification n = new Notification();
-        n.setEmployeeId(employeeId);
-        n.setText(text.substring(0, Math.min(300, text.length())));
-        n.setLink(link);
-        repo.persist(n);
+        Notification notification = new Notification();
+        notification.setEmployeeId(employeeId);
+        notification.setText(text.substring(0, Math.min(300, text.length())));
+        notification.setLink(link);
+        repo.persist(notification);
     }
 
     /** A notification that stays unread until the employee accepts the policy (replaces an older one for the same policy). */
     public void notifyPolicy(UUID employeeId, String text, String link, UUID policyId) {
         clearPolicy(employeeId, policyId);
-        Notification n = new Notification();
-        n.setEmployeeId(employeeId);
-        n.setText(text.substring(0, Math.min(300, text.length())));
-        n.setLink(link);
-        n.setKind(KIND_POLICY);
-        n.setRefId(policyId);
-        repo.persist(n);
+        Notification notification = new Notification();
+        notification.setEmployeeId(employeeId);
+        notification.setText(text.substring(0, Math.min(300, text.length())));
+        notification.setLink(link);
+        notification.setKind(KIND_POLICY);
+        notification.setRefId(policyId);
+        repo.persist(notification);
     }
 
     /** Marks the policy's notifications read for one employee (null = everyone): accepted, replaced or archived. */

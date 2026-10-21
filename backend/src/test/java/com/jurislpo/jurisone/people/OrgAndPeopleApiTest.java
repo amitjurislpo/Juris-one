@@ -126,7 +126,7 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         String name = "Dept " + UUID.randomUUID().toString().substring(0, 6);
         mvc.perform(write(post("/api/departments")).cookie(hr).content("{\"name\":\"" + name + "\"}")).andExpect(status().isCreated()).andExpect(jsonPath("$.msg").value("Department “" + name + "” created"));
         mvc.perform(write(post("/api/departments")).cookie(hr).content("{\"name\":\"" + name.toUpperCase() + "\"}")).andExpect(jsonPath("$.detail").value("This department already exists."));
-        mvc.perform(get("/api/departments?q=" + name.substring(5)).cookie(hr)).andExpect(jsonPath("$.data.rows[0].name").value(name)).andExpect(jsonPath("$.data.rows[0].n").value(0));
+        mvc.perform(get("/api/departments?search=" + name.substring(5)).cookie(hr)).andExpect(jsonPath("$.data.rows[0].name").value(name)).andExpect(jsonPath("$.data.rows[0].employeeCount").value(0));
 
         mvc.perform(write(post("/api/holidays")).cookie(hr).content("{\"date\":\"2031-12-25\",\"name\":\"Christmas\",\"region\":\"ALL\"}"))
                 .andExpect(jsonPath("$.msg").value("Christmas added for everyone · Thu, 25 Dec 2031"));
@@ -138,7 +138,7 @@ class OrgAndPeopleApiTest extends IntegrationTest {
 
     @Test
     void hrAddsAnEmployeeAndNeverSeesSalary() throws Exception {
-        UUID dept = department("Ops " + UUID.randomUUID().toString().substring(0, 6));
+        UUID department = department("Ops " + UUID.randomUUID().toString().substring(0, 6));
         String financeCode = code();
         UUID finance = data.employee(financeCode, financeCode.toLowerCase() + "@example.com", finRole);
         Cookie hr = as(hrmRole);
@@ -146,7 +146,7 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         String body = """
             {"firstName":"Meera","middleName":"","lastName":"Joshi","fatherName":"Prakash Joshi","email":"%s","phoneCountry":"+91","phone":"98765 43210","location":"IN_IST","pan":"abcde1234f",
              "aadhaar":"2345 6789 0123","uan":"","address":"12 Lake Road, Pune","designation":"Associate","departmentId":"%s","managerId":"%s",
-             "doj":"2031-10-12","shift":"IN_DAY","roleId":"%s"}""".formatted(email.toUpperCase(), dept, finance, empRole);
+             "dateOfJoining":"2031-10-12","shift":"IN_DAY","roleId":"%s"}""".formatted(email.toUpperCase(), department, finance, empRole);
         JsonNode r = json.readTree(mvc.perform(write(post("/api/people")).cookie(hr).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
         assertThat(r.at("/msg").asText()).matches("Meera Joshi added as TE-\\d+ · Employee · salary structure pending with Finance · they sign in with the code emailed to their work email");
         String id = r.at("/data/id").asText();
@@ -175,28 +175,28 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         mvc.perform(write(put("/api/people/" + id)).cookie(hr).content(body.replace("Associate", "Senior Associate").replace("+91 98765 43210", "")))
                 .andExpect(jsonPath("$.msg").value("Saved changes for Meera Joshi"));
         assertThat(jdbc.queryForObject("SELECT phone_last4 FROM employees WHERE id = ?::uuid", String.class, id)).isEqualTo("3210"); // blank keeps
-        mvc.perform(write(put("/api/people/" + id + "/access")).cookie(hr).content("{\"on\":false}")).andExpect(jsonPath("$.msg").value("Meera Joshi can no longer sign in"));
+        mvc.perform(write(put("/api/people/" + id + "/access")).cookie(hr).content("{\"enabled\":false}")).andExpect(jsonPath("$.msg").value("Meera Joshi can no longer sign in"));
 
         // export: BOM + CRLF + header, no identity numbers
         mvc.perform(get("/api/people/export?status=All").cookie(hr)).andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("attachment; filename=\"jurisone-people-")))
                 .andExpect(content().string(org.hamcrest.Matchers.startsWith("﻿Employee ID,Name,Email,Designation,Department,Reporting manager,Manager ID,Location,Time zone,Shift,Role,Status,Portal access,Date of joining,Last working day\r\n")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("ABCDE1234F"))));
-        Cookie emp = as(empRole);
-        mvc.perform(get("/api/people/export").cookie(emp)).andExpect(status().isForbidden());
-        mvc.perform(get("/api/directory?q=Meera").cookie(emp)).andExpect(jsonPath("$.data.rows[0].name").value("Meera Joshi"));
+        Cookie employee = as(empRole);
+        mvc.perform(get("/api/people/export").cookie(employee)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/directory?search=Meera").cookie(employee)).andExpect(jsonPath("$.data.rows[0].name").value("Meera Joshi"));
     }
 
     @Test
     void hrCannotGiveRolesOutsideItsList() throws Exception {
-        UUID dept = department("Legal " + UUID.randomUUID().toString().substring(0, 6));
+        UUID department = department("Legal " + UUID.randomUUID().toString().substring(0, 6));
         String mc = code();
         UUID manager = data.employee(mc, mc.toLowerCase() + "@example.com", empRole);
         Cookie hr = as(hrmRole);
         String body = """
             {"firstName":"Raj","lastName":"Verma","fatherName":"K Verma","email":"raj.%s@example.com","phoneCountry":"+1","phone":"555 000 1111","location":"US_ET","pan":"",
-             "aadhaar":"","uan":"","address":"","designation":"Analyst","departmentId":"%s","managerId":"%s","doj":"2031-01-01","shift":"US_DAY","roleId":"%s"}"""
-                .formatted(UUID.randomUUID().toString().substring(0, 6), dept, manager, finRole);
+             "aadhaar":"","uan":"","address":"","designation":"Analyst","departmentId":"%s","managerId":"%s","dateOfJoining":"2031-01-01","shift":"US_DAY","roleId":"%s"}"""
+                .formatted(UUID.randomUUID().toString().substring(0, 6), department, manager, finRole);
         mvc.perform(write(post("/api/people")).cookie(hr).content(body)).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value("You can't give people the Fm role."));
     }
@@ -216,14 +216,14 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         mvc.perform(get("/api/people/" + ids[0]).cookie(lead)).andExpect(jsonPath("$.data.canConfirm").value(false));
         mvc.perform(get("/api/people/" + ids[0]).cookie(hr)).andExpect(jsonPath("$.data.canConfirm").value(true));
         // someone who can edit people but is neither admin nor HR is refused
-        mvc.perform(write(put("/api/people/" + ids[0] + "/confirm")).cookie(lead)).andExpect(status().isUnprocessableEntity());
+        mvc.perform(write(put("/api/people/" + ids[0] + "/status")).cookie(lead).content("{\"status\":\"ACTIVE\"}")).andExpect(status().isUnprocessableEntity());
         assertThat(jdbc.queryForObject("SELECT status::text FROM employees WHERE id = ?", String.class, ids[0])).isEqualTo("PROBATION");
-        mvc.perform(write(put("/api/people/" + ids[0] + "/confirm")).cookie(hr)).andExpect(status().isOk());
-        mvc.perform(write(put("/api/people/" + ids[1] + "/confirm")).cookie(owner)).andExpect(status().isOk());
+        mvc.perform(write(put("/api/people/" + ids[0] + "/status")).cookie(hr).content("{\"status\":\"ACTIVE\"}")).andExpect(status().isOk());
+        mvc.perform(write(put("/api/people/" + ids[1] + "/status")).cookie(owner).content("{\"status\":\"ACTIVE\"}")).andExpect(status().isOk());
         assertThat(jdbc.queryForObject("SELECT status::text FROM employees WHERE id = ?", String.class, ids[0])).isEqualTo("ACTIVE");
         assertThat(jdbc.queryForObject("SELECT status::text FROM employees WHERE id = ?", String.class, ids[1])).isEqualTo("ACTIVE");
         // already permanent: nothing left to confirm
-        mvc.perform(write(put("/api/people/" + ids[0] + "/confirm")).cookie(hr)).andExpect(status().isUnprocessableEntity());
+        mvc.perform(write(put("/api/people/" + ids[0] + "/status")).cookie(hr).content("{\"status\":\"ACTIVE\"}")).andExpect(status().isUnprocessableEntity());
         // changing a role is for the admin and HR only: a team lead editing sees just the current role and can't switch it
         mvc.perform(get("/api/people/form-options").param("id", ids[2].toString()).cookie(lead))
                 .andExpect(jsonPath("$.data.roles.length()").value(1));

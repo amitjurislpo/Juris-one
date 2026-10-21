@@ -53,20 +53,20 @@ public class AnnouncementController {
     /** {@code {title, body, audience?, pinned?, expiresOn?}} — published at once. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Map<String, String>> create(@RequestBody AnnouncementService.AnnouncementInput body, HttpServletRequest req) {
-        String id = announcements.create(manager(), body, RequestMeta.of(req).ip());
+    public ApiResult<Map<String, String>> create(@RequestBody AnnouncementService.AnnouncementInput body, HttpServletRequest request) {
+        String id = announcements.create(manager(), body, RequestMeta.of(request).ip());
         return ApiResult.success("Announcement published", Map.of("id", id));
     }
 
     @PutMapping("/{id}")
-    public ApiResult<Void> update(@PathVariable String id, @RequestBody AnnouncementService.AnnouncementInput body, HttpServletRequest req) {
-        announcements.update(manager(), id, body, RequestMeta.of(req).ip());
+    public ApiResult<Void> update(@PathVariable String id, @RequestBody AnnouncementService.AnnouncementInput body, HttpServletRequest request) {
+        announcements.update(manager(), id, body, RequestMeta.of(request).ip());
         return ApiResult.message("Announcement saved");
     }
 
     /** {@code {"status": "PUBLISHED" | "UNPUBLISHED"}} */
     @PutMapping("/{id}/status")
-    public ApiResult<Void> status(@PathVariable String id, @RequestBody StatusBody body, HttpServletRequest req) {
-        return ApiResult.message(announcements.setStatus(manager(), id, body.status(), RequestMeta.of(req).ip()));
+    public ApiResult<Void> status(@PathVariable String id, @RequestBody StatusBody body, HttpServletRequest request) {
+        return ApiResult.message(announcements.setStatus(manager(), id, body.status(), RequestMeta.of(request).ip()));
     }
 }

@@ -89,7 +89,7 @@ class PolicyApiTest extends IntegrationTest {
 
         // published: everything but the policy endpoints answers 428 until accepted
         mvc.perform(get("/api/me").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.pendingPolicies").value(1));
-        mvc.perform(get("/api/attendance/me").cookie(employee)).andExpect(status().isPreconditionRequired())
+        mvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isPreconditionRequired())
                 .andExpect(jsonPath("$.code").value("POLICY_ACK_REQUIRED"));
         mvc.perform(get("/api/policies").cookie(hr)).andExpect(status().isPreconditionRequired()); // HR too
         mvc.perform(get("/api/policies").cookie(owner)).andExpect(status().isOk()); // never the owner
@@ -105,7 +105,7 @@ class PolicyApiTest extends IntegrationTest {
         mvc.perform(write(post("/api/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated());
         mvc.perform(write(post("/api/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.msg").value("Already accepted"));
-        mvc.perform(get("/api/attendance/me").cookie(employee)).andExpect(status().isOk());
+        mvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isOk());
         var ack = jdbc.queryForMap("SELECT * FROM policy_acknowledgements WHERE employee_code = ?", employeeCode);
         assertThat(ack.get("policy_title")).isEqualTo("Code of conduct");
         assertThat(ack.get("version")).isEqualTo(1);
@@ -119,9 +119,9 @@ class PolicyApiTest extends IntegrationTest {
                 .andExpect(jsonPath("$.detail").value("Nothing has changed since version 1."));
         mvc.perform(write(put("/api/policies/" + id)).cookie(hr).content("{\"title\":\"Code of conduct\",\"body\":\"Be kind. Be on time. Be honest.\"}"))
                 .andExpect(status().isOk());
-        mvc.perform(get("/api/attendance/me").cookie(employee)).andExpect(status().isOk()); // a draft change asks nothing
+        mvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isOk()); // a draft change asks nothing
         publish(hr, id);
-        mvc.perform(get("/api/attendance/me").cookie(employee)).andExpect(status().isPreconditionRequired());
+        mvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isPreconditionRequired());
         mvc.perform(get("/api/policies/mine").cookie(employee)).andExpect(jsonPath("$.data[0].version").value(2))
                 .andExpect(jsonPath("$.data[0].acknowledgedAt").doesNotExist());
         mvc.perform(get("/api/policies/" + id).cookie(owner)).andExpect(jsonPath("$.data.versions.length()").value(2))

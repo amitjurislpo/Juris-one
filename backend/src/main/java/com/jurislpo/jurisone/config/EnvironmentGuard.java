@@ -55,7 +55,7 @@ public class EnvironmentGuard {
         return out;
     }
 
-    private static String blankTo(String v, String fallback) {
-        return v == null || v.isBlank() ? fallback : v;
+    private static String blankTo(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 }

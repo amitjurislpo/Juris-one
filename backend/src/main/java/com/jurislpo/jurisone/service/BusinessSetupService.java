@@ -45,28 +45,28 @@ public class BusinessSetupService {
 
     /** A default employee ID prefix: initials of the name ("Juris Consultants" → "JC"), 2–5 letters. */
     public static String defaultPrefix(String name) {
-        StringBuilder b = new StringBuilder();
-        for (String w : name.trim().split("\\s+")) if (!w.isEmpty() && Character.isLetter(w.charAt(0))) b.append(Character.toUpperCase(w.charAt(0)));
-        String p = b.length() >= 2 ? b.toString() : name.replaceAll("[^A-Za-z]", "").toUpperCase(Locale.ROOT);
+        StringBuilder builder = new StringBuilder();
+        for (String w : name.trim().split("\\s+")) if (!w.isEmpty() && Character.isLetter(w.charAt(0))) builder.append(Character.toUpperCase(w.charAt(0)));
+        String p = builder.length() >= 2 ? builder.toString() : name.replaceAll("[^A-Za-z]", "").toUpperCase(Locale.ROOT);
         if (p.length() < 2) p = (p + "XX").substring(0, 2);
         return p.substring(0, Math.min(5, p.length()));
     }
 
     /** Creates the business with every active role template (the demo seed and the platform company). */
-    public UUID create(NewBusiness b, UUID createdBy) {
-        return createWith(b, createdBy, templates.allActive());
+    public UUID create(NewBusiness newBusiness, UUID createdBy) {
+        return createWith(newBusiness, createdBy, templates.allActive());
     }
 
     /** Creates the business with the mandatory role templates plus the chosen optional ones (unknown or switched-off keys → 422, before anything is created). */
-    public UUID create(NewBusiness b, UUID createdBy, List<String> roleKeys) {
-        return createWith(b, createdBy, templates.forNewBusiness(roleKeys));
+    public UUID create(NewBusiness newBusiness, UUID createdBy, List<String> roleKeys) {
+        return createWith(newBusiness, createdBy, templates.forNewBusiness(roleKeys));
     }
 
-    private UUID createWith(NewBusiness b, UUID createdBy, List<RoleTemplateRepository.Template> roles) {
+    private UUID createWith(NewBusiness newBusiness, UUID createdBy, List<RoleTemplateRepository.Template> roles) {
         UUID id = UUID.randomUUID();
         TenantContext.run(null, () -> repo.insertBusiness(
-                id, b.name(), b.legalName(), b.code(), b.employeePrefix(), b.timeZone() == null ? "Asia/Kolkata" : b.timeZone(), b.contactEmail(),
-                b.contactPhone(), b.address(), b.gstin(), createdBy));
+                id, newBusiness.name(), newBusiness.legalName(), newBusiness.code(), newBusiness.employeePrefix(), newBusiness.timeZone() == null ? "Asia/Kolkata" : newBusiness.timeZone(), newBusiness.contactEmail(),
+                newBusiness.contactPhone(), newBusiness.address(), newBusiness.gstin(), createdBy));
         TenantContext.run(id, () -> initDefaults(createdBy, roles));
         return id;
     }
@@ -79,26 +79,26 @@ public class BusinessSetupService {
     private Map<String, UUID> initDefaults(UUID createdBy, List<RoleTemplateRepository.Template> roles) {
         requireBusiness();
         Map<String, UUID> ids = new HashMap<>();
-        for (RoleTemplateRepository.Template r : roles) {
-            List<UUID> existing = repo.findRoleIds(r.key());
+        for (RoleTemplateRepository.Template template : roles) {
+            List<UUID> existing = repo.findRoleIds(template.key());
             UUID id = existing.isEmpty() ? UUID.randomUUID() : existing.get(0);
             if (existing.isEmpty()) {
-                repo.insertRole(id, r.key(), r.name(), r.locked());
+                repo.insertRole(id, template.key(), template.name(), template.locked());
             }
-            ids.put(r.key(), id);
+            ids.put(template.key(), id);
         }
-        for (RoleTemplateRepository.Template r : roles) {
-            UUID id = ids.get(r.key());
+        for (RoleTemplateRepository.Template template : roles) {
+            UUID id = ids.get(template.key());
             // a role's permissions and assignable roles are written only when it has none yet (the owner role is locked and always complete)
             long has = repo.countPermissions(id);
-            if (has == 0 || r.locked()) {
+            if (has == 0 || template.locked()) {
                 repo.deletePermissions(id);
-                for (String p : r.permissions()) repo.insertPermission(id, p);
+                for (String p : template.permissions()) repo.insertPermission(id, p);
             }
             long hasAssign = repo.countAssignableRoles(id);
-            if (hasAssign == 0 || r.locked()) {
+            if (hasAssign == 0 || template.locked()) {
                 repo.deleteAssignableRoles(id);
-                for (String a : r.assignable()) {
+                for (String a : template.assignable()) {
                     UUID target = ids.containsKey(a) ? ids.get(a) : repo.findRoleIds(a).stream().findFirst().orElse(null);
                     if (target != null) repo.insertAssignableRole(id, target);
                 }
@@ -118,30 +118,30 @@ public class BusinessSetupService {
      * Gives the current business a role made from {@code t}: a snapshot of its permissions and assignable roles. Roles the
      * business already has whose template lets them add this one get linked to it too.
      */
-    public UUID addRole(RoleTemplateRepository.Template t) {
+    public UUID addRole(RoleTemplateRepository.Template template) {
         requireBusiness();
-        if (!repo.findRoleIds(t.key()).isEmpty()) throw new UserException(HttpStatus.CONFLICT, "This business already has the " + t.name() + " role.");
+        if (!repo.findRoleIds(template.key()).isEmpty()) throw new UserException(HttpStatus.CONFLICT, "This business already has the " + template.name() + " role.");
         UUID id = UUID.randomUUID();
-        repo.insertRole(id, t.key(), t.name(), t.locked());
-        copyTemplate(id, t);
-        for (Map<String, Object> r : repo.findRoleKeys()) {
-            RoleTemplateRepository.Template other = templates.any((String) r.get("key"));
-            if (other != null && other.assignable().contains(t.key())) repo.addAssignableRole((UUID) r.get("id"), id);
+        repo.insertRole(id, template.key(), template.name(), template.locked());
+        copyTemplate(id, template);
+        for (Map<String, Object> roleKey : repo.findRoleKeys()) {
+            RoleTemplateRepository.Template other = templates.any((String) roleKey.get("key"));
+            if (other != null && other.assignable().contains(template.key())) repo.addAssignableRole((UUID) roleKey.get("id"), id);
         }
         return id;
     }
 
     /** Replaces the role's permissions and assignable roles with the template's current ones. */
-    public void syncRole(UUID roleId, RoleTemplateRepository.Template t) {
+    public void syncRole(UUID roleId, RoleTemplateRepository.Template template) {
         requireBusiness();
         repo.deletePermissions(roleId);
         repo.deleteAssignableRoles(roleId);
-        copyTemplate(roleId, t);
+        copyTemplate(roleId, template);
     }
 
-    private void copyTemplate(UUID roleId, RoleTemplateRepository.Template t) {
-        for (String p : t.permissions()) repo.insertPermission(roleId, p);
-        for (String a : t.assignable()) repo.findRoleIds(a).stream().findFirst().ifPresent(target -> repo.addAssignableRole(roleId, target));
+    private void copyTemplate(UUID roleId, RoleTemplateRepository.Template template) {
+        for (String p : template.permissions()) repo.insertPermission(roleId, p);
+        for (String a : template.assignable()) repo.findRoleIds(a).stream().findFirst().ifPresent(target -> repo.addAssignableRole(roleId, target));
     }
 
     public record NewOwner(String name, String email, String designation) {}
@@ -150,22 +150,22 @@ public class BusinessSetupService {
      * Adds a sub admin (owner) to the current business: an employee with the owner role and portal access, and a
      * user row (they sign in with the emailed code). Returns the employee id.
      */
-    public UUID addOwner(NewOwner o, UUID createdBy) {
+    public UUID addOwner(NewOwner newOwner, UUID createdBy) {
         requireBusiness();
-        return tx.execute(s -> insertOwner(o, createdBy)); // the code allocation lock holds until commit
+        return tx.execute(s -> insertOwner(newOwner, createdBy)); // the code allocation lock holds until commit
     }
 
-    private UUID insertOwner(NewOwner o, UUID createdBy) {
+    private UUID insertOwner(NewOwner newOwner, UUID createdBy) {
         Map<String, Object> biz = repo.findCurrentPrefixAndZone();
         String prefix = (String) biz.get("employee_prefix");
-        String tz = (String) biz.get("time_zone");
+        String timeZone = (String) biz.get("time_zone");
         UUID role = repo.findRoleId(OWNER);
         repo.lockCodeAllocation();
-        Integer n = repo.findMaxCodeNumber(prefix);
-        String code = prefix + "-" + String.format(Locale.ROOT, "%03d", (n == null ? 0 : n) + 1);
+        Integer count = repo.findMaxCodeNumber(prefix);
+        String code = prefix + "-" + String.format(Locale.ROOT, "%03d", (count == null ? 0 : count) + 1);
         UUID id = UUID.randomUUID();
-        repo.insertOwnerEmployee(id, code, o.name(), o.email().trim().toLowerCase(Locale.ROOT), o.designation() == null ? "Owner" : o.designation(), role,
-                LocalDate.now(ZoneId.of(tz)), tz, "Asia/Kolkata".equals(tz) ? "IN" : "US", createdBy);
+        repo.insertOwnerEmployee(id, code, newOwner.name(), newOwner.email().trim().toLowerCase(Locale.ROOT), newOwner.designation() == null ? "Owner" : newOwner.designation(), role,
+                LocalDate.now(ZoneId.of(timeZone)), timeZone, "Asia/Kolkata".equals(timeZone) ? "IN" : "US", createdBy);
         repo.insertUser(id);
         return id;
     }

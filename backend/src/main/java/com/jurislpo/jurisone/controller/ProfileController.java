@@ -41,38 +41,38 @@ public class ProfileController {
 
     @GetMapping("/api/profile")
     public ApiResult<Map<String, Object>> mine() {
-        CurrentUser u = auth.requirePage("profile");
-        Map<String, Object> p = new java.util.LinkedHashMap<>(profiles.mine(u));
-        p.put("documents", onboarding.employeeDocuments(u.id().toString()));
-        return ApiResult.success(p);
+        CurrentUser user = auth.requirePage("profile");
+        Map<String, Object> row = new java.util.LinkedHashMap<>(profiles.mine(user));
+        row.put("documents", onboarding.employeeDocuments(user.id().toString()));
+        return ApiResult.success(row);
     }
 
     /** {@code {fatherName, dateOfBirth, currentAddress, permanentAddress, emergencyName, emergencyRelation, emergencyPhoneCountry, emergencyPhone}} */
     @PutMapping("/api/profile")
-    public ApiResult<Void> update(@RequestBody ProfileService.ProfileInput body, HttpServletRequest req) {
-        return ApiResult.message(profiles.update(auth.requirePage("profile"), body, RequestMeta.of(req).ip()));
+    public ApiResult<Void> update(@RequestBody ProfileService.ProfileInput body, HttpServletRequest request) {
+        return ApiResult.message(profiles.update(auth.requirePage("profile"), body, RequestMeta.of(request).ip()));
     }
 
     /** My own photo: the raw image bytes (JPEG, PNG or WebP, at most 400 KB) as the request body. Answers {@code {photo: <version>}}. */
     @PutMapping("/api/profile/photo")
-    public ApiResult<Map<String, Long>> setPhoto(@RequestBody(required = false) byte[] body, @RequestHeader(value = HttpHeaders.CONTENT_TYPE, required = false) String type, HttpServletRequest req) {
-        long v = photos.setOwn(auth.requirePage("profile"), type, body, RequestMeta.of(req).ip());
+    public ApiResult<Map<String, Long>> setPhoto(@RequestBody(required = false) byte[] body, @RequestHeader(value = HttpHeaders.CONTENT_TYPE, required = false) String type, HttpServletRequest request) {
+        long v = photos.setOwn(auth.requirePage("profile"), type, body, RequestMeta.of(request).ip());
         return ApiResult.success("Photo saved", Map.of("photo", v));
     }
 
     @DeleteMapping("/api/profile/photo")
-    public ApiResult<Void> removePhoto(HttpServletRequest req) {
-        photos.removeOwn(auth.requirePage("profile"), RequestMeta.of(req).ip());
+    public ApiResult<Void> removePhoto(HttpServletRequest request) {
+        photos.removeOwn(auth.requirePage("profile"), RequestMeta.of(request).ip());
         return ApiResult.message("Photo removed");
     }
 
     @GetMapping("/api/profile/documents/{docId}/file")
     public ResponseEntity<byte[]> document(@PathVariable String docId) {
-        CurrentUser u = auth.requirePage("profile");
-        OnboardingService.FileOut f = onboarding.employeeDocument(u.id().toString(), docId);
-        if (f == null) throw new com.jurislpo.jurisone.exception.UserException(HttpStatus.NOT_FOUND, "File not found.");
-        return ResponseEntity.ok().contentType(MediaType.parseMediaType(f.mime()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().filename(f.name(), StandardCharsets.UTF_8).build().toString())
-                .header(HttpHeaders.CACHE_CONTROL, "private, no-store").header("X-Content-Type-Options", "nosniff").body(f.bytes());
+        CurrentUser user = auth.requirePage("profile");
+        OnboardingService.FileOut file = onboarding.employeeDocument(user.id().toString(), docId);
+        if (file == null) throw new com.jurislpo.jurisone.exception.UserException(HttpStatus.NOT_FOUND, "File not found.");
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(file.mime()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().filename(file.name(), StandardCharsets.UTF_8).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store").header("X-Content-Type-Options", "nosniff").body(file.bytes());
     }
 }

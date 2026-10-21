@@ -2,7 +2,7 @@ package com.jurislpo.jurisone.repository;
 
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.service.LeaveService.HolidayView;
-import com.jurislpo.jurisone.service.LeaveService.ReqRow;
+import com.jurislpo.jurisone.service.LeaveService.RequestRow;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -110,13 +110,13 @@ public class LeaveRepository {
     }
 
     /** The employee's requests ({@code status} "All" = every status); applied dates shown in {@code timeZone}. */
-    public List<ReqRow> findRequests(UUID employeeId, String status, String timeZone) {
+    public List<RequestRow> findRequests(UUID employeeId, String status, String timeZone) {
         return jdbc.query("""
             SELECT l.id::text AS id, t.name AS type_name, l.leave_type, l.from_date, l.to_date, l.part::text AS part, l.days, l.lop_days, l.applied_at,
                    l.reason, l.status::text AS status, d.full_name AS decided_by
             FROM leave_requests l JOIN leave_types t ON t.code = l.leave_type LEFT JOIN employees d ON d.id = l.decided_by
             WHERE l.employee_id = ? AND (? = 'All' OR l.status::text = ?)""",
-                (rs, i) -> new ReqRow(rs.getString("id"), rs.getString("type_name"), rs.getString("leave_type"), rs.getDate("from_date").toLocalDate().toString(),
+                (rs, i) -> new RequestRow(rs.getString("id"), rs.getString("type_name"), rs.getString("leave_type"), rs.getDate("from_date").toLocalDate().toString(),
                         rs.getDate("to_date").toLocalDate().toString(), rs.getString("part"), rs.getBigDecimal("days").doubleValue(),
                         rs.getBigDecimal("lop_days").doubleValue(), Format.isoInZone(rs.getTimestamp("applied_at").toInstant(), timeZone).toString(),
                         rs.getString("reason"), rs.getString("status"), rs.getString("decided_by"), rs.getTimestamp("applied_at").toInstant()),

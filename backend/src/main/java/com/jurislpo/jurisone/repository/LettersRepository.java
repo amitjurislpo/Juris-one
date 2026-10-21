@@ -66,11 +66,11 @@ public class LettersRepository {
     // ───────────────────────── issued letters ─────────────────────────
 
     /** The next reference number of the financial year (atomic; rolls back with the issuing transaction). */
-    public int nextNumber(String fy) {
-        Integer n = jdbc.queryForObject("""
+    public int nextNumber(String financialYear) {
+        Integer count = jdbc.queryForObject("""
             INSERT INTO letter_sequences (fy, last_no) VALUES (?, 1)
-            ON CONFLICT (business_id, fy) DO UPDATE SET last_no = letter_sequences.last_no + 1 RETURNING last_no""", Integer.class, fy);
-        return n == null ? 1 : n;
+            ON CONFLICT (business_id, fy) DO UPDATE SET last_no = letter_sequences.last_no + 1 RETURNING last_no""", Integer.class, financialYear);
+        return count == null ? 1 : count;
     }
 
     public void insertIssued(UUID id, String reference, UUID templateId, String templateName, int templateVersion, String type, boolean needsSalary, UUID employeeId,

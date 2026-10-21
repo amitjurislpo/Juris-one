@@ -1,109 +1,109 @@
 package com.jurislpo.jurisone.repository;
 
 import com.jurislpo.jurisone.service.TaxCatalogue;
-import com.jurislpo.jurisone.service.TaxOpsService.ItemView;
-import com.jurislpo.jurisone.service.TaxOpsService.ProofItem;
-import com.jurislpo.jurisone.service.TaxOpsService.ProofRow;
+import com.jurislpo.jurisone.service.TaxOperationsService.ItemView;
+import com.jurislpo.jurisone.service.TaxOperationsService.ProofItem;
+import com.jurislpo.jurisone.service.TaxOperationsService.ProofRow;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** Data access for {@code TaxOpsService}: tax profiles, declaration items and proofs. */
+/** Data access for {@code TaxOperationsService}: tax profiles, declaration items and proofs. */
 @Repository
-public class TaxOpsRepository {
+public class TaxOperationsRepository {
 
     private final JdbcTemplate jdbc;
 
-    public TaxOpsRepository(JdbcTemplate jdbc) {
+    public TaxOperationsRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
     // ── tax profiles ──
 
     /** The employee's tax profile for the Declare page (empty when none). */
-    public List<Map<String, Object>> declareProfile(UUID employeeId, String fy) {
+    public List<Map<String, Object>> declareProfile(UUID employeeId, String financialYear) {
         return jdbc.queryForList("SELECT regime::text AS regime, regime_overridden, metro, parents_senior, landlord_pan FROM tax_profiles WHERE employee_id = ? AND fy = ?",
-                employeeId, fy);
+                employeeId, financialYear);
     }
 
     /** Creates the default (new regime) profile unless one exists. */
-    public void ensureProfile(UUID employeeId, String fy) {
+    public void ensureProfile(UUID employeeId, String financialYear) {
         jdbc.update("INSERT INTO tax_profiles (employee_id, fy, regime, regime_overridden, metro, parents_senior, prev_employer_income, prev_employer_tds, updated_at) "
-                + "VALUES (?, ?, 'NEW', false, false, false, 0, 0, now()) ON CONFLICT (employee_id, fy) DO NOTHING", employeeId, fy);
+                + "VALUES (?, ?, 'NEW', false, false, false, 0, 0, now()) ON CONFLICT (employee_id, fy) DO NOTHING", employeeId, financialYear);
     }
 
     /** regime, regime_overridden and landlord_pan of an existing profile. */
-    public Map<String, Object> profileRegime(UUID employeeId, String fy) {
-        return jdbc.queryForMap("SELECT regime::text AS regime, regime_overridden, landlord_pan FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, fy);
+    public Map<String, Object> profileRegime(UUID employeeId, String financialYear) {
+        return jdbc.queryForMap("SELECT regime::text AS regime, regime_overridden, landlord_pan FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, financialYear);
     }
 
-    public void updateRegime(String regime, UUID employeeId, String fy) {
-        jdbc.update("UPDATE tax_profiles SET regime = ?::\"TaxRegime\", updated_at = now() WHERE employee_id = ? AND fy = ?", regime, employeeId, fy);
+    public void updateRegime(String regime, UUID employeeId, String financialYear) {
+        jdbc.update("UPDATE tax_profiles SET regime = ?::\"TaxRegime\", updated_at = now() WHERE employee_id = ? AND fy = ?", regime, employeeId, financialYear);
     }
 
-    public void updateProfileDetails(Boolean metro, Boolean parentsSenior, String landlordPan, UUID employeeId, String fy) {
+    public void updateProfileDetails(Boolean metro, Boolean parentsSenior, String landlordPan, UUID employeeId, String financialYear) {
         jdbc.update("UPDATE tax_profiles SET metro = ?, parents_senior = ?, landlord_pan = ?, updated_at = now() WHERE employee_id = ? AND fy = ?",
-                metro, parentsSenior, landlordPan, employeeId, fy);
+                metro, parentsSenior, landlordPan, employeeId, financialYear);
     }
 
     /** regime, metro and landlord_pan for the proof drawer (empty when no profile). */
-    public List<Map<String, Object>> proofProfile(UUID employeeId, String fy) {
-        return jdbc.queryForList("SELECT regime::text AS regime, metro, landlord_pan FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, fy);
+    public List<Map<String, Object>> proofProfile(UUID employeeId, String financialYear) {
+        return jdbc.queryForList("SELECT regime::text AS regime, metro, landlord_pan FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, financialYear);
     }
 
-    public List<String> regimeOf(UUID employeeId, String fy) {
-        return jdbc.queryForList("SELECT regime::text FROM tax_profiles WHERE employee_id = ? AND fy = ?", String.class, employeeId, fy);
+    public List<String> regimeOf(UUID employeeId, String financialYear) {
+        return jdbc.queryForList("SELECT regime::text FROM tax_profiles WHERE employee_id = ? AND fy = ?", String.class, employeeId, financialYear);
     }
 
     /** Finance sets the regime (creating the profile if needed) and marks it overridden. */
-    public void upsertOverriddenRegime(UUID employeeId, String fy, String regime) {
+    public void upsertOverriddenRegime(UUID employeeId, String financialYear, String regime) {
         jdbc.update("""
             INSERT INTO tax_profiles (employee_id, fy, regime, regime_overridden, metro, parents_senior, prev_employer_income, prev_employer_tds, updated_at)
             VALUES (?, ?, ?::"TaxRegime", true, false, false, 0, 0, now())
-            ON CONFLICT (employee_id, fy) DO UPDATE SET regime = EXCLUDED.regime, regime_overridden = true, updated_at = now()""", employeeId, fy, regime);
+            ON CONFLICT (employee_id, fy) DO UPDATE SET regime = EXCLUDED.regime, regime_overridden = true, updated_at = now()""", employeeId, financialYear, regime);
     }
 
-    public List<Map<String, Object>> previousEmployer(UUID employeeId, String fy) {
-        return jdbc.queryForList("SELECT prev_employer_income, prev_employer_tds FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, fy);
+    public List<Map<String, Object>> previousEmployer(UUID employeeId, String financialYear) {
+        return jdbc.queryForList("SELECT prev_employer_income, prev_employer_tds FROM tax_profiles WHERE employee_id = ? AND fy = ?", employeeId, financialYear);
     }
 
     /** Amounts in paise. */
-    public void upsertPreviousEmployer(UUID employeeId, String fy, long income, long tds) {
+    public void upsertPreviousEmployer(UUID employeeId, String financialYear, long income, long tds) {
         jdbc.update("""
             INSERT INTO tax_profiles (employee_id, fy, regime, regime_overridden, metro, parents_senior, prev_employer_income, prev_employer_tds, updated_at)
             VALUES (?, ?, 'NEW', false, false, false, ?, ?, now())
             ON CONFLICT (employee_id, fy) DO UPDATE SET prev_employer_income = EXCLUDED.prev_employer_income, prev_employer_tds = EXCLUDED.prev_employer_tds, updated_at = now()""",
-                employeeId, fy, income, tds);
+                employeeId, financialYear, income, tds);
     }
 
     // ── declaration items ──
 
     /** The employee's declaration items for the Declare page (amounts in rupees). */
-    public List<ItemView> itemViews(UUID employeeId, String fy) {
+    public List<ItemView> itemViews(UUID employeeId, String financialYear) {
         return jdbc.query("SELECT id::text, item_key, amount, status::text, proof_name, reject_reason FROM declaration_items WHERE employee_id = ? AND fy = ?",
-                (rs, i) -> new ItemView(rs.getString(1), rs.getString(2), rs.getLong(3) / 100.0, rs.getString(4), rs.getString(5), rs.getString(6)), employeeId, fy);
+                (rs, i) -> new ItemView(rs.getString(1), rs.getString(2), rs.getLong(3) / 100.0, rs.getString(4), rs.getString(5), rs.getString(6)), employeeId, financialYear);
     }
 
     /** id, amount and status of one declared item (empty when none). */
-    public List<Map<String, Object>> findItem(UUID employeeId, String fy, String itemKey) {
+    public List<Map<String, Object>> findItem(UUID employeeId, String financialYear, String itemKey) {
         return jdbc.queryForList("SELECT id, amount, status::text AS status FROM declaration_items WHERE employee_id = ? AND fy = ? AND item_key = ?",
-                employeeId, fy, itemKey);
+                employeeId, financialYear, itemKey);
     }
 
     /** Saves a declared amount (paise); the item goes back to Draft. */
-    public void upsertItemAmount(UUID id, UUID employeeId, String fy, String section, String itemKey, long amount) {
+    public void upsertItemAmount(UUID id, UUID employeeId, String financialYear, String section, String itemKey, long amount) {
         jdbc.update("""
             INSERT INTO declaration_items (id, employee_id, fy, section, item_key, amount, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', now())
             ON CONFLICT (employee_id, fy, item_key) DO UPDATE SET amount = EXCLUDED.amount, status = 'DRAFT', decided_by = NULL, decided_at = NULL,
-              reject_reason = NULL, updated_at = now()""", id, employeeId, fy, section, itemKey, amount);
+              reject_reason = NULL, updated_at = now()""", id, employeeId, financialYear, section, itemKey, amount);
     }
 
     /** Drafts with an amount (id, item_key, amount, proof_path). */
-    public List<Map<String, Object>> draftsWithAmount(UUID employeeId, String fy) {
+    public List<Map<String, Object>> draftsWithAmount(UUID employeeId, String financialYear) {
         return jdbc.queryForList("SELECT id, item_key, amount, proof_path FROM declaration_items WHERE employee_id = ? AND fy = ? AND status = 'DRAFT' AND amount > 0",
-                employeeId, fy);
+                employeeId, financialYear);
     }
 
     public void markPending(UUID[] ids) {
@@ -111,18 +111,18 @@ public class TaxOpsRepository {
     }
 
     /** status of one declared item (empty when none). */
-    public List<Map<String, Object>> itemStatus(UUID employeeId, String fy, String itemKey) {
-        return jdbc.queryForList("SELECT status::text AS status FROM declaration_items WHERE employee_id = ? AND fy = ? AND item_key = ?", employeeId, fy, itemKey);
+    public List<Map<String, Object>> itemStatus(UUID employeeId, String financialYear, String itemKey) {
+        return jdbc.queryForList("SELECT status::text AS status FROM declaration_items WHERE employee_id = ? AND fy = ? AND item_key = ?", employeeId, financialYear, itemKey);
     }
 
     /** Attaches a proof file to an item (creating it at ₹0); {@code reopen} sends a decided item back to Draft. */
-    public void upsertItemProof(UUID id, UUID employeeId, String fy, String section, String itemKey, String proofPath, String proofName, boolean reopen) {
+    public void upsertItemProof(UUID id, UUID employeeId, String financialYear, String section, String itemKey, String proofPath, String proofName, boolean reopen) {
         jdbc.update("""
             INSERT INTO declaration_items (id, employee_id, fy, section, item_key, amount, status, proof_path, proof_name, updated_at)
             VALUES (?, ?, ?, ?, ?, 0, 'DRAFT', ?, ?, now())
             ON CONFLICT (employee_id, fy, item_key) DO UPDATE SET proof_path = EXCLUDED.proof_path, proof_name = EXCLUDED.proof_name, updated_at = now()"""
                 + (reopen ? ", status = 'DRAFT', decided_by = NULL, decided_at = NULL, reject_reason = NULL" : ""),
-                id, employeeId, fy, section, itemKey, proofPath, proofName);
+                id, employeeId, financialYear, section, itemKey, proofPath, proofName);
     }
 
     /** employee_id, proof_path and proof_name of an item (empty when not found). */
@@ -133,7 +133,7 @@ public class TaxOpsRepository {
     // ── proofs (Finance) ──
 
     /** One row per employee with declarations or proofs this FY. */
-    public List<ProofRow> proofRows(String fy) {
+    public List<ProofRow> proofRows(String financialYear) {
         return jdbc.query("""
             SELECT e.id::text, e.full_name, e.code, d.name AS dept, COALESCE((SELECT t.regime::text FROM tax_profiles t WHERE t.employee_id = e.id AND t.fy = ?), 'NEW') AS reg,
                    (SELECT COALESCE(sum(i.amount), 0) FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ?) AS dec,
@@ -142,7 +142,7 @@ public class TaxOpsRepository {
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id
             WHERE EXISTS (SELECT 1 FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ? AND (i.amount > 0 OR i.proof_path IS NOT NULL))""",
                 (rs, i) -> new ProofRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4) == null ? "—" : rs.getString(4), rs.getString(5),
-                        rs.getLong(6), rs.getInt(7), rs.getInt(8)), fy, fy, fy, fy, fy);
+                        rs.getLong(6), rs.getInt(7), rs.getInt(8)), financialYear, financialYear, financialYear, financialYear, financialYear);
     }
 
     public Map<String, Object> employeeNameCode(UUID employeeId) {
@@ -150,13 +150,13 @@ public class TaxOpsRepository {
     }
 
     /** Items with an amount or a proof, by section. */
-    public List<ProofItem> proofItems(UUID employeeId, String fy) {
+    public List<ProofItem> proofItems(UUID employeeId, String financialYear) {
         return jdbc.query("""
             SELECT id::text, item_key, section, amount, status::text, proof_name, proof_path, reject_reason FROM declaration_items
             WHERE employee_id = ? AND fy = ? AND (amount > 0 OR proof_path IS NOT NULL) ORDER BY section ASC""",
                 (rs, i) -> new ProofItem(rs.getString(1), rs.getString(2), TaxCatalogue.ITEM_LABEL.getOrDefault(rs.getString(2), rs.getString(2)),
                         TaxCatalogue.SECTION_OF_ITEM.getOrDefault(rs.getString(2), rs.getString(3)), rs.getLong(4), rs.getString(5), rs.getString(6),
-                        rs.getString(7) != null, rs.getString(8)), employeeId, fy);
+                        rs.getString(7) != null, rs.getString(8)), employeeId, financialYear);
     }
 
     /** employee_id, item_key and amount of an item (empty when not found). */
@@ -171,8 +171,8 @@ public class TaxOpsRepository {
     }
 
     /** id, item_key and amount of the employee's pending items. */
-    public List<Map<String, Object>> pendingItems(UUID employeeId, String fy) {
-        return jdbc.queryForList("SELECT id, item_key, amount FROM declaration_items WHERE employee_id = ? AND fy = ? AND status = 'PENDING'", employeeId, fy);
+    public List<Map<String, Object>> pendingItems(UUID employeeId, String financialYear) {
+        return jdbc.queryForList("SELECT id, item_key, amount FROM declaration_items WHERE employee_id = ? AND fy = ? AND status = 'PENDING'", employeeId, financialYear);
     }
 
     public void approvePending(UUID decidedBy, UUID[] ids) {

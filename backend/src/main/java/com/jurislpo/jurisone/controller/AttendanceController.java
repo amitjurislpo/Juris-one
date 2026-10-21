@@ -35,15 +35,15 @@ public class AttendanceController {
     }
 
     /** ?m=YYYY-MM&d=YYYY-MM-DD; {@code tracked:false} when attendance isn't tracked for the user. */
-    @GetMapping("/api/attendance/me")
-    public ApiResult<MyAttendanceService.Page> me(@RequestParam Map<String, String> sp) {
-        return ApiResult.success(mine.page(auth.requirePage("attendance"), sp));
+    @GetMapping("/api/attendance/mine")
+    public ApiResult<MyAttendanceService.Page> me(@RequestParam Map<String, String> queryParams) {
+        return ApiResult.success(mine.page(auth.requirePage("attendance"), queryParams));
     }
 
     @PostMapping("/api/attendance/regularizations")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Void> requestRegularization(@RequestBody MyAttendanceService.RegInput body, HttpServletRequest req) {
-        return ApiResult.message(mine.requestRegularization(auth.assertPerm("self"), body, RequestMeta.of(req).ip()));
+    public ApiResult<Void> requestRegularization(@RequestBody MyAttendanceService.RegularizationInput body, HttpServletRequest request) {
+        return ApiResult.message(mine.requestRegularization(auth.assertPerm("self"), body, RequestMeta.of(request).ip()));
     }
 
     @DeleteMapping("/api/attendance/regularizations/{id}")
@@ -54,21 +54,21 @@ public class AttendanceController {
     /** Check in / check out ({@code {"expect": "IN" | "OUT"}} — the button the user saw). */
     @PostMapping("/api/attendance/punches")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Map<String, String>> punch(@RequestBody PunchRequest body, HttpServletRequest req) {
-        MyAttendanceService.PunchResult r = mine.punch(auth.assertPerm("self"), body.expect(), RequestMeta.of(req).ip());
+    public ApiResult<Map<String, String>> punch(@RequestBody PunchRequest body, HttpServletRequest request) {
+        MyAttendanceService.PunchResult r = mine.punch(auth.assertPerm("self"), body.expect(), RequestMeta.of(request).ip());
         return ApiResult.success(r.msg(), Map.of("kind", r.kind()));
     }
 
     /** Register page data: daily log (?day=&tz=&st=) or monthly grid (?view=month&ym=), paged 50. */
-    @GetMapping("/api/register")
-    public ApiResult<Map<String, Object>> registerPage(@RequestParam Map<String, String> sp) {
-        return ApiResult.success(register.page(auth.requirePage("register"), sp));
+    @GetMapping("/api/attendance/register")
+    public ApiResult<Map<String, Object>> registerPage(@RequestParam Map<String, String> queryParams) {
+        return ApiResult.success(register.page(auth.requirePage("register"), queryParams));
     }
 
-    /** CSV (att.all) — same filters as the page; the original route path. */
-    @GetMapping("/api/attendance/register")
-    public ResponseEntity<byte[]> export(@RequestParam Map<String, String> sp) {
-        RegisterService.Export e = register.export(auth.assertPerm("att.all"), sp);
+    /** CSV (att.all) — same filters as the page. */
+    @GetMapping("/api/attendance/register/export")
+    public ResponseEntity<byte[]> export(@RequestParam Map<String, String> queryParams) {
+        RegisterService.Export e = register.export(auth.assertPerm("att.all"), queryParams);
         return PeopleController.csv(e.filename(), e.body());
     }
 }

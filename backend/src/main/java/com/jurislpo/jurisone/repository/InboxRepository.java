@@ -54,8 +54,8 @@ public class InboxRepository {
     }
 
     /** The newest n: unread first. */
-    public List<Item> recent(UUID employeeId, int n) {
+    public List<Item> recent(UUID employeeId, int count) {
         return jdbc.query("SELECT id::text, text, link, created_at, read_at, kind FROM notifications WHERE employee_id = ? ORDER BY read_at IS NOT NULL, created_at DESC LIMIT ?",
-                (rs, i) -> InboxService.item(rs.getString(1), rs.getString(2), rs.getString(3), rs.getTimestamp(4), rs.getTimestamp(5), rs.getString(6)), employeeId, n);
+                (rs, i) -> InboxService.item(rs.getString(1), rs.getString(2), rs.getString(3), rs.getTimestamp(4), rs.getTimestamp(5), rs.getString(6)), employeeId, count);
     }
 }

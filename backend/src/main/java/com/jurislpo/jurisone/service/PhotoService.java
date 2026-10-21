@@ -50,28 +50,28 @@ public class PhotoService {
     }
 
     /** Own photo ({@code /api/profile/photo}). Returns the new version stamp (epoch millis). */
-    public long setOwn(CurrentUser u, String declaredType, byte[] data, String ip) {
-        return store(u.id(), u.id(), declaredType, data, ip);
+    public long setOwn(CurrentUser user, String declaredType, byte[] data, String ip) {
+        return store(user.id(), user.id(), declaredType, data, ip);
     }
 
-    public void removeOwn(CurrentUser u, String ip) {
-        drop(u.id(), u.id(), ip);
+    public void removeOwn(CurrentUser user, String ip) {
+        drop(user.id(), user.id(), ip);
     }
 
     /** Someone else's photo: the same rule as editing that employee (people.add, role in reach); never an exited employee. */
-    public long setFor(CurrentUser u, String idRaw, String declaredType, byte[] data, String ip) {
-        UUID id = mayEdit(u, idRaw);
-        return store(u.id(), id, declaredType, data, ip);
+    public long setFor(CurrentUser user, String idRaw, String declaredType, byte[] data, String ip) {
+        UUID id = mayEdit(user, idRaw);
+        return store(user.id(), id, declaredType, data, ip);
     }
 
-    public void removeFor(CurrentUser u, String idRaw, String ip) {
-        drop(u.id(), mayEdit(u, idRaw), ip);
+    public void removeFor(CurrentUser user, String idRaw, String ip) {
+        drop(user.id(), mayEdit(user, idRaw), ip);
     }
 
-    private UUID mayEdit(CurrentUser u, String idRaw) {
+    private UUID mayEdit(CurrentUser user, String idRaw) {
         UUID id = Check.uuid(idRaw);
-        Target t = actors.target(id);
-        if (t == null || !PeopleRules.canEditEmployee(actors.actor(u), t) || t.status() == EmployeeStatus.EXITED) throw new UserException(HttpStatus.FORBIDDEN, "You can't change this person's photo.");
+        Target target = actors.target(id);
+        if (target == null || !PeopleRules.canEditEmployee(actors.actor(user), target) || target.status() == EmployeeStatus.EXITED) throw new UserException(HttpStatus.FORBIDDEN, "You can't change this person's photo.");
         return id;
     }
 
@@ -96,7 +96,7 @@ public class PhotoService {
     }
 
     /** Epoch millis of a {@code photo_updated_at} column value (null stays null) — the {@code photo} field of every payload. */
-    public static Long version(Object ts) {
-        return ts instanceof Timestamp t ? Long.valueOf(t.getTime()) : null;
+    public static Long version(Object timestamp) {
+        return timestamp instanceof Timestamp t ? Long.valueOf(t.getTime()) : null;
     }
 }

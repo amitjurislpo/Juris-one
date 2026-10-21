@@ -7,8 +7,10 @@ import com.jurislpo.jurisone.security.CurrentUser;
 import com.jurislpo.jurisone.service.AuditService;
 import com.jurislpo.jurisone.service.RateLimiter;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** /api/audit/page-views: the web app reports each page the signed-in user opens, so the trail shows where people went. */
@@ -31,18 +33,19 @@ public class AuditController {
 
     /** Any signed-in user. Path must start with "/" (the query is dropped, 200 characters at most). Over the per-session rate it is quietly ignored. */
     @PostMapping("/api/audit/page-views")
-    public ApiResult<Void> pageView(@RequestBody PageView body, HttpServletRequest req) {
-        CurrentUser u = auth.assertPerm();
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Void> pageView(@RequestBody PageView body, HttpServletRequest request) {
+        CurrentUser user = auth.assertPerm();
         String path = body == null || body.path() == null ? "" : body.path().trim();
-        int q = path.indexOf('?');
-        if (q >= 0) path = path.substring(0, q);
+        int queryStart = path.indexOf('?');
+        if (queryStart >= 0) path = path.substring(0, queryStart);
         int hash = path.indexOf('#');
         if (hash >= 0) path = path.substring(0, hash);
         if (!path.startsWith("/") || path.length() > 200 || path.chars().anyMatch(Character::isISOControl)) {
-            throw new com.jurislpo.jurisone.exception.UserException(org.springframework.http.HttpStatus.BAD_REQUEST, "Not a valid page path.");
+            throw new com.jurislpo.jurisone.exception.UserException(HttpStatus.BAD_REQUEST, "Not a valid page path.");
         }
-        if (limiter.rateLimit("page-views:" + u.sessionId(), MAX_PER_MINUTE, 60_000L).limited()) return ApiResult.message("ok");
-        audit.log(u.id(), "page.view", "page", path, RequestMeta.of(req).ip());
+        if (limiter.rateLimit("page-views:" + user.sessionId(), MAX_PER_MINUTE, 60_000L).limited()) return ApiResult.message("ok");
+        audit.log(user.id(), "page.view", "page", path, RequestMeta.of(request).ip());
         return ApiResult.message("ok");
     }
 }

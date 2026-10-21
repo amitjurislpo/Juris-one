@@ -6,54 +6,54 @@ import java.util.Map;
 import java.util.function.Function;
 
 /**
- * List state from the query string: ?q=&sort=&dir=&page= — invalid values fall back silently.
+ * List state from the query string: ?search=&sort=&sortDirection=&page= — invalid values fall back silently.
  */
-public record ListParams(String q, String sort, String dir, int page, int skip, int take) {
+public record ListParams(String search, String sort, String sortDirection, int page, int skip, int take) {
 
-    /** {@code str(sp, k)}: first value, cut to 200 chars. */
-    public static String str(Map<String, String> sp, String k, String dflt) {
-        String v = sp.get(k);
-        if (v == null) return dflt;
-        return v.substring(0, Math.min(200, v.length()));
+    /** {@code str(queryParams, key, defaultValue)}: first value, cut to 200 chars. */
+    public static String str(Map<String, String> queryParams, String key, String defaultValue) {
+        String value = queryParams.get(key);
+        if (value == null) return defaultValue;
+        return value.substring(0, Math.min(200, value.length()));
     }
 
     /** {@code pick}: the value if allowed, else the default. */
-    public static String pick(Map<String, String> sp, String k, List<String> allowed, String dflt) {
-        String v = str(sp, k, "");
-        return allowed.contains(v) ? v : dflt;
+    public static String pick(Map<String, String> queryParams, String key, List<String> allowed, String defaultValue) {
+        String value = str(queryParams, key, "");
+        return allowed.contains(value) ? value : defaultValue;
     }
 
-    public static ListParams of(Map<String, String> sp, List<String> sorts, String dflt, int pageSize, String dfltDir) {
+    public static ListParams of(Map<String, String> queryParams, List<String> sorts, String defaultSort, int pageSize, String defaultDirection) {
         int page;
         try {
-            page = Integer.parseInt(str(sp, "page", "1").trim().replaceAll("^(\\d+).*$", "$1"));
+            page = Integer.parseInt(str(queryParams, "page", "1").trim().replaceAll("^(\\d+).*$", "$1"));
         } catch (NumberFormatException e) {
             page = 1;
         }
         page = Math.max(1, Math.min(10_000, page == 0 ? 1 : page));
-        return new ListParams(str(sp, "q", "").trim(), pick(sp, "sort", sorts, dflt), pick(sp, "dir", List.of("asc", "desc"), dfltDir), page,
+        return new ListParams(str(queryParams, "search", "").trim(), pick(queryParams, "sort", sorts, defaultSort), pick(queryParams, "sortDirection", List.of("asc", "desc"), defaultDirection), page,
                 (page - 1) * pageSize, pageSize);
     }
 
-    public static ListParams of(Map<String, String> sp, List<String> sorts, String dflt) {
-        return of(sp, sorts, dflt, 25, "asc");
+    public static ListParams of(Map<String, String> queryParams, List<String> sorts, String defaultSort) {
+        return of(queryParams, sorts, defaultSort, 25, "asc");
     }
 
     public boolean asc() {
-        return "asc".equals(dir);
+        return "asc".equals(sortDirection);
     }
 
-    /** JS {@code (x > y ? 1 : x < y ? -1 : 0) * dir} on the chosen key; stable. */
+    /** JS {@code (x > y ? 1 : x < y ? -1 : 0) * sortDirection} on the chosen key; stable. */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public <T> Comparator<T> comparator(Map<String, Function<T, ? extends Comparable>> keys) {
         Function<T, ? extends Comparable> key = keys.get(sort);
-        Comparator<T> c = (a, b) -> {
+        Comparator<T> comparator = (a, b) -> {
             Comparable x = key.apply(a), y = key.apply(b);
             if (x == null && y == null) return 0;
             if (x == null) return -1;
             if (y == null) return 1;
             return Integer.signum(x.compareTo(y));
         };
-        return asc() ? c : c.reversed();
+        return asc() ? comparator : comparator.reversed();
     }
 }

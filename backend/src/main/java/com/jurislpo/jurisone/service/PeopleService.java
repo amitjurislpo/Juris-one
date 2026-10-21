@@ -55,63 +55,63 @@ public class PeopleService {
 
     // ───────────────────────── list ─────────────────────────
 
-    public record PersonRow(String id, String code, String name, String title, String dept, String manager, String loc, boolean india, String role,
-                            String status, boolean access, String doj, boolean canToggle, Long photo) {}
+    public record PersonRow(String id, String code, String name, String title, String department, String manager, String location, boolean india, String role,
+                            String status, boolean access, String dateOfJoining, boolean canToggle, Long photo) {}
 
-    public record Dept(String id, String name) {}
+    public record DepartmentSummary(String id, String name) {}
 
-    public record Page(List<PersonRow> rows, int total, int page, int take, List<Dept> depts, Map<String, Integer> counts, boolean seePay, boolean canAdd) {}
+    public record Page(List<PersonRow> rows, int total, int page, int take, List<DepartmentSummary> departments, Map<String, Integer> counts, boolean seePay, boolean canAdd) {}
 
-    public Page page(CurrentUser u, Map<String, String> sp) {
-        PeopleQuery pq = new PeopleQuery(sp, u.id());
-        Actor actor = actors.actor(u);
-        List<PersonRow> rows = repo.findPage(pq, t -> PeopleRules.canToggleAccess(actor, t));
-        Integer total = repo.count(pq);
-        List<Dept> depts = repo.findActiveDepartments();
-        Map<String, Integer> k = repo.countTabs(u.id());
-        return new Page(rows, total == null ? 0 : total, pq.ls.page(), pq.ls.take(), depts, k, u.perms().contains("struct.manage"), PeopleRules.canAddEmployees(actor));
+    public Page page(CurrentUser user, Map<String, String> queryParams) {
+        PeopleQuery peopleQuery = new PeopleQuery(queryParams, user.id());
+        Actor actor = actors.actor(user);
+        List<PersonRow> rows = repo.findPage(peopleQuery, t -> PeopleRules.canToggleAccess(actor, t));
+        Integer total = repo.count(peopleQuery);
+        List<DepartmentSummary> departments = repo.findActiveDepartments();
+        Map<String, Integer> counts = repo.countTabs(user.id());
+        return new Page(rows, total == null ? 0 : total, peopleQuery.listParams.page(), peopleQuery.listParams.take(), departments, counts, user.perms().contains("struct.manage"), PeopleRules.canAddEmployees(actor));
     }
 
     // ───────────────────────── directory (dir, everyone) ─────────────────────────
 
-    public record DirRow(String id, String name, String email, String title, String status, Long photo) {}
+    public record DirectoryRow(String id, String name, String email, String title, String status, Long photo) {}
 
-    public record Directory(List<DirRow> rows, int total, int page, int take, int nActive, List<Dept> depts) {}
+    public record Directory(List<DirectoryRow> rows, int total, int page, int take, int activeCount, List<DepartmentSummary> departments) {}
 
-    public Directory directory(Map<String, String> sp) {
-        com.jurislpo.jurisone.common.ListParams ls = com.jurislpo.jurisone.common.ListParams.of(sp, List.of("name", "email", "title", "st"), "name");
-        String st = com.jurislpo.jurisone.common.ListParams.pick(sp, "st", List.of("All", "Active", "Past"), "All");
-        String dept = com.jurislpo.jurisone.common.ListParams.str(sp, "dept", "All");
+    public Directory directory(Map<String, String> queryParams) {
+        com.jurislpo.jurisone.common.ListParams listParams = com.jurislpo.jurisone.common.ListParams.of(queryParams, List.of("name", "email", "title", "status"), "name");
+        String status = com.jurislpo.jurisone.common.ListParams.pick(queryParams, "status", List.of("All", "Active", "Past"), "All");
+        String departmentId = com.jurislpo.jurisone.common.ListParams.str(queryParams, "departmentId", "All");
         List<String> and = new ArrayList<>();
         List<Object> args = new ArrayList<>();
-        if (!"All".equals(st)) and.add("Past".equals(st) ? "status = 'EXITED'" : "status <> 'EXITED'");
-        if (!"All".equals(dept) && dept.matches("^[0-9a-f-]{36}$")) {
+        if (!"All".equals(status)) and.add("Past".equals(status) ? "status = 'EXITED'" : "status <> 'EXITED'");
+        if (!"All".equals(departmentId) && departmentId.matches("^[0-9a-f-]{36}$")) {
             and.add("department_id = ?::uuid");
-            args.add(dept);
+            args.add(departmentId);
         }
-        if (!ls.q().isEmpty()) {
+        if (!listParams.search().isEmpty()) {
             and.add("(full_name ILIKE ? OR email ILIKE ? OR designation ILIKE ?)");
-            for (int i = 0; i < 3; i++) args.add(PeopleQuery.like(ls.q()));
+            for (int i = 0; i < 3; i++) args.add(PeopleQuery.like(listParams.search()));
         }
         String where = and.isEmpty() ? "" : " WHERE " + String.join(" AND ", and);
-        String d = ls.asc() ? "ASC" : "DESC";
-        String order = switch (ls.sort()) {
-            case "email" -> "email " + d;
-            case "title" -> "designation " + d + ", full_name ASC";
-            case "st" -> "status " + d + ", full_name ASC";
-            default -> "full_name " + d;
+        String direction = listParams.asc() ? "ASC" : "DESC";
+        String order = switch (listParams.sort()) {
+            case "email" -> "email " + direction;
+            case "title" -> "designation " + direction + ", full_name ASC";
+            case "status" -> "status " + direction + ", full_name ASC";
+            default -> "full_name " + direction;
         };
-        List<DirRow> rows = repo.findDirectoryPage(where, order, args, ls.take(), ls.skip());
+        List<DirectoryRow> rows = repo.findDirectoryPage(where, order, args, listParams.take(), listParams.skip());
         Integer total = repo.countDirectory(where, args);
         Integer active = repo.countCurrent();
-        List<Dept> depts = repo.findActiveDepartments();
-        return new Directory(rows, total == null ? 0 : total, ls.page(), ls.take(), active == null ? 0 : active, depts);
+        List<DepartmentSummary> departments = repo.findActiveDepartments();
+        return new Directory(rows, total == null ? 0 : total, listParams.page(), listParams.take(), active == null ? 0 : active, departments);
     }
 
     // ───────────────────────── profile drawer ─────────────────────────
 
-    public record Profile(String id, String code, String name, String father, String email, String phone, String address, String pan, String aadhaar,
-                          String uan, String designation, String department, String manager, List<String> reports, String doj, String exit, String location,
+    public record Profile(String id, String code, String name, String fatherName, String email, String phone, String address, String pan, String aadhaar,
+                          String uan, String designation, String department, String manager, List<String> reports, String dateOfJoining, String exitDate, String location,
                           boolean india, String shift, String role, String status, boolean access, Long gross, boolean canEdit,
                           boolean canToggle, boolean canConfirm, Long photo) {}
 
@@ -121,81 +121,81 @@ public class PeopleService {
         return parts.size() > 1 ? "•••••, " + parts.get(parts.size() - 1) : "On file";
     }
 
-    public Profile profile(CurrentUser u, String idRaw) {
+    public Profile profile(CurrentUser user, String idRaw) {
         UUID id = Check.uuid(idRaw);
         List<Map<String, Object>> rs = repo.findProfile(id);
         if (rs.isEmpty()) throw new UserException("That employee no longer exists.");
-        Map<String, Object> e = rs.get(0);
-        Actor actor = actors.actor(u);
-        EmployeeStatus status = EmployeeStatus.valueOf((String) e.get("status_s"));
-        Target target = new Target(id.toString(), e.get("role_id").toString(), (String) e.get("role_key"), status, Boolean.TRUE.equals(e.get("is_super_admin")));
+        Map<String, Object> row = rs.get(0);
+        Actor actor = actors.actor(user);
+        EmployeeStatus status = EmployeeStatus.valueOf((String) row.get("status_s"));
+        Target target = new Target(id.toString(), row.get("role_id").toString(), (String) row.get("role_key"), status, Boolean.TRUE.equals(row.get("is_super_admin")));
 
         // Salary is fetched only for struct.manage — HR never receives it.
         Long gross = null;
-        if (u.perms().contains("struct.manage")) {
+        if (user.perms().contains("struct.manage")) {
             List<Long> g = repo.findGross(id, Date.valueOf(Format.todayIn(IST)));
             gross = g.isEmpty() ? 0L : g.get(0);
         }
-        boolean india = "IN".equals(e.get("region_s"));
+        boolean india = "IN".equals(row.get("region_s"));
         List<String> reports = repo.findCurrentReportNames(id);
-        String shift = e.get("shift_code") == null ? "—" : Shifts.label((String) e.get("shift_code"), (String) e.get("start_local"), (String) e.get("end_local"));
-        Date exit = (Date) e.get("exit_date");
-        return new Profile(id.toString(), (String) e.get("code"), (String) e.get("full_name"), e.get("father_name") == null ? "—" : (String) e.get("father_name"),
-                (String) e.get("email"), Masks.phone((String) e.get("phone_last4")), maskAddress(pii.decrypt((String) e.get("address_enc"))),
-                india ? Masks.pan((String) e.get("pan_last4")) : "—", india ? Masks.aadhaar((String) e.get("aadhaar_last4")) : "—",
-                india ? Masks.uan((String) e.get("uan_last4")) : "—", (String) e.get("designation"), e.get("dept") == null ? "—" : (String) e.get("dept"),
-                e.get("manager") == null ? "—" : (String) e.get("manager"), reports, ((Date) e.get("date_of_joining")).toLocalDate().toString(),
-                exit == null ? null : exit.toLocalDate().toString(), PeopleRules.locationOfTz((String) e.get("time_zone")).l(), india, shift,
-                (String) e.get("role_name"), status.name(), Boolean.TRUE.equals(e.get("portal_access")), gross,
-                PeopleRules.canEditEmployee(actor, target) && status != EmployeeStatus.EXITED, PeopleRules.canToggleAccess(actor, target), PeopleRules.canConfirm(actor, target), PhotoService.version(e.get("photo_updated_at")));
+        String shift = row.get("shift_code") == null ? "—" : Shifts.label((String) row.get("shift_code"), (String) row.get("start_local"), (String) row.get("end_local"));
+        Date exit = (Date) row.get("exit_date");
+        return new Profile(id.toString(), (String) row.get("code"), (String) row.get("full_name"), row.get("father_name") == null ? "—" : (String) row.get("father_name"),
+                (String) row.get("email"), Masks.phone((String) row.get("phone_last4")), maskAddress(pii.decrypt((String) row.get("address_enc"))),
+                india ? Masks.pan((String) row.get("pan_last4")) : "—", india ? Masks.aadhaar((String) row.get("aadhaar_last4")) : "—",
+                india ? Masks.uan((String) row.get("uan_last4")) : "—", (String) row.get("designation"), row.get("dept") == null ? "—" : (String) row.get("dept"),
+                row.get("manager") == null ? "—" : (String) row.get("manager"), reports, ((Date) row.get("date_of_joining")).toLocalDate().toString(),
+                exit == null ? null : exit.toLocalDate().toString(), PeopleRules.locationOfTimeZone((String) row.get("time_zone")).label(), india, shift,
+                (String) row.get("role_name"), status.name(), Boolean.TRUE.equals(row.get("portal_access")), gross,
+                PeopleRules.canEditEmployee(actor, target) && status != EmployeeStatus.EXITED, PeopleRules.canToggleAccess(actor, target), PeopleRules.canConfirm(actor, target), PhotoService.version(row.get("photo_updated_at")));
     }
 
     /** Full phone + address for people who may edit the record. Every reveal is audited. */
-    public Map<String, String> reveal(CurrentUser u, String idRaw, String ip) {
+    public Map<String, String> reveal(CurrentUser user, String idRaw, String ip) {
         UUID id = Check.uuid(idRaw);
-        Target t = actors.target(id);
-        if (t == null || !PeopleRules.canEditEmployee(actors.actor(u), t)) throw new UserException("You can't view this person's contact details.");
-        Map<String, Object> e = repo.findContactEnc(id);
-        audit.log(u.id(), "employee.pii_reveal", "employee", id.toString(), null, Map.of("fields", List.of("phone", "address")), ip);
-        String phone = pii.decrypt((String) e.get("phone_enc")), address = pii.decrypt((String) e.get("address_enc"));
+        Target target = actors.target(id);
+        if (target == null || !PeopleRules.canEditEmployee(actors.actor(user), target)) throw new UserException("You can't view this person's contact details.");
+        Map<String, Object> row = repo.findContactEnc(id);
+        audit.log(user.id(), "employee.pii_reveal", "employee", id.toString(), null, Map.of("fields", List.of("phone", "address")), ip);
+        String phone = pii.decrypt((String) row.get("phone_enc")), address = pii.decrypt((String) row.get("address_enc"));
         return Map.of("phone", phone == null ? "—" : phone, "address", address == null ? "—" : address);
     }
 
     // ───────────────────────── access & exit ─────────────────────────
 
-    public String toggleAccess(CurrentUser u, String idRaw, boolean on, String ip) {
+    public String toggleAccess(CurrentUser user, String idRaw, boolean on, String ip) {
         UUID id = Check.uuid(idRaw);
-        Target t = actors.target(id);
-        if (t == null || !PeopleRules.canToggleAccess(actors.actor(u), t)) throw new UserException("You can't change portal access for this person.");
-        Map<String, Object> e = repo.findNameAndAccess(id);
+        Target target = actors.target(id);
+        if (target == null || !PeopleRules.canToggleAccess(actors.actor(user), target)) throw new UserException("You can't change portal access for this person.");
+        Map<String, Object> row = repo.findNameAndAccess(id);
         tx.executeWithoutResult(s -> {
             repo.setPortalAccess(id, on);
             if (!on) sessions.revokeAll(id, "access_disabled");
-            audit.log(u.id(), "employee.access_toggle", "employee", id.toString(), Map.of("portalAccess", e.get("portal_access")), Map.of("portalAccess", on), ip);
+            audit.log(user.id(), "employee.access_toggle", "employee", id.toString(), Map.of("portalAccess", row.get("portal_access")), Map.of("portalAccess", on), ip);
         });
-        String name = (String) e.get("full_name");
+        String name = (String) row.get("full_name");
         return on ? "Portal access enabled for " + name + " · they sign in with the code emailed to their work email" : name + " can no longer sign in";
     }
 
     /** Probation → permanent. Admin (owner) and HR only; the daily job would do it after the probation period anyway. */
-    public String confirmEmployee(CurrentUser u, String idRaw, String ip) {
+    public String confirmEmployee(CurrentUser user, String idRaw, String ip) {
         UUID id = Check.uuid(idRaw);
-        Target t = actors.target(id);
-        if (t == null || !PeopleRules.canConfirm(actors.actor(u), t)) throw new UserException("You can't make this person permanent.");
+        Target target = actors.target(id);
+        if (target == null || !PeopleRules.canConfirm(actors.actor(user), target)) throw new UserException("You can't make this person permanent.");
         String name = (String) repo.findNameAndAccess(id).get("full_name");
         tx.executeWithoutResult(s -> {
             repo.markConfirmed(id);
-            audit.log(u.id(), "employee.confirm", "employee", id.toString(), Map.of("status", t.status().name()), Map.of("status", "ACTIVE"), ip);
+            audit.log(user.id(), "employee.confirm", "employee", id.toString(), Map.of("status", target.status().name()), Map.of("status", "ACTIVE"), ip);
         });
         return name + " is now a permanent employee";
     }
 
-    public String markExited(CurrentUser u, String idRaw, String exitDate, String ip) {
+    public String markExited(CurrentUser user, String idRaw, String exitDate, String ip) {
         UUID id = Check.uuid(idRaw);
         if (exitDate == null || !exitDate.matches("^\\d{4}-\\d{2}-\\d{2}$")) throw new UserException("Pick the last working day.");
-        Target t = actors.target(id);
-        if (t == null || !PeopleRules.canEditEmployee(actors.actor(u), t)) throw new UserException("You can't change this person's record.");
-        return finalizeExit(u.id(), id, exitDate, ip);
+        Target target = actors.target(id);
+        if (target == null || !PeopleRules.canEditEmployee(actors.actor(user), target)) throw new UserException("You can't change this person's record.");
+        return finalizeExit(user.id(), id, exitDate, ip);
     }
 
     /**
@@ -204,34 +204,34 @@ public class PeopleService {
      * The caller has already checked who may do it.
      */
     public String finalizeExit(UUID actorId, UUID id, String exitDate, String ip) {
-        Map<String, Object> e = repo.findForExit(id);
-        if (e == null || "EXITED".equals(String.valueOf(e.get("status")))) throw new UserException("Already a past employee.");
-        if (exitDate.compareTo(((Date) e.get("date_of_joining")).toLocalDate().toString()) < 0) {
+        Map<String, Object> row = repo.findForExit(id);
+        if (row == null || "EXITED".equals(String.valueOf(row.get("status")))) throw new UserException("Already a past employee.");
+        if (exitDate.compareTo(((Date) row.get("date_of_joining")).toLocalDate().toString()) < 0) {
             throw new UserException("The last working day can't be before the joining date.");
         }
-        long reports = ((Number) e.get("reports")).longValue();
+        long reports = ((Number) row.get("reports")).longValue();
         if (reports > 0) {
-            throw new UserException(e.get("full_name") + " still has " + reports + " direct report" + (reports == 1 ? "" : "s") + ". Assign them a new manager first.");
+            throw new UserException(row.get("full_name") + " still has " + reports + " direct report" + (reports == 1 ? "" : "s") + ". Assign them a new manager first.");
         }
         tx.executeWithoutResult(s -> {
             repo.markExited(id, Date.valueOf(exitDate));
             repo.clearDepartmentHead(id);
             sessions.revokeAll(id, "exited");
             Map<String, Object> before = new LinkedHashMap<>();
-            before.put("status", e.get("status"));
-            before.put("portalAccess", e.get("portal_access"));
+            before.put("status", row.get("status"));
+            before.put("portalAccess", row.get("portal_access"));
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("status", "EXITED");
             after.put("exitDate", exitDate);
             after.put("portalAccess", false);
             audit.log(actorId, "employee.exit", "employee", id.toString(), before, after, ip);
         });
-        return e.get("full_name") + " marked as a past employee · access removed";
+        return row.get("full_name") + " marked as a past employee · access removed";
     }
 
     // ───────────────────────── add / edit ─────────────────────────
 
-    public record DeptOption(String id, String name, String headId) {}
+    public record DepartmentOption(String id, String name, String headId) {}
 
     public record Manager(String id, String name, String title) {}
 
@@ -241,7 +241,7 @@ public class PeopleService {
 
     public record Editing(String code, String name, Last4 last4, boolean hasAddress, boolean hadManager) {}
 
-    public record FormOptions(String nextCode, List<DeptOption> departments, String lockedDepartmentId, List<Manager> managers, List<RoleOption> roles,
+    public record FormOptions(String nextCode, List<DepartmentOption> departments, String lockedDepartmentId, List<Manager> managers, List<RoleOption> roles,
                               EmployeeInput defaults, Editing editing) {}
 
     /** Next employee ID in this business: its prefix plus the next number, e.g. AB-007 (row-level security scopes the max). */
@@ -252,19 +252,19 @@ public class PeopleService {
     }
 
     private Map<String, Object> editable(Actor actor, UUID editId) {
-        Target t = actors.target(editId);
-        if (t == null || !PeopleRules.canEditEmployee(actor, t) || t.status() == EmployeeStatus.EXITED) throw new UserException("You can't edit this person.");
+        Target target = actors.target(editId);
+        if (target == null || !PeopleRules.canEditEmployee(actor, target) || target.status() == EmployeeStatus.EXITED) throw new UserException("You can't edit this person.");
         return repo.findEditable(editId);
     }
 
     public record RoleRow(String id, String key, String name, int perms) {}
 
-    private boolean roleAllowed(Actor actor, RoleRow r, String currentRoleId) {
-        return PeopleRules.canAssignRole(actor, r.id(), currentRoleId) || (PeopleRules.isAdmin(actor) && !PeopleRules.isAdminRole(r.key())) || r.id().equals(currentRoleId);
+    private boolean roleAllowed(Actor actor, RoleRow roleRow, String currentRoleId) {
+        return PeopleRules.canAssignRole(actor, roleRow.id(), currentRoleId) || (PeopleRules.isAdmin(actor) && !PeopleRules.isAdminRole(roleRow.key())) || roleRow.id().equals(currentRoleId);
     }
 
-    public FormOptions formOptions(CurrentUser u, String editIdRaw) {
-        Actor actor = actors.actor(u);
+    public FormOptions formOptions(CurrentUser user, String editIdRaw) {
+        Actor actor = actors.actor(user);
         Map<String, Object> current = null;
         UUID editId = null;
         if (editIdRaw != null && !editIdRaw.isEmpty()) {
@@ -274,7 +274,7 @@ public class PeopleService {
             throw new UserException("You can't add employees.");
         }
         String locked = PeopleRules.lockedDepartment(actor);
-        List<DeptOption> departments = locked == null
+        List<DepartmentOption> departments = locked == null
                 ? repo.findDepartmentOptions()
                 : repo.findDepartmentOption(locked);
         List<Manager> managers = repo.findManagerOptions(editId);
@@ -293,16 +293,16 @@ public class PeopleService {
             String[] names = names(current);
             defaults = new EmployeeInput(names[0], names[1], names[2], current.get("father_name") == null ? "" : (String) current.get("father_name"),
                     (String) current.get("email"), current.get("phone_country") == null ? "+91" : (String) current.get("phone_country"), "",
-                    PeopleRules.locationOfTz((String) current.get("time_zone")).v(), current.get("joining_office") == null ? "" : (String) current.get("joining_office"),
+                    PeopleRules.locationOfTimeZone((String) current.get("time_zone")).value(), current.get("joining_office") == null ? "" : (String) current.get("joining_office"),
                     "", "", "", "", (String) current.get("designation"), current.get("department_id") == null ? "" : current.get("department_id").toString(),
                     current.get("reporting_manager_id") == null ? "" : current.get("reporting_manager_id").toString(),
                     ((Date) current.get("date_of_joining")).toLocalDate().toString(), shift, currentRole);
         } else {
-            DeptOption dept = locked != null ? (departments.isEmpty() ? null : departments.get(0))
+            DepartmentOption department = locked != null ? (departments.isEmpty() ? null : departments.get(0))
                     : departments.stream().filter(d -> !List.of("Human Resources", "Finance").contains(d.name())).findFirst().orElse(departments.isEmpty() ? null : departments.get(0));
             RoleRow role = allowed.stream().filter(r -> employeeRole != null && r.id().equals(employeeRole.id())).findFirst().orElse(allowed.isEmpty() ? null : allowed.get(0));
-            String manager = locked != null ? u.id().toString() : dept == null ? null : dept.headId();
-            defaults = new EmployeeInput("", "", "", "", "", "+91", "", "", "", "", "", "", "", "", dept == null ? "" : dept.id(), manager == null ? "" : manager,
+            String manager = locked != null ? user.id().toString() : department == null ? null : department.headId();
+            defaults = new EmployeeInput("", "", "", "", "", "+91", "", "", "", "", "", "", "", "", department == null ? "" : department.id(), manager == null ? "" : manager,
                     Format.todayIn(IST).toString(), "IN_NIGHT", role == null ? "" : role.id());
         }
         Editing editing = current == null ? null : new Editing((String) current.get("code"), (String) current.get("full_name"),
@@ -318,55 +318,55 @@ public class PeopleService {
             return new String[] {(String) row.get("first_name"), row.get("middle_name") == null ? "" : (String) row.get("middle_name"),
                     row.get("last_name") == null ? "" : (String) row.get("last_name")};
         }
-        String[] w = ((String) row.get("full_name")).trim().split("\\s+");
-        if (w.length == 1) return new String[] {w[0], "", ""};
-        return new String[] {w[0], String.join(" ", java.util.Arrays.copyOfRange(w, 1, w.length - 1)), w[w.length - 1]};
+        String[] parts = ((String) row.get("full_name")).trim().split("\\s+");
+        if (parts.length == 1) return new String[] {parts[0], "", ""};
+        return new String[] {parts[0], String.join(" ", java.util.Arrays.copyOfRange(parts, 1, parts.length - 1)), parts[parts.length - 1]};
     }
 
     /** employeeInput (zod): trims, lower-cases email, upper-cases PAN; first failing field wins, in schema order. */
-    static EmployeeInput parse(EmployeeInput in) {
+    static EmployeeInput parse(EmployeeInput input) {
         java.util.function.BiFunction<String, String, String> s = (v, f) -> v == null ? "" : v.trim();
-        String first = s.apply(in.firstName(), "firstName");
+        String first = s.apply(input.firstName(), "firstName");
         if (first.isEmpty()) throw bad("First name is required");
-        String middle = s.apply(in.middleName(), "middleName");
-        String last = s.apply(in.lastName(), "lastName");
+        String middle = s.apply(input.middleName(), "middleName");
+        String last = s.apply(input.lastName(), "lastName");
         if (last.isEmpty()) throw bad("Last name is required");
         for (String n : List.of(first, middle, last)) if (n.length() > 60) throw bad("Keep each name under 60 characters");
-        String father = s.apply(in.fatherName(), "fatherName");
+        String father = s.apply(input.fatherName(), "fatherName");
         if (father.length() < 2) throw bad("Father’s name is required");
         if (father.length() > 120) throw bad("Too big: expected string to have <=120 characters");
-        String email = s.apply(in.email(), "email").toLowerCase();
+        String email = s.apply(input.email(), "email").toLowerCase();
         if (email.length() > 200) throw bad("Too big: expected string to have <=200 characters");
         if (!PeopleRules.EMAIL_RE.matcher(email).matches()) throw bad("Enter a valid email");
-        String phoneCountry = s.apply(in.phoneCountry(), "phoneCountry");
+        String phoneCountry = s.apply(input.phoneCountry(), "phoneCountry");
         if (phoneCountry.isEmpty()) phoneCountry = "+91";
         if (com.jurislpo.jurisone.engine.Phones.country(phoneCountry).isEmpty()) throw bad("Choose the country code");
-        String phone = PeopleRules.digits(s.apply(in.phone(), "phone"));
+        String phone = PeopleRules.digits(s.apply(input.phone(), "phone"));
         if (phone.length() > 15) throw bad("Too big: expected string to have <=15 digits");
-        String location = s.apply(in.location(), "location");
+        String location = s.apply(input.location(), "location");
         if (location.isEmpty()) location = "IN_IST"; // not chosen: India
-        location = Check.oneOf(location, PeopleRules.LOCATIONS.stream().map(Location::v).toList());
-        String office = s.apply(in.joiningOffice(), "joiningOffice");
+        location = Check.oneOf(location, PeopleRules.LOCATIONS.stream().map(Location::value).toList());
+        String office = s.apply(input.joiningOffice(), "joiningOffice");
         if (office.length() > 120) throw bad("Keep the joining office under 120 characters");
-        String pan = s.apply(in.pan(), "pan").toUpperCase();
+        String pan = s.apply(input.pan(), "pan").toUpperCase();
         if (pan.length() > 10) throw bad("Too big: expected string to have <=10 characters");
-        String aadhaar = s.apply(in.aadhaar(), "aadhaar");
+        String aadhaar = s.apply(input.aadhaar(), "aadhaar");
         if (aadhaar.length() > 20) throw bad("Too big: expected string to have <=20 characters");
-        String uan = s.apply(in.uan(), "uan");
+        String uan = s.apply(input.uan(), "uan");
         if (uan.length() > 20) throw bad("Too big: expected string to have <=20 characters");
-        String address = s.apply(in.address(), "address");
+        String address = s.apply(input.address(), "address");
         if (address.length() > 500) throw bad("Too big: expected string to have <=500 characters");
-        String designation = s.apply(in.designation(), "designation");
+        String designation = s.apply(input.designation(), "designation");
         if (designation.length() < 2) throw bad("Designation is required");
         if (designation.length() > 120) throw bad("Too big: expected string to have <=120 characters");
-        String departmentId = Check.uuid(in.departmentId(), "Pick a department").toString();
-        String managerId = in.managerId() == null ? "" : in.managerId();
+        String departmentId = Check.uuid(input.departmentId(), "Pick a department").toString();
+        String managerId = input.managerId() == null ? "" : input.managerId();
         if (!managerId.isEmpty() && !PeopleRules.UUID_RE.matcher(managerId).matches()) throw bad("Invalid input");
-        String doj = Check.isoDate(in.doj(), "Pick the date of joining");
-        String shift = in.shift() == null || in.shift().isBlank() ? ("IN_IST".equals(location) ? "IN_NIGHT" : "US_DAY") : Check.oneOf(in.shift(), List.of("IN_NIGHT", "IN_DAY", "US_DAY"));
-        String roleId = Check.uuid(in.roleId(), "Pick a role").toString();
+        String dateOfJoining = Check.isoDate(input.dateOfJoining(), "Pick the date of joining");
+        String shift = input.shift() == null || input.shift().isBlank() ? ("IN_IST".equals(location) ? "IN_NIGHT" : "US_DAY") : Check.oneOf(input.shift(), List.of("IN_NIGHT", "IN_DAY", "US_DAY"));
+        String roleId = Check.uuid(input.roleId(), "Pick a role").toString();
         return new EmployeeInput(first, middle, last, father, email, phoneCountry, phone, location, office, pan, aadhaar, uan, address, designation, departmentId,
-                managerId, doj, shift, roleId);
+                managerId, dateOfJoining, shift, roleId);
     }
 
     private static UserException bad(String m) {
@@ -375,18 +375,18 @@ public class PeopleService {
 
     public record Saved(String id, String code, String msg) {}
 
-    public Saved save(CurrentUser u, EmployeeInput input, String editIdRaw, String ip) {
-        return save(u, input, editIdRaw, ip, true);
+    public Saved save(CurrentUser user, EmployeeInput input, String editIdRaw, String ip) {
+        return save(user, input, editIdRaw, ip, true);
     }
 
     /** Adds an employee from a verified onboarding: portal access off and no invite yet (HR turns access on later). */
-    public Saved addWithoutAccess(CurrentUser u, EmployeeInput input, String ip) {
-        return save(u, input, null, ip, false);
+    public Saved addWithoutAccess(CurrentUser user, EmployeeInput input, String ip) {
+        return save(user, input, null, ip, false);
     }
 
-    private Saved save(CurrentUser u, EmployeeInput input, String editIdRaw, String ip, boolean access) {
+    private Saved save(CurrentUser user, EmployeeInput input, String editIdRaw, String ip, boolean access) {
         EmployeeInput f = parse(input);
-        Actor actor = actors.actor(u);
+        Actor actor = actors.actor(user);
         boolean editing = editIdRaw != null && !editIdRaw.isEmpty();
         Map<String, Object> current = null;
         UUID editId = null;
@@ -412,8 +412,8 @@ public class PeopleService {
         if (current != null && !f.roleId().equals(currentRole) && !PeopleRules.canManageStatusAndRole(actor)) throw new UserException("Only the admin or HR can change someone's role.");
 
         // Department: must exist; locked to the actor's own department where the rule applies.
-        List<Map<String, Object>> dept = repo.findDepartmentArchivedAt(f.departmentId());
-        if (dept.isEmpty() || dept.get(0).get("archived_at") != null) throw new UserException("Pick a department.");
+        List<Map<String, Object>> department = repo.findDepartmentArchivedAt(f.departmentId());
+        if (department.isEmpty() || department.get(0).get("archived_at") != null) throw new UserException("Pick a department.");
         String locked = PeopleRules.lockedDepartment(actor);
         if (locked != null && !f.departmentId().equals(locked)) throw new UserException("You can add people to your own department only.");
 
@@ -461,9 +461,9 @@ public class PeopleService {
             if (!f.aadhaar().isEmpty()) setPII.accept("aadhaar", PeopleRules.digits(f.aadhaar()));
             if (!f.uan().isEmpty()) setPII.accept("uan", PeopleRules.digits(f.uan()));
         } else {
-            for (String k : List.of("pan", "aadhaar", "uan")) {
-                piiCols.put(k + "Enc", null);
-                piiCols.put(k + "Last4", null);
+            for (String key : List.of("pan", "aadhaar", "uan")) {
+                piiCols.put(key + "Enc", null);
+                piiCols.put(key + "Last4", null);
             }
         }
         List<String> changedPII = piiCols.keySet().stream().filter(k -> k.endsWith("Enc")).map(k -> k.replace("Enc", "")).toList();
@@ -493,19 +493,19 @@ public class PeopleService {
             after.put("departmentId", f.departmentId());
             after.put("reportingManagerId", managerId);
             after.put("roleId", f.roleId());
-            after.put("dateOfJoining", f.doj());
-            after.put("timeZone", loc.tz());
+            after.put("dateOfJoining", f.dateOfJoining());
+            after.put("timeZone", loc.timeZone());
             after.put("shiftId", shiftId.toString());
             after.put("piiChanged", changedPII);
             String status = (String) cur.get("status_s");
             String newStatus = "ONBOARDING".equals(status) || "PROBATION".equals(status)
-                    ? PeopleRules.initialStatus(LocalDate.parse(f.doj()), today).name() : status;
+                    ? PeopleRules.initialStatus(LocalDate.parse(f.dateOfJoining()), today).name() : status;
             tx.executeWithoutResult(s -> {
                 repo.updateEmployee(id, fullName, f.firstName(), f.middleName().isEmpty() ? null : f.middleName(), f.lastName(),
-                        f.joiningOffice().isEmpty() ? null : f.joiningOffice(), f.fatherName(), email, f.designation(), f.departmentId(), managerId, f.roleId(), Date.valueOf(f.doj()),
-                        loc.tz(), loc.region(), shiftId, newStatus);
+                        f.joiningOffice().isEmpty() ? null : f.joiningOffice(), f.fatherName(), email, f.designation(), f.departmentId(), managerId, f.roleId(), Date.valueOf(f.dateOfJoining()),
+                        loc.timeZone(), loc.region(), shiftId, newStatus);
                 repo.updatePii(id, piiCols);
-                audit.log(u.id(), "employee.edit", "employee", id.toString(), before, after, ip);
+                audit.log(user.id(), "employee.edit", "employee", id.toString(), before, after, ip);
             });
             return new Saved(id.toString(), (String) cur.get("code"), "Saved changes for " + fullName);
         }
@@ -519,8 +519,8 @@ public class PeopleService {
             String code = nextCode();
             codeOut[0] = code;
             repo.insertEmployee(id, code, fullName, f.firstName(), f.middleName().isEmpty() ? null : f.middleName(), f.lastName(), f.joiningOffice().isEmpty() ? null : f.joiningOffice(),
-                    f.fatherName(), email, f.designation(), f.departmentId(), managerId, f.roleId(), Date.valueOf(f.doj()),
-                    loc.tz(), loc.region(), shiftId, PeopleRules.initialStatus(LocalDate.parse(f.doj()), today).name(), access, u.id());
+                    f.fatherName(), email, f.designation(), f.departmentId(), managerId, f.roleId(), Date.valueOf(f.dateOfJoining()),
+                    loc.timeZone(), loc.region(), shiftId, PeopleRules.initialStatus(LocalDate.parse(f.dateOfJoining()), today).name(), access, user.id());
             repo.updatePii(id, piiCols);
             repo.insertUser(id);
             // the TS audit: { code, ...data without *Enc, piiProvided }
@@ -533,13 +533,13 @@ public class PeopleService {
             after.put("departmentId", f.departmentId());
             after.put("reportingManagerId", managerId);
             after.put("roleId", f.roleId());
-            after.put("dateOfJoining", f.doj() + "T00:00:00.000Z");
-            after.put("timeZone", loc.tz());
+            after.put("dateOfJoining", f.dateOfJoining() + "T00:00:00.000Z");
+            after.put("timeZone", loc.timeZone());
             after.put("region", loc.region());
             after.put("shiftId", shiftId.toString());
             piiCols.forEach((k, v) -> { if (k.endsWith("Last4")) after.put(k, v); });
             after.put("piiProvided", changedPII);
-            audit.log(u.id(), "employee.create", "employee", id.toString(), null, after, ip);
+            audit.log(user.id(), "employee.create", "employee", id.toString(), null, after, ip);
             if (india) {
                 // Finance is told a salary structure is needed (REQUIREMENTS §5.2).
                 List<UUID> finance = repo.findFinanceRecipients();
@@ -552,23 +552,23 @@ public class PeopleService {
                 + (india ? " · salary structure pending with Finance" : "") + (access ? " · they sign in with the code emailed to their work email" : " · portal access is off until you turn it on"));
     }
 
-    private static String str(Object o) {
-        return o == null ? null : o.toString();
+    private static String str(Object value) {
+        return value == null ? null : value.toString();
     }
 
     // ───────────────────────── export ─────────────────────────
 
     public record Export(String filename, String body) {}
 
-    public Export export(CurrentUser u, Map<String, String> sp) {
-        PeopleQuery pq = new PeopleQuery(sp);
-        List<List<Object>> rows = repo.findExportRows(pq);
+    public Export export(CurrentUser user, Map<String, String> queryParams) {
+        PeopleQuery peopleQuery = new PeopleQuery(queryParams);
+        List<List<Object>> rows = repo.findExportRows(peopleQuery);
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("rows", rows.size());
-        after.put("filters", sp);
-        audit.log(u.id(), "employee.export", "employee", null, null, after, null);
+        after.put("filters", queryParams);
+        audit.log(user.id(), "employee.export", "employee", null, null, after, null);
         String body = Csv.toCsv(List.of("Employee ID", "Name", "Email", "Designation", "Department", "Reporting manager", "Manager ID", "Location", "Time zone",
                 "Shift", "Role", "Status", "Portal access", "Date of joining", "Last working day"), rows);
-        return new Export("jurisone-people-" + Format.todayIn(u.timeZone()) + ".csv", body);
+        return new Export("jurisone-people-" + Format.todayIn(user.timeZone()) + ".csv", body);
     }
 }

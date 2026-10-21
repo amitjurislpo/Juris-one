@@ -45,9 +45,9 @@ public class PiiCrypto {
         try {
             byte[] iv = new byte[12];
             RANDOM.nextBytes(iv);
-            Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
-            c.init(Cipher.ENCRYPT_MODE, key(), new GCMParameterSpec(128, iv));
-            byte[] out = c.doFinal(plain.getBytes(StandardCharsets.UTF_8)); // ciphertext ‖ tag
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, key(), new GCMParameterSpec(128, iv));
+            byte[] out = cipher.doFinal(plain.getBytes(StandardCharsets.UTF_8)); // ciphertext ‖ tag
             byte[] ct = Arrays.copyOfRange(out, 0, out.length - 16);
             byte[] tag = Arrays.copyOfRange(out, out.length - 16, out.length);
             return "v1." + B64URL.encodeToString(iv) + "." + B64URL.encodeToString(tag) + "." + B64URL.encodeToString(ct);
@@ -58,18 +58,18 @@ public class PiiCrypto {
 
     public String decrypt(String stored) {
         if (stored == null || stored.isEmpty()) return null;
-        String[] p = stored.split("\\.", -1);
-        if (p.length < 4 || !"v1".equals(p[0]) || p[1].isEmpty() || p[2].isEmpty() || p[3].isEmpty()) {
+        String[] parts = stored.split("\\.", -1);
+        if (parts.length < 4 || !"v1".equals(parts[0]) || parts[1].isEmpty() || parts[2].isEmpty() || parts[3].isEmpty()) {
             throw new IllegalArgumentException("Unrecognised PII ciphertext");
         }
         try {
-            byte[] iv = B64URL_DEC.decode(p[1]), tag = B64URL_DEC.decode(p[2]), ct = B64URL_DEC.decode(p[3]);
+            byte[] iv = B64URL_DEC.decode(parts[1]), tag = B64URL_DEC.decode(parts[2]), ct = B64URL_DEC.decode(parts[3]);
             byte[] in = new byte[ct.length + tag.length];
             System.arraycopy(ct, 0, in, 0, ct.length);
             System.arraycopy(tag, 0, in, ct.length, tag.length);
-            Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
-            c.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, iv));
-            return new String(c.doFinal(in), StandardCharsets.UTF_8);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, iv));
+            return new String(cipher.doFinal(in), StandardCharsets.UTF_8);
         } catch (GeneralSecurityException e) {
             throw new IllegalArgumentException("PII ciphertext failed authentication", e);
         }

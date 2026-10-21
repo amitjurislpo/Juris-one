@@ -21,23 +21,23 @@ public class ShellService {
 
     public record NavLink(String id, String label, String icon) {}
 
-    public record Group(String g, List<NavLink> items) {}
+    public record NavGroup(String title, List<NavLink> items) {}
 
     /** A bell line; {@code id} set for a stored notification ({@code unread}, {@code sticky}: stays until the policy is accepted). */
-    public record Note(String t, String s, String href, String id, boolean unread, boolean sticky) {
-        Note(String t, String s, String href) {
-            this(t, s, href, null, false, false);
+    public record ShellNote(String text, String meta, String href, String id, boolean unread, boolean sticky) {
+        ShellNote(String text, String meta, String href) {
+            this(text, meta, href, null, false, false);
         }
     }
 
-    public record Me(String code, String name, String designation, String roleName, String department, String manager, String doj, String shift,
+    public record ShellUser(String code, String name, String designation, String roleName, String department, String manager, String dateOfJoining, String shift,
                      boolean isAdminLike) {}
 
     /**
      * {@code businessName} null for the super admin (platform); {@code subscription} null for the super admin — when it
      * is not active the app shows the "subscription ended" screen instead of the pages.
      */
-    public record Shell(Me me, List<Group> groups, Map<String, Integer> badges, List<Note> notes, int unread, String landing, boolean canSelf,
+    public record Shell(ShellUser me, List<NavGroup> groups, Map<String, Integer> badges, List<ShellNote> notes, int unread, String landing, boolean canSelf,
                         String businessName, com.jurislpo.jurisone.service.SubscriptionService.Current subscription) {}
 
     private final ShellRepository repo;
@@ -50,54 +50,54 @@ public class ShellService {
         this.subscriptions = subscriptions;
     }
 
-    public Shell shell(CurrentUser u) {
-        boolean adminLike = !u.perms().contains("self");
-        Map<String, Group> groups = new LinkedHashMap<>();
-        for (Nav.Item n : Nav.visible(u.perms(), u.hasReports(), subscriptions.activeModules(u.businessId()))) {
-            String g = n.group() != null ? n.group() : adminLike ? "Workspace" : "My workspace";
-            groups.computeIfAbsent(g, k -> new Group(k, new ArrayList<>())).items().add(new NavLink(n.id(), n.label(), n.icon()));
+    public Shell shell(CurrentUser user) {
+        boolean adminLike = !user.perms().contains("self");
+        Map<String, NavGroup> groups = new LinkedHashMap<>();
+        for (Nav.Item item : Nav.visible(user.perms(), user.hasReports(), subscriptions.activeModules(user.businessId()))) {
+            String g = item.group() != null ? item.group() : adminLike ? "Workspace" : "My workspace";
+            groups.computeIfAbsent(g, k -> new NavGroup(k, new ArrayList<>())).items().add(new NavLink(item.id(), item.label(), item.icon()));
         }
 
-        int pendingLeave = u.can("appr.leave") ? count(repo.countPendingLeave(u.id())) : 0;
-        int pendingReg = u.can("appr.reg") ? count(repo.countPendingRegularizations(u.id())) : 0;
-        int proofs = u.can("proofs.verify") ? count(repo.countPendingProofs(u.id())) : 0;
+        int pendingLeave = user.can("appr.leave") ? count(repo.countPendingLeave(user.id())) : 0;
+        int pendingReg = user.can("appr.reg") ? count(repo.countPendingRegularizations(user.id())) : 0;
+        int proofs = user.can("proofs.verify") ? count(repo.countPendingProofs(user.id())) : 0;
         int pending = pendingLeave + pendingReg;
 
-        List<InboxService.Item> recent = inbox.recent(u.id(), 8);
-        LocalDate today = Format.todayIn(u.timeZone());
-        List<Map<String, Object>> holiday = repo.nextHoliday(today, u.region());
+        List<InboxService.Item> recent = inbox.recent(user.id(), 8);
+        LocalDate today = Format.todayIn(user.timeZone());
+        List<Map<String, Object>> holiday = repo.nextHoliday(today, user.region());
 
-        List<Note> notes = new ArrayList<>();
-        if (u.can("appr.leave", "appr.reg")) notes.add(new Note(pending + " request" + (pending == 1 ? "" : "s") + " waiting for approval", "Approvals", "/approvals"));
-        if (u.can("proofs.verify")) notes.add(new Note(proofs + " investment proof" + (proofs == 1 ? "" : "s") + " to verify", "Finance", "/proofs"));
+        List<ShellNote> notes = new ArrayList<>();
+        if (user.can("appr.leave", "appr.reg")) notes.add(new ShellNote(pending + " request" + (pending == 1 ? "" : "s") + " waiting for approval", "Approvals", "/approvals"));
+        if (user.can("proofs.verify")) notes.add(new ShellNote(proofs + " investment proof" + (proofs == 1 ? "" : "s") + " to verify", "Finance", "/proofs"));
         for (InboxService.Item n : recent) {
-            notes.add(new Note(n.text(), Format.fmtDateTime(java.time.Instant.parse(n.createdAt()), u.timeZone()), n.link(), n.id(), n.readAt() == null, n.sticky()));
+            notes.add(new ShellNote(n.text(), Format.formatDateTime(java.time.Instant.parse(n.createdAt()), user.timeZone()), n.link(), n.id(), n.readAt() == null, n.sticky()));
         }
         if (!holiday.isEmpty()) {
             LocalDate d = ((java.sql.Date) holiday.get(0).get("date")).toLocalDate();
-            notes.add(new Note(holiday.get(0).get("name") + " holiday on " + Format.fmtDL(d), "Holiday calendar", null));
+            notes.add(new ShellNote(holiday.get(0).get("name") + " holiday on " + Format.formatWeekdayDate(d), "Holiday calendar", null));
         }
-        int unread = inbox.unread(u.id());
+        int unread = inbox.unread(user.id());
 
-        Map<String, Object> e = repo.profileCard(u.id());
-        String shift = e.get("shift_code") == null ? null : Shifts.label((String) e.get("shift_code"), (String) e.get("start_local"), (String) e.get("end_local"));
-        Me me = new Me(u.code(), u.name(), u.designation(), u.roleName(), orDash(e.get("department")), orDash(e.get("manager")),
-                ((java.sql.Date) e.get("date_of_joining")).toLocalDate().toString(), shift, adminLike);
+        Map<String, Object> row = repo.profileCard(user.id());
+        String shift = row.get("shift_code") == null ? null : Shifts.label((String) row.get("shift_code"), (String) row.get("start_local"), (String) row.get("end_local"));
+        ShellUser shellUser = new ShellUser(user.code(), user.name(), user.designation(), user.roleName(), orDash(row.get("department")), orDash(row.get("manager")),
+                ((java.sql.Date) row.get("date_of_joining")).toLocalDate().toString(), shift, adminLike);
 
         Map<String, Integer> badges = new LinkedHashMap<>();
         badges.put("approvals", pending);
         badges.put("proofs", proofs);
-        String businessName = u.businessId() == null ? null : repo.businessName(u.businessId());
-        var subscription = u.businessId() == null ? null : subscriptions.current(u.businessId());
-        return new Shell(me, new ArrayList<>(groups.values()), badges, notes, unread, u.landingPath(), u.perms().contains("self"), businessName, subscription);
+        String businessName = user.businessId() == null ? null : repo.businessName(user.businessId());
+        var subscription = user.businessId() == null ? null : subscriptions.current(user.businessId());
+        return new Shell(shellUser, new ArrayList<>(groups.values()), badges, notes, unread, user.landingPath(), user.perms().contains("self"), businessName, subscription);
     }
 
-    private static int count(Integer n) {
-        return n == null ? 0 : n;
+    private static int count(Integer count) {
+        return count == null ? 0 : count;
     }
 
-    private static String orDash(Object v) {
-        return v == null ? "—" : v.toString();
+    private static String orDash(Object value) {
+        return value == null ? "—" : value.toString();
     }
 
 }

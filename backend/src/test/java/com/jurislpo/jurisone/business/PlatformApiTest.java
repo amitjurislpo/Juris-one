@@ -85,8 +85,8 @@ class PlatformApiTest extends IntegrationTest {
         mvc.perform(get("/api/platform/businesses").cookie(c)).andExpect(status().isForbidden());
 
         // the next employee gets the next ID of this business
-        UUID dept = jdbc.queryForObject("SELECT id FROM departments WHERE business_id = ? AND name = 'Finance'", UUID.class, business);
-        assertThat(dept).isNotNull();
+        UUID department = jdbc.queryForObject("SELECT id FROM departments WHERE business_id = ? AND name = 'Finance'", UUID.class, business);
+        assertThat(department).isNotNull();
     }
 
     @Test
@@ -133,7 +133,7 @@ class PlatformApiTest extends IntegrationTest {
         String body = """
             {"firstName":"Kiran","lastName":"Rao","fatherName":"M Rao","email":"kiran.%s@jurisone.test","phoneCountry":"+91","phone":"9876501234","location":"",
              "joiningOffice":"Head office","pan":"","aadhaar":"","uan":"","address":"","designation":"HR Manager","departmentId":"%s","managerId":"%s",
-             "doj":"2026-10-01","shift":"IN_DAY","roleId":"%s"}""".formatted(TestData.letters(5), hrDept, sa, hrRole);
+             "dateOfJoining":"2026-10-01","shift":"IN_DAY","roleId":"%s"}""".formatted(TestData.letters(5), hrDept, sa, hrRole);
         String created = mvc.perform(write(post("/api/people")).cookie(c).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         assertThat(created).contains("JO-");
         String people = mvc.perform(get("/api/people").cookie(c)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -142,7 +142,7 @@ class PlatformApiTest extends IntegrationTest {
         UUID ownerRole = customer.role("owner", "dir", "roles.manage", "people.view", "people.add");
         String ownerEmail = TestData.letters(8) + "@customer.test";
         customer.employee("PO-" + TestData.letters(4).toUpperCase(), ownerEmail, ownerRole);
-        String theirs = mvc.perform(get("/api/people?q=Kiran").cookie(signIn(ownerEmail))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String theirs = mvc.perform(get("/api/people?search=Kiran").cookie(signIn(ownerEmail))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(theirs).doesNotContain("Kiran Rao");
     }
 }
