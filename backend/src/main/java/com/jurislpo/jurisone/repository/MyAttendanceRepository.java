@@ -29,14 +29,14 @@ public class MyAttendanceRepository {
         return jdbc.query("""
             SELECT r.id::text, r.work_date, r.kind::text, r.status::text, d.full_name AS by, r.reason FROM regularization_requests r
             LEFT JOIN employees d ON d.id = r.decided_by WHERE r.employee_id = ? AND r.work_date >= ? AND r.work_date <= ? ORDER BY r.created_at DESC""",
-                (rs, i) -> new RegularizationView(rs.getString(1), rs.getDate(2).toLocalDate().toString(), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6)),
+                (resultSet, i) -> new RegularizationView(resultSet.getString(1), resultSet.getDate(2).toLocalDate().toString(), resultSet.getString(3), resultSet.getString(4), resultSet.getString(5), resultSet.getString(6)),
                 employeeId, Date.valueOf(first), Date.valueOf(last));
     }
 
     /** Holidays from {@code from} for a region plus "Everyone", soonest first. */
     public List<HolidayView> upcomingHolidays(String region, LocalDate from, int take) {
         return jdbc.query("SELECT id::text, date, name, region::text FROM holidays WHERE date >= ? AND region::text IN ('ALL', ?) ORDER BY date ASC LIMIT ?",
-                (rs, i) -> new HolidayView(rs.getString(1), rs.getDate(2).toLocalDate().toString(), rs.getString(3), rs.getString(4)), Date.valueOf(from), region, take);
+                (resultSet, i) -> new HolidayView(resultSet.getString(1), resultSet.getDate(2).toLocalDate().toString(), resultSet.getString(3), resultSet.getString(4)), Date.valueOf(from), region, take);
     }
 
     /** Status of a pending or approved request of this kind for the day (empty when none). */
@@ -65,18 +65,18 @@ public class MyAttendanceRepository {
         return jdbc.queryForList("SELECT at, kind::text AS kind FROM punches WHERE employee_id = ? ORDER BY at DESC LIMIT 1", employeeId);
     }
 
-    public void insertWebPunch(UUID employeeId, Instant at, String kind, String ip) {
+    public void insertWebPunch(UUID employeeId, Instant instant, String kind, String ipAddress) {
         jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, ip, created_at) VALUES (?, ?, ?, ?::\"PunchKind\", 'WEB', ?, now())",
-                UUID.randomUUID(), employeeId, Timestamp.from(at), kind, ip);
+                UUID.randomUUID(), employeeId, Timestamp.from(instant), kind, ipAddress);
     }
 
     /** The employee's punches since {@code since}, oldest first. */
     public List<Punch> punchesSince(UUID employeeId, Instant since) {
         return jdbc.query("SELECT at, kind::text FROM punches WHERE employee_id = ? AND at >= ? ORDER BY at ASC",
-                (rs, i) -> new Punch(rs.getTimestamp(1).toInstant(), PunchKind.valueOf(rs.getString(2))), employeeId, Timestamp.from(since));
+                (resultSet, i) -> new Punch(resultSet.getTimestamp(1).toInstant(), PunchKind.valueOf(resultSet.getString(2))), employeeId, Timestamp.from(since));
     }
 
-    private static Timestamp ts(Instant i) {
-        return i == null ? null : Timestamp.from(i);
+    private static Timestamp ts(Instant instant) {
+        return instant == null ? null : Timestamp.from(instant);
     }
 }

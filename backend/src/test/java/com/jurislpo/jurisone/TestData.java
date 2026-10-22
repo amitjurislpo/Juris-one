@@ -32,11 +32,11 @@ public final class TestData {
     }
 
     /** {@code n} random lowercase letters (for business codes, emails and employee codes that must not collide). */
-    public static String letters(int n) {
-        StringBuilder b = new StringBuilder();
-        java.util.concurrent.ThreadLocalRandom r = java.util.concurrent.ThreadLocalRandom.current();
-        for (int i = 0; i < n; i++) b.append((char) ('a' + r.nextInt(26)));
-        return b.toString();
+    public static String letters(int length) {
+        StringBuilder builder = new StringBuilder();
+        java.util.concurrent.ThreadLocalRandom random = java.util.concurrent.ThreadLocalRandom.current();
+        for (int i = 0; i < length; i++) builder.append((char) ('a' + random.nextInt(26)));
+        return builder.toString();
     }
 
     public UUID business() {
@@ -65,11 +65,11 @@ public final class TestData {
     }
 
     public UUID role(String key, String... perms) {
-        UUID existing = jdbc.query("SELECT id FROM roles WHERE key = ? AND business_id = ?", rs -> rs.next() ? (UUID) rs.getObject(1) : null, key, business);
+        UUID existing = jdbc.query("SELECT id FROM roles WHERE key = ? AND business_id = ?", resultSet -> resultSet.next() ? (UUID) resultSet.getObject(1) : null, key, business);
         if (existing != null) return existing;
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO roles (id, key, name, business_id) VALUES (?, ?, ?, ?)", id, key, key.substring(0, 1).toUpperCase() + key.substring(1), business);
-        for (String p : perms) jdbc.update("INSERT INTO role_permissions (role_id, permission_key) VALUES (?, ?)", id, p);
+        for (String perm : perms) jdbc.update("INSERT INTO role_permissions (role_id, permission_key) VALUES (?, ?)", id, perm);
         return id;
     }
 

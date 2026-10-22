@@ -17,6 +17,6 @@ public class RegisterRepository {
 
     /** Departments not archived, by name (the register's department filter). */
     public List<DepartmentSummary> activeDepartments() {
-        return jdbc.query("SELECT id::text, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (rs, i) -> new DepartmentSummary(rs.getString(1), rs.getString(2)));
+        return jdbc.query("SELECT id::text, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (resultSet, i) -> new DepartmentSummary(resultSet.getString(1), resultSet.getString(2)));
     }
 }

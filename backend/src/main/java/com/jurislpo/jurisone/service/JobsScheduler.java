@@ -25,8 +25,8 @@ public class JobsScheduler {
     @Scheduled(initialDelay = 15_000, fixedDelay = 600_000)
     public void tick() {
         try {
-            Map<String, Object> r = jobs.runJobs(Instant.now());
-            jobs.logSummary(r);
+            Map<String, Object> result = jobs.runJobs(Instant.now());
+            jobs.logSummary(result);
         } catch (RuntimeException e) {
             log.error("[jobs] failed", e);
         }

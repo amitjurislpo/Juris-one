@@ -23,9 +23,9 @@ public class Payslip {
         public Key() {}
         public Key(UUID runId, UUID employeeId) { this.runId = runId; this.employeeId = employeeId; }
 
-        @Override public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Key other)) return false;
+        @Override public boolean equals(Object object) {
+            if (this == object) return true;
+            if (!(object instanceof Key other)) return false;
             return Objects.equals(runId, other.runId) && Objects.equals(employeeId, other.employeeId);
         }
         @Override public int hashCode() { return Objects.hash(runId, employeeId); }

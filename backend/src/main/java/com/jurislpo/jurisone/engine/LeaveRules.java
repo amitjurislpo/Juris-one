@@ -27,9 +27,9 @@ public final class LeaveRules {
         List<Skipped> skipped = new ArrayList<>();
         for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
             if (weeklyOffs.contains(AttendanceEngine.dowOf(date))) continue;
-            String h = holidays.get(date);
-            if (h != null && !h.isEmpty()) {
-                skipped.add(new Skipped(date, h));
+            String holidayName = holidays.get(date);
+            if (holidayName != null && !holidayName.isEmpty()) {
+                skipped.add(new Skipped(date, holidayName));
                 continue;
             }
             dates.add(date);
@@ -71,12 +71,12 @@ public final class LeaveRules {
 
     /** Monthly accrual, pro-rata in the joining month (and zero before it). */
     public static double accrualFor(YearMonth yearMonth, LocalDate dateOfJoining, double perMonth) {
-        int dim = yearMonth.lengthOfMonth();
+        int daysInMonth = yearMonth.lengthOfMonth();
         LocalDate first = yearMonth.atDay(1), last = yearMonth.atEndOfMonth();
         if (dateOfJoining.isAfter(last)) return 0;
         if (!dateOfJoining.isAfter(first)) return perMonth;
-        int daysLeft = dim - dateOfJoining.getDayOfMonth() + 1;
-        return round2((perMonth * daysLeft) / dim);
+        int daysLeft = daysInMonth - dateOfJoining.getDayOfMonth() + 1;
+        return round2((perMonth * daysLeft) / daysInMonth);
     }
 
     /** Comp-off for work on a holiday / weekly off: a full day's hours → 1, half-day hours → 0.5. */

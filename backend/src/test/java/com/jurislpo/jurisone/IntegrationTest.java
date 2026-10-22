@@ -19,9 +19,9 @@ public abstract class IntegrationTest {
     static final PostgreSQLContainer<?> PG = PostgresContainer.start();
 
     @DynamicPropertySource
-    static void db(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", PG::getJdbcUrl);
-        r.add("spring.datasource.username", PG::getUsername);
-        r.add("spring.datasource.password", PG::getPassword);
+    static void db(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", PG::getJdbcUrl);
+        registry.add("spring.datasource.username", PG::getUsername);
+        registry.add("spring.datasource.password", PG::getPassword);
     }
 }

@@ -38,7 +38,7 @@ public class RolesRepository {
     /** Current (not exited) employees with the role, by name. */
     public List<Member> findCurrentMembers(UUID roleId) {
         return jdbc.query("SELECT id, full_name FROM employees WHERE role_id = ? AND status <> 'EXITED' ORDER BY full_name ASC",
-                (rs, i) -> new Member(rs.getString(1), rs.getString(2)), roleId);
+                (resultSet, i) -> new Member(resultSet.getString(1), resultSet.getString(2)), roleId);
     }
 
     /** Employees ever given the role, past ones included. */

@@ -24,9 +24,9 @@ public class BusinessRepository {
     /** Every employee of the current business (except the owner / super admin) for the export, by code. */
     public List<Map<String, Object>> findEmployeesForExport() {
         return jdbc.queryForList("""
-            SELECT e.code, e.full_name, e.father_name, e.email, e.phone_enc, e.phone_last4, e.designation, d.name AS dept, r.name AS role,
+            SELECT e.code, e.full_name, e.father_name, e.email, e.phone_enc, e.phone_last4, e.designation, d.name AS department_name, r.name AS role,
                    m.full_name AS manager, e.status::text AS status, e.date_of_joining, e.exit_date, e.region::text AS region, e.time_zone,
-                   s.code AS s_code, s.start_local, s.end_local, e.portal_access, e.pan_enc, e.pan_last4, e.aadhaar_enc, e.aadhaar_last4,
+                   s.code AS shift_code, s.start_local, s.end_local, e.portal_access, e.pan_enc, e.pan_last4, e.aadhaar_enc, e.aadhaar_last4,
                    e.uan_enc, e.uan_last4, e.bank_name, e.bank_account_enc, e.bank_account_last4, e.bank_ifsc, e.address_enc
             FROM employees e JOIN roles r ON r.id = e.role_id
             LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees m ON m.id = e.reporting_manager_id LEFT JOIN shifts s ON s.id = e.shift_id

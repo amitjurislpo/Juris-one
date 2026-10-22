@@ -31,10 +31,10 @@ public final class TaxCatalogue {
 
     static {
         for (Section section : DECL) {
-            for (Item i : section.items()) {
-                ITEM_LABEL.put(i.key(), i.label());
-                SECTION_OF_ITEM.put(i.key(), section.label());
-                if (!i.auto()) ITEM_SECTION.put(i.key(), "medParents".equals(i.key()) ? "80D_PARENTS" : section.key());
+            for (Item item : section.items()) {
+                ITEM_LABEL.put(item.key(), item.label());
+                SECTION_OF_ITEM.put(item.key(), section.label());
+                if (!item.auto()) ITEM_SECTION.put(item.key(), "medParents".equals(item.key()) ? "80D_PARENTS" : section.key());
             }
         }
     }

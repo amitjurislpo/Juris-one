@@ -37,7 +37,7 @@ public class ShellService {
      * {@code businessName} null for the super admin (platform); {@code subscription} null for the super admin — when it
      * is not active the app shows the "subscription ended" screen instead of the pages.
      */
-    public record Shell(ShellUser me, List<NavGroup> groups, Map<String, Integer> badges, List<ShellNote> notes, int unread, String landing, boolean canSelf,
+    public record Shell(ShellUser currentUser, List<NavGroup> groups, Map<String, Integer> badges, List<ShellNote> notes, int unread, String landing, boolean canSelf,
                         String businessName, com.jurislpo.jurisone.service.SubscriptionService.Current subscription) {}
 
     private final ShellRepository repo;
@@ -54,8 +54,8 @@ public class ShellService {
         boolean adminLike = !user.perms().contains("self");
         Map<String, NavGroup> groups = new LinkedHashMap<>();
         for (Nav.Item item : Nav.visible(user.perms(), user.hasReports(), subscriptions.activeModules(user.businessId()))) {
-            String g = item.group() != null ? item.group() : adminLike ? "Workspace" : "My workspace";
-            groups.computeIfAbsent(g, k -> new NavGroup(k, new ArrayList<>())).items().add(new NavLink(item.id(), item.label(), item.icon()));
+            String group = item.group() != null ? item.group() : adminLike ? "Workspace" : "My workspace";
+            groups.computeIfAbsent(group, k -> new NavGroup(k, new ArrayList<>())).items().add(new NavLink(item.id(), item.label(), item.icon()));
         }
 
         int pendingLeave = user.can("appr.leave") ? count(repo.countPendingLeave(user.id())) : 0;
@@ -70,12 +70,12 @@ public class ShellService {
         List<ShellNote> notes = new ArrayList<>();
         if (user.can("appr.leave", "appr.reg")) notes.add(new ShellNote(pending + " request" + (pending == 1 ? "" : "s") + " waiting for approval", "Approvals", "/approvals"));
         if (user.can("proofs.verify")) notes.add(new ShellNote(proofs + " investment proof" + (proofs == 1 ? "" : "s") + " to verify", "Finance", "/proofs"));
-        for (InboxService.Item n : recent) {
-            notes.add(new ShellNote(n.text(), Format.formatDateTime(java.time.Instant.parse(n.createdAt()), user.timeZone()), n.link(), n.id(), n.readAt() == null, n.sticky()));
+        for (InboxService.Item note : recent) {
+            notes.add(new ShellNote(note.text(), Format.formatDateTime(java.time.Instant.parse(note.createdAt()), user.timeZone()), note.link(), note.id(), note.readAt() == null, note.sticky()));
         }
         if (!holiday.isEmpty()) {
-            LocalDate d = ((java.sql.Date) holiday.get(0).get("date")).toLocalDate();
-            notes.add(new ShellNote(holiday.get(0).get("name") + " holiday on " + Format.formatWeekdayDate(d), "Holiday calendar", null));
+            LocalDate date = ((java.sql.Date) holiday.get(0).get("date")).toLocalDate();
+            notes.add(new ShellNote(holiday.get(0).get("name") + " holiday on " + Format.formatWeekdayDate(date), "Holiday calendar", null));
         }
         int unread = inbox.unread(user.id());
 

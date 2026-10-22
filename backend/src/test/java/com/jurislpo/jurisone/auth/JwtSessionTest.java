@@ -31,9 +31,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** JWT access tokens (5 min) + rotating refresh tokens; revocation on the next request; problem+json errors. */
 class JwtSessionTest extends IntegrationTest {
 
-    @Autowired MockMvc mvc;
+    @Autowired MockMvc mockMvc;
     @Autowired JdbcTemplate jdbc;
-    @Autowired JwtService jwt;
+    @Autowired JwtService jwtService;
     @Autowired RateLimiter limiter;
     TestData data;
     UUID role;
@@ -45,102 +45,102 @@ class JwtSessionTest extends IntegrationTest {
         limiter.clear();
     }
 
-    static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder b) {
-        return b.header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON);
+    static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder request) {
+        return request.header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON);
     }
 
-    record Signed(UUID id, Cookie at, Cookie rt) {}
+    record Signed(UUID id, Cookie accessCookie, Cookie refreshCookie) {}
 
-    static String cookie(MockHttpServletResponse res, String name) {
-        for (String h : res.getHeaders("Set-Cookie")) {
-            Matcher m = Pattern.compile("^" + name + "=([^;]*)").matcher(h);
-            if (m.find()) return m.group(1);
+    static String cookie(MockHttpServletResponse response, String name) {
+        for (String header : response.getHeaders("Set-Cookie")) {
+            Matcher matcher = Pattern.compile("^" + name + "=([^;]*)").matcher(header);
+            if (matcher.find()) return matcher.group(1);
         }
         return null;
     }
 
     Signed signIn() throws Exception {
-        String c = "JC-J" + (int) (Math.random() * 1_000_000);
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
-        MockHttpServletResponse res = SignIn.session(mvc, c.toLowerCase() + "@example.com")
+        String code = "JC-J" + (int) (Math.random() * 1_000_000);
+        UUID id = data.employee(code, code.toLowerCase() + "@example.com", role);
+        MockHttpServletResponse response = SignIn.session(mockMvc, code.toLowerCase() + "@example.com")
                 .andExpect(status().isCreated()).andReturn().getResponse();
-        List<String> headers = res.getHeaders("Set-Cookie");
+        List<String> headers = response.getHeaders("Set-Cookie");
         assertThat(headers).anyMatch(h -> h.startsWith("jo_at=") && h.contains("HttpOnly") && h.contains("SameSite=Lax"));
         assertThat(headers).anyMatch(h -> h.startsWith("jo_rt=") && h.contains("HttpOnly"));
-        return new Signed(id, new Cookie("jo_at", cookie(res, "jo_at")), new Cookie("jo_rt", cookie(res, "jo_rt")));
+        return new Signed(id, new Cookie("jo_at", cookie(response, "jo_at")), new Cookie("jo_rt", cookie(response, "jo_rt")));
     }
 
     @Test
     void theAccessTokenIsASignedFiveMinuteJwt() throws Exception {
-        Signed s = signIn();
-        String[] parts = s.at().getValue().split("\\.");
+        Signed signed = signIn();
+        String[] parts = signed.accessCookie().getValue().split("\\.");
         assertThat(parts).hasSize(3);
         String payload = new String(java.util.Base64.getUrlDecoder().decode(parts[1]));
-        assertThat(payload).contains("\"sub\":\"" + s.id() + "\"").contains("\"sid\"").contains("\"iss\":\"jurisone\"");
-        JwtService.AccessClaims claims = jwt.verify(s.at().getValue());
-        assertThat(claims.employeeId()).isEqualTo(s.id());
-        mvc.perform(get("/api/me").cookie(s.at())).andExpect(status().isOk());
+        assertThat(payload).contains("\"sub\":\"" + signed.id() + "\"").contains("\"sid\"").contains("\"iss\":\"jurisone\"");
+        JwtService.AccessClaims claims = jwtService.verify(signed.accessCookie().getValue());
+        assertThat(claims.employeeId()).isEqualTo(signed.id());
+        mockMvc.perform(get("/api/me").cookie(signed.accessCookie())).andExpect(status().isOk());
     }
 
     @Test
     void anExpiredOrForgedTokenIsRejectedWithProblemJson() throws Exception {
-        Signed s = signIn();
-        String sid = jdbc.queryForObject("SELECT id FROM sessions WHERE employee_id = ?", String.class, s.id());
-        String old = jwt.issue(s.id(), sid, Instant.now().minusSeconds(6 * 60));
-        mvc.perform(get("/api/me").cookie(new Cookie("jo_at", old))).andExpect(status().isUnauthorized())
+        Signed signed = signIn();
+        String sessionId = jdbc.queryForObject("SELECT id FROM sessions WHERE employee_id = ?", String.class, signed.id());
+        String expiredToken = jwtService.issue(signed.id(), sessionId, Instant.now().minusSeconds(6 * 60));
+        mockMvc.perform(get("/api/me").cookie(new Cookie("jo_at", expiredToken))).andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(jsonPath("$.code").value("TOKEN_EXPIRED"))
                 .andExpect(jsonPath("$.detail").value("Your session has ended. Please sign in again."))
                 .andExpect(jsonPath("$.status").value(401));
 
-        String forged = s.at().getValue().substring(0, s.at().getValue().lastIndexOf('.') + 1) + "AAAA";
-        mvc.perform(get("/api/me").cookie(new Cookie("jo_at", forged))).andExpect(status().isUnauthorized())
+        String forged = signed.accessCookie().getValue().substring(0, signed.accessCookie().getValue().lastIndexOf('.') + 1) + "AAAA";
+        mockMvc.perform(get("/api/me").cookie(new Cookie("jo_at", forged))).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
     }
 
     @Test
     void refreshRotatesAndAReusedRefreshTokenRevokesTheSession() throws Exception {
-        Signed s = signIn();
-        MockHttpServletResponse r1 = mvc.perform(write(post("/api/auth/session-refreshes")).cookie(s.rt())).andExpect(status().isCreated()).andReturn().getResponse();
-        String at2 = cookie(r1, "jo_at"), rt2 = cookie(r1, "jo_rt");
-        assertThat(rt2).isNotEqualTo(s.rt().getValue());
-        mvc.perform(get("/api/me").cookie(new Cookie("jo_at", at2))).andExpect(status().isOk());
+        Signed signed = signIn();
+        MockHttpServletResponse response = mockMvc.perform(write(post("/api/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isCreated()).andReturn().getResponse();
+        String refreshedAccessToken = cookie(response, "jo_at"), refreshedRefreshToken = cookie(response, "jo_rt");
+        assertThat(refreshedRefreshToken).isNotEqualTo(signed.refreshCookie().getValue());
+        mockMvc.perform(get("/api/me").cookie(new Cookie("jo_at", refreshedAccessToken))).andExpect(status().isOk());
 
         // the old refresh token was used — presenting it again means it was copied
-        mvc.perform(write(post("/api/auth/session-refreshes")).cookie(s.rt())).andExpect(status().isUnauthorized())
+        mockMvc.perform(write(post("/api/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
-        mvc.perform(get("/api/me").cookie(new Cookie("jo_at", at2))).andExpect(status().isUnauthorized());
-        mvc.perform(write(post("/api/auth/session-refreshes")).cookie(new Cookie("jo_rt", rt2))).andExpect(status().isUnauthorized());
-        assertThat(jdbc.queryForObject("SELECT revoked_reason FROM sessions WHERE employee_id = ?", String.class, s.id())).isEqualTo("refresh_reuse");
+        mockMvc.perform(get("/api/me").cookie(new Cookie("jo_at", refreshedAccessToken))).andExpect(status().isUnauthorized());
+        mockMvc.perform(write(post("/api/auth/session-refreshes")).cookie(new Cookie("jo_rt", refreshedRefreshToken))).andExpect(status().isUnauthorized());
+        assertThat(jdbc.queryForObject("SELECT revoked_reason FROM sessions WHERE employee_id = ?", String.class, signed.id())).isEqualTo("refresh_reuse");
     }
 
     @Test
     void disablingAccessStopsTheNextRequestAndRefresh() throws Exception {
-        Signed s = signIn();
-        mvc.perform(get("/api/me").cookie(s.at())).andExpect(status().isOk());
-        jdbc.update("UPDATE employees SET portal_access = false WHERE id = ?", s.id());
-        mvc.perform(get("/api/me").cookie(s.at())).andExpect(status().isUnauthorized());
-        mvc.perform(write(post("/api/auth/session-refreshes")).cookie(s.rt())).andExpect(status().isUnauthorized());
+        Signed signed = signIn();
+        mockMvc.perform(get("/api/me").cookie(signed.accessCookie())).andExpect(status().isOk());
+        jdbc.update("UPDATE employees SET portal_access = false WHERE id = ?", signed.id());
+        mockMvc.perform(get("/api/me").cookie(signed.accessCookie())).andExpect(status().isUnauthorized());
+        mockMvc.perform(write(post("/api/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isUnauthorized());
     }
 
     @Test
     void signOutRevokesTheSessionEvenWithOnlyTheRefreshCookie() throws Exception {
-        Signed s = signIn();
-        mvc.perform(write(delete("/api/auth/session")).cookie(s.rt())).andExpect(status().isOk());
-        mvc.perform(get("/api/me").cookie(s.at())).andExpect(status().isUnauthorized());
-        mvc.perform(write(post("/api/auth/session-refreshes")).cookie(s.rt())).andExpect(status().isUnauthorized());
+        Signed signed = signIn();
+        mockMvc.perform(write(delete("/api/auth/session")).cookie(signed.refreshCookie())).andExpect(status().isOk());
+        mockMvc.perform(get("/api/me").cookie(signed.accessCookie())).andExpect(status().isUnauthorized());
+        mockMvc.perform(write(post("/api/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isUnauthorized());
     }
 
     @Test
     void errorsAreProblemDetails() throws Exception {
-        Signed s = signIn();
-        mvc.perform(get("/api/people/not-a-uuid").cookie(s.at())).andExpect(status().isForbidden())
+        Signed signed = signIn();
+        mockMvc.perform(get("/api/people/not-a-uuid").cookie(signed.accessCookie())).andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(jsonPath("$.code").value("FORBIDDEN")).andExpect(jsonPath("$.title").value("Forbidden"))
                 .andExpect(jsonPath("$.instance").value("/api/people/not-a-uuid"));
-        mvc.perform(write(post("/api/leave/requests")).cookie(s.at()).content("{nope")).andExpect(status().isBadRequest())
+        mockMvc.perform(write(post("/api/leave/requests")).cookie(signed.accessCookie()).content("{nope")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
-        mvc.perform(post("/api/leave/requests").cookie(s.at()).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden())
+        mockMvc.perform(post("/api/leave/requests").cookie(signed.accessCookie()).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("CROSS_SITE_BLOCKED"));
     }
 }

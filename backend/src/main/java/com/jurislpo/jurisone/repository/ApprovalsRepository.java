@@ -22,10 +22,10 @@ public class ApprovalsRepository {
     }
 
     /** A decided leave request (last 30 days list). */
-    public record DecidedLeave(String id, Instant at, String name, String typeName, LocalDate from, LocalDate to, String status, String decidedBy) {}
+    public record DecidedLeave(String id, Instant decidedAt, String name, String typeName, LocalDate from, LocalDate to, String status, String decidedBy) {}
 
     /** A decided regularization (last 30 days list). */
-    public record DecidedRegularization(String id, Instant at, String name, String kind, LocalDate workDate, String status, String decidedBy, String role) {}
+    public record DecidedRegularization(String id, Instant decidedAt, String name, String kind, LocalDate workDate, String status, String decidedBy, String role) {}
 
     /** The leave request with its type name and the employee's name (empty when not found). */
     public List<Map<String, Object>> findLeaveForDecision(UUID id) {
@@ -53,12 +53,12 @@ public class ApprovalsRepository {
                 status, decidedBy, decidedAt, decidedRole, id);
     }
 
-    public void insertRegularizationPunchIn(UUID employeeId, Timestamp at) {
-        jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, created_at) VALUES (?, ?, ?, 'IN', 'REGULARIZATION', now())", UUID.randomUUID(), employeeId, at);
+    public void insertRegularizationPunchIn(UUID employeeId, Timestamp timestamp) {
+        jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, created_at) VALUES (?, ?, ?, 'IN', 'REGULARIZATION', now())", UUID.randomUUID(), employeeId, timestamp);
     }
 
-    public void insertRegularizationPunchOut(UUID employeeId, Timestamp at) {
-        jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, created_at) VALUES (?, ?, ?, 'OUT', 'REGULARIZATION', now())", UUID.randomUUID(), employeeId, at);
+    public void insertRegularizationPunchOut(UUID employeeId, Timestamp timestamp) {
+        jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, created_at) VALUES (?, ?, ?, 'OUT', 'REGULARIZATION', now())", UUID.randomUUID(), employeeId, timestamp);
     }
 
     /** Days after which a comp-off expires (null when not set). */
@@ -78,7 +78,7 @@ public class ApprovalsRepository {
     public List<Map<String, Object>> findPendingLeave(String nameFilter, Object[] args) {
         return jdbc.queryForList("""
             SELECT l.id, l.employee_id, l.leave_type, t.name AS type_name, l.from_date, l.to_date, l.part::text AS part, l.days, l.lop_days, l.reason,
-                   e.full_name, e.department_id, d.name AS dept
+                   e.full_name, e.department_id, d.name AS department_name
             FROM leave_requests l JOIN leave_types t ON t.code = l.leave_type JOIN employees e ON e.id = l.employee_id LEFT JOIN departments d ON d.id = e.department_id
             WHERE l.status = 'PENDING' AND l.employee_id <> ?""" + nameFilter + " ORDER BY l.from_date ASC", args);
     }
@@ -94,7 +94,7 @@ public class ApprovalsRepository {
     /** Pending regularizations of everyone but the approver, oldest first; {@code nameFilter} / {@code args} as for leave. */
     public List<Map<String, Object>> findPendingRegularizations(String nameFilter, Object[] args) {
         return jdbc.queryForList("""
-            SELECT r.id, r.employee_id, r.work_date, r.kind::text AS kind, r.proposed_in, r.proposed_out, r.reason, e.full_name, e.time_zone, d.name AS dept
+            SELECT r.id, r.employee_id, r.work_date, r.kind::text AS kind, r.proposed_in, r.proposed_out, r.reason, e.full_name, e.time_zone, d.name AS department_name
             FROM regularization_requests r JOIN employees e ON e.id = r.employee_id LEFT JOIN departments d ON d.id = e.department_id
             WHERE r.status = 'PENDING' AND r.employee_id <> ?""" + nameFilter + " ORDER BY r.work_date ASC", args);
     }
@@ -113,8 +113,8 @@ public class ApprovalsRepository {
             SELECT l.id::text, l.decided_at, e.full_name, t.name, l.from_date, l.to_date, l.status::text, dd.full_name AS by
             FROM leave_requests l JOIN employees e ON e.id = l.employee_id JOIN leave_types t ON t.code = l.leave_type LEFT JOIN employees dd ON dd.id = l.decided_by
             WHERE l.status IN ('APPROVED', 'DECLINED') AND l.decided_at >= ? ORDER BY l.decided_at DESC LIMIT 15""",
-                (rs, i) -> new DecidedLeave(rs.getString(1), rs.getTimestamp(2).toInstant(), rs.getString(3), rs.getString(4), rs.getDate(5).toLocalDate(),
-                        rs.getDate(6).toLocalDate(), rs.getString(7), rs.getString(8)), since);
+                (resultSet, i) -> new DecidedLeave(resultSet.getString(1), resultSet.getTimestamp(2).toInstant(), resultSet.getString(3), resultSet.getString(4), resultSet.getDate(5).toLocalDate(),
+                        resultSet.getDate(6).toLocalDate(), resultSet.getString(7), resultSet.getString(8)), since);
     }
 
     /** The 15 most recently decided regularizations since the given time. */
@@ -123,7 +123,7 @@ public class ApprovalsRepository {
             SELECT r.id::text, r.decided_at, e.full_name, r.kind::text, r.work_date, r.status::text, dd.full_name AS by, r.decided_role
             FROM regularization_requests r JOIN employees e ON e.id = r.employee_id LEFT JOIN employees dd ON dd.id = r.decided_by
             WHERE r.status IN ('APPROVED', 'DECLINED') AND r.decided_at >= ? ORDER BY r.decided_at DESC LIMIT 15""",
-                (rs, i) -> new DecidedRegularization(rs.getString(1), rs.getTimestamp(2).toInstant(), rs.getString(3), rs.getString(4), rs.getDate(5).toLocalDate(),
-                        rs.getString(6), rs.getString(7), rs.getString(8)), since);
+                (resultSet, i) -> new DecidedRegularization(resultSet.getString(1), resultSet.getTimestamp(2).toInstant(), resultSet.getString(3), resultSet.getString(4), resultSet.getDate(5).toLocalDate(),
+                        resultSet.getString(6), resultSet.getString(7), resultSet.getString(8)), since);
     }
 }

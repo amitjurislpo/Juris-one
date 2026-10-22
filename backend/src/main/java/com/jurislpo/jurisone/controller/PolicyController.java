@@ -69,8 +69,8 @@ public class PolicyController {
     @PostMapping("/{id}/acknowledgements")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> acknowledge(@PathVariable String id, @RequestBody AckBody body, HttpServletRequest request) {
-        RequestMeta m = RequestMeta.of(request);
-        return ApiResult.message(policies.acknowledge(auth.assertPerm(), id, body.version(), m.ip(), m.userAgent()));
+        RequestMeta requestMeta = RequestMeta.of(request);
+        return ApiResult.message(policies.acknowledge(auth.assertPerm(), id, body.version(), requestMeta.ipAddress(), requestMeta.userAgent()));
     }
 
     /** The PDF of a published version. */
@@ -86,11 +86,11 @@ public class PolicyController {
         return ApiResult.success(policies.list());
     }
 
-    /** {@code {title, body, requiresAck?}} — a new draft. */
+    /** {@code {title, body, requiresAcknowledgement?}} — a new draft. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> create(@RequestBody PolicyService.PolicyInput body, HttpServletRequest request) {
-        String id = policies.create(manager(), body, RequestMeta.of(request).ip());
+        String id = policies.create(manager(), body, RequestMeta.of(request).ipAddress());
         return ApiResult.success("Draft saved", Map.of("id", id));
     }
 
@@ -103,20 +103,20 @@ public class PolicyController {
     /** Edits the draft; publishing it makes a new version. */
     @PutMapping("/{id}")
     public ApiResult<Void> update(@PathVariable String id, @RequestBody PolicyService.PolicyInput body, HttpServletRequest request) {
-        policies.update(manager(), id, body, RequestMeta.of(request).ip());
+        policies.update(manager(), id, body, RequestMeta.of(request).ipAddress());
         return ApiResult.message("Draft saved");
     }
 
     @DeleteMapping("/{id}")
     public ApiResult<Void> delete(@PathVariable String id, HttpServletRequest request) {
-        policies.delete(manager(), id, RequestMeta.of(request).ip());
+        policies.delete(manager(), id, RequestMeta.of(request).ipAddress());
         return ApiResult.message("Draft deleted");
     }
 
     /** {@code {"status": "PUBLISHED" | "ARCHIVED"}} */
     @PutMapping("/{id}/status")
     public ApiResult<Void> status(@PathVariable String id, @RequestBody StatusBody body, HttpServletRequest request) {
-        return ApiResult.message(policies.setStatus(manager(), id, body.status(), RequestMeta.of(request).ip()));
+        return ApiResult.message(policies.setStatus(manager(), id, body.status(), RequestMeta.of(request).ipAddress()));
     }
 
     /** Multipart {@code file}: the PDF for the draft. */
@@ -124,7 +124,7 @@ public class PolicyController {
     public ApiResult<Map<String, String>> attach(@PathVariable String id, @RequestPart(name = "file", required = false) MultipartFile file, HttpServletRequest request) {
         CurrentUser user = manager();
         try {
-            String name = policies.attach(user, id, file == null ? null : file.getOriginalFilename(), file == null ? null : file.getBytes(), RequestMeta.of(request).ip());
+            String name = policies.attach(user, id, file == null ? null : file.getOriginalFilename(), file == null ? null : file.getBytes(), RequestMeta.of(request).ipAddress());
             return ApiResult.success("Attached " + name, Map.of("name", name));
         } catch (IOException e) {
             throw new IllegalStateException(e);
@@ -133,7 +133,7 @@ public class PolicyController {
 
     @DeleteMapping("/{id}/file")
     public ApiResult<Void> detach(@PathVariable String id, HttpServletRequest request) {
-        policies.detach(manager(), id, RequestMeta.of(request).ip());
+        policies.detach(manager(), id, RequestMeta.of(request).ipAddress());
         return ApiResult.message("PDF removed from the draft");
     }
 
@@ -147,8 +147,8 @@ public class PolicyController {
     @PostMapping("/{id}/reminders")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, Integer>> remind(@PathVariable String id, HttpServletRequest request) {
-        int n = policies.remind(manager(), id, RequestMeta.of(request).ip());
-        return ApiResult.success(n == 0 ? "Everyone has already accepted it" : "Reminder sent to " + n + " " + (n == 1 ? "person" : "people"), Map.of("count", n));
+        int remindedCount = policies.remind(manager(), id, RequestMeta.of(request).ipAddress());
+        return ApiResult.success(remindedCount == 0 ? "Everyone has already accepted it" : "Reminder sent to " + remindedCount + " " + (remindedCount == 1 ? "person" : "people"), Map.of("count", remindedCount));
     }
 
     /** The legal evidence: every acknowledgement of every version, as recorded (CSV, or {@code ?format=pdf}; audited). */
@@ -156,13 +156,13 @@ public class PolicyController {
     public ResponseEntity<byte[]> evidence(@PathVariable String id, @org.springframework.web.bind.annotation.RequestParam(name = "format", required = false) String format,
                                            HttpServletRequest request) {
         if ("pdf".equals(format)) {
-            PolicyService.PolicyFile file = policies.evidencePdf(manager(), id, RequestMeta.of(request).ip());
+            PolicyService.PolicyFile file = policies.evidencePdf(manager(), id, RequestMeta.of(request).ipAddress());
             return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF)
                     .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(file.name(), StandardCharsets.UTF_8).build().toString())
                     .header(HttpHeaders.CACHE_CONTROL, "private, no-store").body(file.bytes());
         }
-        PolicyService.Export e = policies.evidence(manager(), id, RequestMeta.of(request).ip());
-        return PeopleController.csv(e.filename(), e.body());
+        PolicyService.Export exportFile = policies.evidence(manager(), id, RequestMeta.of(request).ipAddress());
+        return PeopleController.csv(exportFile.filename(), exportFile.body());
     }
 
     static ResponseEntity<byte[]> pdf(PolicyService.PolicyFile file) {

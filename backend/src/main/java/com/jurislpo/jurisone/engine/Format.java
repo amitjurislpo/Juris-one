@@ -22,13 +22,13 @@ public final class Format {
     private static final List<String> MONTH_ABBREVIATIONS_UK = List.of("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec");
 
     /** ISO date of {@code at} as seen in an IANA zone. */
-    public static LocalDate isoInZone(Instant at, String timeZone) {
-        return at.atZone(ZoneId.of(timeZone)).toLocalDate();
+    public static LocalDate isoInZone(Instant instant, String timeZone) {
+        return instant.atZone(ZoneId.of(timeZone)).toLocalDate();
     }
 
     /** {@code Date.prototype.toISOString()}: millisecond precision, Z. */
-    public static String isoTimestamp(Instant i) {
-        return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(java.time.ZoneOffset.UTC).format(i);
+    public static String isoTimestamp(Instant instant) {
+        return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(java.time.ZoneOffset.UTC).format(instant);
     }
 
     public static LocalDate todayIn(String timeZone) {
@@ -53,22 +53,22 @@ public final class Format {
     }
 
     /** Intl en-GB {day numeric, month short, hour numeric, minute 2-digit, hour12} → "7 Oct, 8:49 pm". */
-    public static String formatDateTime(Instant at, String timeZone) {
-        ZonedDateTime zoned = at.atZone(ZoneId.of(timeZone));
+    public static String formatDateTime(Instant instant, String timeZone) {
+        ZonedDateTime zoned = instant.atZone(ZoneId.of(timeZone));
         int hour = zoned.getHour() % 12 == 0 ? 12 : zoned.getHour() % 12;
         return zoned.getDayOfMonth() + " " + MONTH_ABBREVIATIONS_UK.get(zoned.getMonthValue() - 1) + ", " + hour + ":" + String.format(java.util.Locale.ROOT, "%02d", zoned.getMinute()) + " "
                 + (zoned.getHour() < 12 ? "am" : "pm");
     }
 
     /** Whole-day difference b − a. */
-    public static long daysBetween(LocalDate a, LocalDate b) {
-        return ChronoUnit.DAYS.between(a, b);
+    public static long daysBetween(LocalDate start, LocalDate end) {
+        return ChronoUnit.DAYS.between(start, end);
     }
 
     /** Indian digit grouping (en-IN): 1234567 → "12,34,567". */
-    public static String groupIndian(long n) {
-        if (n < 0) return "-" + groupIndian(-n);
-        String text = Long.toString(n);
+    public static String groupIndian(long number) {
+        if (number < 0) return "-" + groupIndian(-number);
+        String text = Long.toString(number);
         if (text.length() <= 3) return text;
         String last3 = text.substring(text.length() - 3);
         String rest = text.substring(0, text.length() - 3);
@@ -83,7 +83,7 @@ public final class Format {
     }
 
     /** Paise → "₹1,23,456". */
-    public static String inr(long paise) {
+    public static String formatRupees(long paise) {
         return "₹" + groupIndian(Math.round(paise / 100.0));
     }
 
@@ -92,11 +92,11 @@ public final class Format {
         return (long) Math.floor(hours) + "h " + String.format(java.util.Locale.ROOT, "%02d", Math.round((hours % 1) * 60)) + "m";
     }
 
-    public static String initials(String n) {
+    public static String initials(String name) {
         StringBuilder builder = new StringBuilder();
-        for (String w : n.trim().split("\\s+")) {
-            if (w.isEmpty()) continue;
-            builder.appendCodePoint(w.codePointAt(0));
+        for (String word : name.trim().split("\\s+")) {
+            if (word.isEmpty()) continue;
+            builder.appendCodePoint(word.codePointAt(0));
             if (builder.codePointCount(0, builder.length()) == 2) break;
         }
         return builder.toString().toUpperCase();

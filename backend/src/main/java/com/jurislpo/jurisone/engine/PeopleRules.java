@@ -104,10 +104,10 @@ public final class PeopleRules {
 
     /** Would setting {@code managerId} as the manager of {@code employeeId} create a reporting loop? */
     public static boolean createsCycle(String employeeId, String managerId, Map<String, String> managerOf) {
-        String cur = managerId;
-        for (int i = 0; cur != null && !cur.isEmpty() && i < 10_000; i++) {
-            if (cur.equals(employeeId)) return true;
-            cur = managerOf.get(cur);
+        String currentId = managerId;
+        for (int i = 0; currentId != null && !currentId.isEmpty() && i < 10_000; i++) {
+            if (currentId.equals(employeeId)) return true;
+            currentId = managerOf.get(currentId);
         }
         return false;
     }
@@ -149,8 +149,8 @@ public final class PeopleRules {
     }
 
     public static boolean validPhone(String text) {
-        int n = digits(text).length();
-        return n >= 10 && n <= 15;
+        int digitCount = digits(text).length();
+        return digitCount >= 10 && digitCount <= 15;
     }
 
     /** The add / edit employee form (employee-schema.ts EmployeeInput); strings already trimmed by the caller where zod trims. */
@@ -176,31 +176,31 @@ public final class PeopleRules {
 
     /** Step-by-step checks shown in the form (and re-run on the server). Field → message, in check order. */
     public static Map<String, String> stepErrors(int step, EmployeeInput input, boolean editing, boolean hadManager) {
-        Map<String, String> x = new LinkedHashMap<>();
+        Map<String, String> errors = new LinkedHashMap<>();
         boolean india = "IN_IST".equals(input.locationOrDefault());
         if (step == 1) {
-            if (input.firstName().trim().isEmpty()) x.put("firstName", "First name is required");
-            if (input.lastName().trim().isEmpty()) x.put("lastName", "Last name is required");
-            if (input.fatherName().trim().length() < 2) x.put("fatherName", "Father’s name is required");
-            if (!EMAIL_RE.matcher(input.email().trim()).matches()) x.put("email", "Enter a valid email");
+            if (input.firstName().trim().isEmpty()) errors.put("firstName", "First name is required");
+            if (input.lastName().trim().isEmpty()) errors.put("lastName", "Last name is required");
+            if (input.fatherName().trim().length() < 2) errors.put("fatherName", "Father’s name is required");
+            if (!EMAIL_RE.matcher(input.email().trim()).matches()) errors.put("email", "Enter a valid email");
             if (!input.phone().isEmpty() || !editing) {
-                String p = Phones.problem(input.phoneCountry(), input.phone());
-                if (p != null) x.put("phone", p);
+                String phoneProblem = Phones.problem(input.phoneCountry(), input.phone());
+                if (phoneProblem != null) errors.put("phone", phoneProblem);
             }
         }
         if (step == 2 && india) {
-            if (!input.pan().isEmpty() && !PAN_RE.matcher(input.pan().trim().toUpperCase()).matches()) x.put("pan", "PAN looks like ABCDE1234F");
-            if (!input.aadhaar().isEmpty() && !validAadhaar(input.aadhaar())) x.put("aadhaar", "Aadhaar has 12 digits");
-            if (!input.uan().isEmpty() && !validUan(input.uan())) x.put("uan", "UAN has 12 digits");
+            if (!input.pan().isEmpty() && !PAN_RE.matcher(input.pan().trim().toUpperCase()).matches()) errors.put("pan", "PAN looks like ABCDE1234F");
+            if (!input.aadhaar().isEmpty() && !validAadhaar(input.aadhaar())) errors.put("aadhaar", "Aadhaar has 12 digits");
+            if (!input.uan().isEmpty() && !validUan(input.uan())) errors.put("uan", "UAN has 12 digits");
         }
         if (step == 3) {
-            if (input.designation().trim().length() < 2) x.put("designation", "Designation is required");
-            if (input.departmentId().isEmpty()) x.put("departmentId", "Pick a department");
-            if (input.managerId().isEmpty() && (!editing || hadManager)) x.put("managerId", "Pick a reporting manager");
-            if (input.dateOfJoining().isEmpty()) x.put("dateOfJoining", "Pick the date of joining");
-            if (input.roleId().isEmpty()) x.put("roleId", "Pick a role");
+            if (input.designation().trim().length() < 2) errors.put("designation", "Designation is required");
+            if (input.departmentId().isEmpty()) errors.put("departmentId", "Pick a department");
+            if (input.managerId().isEmpty() && (!editing || hadManager)) errors.put("managerId", "Pick a reporting manager");
+            if (input.dateOfJoining().isEmpty()) errors.put("dateOfJoining", "Pick the date of joining");
+            if (input.roleId().isEmpty()) errors.put("roleId", "Pick a role");
         }
-        return x;
+        return errors;
     }
 
     public static Map<String, String> stepErrors(int step, EmployeeInput input, boolean editing) {

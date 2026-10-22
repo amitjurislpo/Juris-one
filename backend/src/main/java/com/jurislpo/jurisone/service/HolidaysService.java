@@ -52,12 +52,12 @@ public class HolidaysService {
         return new Page(items, rows, Format.todayIn(user.timeZone()).toString());
     }
 
-    static String label(String r) {
-        return "ALL".equals(r) ? "everyone" : "IN".equals(r) ? "India team" : "US team";
+    static String label(String region) {
+        return "ALL".equals(region) ? "everyone" : "IN".equals(region) ? "India team" : "US team";
     }
 
     @Transactional
-    public String add(CurrentUser user, String dateRaw, String nameRaw, String regionRaw, String ip) {
+    public String add(CurrentUser user, String dateRaw, String nameRaw, String regionRaw, String ipAddress) {
         String date = Check.isoDate(dateRaw, "Pick a date");
         String name = Check.trimmed(nameRaw, 2, "Enter the holiday name", 80, "Too big: expected string to have <=80 characters");
         String region = Check.oneOf(regionRaw, List.of("IN", "US", "ALL"));
@@ -74,16 +74,16 @@ public class HolidaysService {
         after.put("date", date);
         after.put("name", name);
         after.put("region", region);
-        audit.log(user.id(), "holiday.create", "holiday", id.toString(), null, after, ip);
+        audit.log(user.id(), "holiday.create", "holiday", id.toString(), null, after, ipAddress);
         return name + " added for " + label(region) + " · " + Format.formatWeekdayDate(LocalDate.parse(date));
     }
 
     @Transactional
-    public String delete(CurrentUser user, String idRaw, String ip) {
+    public String delete(CurrentUser user, String idRaw, String ipAddress) {
         UUID id = Check.uuid(idRaw);
-        List<Map<String, Object>> hs = repo.findById(id);
-        if (hs.isEmpty()) throw new UserException("That holiday no longer exists.");
-        Map<String, Object> row = hs.get(0);
+        List<Map<String, Object>> rows = repo.findById(id);
+        if (rows.isEmpty()) throw new UserException("That holiday no longer exists.");
+        Map<String, Object> row = rows.get(0);
         LocalDate date = ((Date) row.get("date")).toLocalDate();
         if (date.isBefore(Format.todayIn("Asia/Kolkata"))) throw new UserException("Past holidays can't be deleted.");
         repo.delete(id);
@@ -91,7 +91,7 @@ public class HolidaysService {
         before.put("date", date.toString());
         before.put("name", row.get("name"));
         before.put("region", row.get("region"));
-        audit.log(user.id(), "holiday.delete", "holiday", id.toString(), before, null, ip);
+        audit.log(user.id(), "holiday.delete", "holiday", id.toString(), before, null, ipAddress);
         return row.get("name") + " removed from the calendar";
     }
 }

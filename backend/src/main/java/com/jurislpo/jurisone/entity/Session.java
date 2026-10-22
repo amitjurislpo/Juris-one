@@ -26,7 +26,7 @@ public class Session {
     private Instant lastSeenAt;
 
     @Column(name = "ip")
-    private String ip;
+    private String ipAddress;
 
     @Column(name = "user_agent")
     private String userAgent;
@@ -57,8 +57,8 @@ public class Session {
     public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
     public Instant getLastSeenAt() { return lastSeenAt; }
     public void setLastSeenAt(Instant lastSeenAt) { this.lastSeenAt = lastSeenAt; }
-    public String getIp() { return ip; }
-    public void setIp(String ip) { this.ip = ip; }
+    public String getIpAddress() { return ipAddress; }
+    public void setIpAddress(String ipAddress) { this.ipAddress = ipAddress; }
     public String getUserAgent() { return userAgent; }
     public void setUserAgent(String userAgent) { this.userAgent = userAgent; }
     public Instant getRevokedAt() { return revokedAt; }

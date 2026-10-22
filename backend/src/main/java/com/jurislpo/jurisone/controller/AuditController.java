@@ -45,7 +45,7 @@ public class AuditController {
             throw new com.jurislpo.jurisone.exception.UserException(HttpStatus.BAD_REQUEST, "Not a valid page path.");
         }
         if (limiter.rateLimit("page-views:" + user.sessionId(), MAX_PER_MINUTE, 60_000L).limited()) return ApiResult.message("ok");
-        audit.log(user.id(), "page.view", "page", path, RequestMeta.of(request).ip());
+        audit.log(user.id(), "page.view", "page", path, RequestMeta.of(request).ipAddress());
         return ApiResult.message("ok");
     }
 }

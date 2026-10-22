@@ -42,29 +42,29 @@ public class SeedService {
     private static final Logger log = LoggerFactory.getLogger(SeedService.class);
 
     private final SeedRepository repo;
-    private final PiiCrypto pii;
+    private final PiiCrypto piiCrypto;
     private final PayrollOperationsService payrollOperations;
     private final JobsService jobs;
     private final BusinessSetupService setup;
-    private final Environment env;
+    private final Environment environment;
     private final Path storageDir;
 
     private final com.jurislpo.jurisone.service.PlatformCompanyService platformCompany;
 
-    public SeedService(SeedRepository repo, PiiCrypto pii, PayrollOperationsService payrollOperations, JobsService jobs, BusinessSetupService setup,
-                       com.jurislpo.jurisone.service.PlatformCompanyService platformCompany, Environment env, JurisOneProperties props) {
+    public SeedService(SeedRepository repo, PiiCrypto piiCrypto, PayrollOperationsService payrollOperations, JobsService jobs, BusinessSetupService setup,
+                       com.jurislpo.jurisone.service.PlatformCompanyService platformCompany, Environment environment, JurisOneProperties props) {
         this.platformCompany = platformCompany;
         this.repo = repo;
-        this.pii = pii;
+        this.piiCrypto = piiCrypto;
         this.payrollOperations = payrollOperations;
         this.jobs = jobs;
         this.setup = setup;
-        this.env = env;
+        this.environment = environment;
         this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
     }
 
-    static Date d(String iso) {
-        return Date.valueOf(LocalDate.parse(iso));
+    static Date parseDate(String isoDate) {
+        return Date.valueOf(LocalDate.parse(isoDate));
     }
 
     static long paise(double rupees) {
@@ -92,8 +92,8 @@ public class SeedService {
         List<ShiftSeed> list = List.of(new ShiftSeed("IN_NIGHT", "India Night", "19:30", "04:30", "IN", true), new ShiftSeed("IN_DAY", "India Day", "09:30", "18:30", "IN", false),
                 new ShiftSeed("US_DAY", "US Day", "09:00", "18:00", "US", false));
         Map<String, UUID> ids = new HashMap<>();
-        for (ShiftSeed s : list) {
-            ids.put(s.code(), repo.upsertShift(UUID.randomUUID(), s.code(), s.name(), s.start(), s.end(), s.region(), s.crosses()));
+        for (ShiftSeed shiftSeed : list) {
+            ids.put(shiftSeed.code(), repo.upsertShift(UUID.randomUUID(), shiftSeed.code(), shiftSeed.name(), shiftSeed.start(), shiftSeed.end(), shiftSeed.region(), shiftSeed.crosses()));
         }
         return ids;
     }
@@ -135,22 +135,22 @@ public class SeedService {
 
     public record FakeIds(String phone, String pan, String aadhaar, String uan, String bank, String address) {}
 
-    static String pad(long x, int w) {
-        return String.format(Locale.ROOT, "%0" + w + "d", x);
+    static String zeroPad(long number, int width) {
+        return String.format(Locale.ROOT, "%0" + width + "d", number);
     }
 
     /** Deterministic fake IDs so demo data is stable across re-seeds. */
     public static FakeIds fakeIds(String code, boolean india) {
-        long n = Long.parseLong(code.replaceAll("\\D", ""));
+        long number = Long.parseLong(code.replaceAll("\\D", ""));
         String letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-        java.util.function.IntFunction<Character> L = i -> letters.charAt((int) ((n * 7 + i * 5L) % letters.length()));
+        java.util.function.IntFunction<Character> L = i -> letters.charAt((int) ((number * 7 + i * 5L) % letters.length()));
         return new FakeIds(
-                india ? "+91 98" + pad((n * 7919) % 1000, 3) + " " + pad((n * 104729) % 100000, 5) : "+1 (212) 555-" + pad((n * 37) % 10000, 4),
-                india ? "" + L.apply(1) + L.apply(2) + L.apply(3) + "P" + L.apply(4) + pad((n * 1231) % 10000, 4) + L.apply(5) : null,
-                india ? pad(2000 + ((n * 3571) % 7000), 4) + pad((n * 6007) % 10000, 4) + pad((n * 9001) % 10000, 4) : null,
-                india ? "1009" + pad((n * 4421) % 100000000, 8) : null,
-                india ? "5010" + pad((n * 77777) % 100000000, 8) : null,
-                india ? ((n % 90) + 10) + ", Sector " + ((n % 60) + 1) + ", Noida, Uttar Pradesh 201301" : (100 + n) + " Park Avenue, New York, NY 10017");
+                india ? "+91 98" + zeroPad((number * 7919) % 1000, 3) + " " + zeroPad((number * 104729) % 100000, 5) : "+1 (212) 555-" + zeroPad((number * 37) % 10000, 4),
+                india ? "" + L.apply(1) + L.apply(2) + L.apply(3) + "P" + L.apply(4) + zeroPad((number * 1231) % 10000, 4) + L.apply(5) : null,
+                india ? zeroPad(2000 + ((number * 3571) % 7000), 4) + zeroPad((number * 6007) % 10000, 4) + zeroPad((number * 9001) % 10000, 4) : null,
+                india ? "1009" + zeroPad((number * 4421) % 100000000, 8) : null,
+                india ? "5010" + zeroPad((number * 77777) % 100000000, 8) : null,
+                india ? ((number % 90) + 10) + ", Sector " + ((number % 60) + 1) + ", Noida, Uttar Pradesh 201301" : (100 + number) + " Park Avenue, New York, NY 10017");
     }
 
     static final List<Person> PEOPLE = List.of(
@@ -172,8 +172,8 @@ public class SeedService {
             new Person("JC-090", "Emily Carter", "Client Success Associate", "Client Services", "JC-091", "2025-05-19", "employee", "ACTIVE", "US_DAY", "America/New_York", null));
 
     String adminEmail() {
-        String e = env.getProperty("jurisone.seed.super-admin-email", "");
-        return (e.isEmpty() ? "admin@jurislpo.com" : e).toLowerCase();
+        String email = environment.getProperty("jurisone.seed.super-admin-email", "");
+        return (email.isEmpty() ? "admin@jurislpo.com" : email).toLowerCase();
     }
 
     /**
@@ -186,7 +186,7 @@ public class SeedService {
         UUID id;
         if (existing.isEmpty()) {
             id = UUID.randomUUID();
-            repo.insertSuperAdminEmployee(id, email, platformRole, d("2020-06-01"));
+            repo.insertSuperAdminEmployee(id, email, platformRole, parseDate("2020-06-01"));
         } else {
             id = existing.get(0);
             repo.moveToPlatformRole(id, platformRole);
@@ -207,11 +207,11 @@ public class SeedService {
         }
         UUID id = UUID.randomUUID();
         repo.insertEmployee(
-                id, person.code(), person.name(), person.fatherName(), email, person.title(), roleIds.get(person.role()), person.department() == null ? null : departmentIds.get(person.department()), manager, d(person.dateOfJoining()),
-                person.exitDate() == null ? null : d(person.exitDate()), person.status(), person.timeZone(), region(person.timeZone()), person.shift() == null ? null : shiftIds.get(person.shift()),
+                id, person.code(), person.name(), person.fatherName(), email, person.title(), roleIds.get(person.role()), person.department() == null ? null : departmentIds.get(person.department()), manager, parseDate(person.dateOfJoining()),
+                person.exitDate() == null ? null : parseDate(person.exitDate()), person.status(), person.timeZone(), region(person.timeZone()), person.shift() == null ? null : shiftIds.get(person.shift()),
                 !"EXITED".equals(person.status()) && !Boolean.FALSE.equals(person.access()), createdBy,
-                pii.encrypt(ids.phone()), PiiCrypto.last4(ids.phone()), pii.encrypt(ids.address()), pii.encrypt(ids.pan()), PiiCrypto.last4(ids.pan()),
-                pii.encrypt(ids.aadhaar()), PiiCrypto.last4(ids.aadhaar()), pii.encrypt(ids.uan()), PiiCrypto.last4(ids.uan()), pii.encrypt(ids.bank()),
+                piiCrypto.encrypt(ids.phone()), PiiCrypto.last4(ids.phone()), piiCrypto.encrypt(ids.address()), piiCrypto.encrypt(ids.pan()), PiiCrypto.last4(ids.pan()),
+                piiCrypto.encrypt(ids.aadhaar()), PiiCrypto.last4(ids.aadhaar()), piiCrypto.encrypt(ids.uan()), PiiCrypto.last4(ids.uan()), piiCrypto.encrypt(ids.bank()),
                 PiiCrypto.last4(ids.bank()), india ? "HDFC Bank" : null, india ? "HDFC0001234" : null);
         return id;
     }
@@ -246,25 +246,25 @@ public class SeedService {
         List<SeedRepository.PunchEmployee> employees = repo.findPunchEmployees(codeToId.keySet().toArray(String[]::new));
         List<SeedRepository.HolidayDay> holidays = repo.findHolidays();
         List<Object[]> rows = new ArrayList<>();
-        for (SeedRepository.PunchEmployee e : employees) {
-            if (e.startLocal() == null) continue;
-            for (LocalDate day = e.dateOfJoining().isAfter(start) ? e.dateOfJoining() : start; ; day = day.plusDays(1)) {
-                if (e.exitDate() != null && day.isAfter(e.exitDate())) break;
-                Instant inAtBase = AttendanceEngine.atLocal(day, e.startLocal(), e.timeZone());
+        for (SeedRepository.PunchEmployee punchEmployee : employees) {
+            if (punchEmployee.startLocal() == null) continue;
+            for (LocalDate day = punchEmployee.dateOfJoining().isAfter(start) ? punchEmployee.dateOfJoining() : start; ; day = day.plusDays(1)) {
+                if (punchEmployee.exitDate() != null && day.isAfter(punchEmployee.exitDate())) break;
+                Instant inAtBase = AttendanceEngine.atLocal(day, punchEmployee.startLocal(), punchEmployee.timeZone());
                 if (inAtBase.isAfter(now)) break;
-                LocalDate dd = day;
-                int dow = AttendanceEngine.dowOf(day);
-                if (dow == 0 || dow == 6 || holidays.stream().anyMatch(h -> h.date().equals(dd) && ("ALL".equals(h.region()) || h.region().equals(e.region())))
-                        || ABSENT.getOrDefault(e.code(), Set.of()).contains(day.toString())) continue;
-                int hour = hash(e.code() + day);
-                boolean late = LATE.getOrDefault(e.code(), Set.of()).contains(day.toString());
+                LocalDate currentDay = day;
+                int dayOfWeek = AttendanceEngine.dowOf(day);
+                if (dayOfWeek == 0 || dayOfWeek == 6 || holidays.stream().anyMatch(h -> h.date().equals(currentDay) && ("ALL".equals(h.region()) || h.region().equals(punchEmployee.region())))
+                        || ABSENT.getOrDefault(punchEmployee.code(), Set.of()).contains(day.toString())) continue;
+                int hour = hash(punchEmployee.code() + day);
+                boolean late = LATE.getOrDefault(punchEmployee.code(), Set.of()).contains(day.toString());
                 int offset = late ? 18 + (hour % 15) : (hour % 23) - 10; // minutes vs shift start
                 Instant inAt = inAtBase.plusSeconds(offset * 60L);
                 int worked = (8 * 60 + 36) + (hour % 49); // 8h36m – 9h24m
                 Instant outAt = inAt.plusSeconds(worked * 60L);
                 if (outAt.isAfter(now)) break; // only completed shifts — today stays free to check in
-                rows.add(new Object[] {UUID.randomUUID(), e.id(), Timestamp.from(inAt), "IN"});
-                rows.add(new Object[] {UUID.randomUUID(), e.id(), Timestamp.from(outAt), "OUT"});
+                rows.add(new Object[] {UUID.randomUUID(), punchEmployee.id(), Timestamp.from(inAt), "IN"});
+                rows.add(new Object[] {UUID.randomUUID(), punchEmployee.id(), Timestamp.from(outAt), "OUT"});
             }
         }
         repo.insertPunches(rows);
@@ -278,11 +278,11 @@ public class SeedService {
      */
     void seedPayroll(Map<String, UUID> codeToId) {
         for (String yearMonth : List.of("2026-04", "2026-05", "2026-06", "2026-07", "2026-08")) {
-            List<String> st = repo.findPayrollRunStatus(yearMonth);
-            if (!st.isEmpty() && "CLOSED".equals(st.get(0))) continue;
+            List<String> statuses = repo.findPayrollRunStatus(yearMonth);
+            if (!statuses.isEmpty() && "CLOSED".equals(statuses.get(0))) continue;
             String next = YearMonth.parse(yearMonth).plusMonths(1).atDay(1).toString();
-            int n = payrollOperations.closeRun(yearMonth, codeToId.get("JC-004"), false, next);
-            log.info("Payroll {} closed — {} payslips", yearMonth, n);
+            int closedCount = payrollOperations.closeRun(yearMonth, codeToId.get("JC-004"), false, next);
+            log.info("Payroll {} closed — {} payslips", yearMonth, closedCount);
         }
     }
 
@@ -295,35 +295,35 @@ public class SeedService {
             Path absolutePath = directory.resolve(item.get("item_key") + "-demo.pdf");
             long amount = ((Number) item.get("amount")).longValue();
             String body = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\n% Demo proof: " + item.get("item_key") + ", "
-                    + num(amount / 100.0) + " INR\ntrailer<</Root 1 0 R>>\n%%EOF\n";
+                    + formatNumber(amount / 100.0) + " INR\ntrailer<</Root 1 0 R>>\n%%EOF\n";
             Files.writeString(absolutePath, body, StandardCharsets.UTF_8);
             repo.updateProofPath(item.get("id"), storageDir.relativize(absolutePath).toString());
         }
         if (!items.isEmpty()) log.info("Demo proof files: {}", items.size());
     }
 
-    static String num(double v) {
-        return v == Math.rint(v) ? Long.toString((long) v) : Double.toString(v);
+    static String formatNumber(double value) {
+        return value == Math.rint(value) ? Long.toString((long) value) : Double.toString(value);
     }
 
     /** Prototype leave requests and regularizations (once). Balances come from the accrual job. */
     void seedRequests(Map<String, UUID> codeToId) {
         if (jobRan("requests")) return;
-        UUID hr = codeToId.get("JC-012");
+        UUID hrId = codeToId.get("JC-012");
         String[][] leaves = {
                 {"JC-058", "EL", "2026-10-23", "2026-10-23", "Personal work", "PENDING", "2026-10-05"},
                 {"JC-074", "CL", "2026-11-02", "2026-11-02", "", "PENDING", "2026-10-04"},
                 {"JC-049", "CL", "2026-10-21", "2026-10-22", "Sister’s wedding", "PENDING", "2026-10-06"},
                 {"JC-058", "EL", "2026-10-06", "2026-10-06", "Family function", "APPROVED", "2026-09-30"},
                 {"JC-074", "LOP", "2026-09-22", "2026-09-22", "Unapplied absence", "APPROVED", "2026-10-01"}};
-        for (String[] l : leaves) {
-            String code = l[0], type = l[1], from = l[2], to = l[3], reason = l[4], status = l[5], applied = l[6];
+        for (String[] leaveRow : leaves) {
+            String code = leaveRow[0], type = leaveRow[1], from = leaveRow[2], to = leaveRow[3], reason = leaveRow[4], status = leaveRow[5], applied = leaveRow[6];
             int days = from.equals(to) ? 1 : 2;
             UUID id = UUID.randomUUID();
             boolean approved = "APPROVED".equals(status);
             repo.insertLeaveRequest(
-                    id, codeToId.get(code), type, d(from), d(to), days, "LOP".equals(type) ? days : 0, reason.isEmpty() ? null : reason, status,
-                    Timestamp.from(Instant.parse(applied + "T05:00:00Z")), approved ? hr : null, approved ? Timestamp.from(Instant.parse(applied + "T09:00:00Z")) : null);
+                    id, codeToId.get(code), type, parseDate(from), parseDate(to), days, "LOP".equals(type) ? days : 0, reason.isEmpty() ? null : reason, status,
+                    Timestamp.from(Instant.parse(applied + "T05:00:00Z")), approved ? hrId : null, approved ? Timestamp.from(Instant.parse(applied + "T09:00:00Z")) : null);
             if (approved && !"LOP".equals(type)) {
                 repo.insertLeaveUsed(UUID.randomUUID(), codeToId.get(code), type, BigDecimal.valueOf(-days), id.toString());
             }
@@ -334,14 +334,14 @@ public class SeedService {
                 codeToId.get("JC-072"), Timestamp.from(Instant.parse("2026-10-01T20:00:00Z")), Timestamp.from(Instant.parse("2026-10-02T03:00:00Z")));
         if (!out.isEmpty()) repo.deletePunch(out.get(0));
         repo.insertMissedCheckout(
-                UUID.randomUUID(), codeToId.get("JC-072"), d("2026-10-01"), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-02"), "04:36", "Asia/Kolkata")),
+                UUID.randomUUID(), codeToId.get("JC-072"), parseDate("2026-10-01"), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-02"), "04:36", "Asia/Kolkata")),
                 "Laptop shut down on battery", Timestamp.from(Instant.parse("2026-10-02T06:00:00Z")));
         // JC-049 worked 8h40m on Gandhi Jayanti → asks for a comp-off
         repo.insertPunchPair(
                 UUID.randomUUID(), codeToId.get("JC-049"), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-02"), "19:30", "Asia/Kolkata")),
                 UUID.randomUUID(), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-03"), "04:10", "Asia/Kolkata")));
         repo.insertHolidayWork(
-                UUID.randomUUID(), codeToId.get("JC-049"), d("2026-10-02"), "Client filing deadline", Timestamp.from(Instant.parse("2026-10-03T06:00:00Z")));
+                UUID.randomUUID(), codeToId.get("JC-049"), parseDate("2026-10-02"), "Client filing deadline", Timestamp.from(Instant.parse("2026-10-03T06:00:00Z")));
         repo.insertRequestsRun(UUID.randomUUID());
         log.info("Demo leave requests and regularizations added");
     }
@@ -361,7 +361,7 @@ public class SeedService {
         seedPlans();
 
         // demo business (development and tests only): the prototype company, with Sana as its owner (sub admin)
-        boolean demo = "true".equals(env.getProperty("jurisone.seed.demo", "false"));
+        boolean demo = "true".equals(environment.getProperty("jurisone.seed.demo", "false"));
         if (demo) {
             List<UUID> found = repo.findDemoBusinessIds();
             UUID business = found.isEmpty()
@@ -393,9 +393,9 @@ public class SeedService {
         Object[][] plans = {
                 {"Standard", "HRMS and payroll for one business. Set the price before offering it.", new String[0]},
                 {"Standard + Juris Track", "Everything in Standard, plus Juris Track. Set the price before offering it.", new String[] {"JURIS_TRACK"}}};
-        for (Object[] p : plans) {
-            if (repo.countPlansNamed(p[0]) > 0) continue;
-            repo.insertStarterPlan(UUID.randomUUID(), (String) p[0], (String) p[1], (String[]) p[2]);
+        for (Object[] plan : plans) {
+            if (repo.countPlansNamed(plan[0]) > 0) continue;
+            repo.insertStarterPlan(UUID.randomUUID(), (String) plan[0], (String) plan[1], (String[]) plan[2]);
         }
     }
 
@@ -428,21 +428,21 @@ public class SeedService {
                 }
             }
             String[][] heads = {{"Human Resources", "JC-012"}, {"Finance", "JC-004"}, {"Technology", "JC-035"}, {"Litigation Support", "JC-035"}, {"Client Services", "JC-091"}};
-            for (String[] h : heads) repo.updateDepartmentHead(h[0], codeToId.get(h[1]));
+            for (String[] head : heads) repo.updateDepartmentHead(head[0], codeToId.get(head[1]));
 
-            for (Person p : PEOPLE) ensureUser(codeToId.get(p.code()), false);
+            for (Person person : PEOPLE) ensureUser(codeToId.get(person.code()), false);
 
             // 2026 holidays (prototype calendar), added by the HR Manager
-            String[][] hol = {{"2026-01-26", "Republic Day", "IN"}, {"2026-03-04", "Holi", "IN"}, {"2026-08-15", "Independence Day", "IN"}, {"2026-09-07", "Labor Day", "US"},
+            String[][] holidayRows = {{"2026-01-26", "Republic Day", "IN"}, {"2026-03-04", "Holi", "IN"}, {"2026-08-15", "Independence Day", "IN"}, {"2026-09-07", "Labor Day", "US"},
                     {"2026-09-14", "Ganesh Chaturthi", "IN"}, {"2026-10-02", "Gandhi Jayanti", "IN"}, {"2026-10-20", "Dussehra", "IN"}, {"2026-11-09", "Govardhan Puja", "IN"},
                     {"2026-11-24", "Guru Nanak Jayanti", "IN"}, {"2026-11-26", "Thanksgiving Day", "US"}, {"2026-12-25", "Christmas", "ALL"},
                     {"2026-01-01", "New Year's Day", "US"}, {"2026-05-25", "Memorial Day", "US"}, {"2026-07-03", "Independence Day (observed)", "US"}};
-            for (String[] h : hol) {
-                repo.insertHoliday(UUID.randomUUID(), d(h[0]), h[1], h[2], codeToId.get("JC-012"));
+            for (String[] holiday : holidayRows) {
+                repo.insertHoliday(UUID.randomUUID(), parseDate(holiday[0]), holiday[1], holiday[2], codeToId.get("JC-012"));
             }
 
             // Salary structures (monthly, ₹ → paise). Effective-dated; history only grows.
-            Object[][] st = {
+            Object[][] structures = {
                     {"JC-002", "2026-04-01", 55000, 22000, 5500, 27500, "APPRAISAL"},
                     {"JC-004", "2025-04-01", 55000, 22000, 5500, 27500, "APPRAISAL"}, {"JC-004", "2026-04-01", 60000, 24000, 6000, 30000, "APPRAISAL"},
                     {"JC-012", "2025-08-04", 47500, 19000, 4750, 23750, "JOINING"},
@@ -455,26 +455,26 @@ public class SeedService {
                     {"JC-072", "2025-01-20", 29000, 11600, 2900, 14500, "JOINING"},
                     {"JC-074", "2026-09-08", 75000, 30000, 7500, 37500, "JOINING"},
                     {"JC-081", "2026-03-02", 24000, 9600, 2400, 12000, "JOINING"}};
-            for (Object[] s : st) {
+            for (Object[] structure : structures) {
                 repo.insertSalaryStructure(
-                        UUID.randomUUID(), codeToId.get((String) s[0]), d((String) s[1]), paise((Integer) s[2]), paise((Integer) s[3]), paise((Integer) s[4]),
-                        paise((Integer) s[5]), s[6], codeToId.get("JC-004"));
+                        UUID.randomUUID(), codeToId.get((String) structure[0]), parseDate((String) structure[1]), paise((Integer) structure[2]), paise((Integer) structure[3]), paise((Integer) structure[4]),
+                        paise((Integer) structure[5]), structure[6], codeToId.get("JC-004"));
             }
 
             // Tax profiles + old-regime declarations (prototype)
             String financialYear = "2026-27";
             repo.insertTaxProfile(codeToId.get("JC-074"), financialYear, "NEW", paise(750000), paise(38000));
             record DeclarationSeed(String code, Map<String, Object[]> items, String status) {}
-            Map<String, Object[]> d58 = new LinkedHashMap<>();
-            d58.put("rent", new Object[] {"HRA", 180000});
-            d58.put("ppf", new Object[] {"80C", 80000});
-            d58.put("lic", new Object[] {"80C", 25000});
-            d58.put("medSelf", new Object[] {"80D_SELF", 18000});
-            Map<String, Object[]> d49 = new LinkedHashMap<>();
-            d49.put("rent", new Object[] {"HRA", 144000});
-            d49.put("elss", new Object[] {"80C", 60000});
-            d49.put("medParents", new Object[] {"80D_PARENTS", 30000});
-            for (DeclarationSeed declarationSeed : List.of(new DeclarationSeed("JC-058", d58, "PENDING"), new DeclarationSeed("JC-049", d49, "APPROVED"))) {
+            Map<String, Object[]> pendingDeclarationItems = new LinkedHashMap<>();
+            pendingDeclarationItems.put("rent", new Object[] {"HRA", 180000});
+            pendingDeclarationItems.put("ppf", new Object[] {"80C", 80000});
+            pendingDeclarationItems.put("lic", new Object[] {"80C", 25000});
+            pendingDeclarationItems.put("medSelf", new Object[] {"80D_SELF", 18000});
+            Map<String, Object[]> approvedDeclarationItems = new LinkedHashMap<>();
+            approvedDeclarationItems.put("rent", new Object[] {"HRA", 144000});
+            approvedDeclarationItems.put("elss", new Object[] {"80C", 60000});
+            approvedDeclarationItems.put("medParents", new Object[] {"80D_PARENTS", 30000});
+            for (DeclarationSeed declarationSeed : List.of(new DeclarationSeed("JC-058", pendingDeclarationItems, "PENDING"), new DeclarationSeed("JC-049", approvedDeclarationItems, "APPROVED"))) {
                 UUID employeeId = codeToId.get(declarationSeed.code());
                 repo.insertTaxProfile(employeeId, financialYear, "OLD", 0, 0);
                 boolean approved = "APPROVED".equals(declarationSeed.status());
@@ -495,11 +495,11 @@ public class SeedService {
 
     /** Deletes stored payslip PDFs and proof files (after a database reset they belong to nothing). */
     public void clearStoredFiles() throws IOException {
-        for (String sub : List.of("payslips", "proofs")) {
-            Path directory = storageDir.resolve(sub);
+        for (String subfolder : List.of("payslips", "proofs")) {
+            Path directory = storageDir.resolve(subfolder);
             if (!Files.exists(directory)) continue;
             try (java.util.stream.Stream<Path> walk = Files.walk(directory)) {
-                for (Path f : walk.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(f);
+                for (Path path : walk.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(path);
             }
         }
         log.info("Stored payslips and proofs cleared");

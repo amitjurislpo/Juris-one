@@ -38,10 +38,10 @@ public class InboxService {
     /** {@code unreadOnly}: just the unread ones; {@code limit} (≤ 100) overrides the page size for cards; {@code page} from 1. */
     public Page list(CurrentUser user, boolean unreadOnly, Integer limit, Integer page) {
         int size = limit == null ? PAGE : Math.max(1, Math.min(100, limit));
-        int p = page == null || page < 1 ? 1 : page;
+        int pageNumber = page == null || page < 1 ? 1 : page;
         int total = repo.count(user.id(), unreadOnly);
-        List<Item> items = repo.page(user.id(), unreadOnly, size, (p - 1) * size);
-        return new Page(items, unread(user.id()), total, p, Math.max(1, (total + size - 1) / size));
+        List<Item> items = repo.page(user.id(), unreadOnly, size, (pageNumber - 1) * size);
+        return new Page(items, unread(user.id()), total, pageNumber, Math.max(1, (total + size - 1) / size));
     }
 
     public static Item item(String id, String text, String link, Timestamp created, Timestamp read, String kind) {

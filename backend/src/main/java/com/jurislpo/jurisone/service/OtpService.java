@@ -24,13 +24,13 @@ public class OtpService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final OtpRepository repo;
-    private final TransactionTemplate tx;
+    private final TransactionTemplate transactionTemplate;
     private final MailService mail;
     private final String fixedCode;
 
-    public OtpService(OtpRepository repo, TransactionTemplate tx, MailService mail, @Value("${jurisone.otp.fixed-code:}") String fixedCode) {
+    public OtpService(OtpRepository repo, TransactionTemplate transactionTemplate, MailService mail, @Value("${jurisone.otp.fixed-code:}") String fixedCode) {
         this.repo = repo;
-        this.tx = tx;
+        this.transactionTemplate = transactionTemplate;
         this.mail = mail;
         this.fixedCode = fixedCode == null ? "" : fixedCode.trim();
     }
@@ -44,12 +44,12 @@ public class OtpService {
     }
 
     /** Creates a code for this (already verified-eligible) email and emails it. */
-    public void issue(String email, String name, String ip) {
+    public void issue(String email, String name, String ipAddress) {
         String code = newCode();
         Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
-        tx.executeWithoutResult(s -> {
+        transactionTemplate.executeWithoutResult(transactionStatus -> {
             repo.invalidateOpen(email, now);
-            repo.insert(email, hash(email, code), now.plus(Duration.ofMinutes(TTL_MINUTES)), ip);
+            repo.insert(email, hash(email, code), now.plus(Duration.ofMinutes(TTL_MINUTES)), ipAddress);
         });
         mail.send(email, MailTemplates.otp(name, code, TTL_MINUTES));
     }
@@ -57,14 +57,14 @@ public class OtpService {
     /** True when {@code code} matches the newest open code for the email (which is then used up). Wrong tries are counted. */
     public boolean verify(String email, String code) {
         if (code == null || !code.matches("[0-9]{6}")) return false;
-        return Boolean.TRUE.equals(tx.execute(s -> {
+        return Boolean.TRUE.equals(transactionTemplate.execute(transactionStatus -> {
             Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
             OtpRepository.Open open = repo.findOpen(email, now);
             if (open == null || open.attempts() >= MAX_ATTEMPTS) return false;
-            boolean ok = MessageDigest.isEqual(open.codeHash().getBytes(), hash(email, code).getBytes());
-            if (ok) repo.markUsed(open.id(), now);
+            boolean isMatch = MessageDigest.isEqual(open.codeHash().getBytes(), hash(email, code).getBytes());
+            if (isMatch) repo.markUsed(open.id(), now);
             else repo.addAttempt(open.id());
-            return ok;
+            return isMatch;
         }));
     }
 }

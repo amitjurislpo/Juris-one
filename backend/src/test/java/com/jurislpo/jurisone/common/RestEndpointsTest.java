@@ -28,7 +28,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** REST conventions: resource paths, methods and status codes (MIGRATION_PLAN §14). */
 class RestEndpointsTest extends IntegrationTest {
 
-    @Autowired MockMvc mvc;
+    @Autowired MockMvc mockMvc;
     @Autowired JdbcTemplate jdbc;
     TestData data;
     UUID empRole, finRole, hrRole, adminRole;
@@ -42,89 +42,89 @@ class RestEndpointsTest extends IntegrationTest {
         adminRole = data.role("rest-admin", "dir", "roles.manage", "people.view");
     }
 
-    static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder b) {
-        return b.header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON);
+    static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder request) {
+        return request.header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON);
     }
 
-    static int seq = 9500;
+    static int sequence = 9500;
 
     record Person(UUID id, Cookie cookie) {}
 
     Person person(UUID role) throws Exception {
-        String c = "JC-" + (++seq) + (int) (Math.random() * 1000);
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
-        String set = SignIn.session(mvc, c.toLowerCase() + "@example.com")
+        String code = "JC-" + (++sequence) + (int) (Math.random() * 1000);
+        UUID id = data.employee(code, code.toLowerCase() + "@example.com", role);
+        String set = SignIn.session(mockMvc, code.toLowerCase() + "@example.com")
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
-        Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
-        assertThat(m.find()).isTrue();
-        return new Person(id, new Cookie("jo_at", m.group(1)));
+        Matcher matcher = Pattern.compile("jo_at=([^;]+)").matcher(set);
+        assertThat(matcher.find()).isTrue();
+        return new Person(id, new Cookie("jo_at", matcher.group(1)));
     }
 
     @Test
     void sessionsAreCreatedAndDeleted() throws Exception {
-        Person p = person(empRole);
-        mvc.perform(get("/api/me").cookie(p.cookie())).andExpect(status().isOk());
-        mvc.perform(write(delete("/api/auth/session")).cookie(p.cookie())).andExpect(status().isOk())
+        Person person = person(empRole);
+        mockMvc.perform(get("/api/me").cookie(person.cookie())).andExpect(status().isOk());
+        mockMvc.perform(write(delete("/api/auth/session")).cookie(person.cookie())).andExpect(status().isOk())
                 .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
-        mvc.perform(get("/api/me").cookie(p.cookie())).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/me").cookie(person.cookie())).andExpect(status().isUnauthorized());
     }
 
     @Test
     void notificationsArePatchedAndOldVerbPathsAreGone() throws Exception {
-        Person p = person(empRole);
-        mvc.perform(write(patch("/api/notifications")).cookie(p.cookie()).content("{\"read\":true}")).andExpect(status().isOk());
-        mvc.perform(write(patch("/api/notifications")).cookie(p.cookie()).content("{\"read\":false}")).andExpect(status().isBadRequest());
+        Person person = person(empRole);
+        mockMvc.perform(write(patch("/api/notifications")).cookie(person.cookie()).content("{\"read\":true}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/notifications")).cookie(person.cookie()).content("{\"read\":false}")).andExpect(status().isBadRequest());
         // reads are GETs now; the old POST answers 405 with Allow
-        mvc.perform(write(post("/api/leave/previews")).cookie(p.cookie()).content("{}"))
+        mockMvc.perform(write(post("/api/leave/previews")).cookie(person.cookie()).content("{}"))
                 .andExpect(status().isMethodNotAllowed()).andExpect(header().string("Allow", org.hamcrest.Matchers.containsString("GET")))
                 .andExpect(jsonPath("$.detail").value("Method not allowed."));
-        mvc.perform(write(post("/api/notifications/read")).cookie(p.cookie())).andExpect(status().isMethodNotAllowed()); // now /{id}, PATCH only
-        mvc.perform(write(post("/api/approvals/leave")).cookie(p.cookie()).content("{}")).andExpect(status().isNotFound());
+        mockMvc.perform(write(post("/api/notifications/read")).cookie(person.cookie())).andExpect(status().isMethodNotAllowed()); // now /{id}, PATCH only
+        mockMvc.perform(write(post("/api/approvals/leave")).cookie(person.cookie()).content("{}")).andExpect(status().isNotFound());
     }
 
     @Test
     void payrollAdjustmentsAndStatusAreResources() throws Exception {
-        Person fin = person(finRole), employee = person(empRole);
+        Person finance = person(finRole), employee = person(empRole);
         // closing needs {"status":"CLOSED"} and pay.close
-        mvc.perform(write(put("/api/payroll/2026-09/status")).cookie(fin.cookie()).content("{\"status\":\"OPEN\"}"))
+        mockMvc.perform(write(put("/api/payroll/2026-09/status")).cookie(finance.cookie()).content("{\"status\":\"OPEN\"}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Invalid option: expected \"CLOSED\""));
-        mvc.perform(write(put("/api/payroll/2026-09/status")).cookie(employee.cookie()).content("{\"status\":\"CLOSED\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(write(put("/api/payroll/2026-09/status")).cookie(employee.cookie()).content("{\"status\":\"CLOSED\"}")).andExpect(status().isForbidden());
         // the employee id comes from the path
-        mvc.perform(write(put("/api/payroll/2026-09/adjustments/not-a-uuid")).cookie(fin.cookie()).content("{\"lopDays\":null,\"bonus\":0,\"otherDeduction\":0,\"note\":\"\"}"))
+        mockMvc.perform(write(put("/api/payroll/2026-09/adjustments/not-a-uuid")).cookie(finance.cookie()).content("{\"lopDays\":null,\"bonus\":0,\"otherDeduction\":0,\"note\":\"\"}"))
                 .andExpect(status().isBadRequest());
-        mvc.perform(write(delete("/api/payroll/2026-09/adjustments/" + employee.id())).cookie(employee.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(write(delete("/api/payroll/2026-09/adjustments/" + employee.id())).cookie(employee.cookie())).andExpect(status().isForbidden());
 
         // a new salary structure is created → 201
-        mvc.perform(write(post("/api/structures")).cookie(fin.cookie()).content("{\"employeeId\":\"" + employee.id() + "\",\"effectiveFrom\":\"2031-04-01\",\"reason\":\"APPRAISAL\","
+        mockMvc.perform(write(post("/api/structures")).cookie(finance.cookie()).content("{\"employeeId\":\"" + employee.id() + "\",\"effectiveFrom\":\"2031-04-01\",\"reason\":\"APPRAISAL\","
                 + "\"basic\":50000,\"hra\":20000,\"lta\":5000,\"special\":25000}")).andExpect(status().isCreated());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM salary_structures WHERE employee_id = ?", Integer.class, employee.id())).isEqualTo(1);
     }
 
     @Test
     void peopleSubResources() throws Exception {
-        Person hr = person(hrRole);
+        Person hrPerson = person(hrRole);
         String nobody = UUID.randomUUID().toString();
-        mvc.perform(get("/api/people/" + nobody + "/contact").cookie(hr.cookie()))
+        mockMvc.perform(get("/api/people/" + nobody + "/contact").cookie(hrPerson.cookie()))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't view this person's contact details."));
-        mvc.perform(write(put("/api/people/" + nobody + "/status")).cookie(hr.cookie()).content("{\"status\":\"EXITED\",\"exitDate\":\"2031-01-01\"}"))
+        mockMvc.perform(write(put("/api/people/" + nobody + "/status")).cookie(hrPerson.cookie()).content("{\"status\":\"EXITED\",\"exitDate\":\"2031-01-01\"}"))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("You can't change this person's record."));
-        mvc.perform(get("/api/people/form-options").cookie(hr.cookie())).andExpect(status().isUnprocessableEntity()); // this role may assign no roles
-        mvc.perform(write(post("/api/people/" + nobody + "/reveal-contact")).cookie(hr.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/people/form-options").cookie(hrPerson.cookie())).andExpect(status().isUnprocessableEntity()); // this role may assign no roles
+        mockMvc.perform(write(post("/api/people/" + nobody + "/reveal-contact")).cookie(hrPerson.cookie())).andExpect(status().isNotFound());
     }
 
     @Test
     void assignableRolesAreGrantedAndRevoked() throws Exception {
         Person admin = person(data.role("rest-super", "dir", "roles.manage", "platform.manage", "people.view")); // roles are changed by the platform super admin only
         UUID role = data.role("rest-custom-" + UUID.randomUUID().toString().substring(0, 6), "self");
-        mvc.perform(write(put("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(admin.cookie())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.containsString("can now add")));
+        mockMvc.perform(write(put("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(admin.cookie())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("can now add")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM role_assignable_roles WHERE role_id = ? AND assignable_role_id = ?", Integer.class, role, empRole)).isEqualTo(1);
-        mvc.perform(write(delete("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(admin.cookie())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.containsString("can no longer add")));
+        mockMvc.perform(write(delete("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(admin.cookie())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("can no longer add")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM role_assignable_roles WHERE role_id = ? AND assignable_role_id = ?", Integer.class, role, empRole)).isZero();
         // a business admin (roles.manage without platform.manage) can look but not change
         Person owner = person(adminRole);
-        mvc.perform(write(put("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(owner.cookie())).andExpect(status().isForbidden())
+        mockMvc.perform(write(put("/api/roles/" + role + "/assignable-roles/" + empRole)).cookie(owner.cookie())).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.detail").value("Roles are set up for your business by JurisOne."));
     }
 }

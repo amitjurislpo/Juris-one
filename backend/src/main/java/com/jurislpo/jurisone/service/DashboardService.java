@@ -40,14 +40,14 @@ public class DashboardService {
     static final Comparator<String> LOCALE = Collator.getInstance(Locale.US)::compare;
 
     private final DashboardRepository repo;
-    private final AttendanceService att;
-    private final MyAttendanceService my;
+    private final AttendanceService attendanceService;
+    private final MyAttendanceService myAttendance;
     private final PayrollService payroll;
 
     public DashboardService(DashboardRepository repo, AttendanceService attendance, MyAttendanceService myAttendanceService, PayrollService payroll) {
         this.repo = repo;
-        this.att = attendance;
-        this.my = myAttendanceService;
+        this.attendanceService = attendance;
+        this.myAttendance = myAttendanceService;
         this.payroll = payroll;
     }
 
@@ -62,23 +62,23 @@ public class DashboardService {
     public Map<UUID, TodayStatus> todayStatuses(List<UUID> ids, Instant now) {
         Map<UUID, TodayStatus> out = new HashMap<>();
         if (ids.isEmpty()) return out;
-        List<AttendanceEmployee> employees = att.loadAttendanceEmployees("e.id = ANY (?)", (Object) ids.toArray(UUID[]::new));
+        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ANY (?)", (Object) ids.toArray(UUID[]::new));
         if (employees.isEmpty()) return out;
-        Map<UUID, LocalDate> wds = new HashMap<>();
-        for (AttendanceEmployee e : employees) wds.put(e.id(), att.currentWorkDate(e, now));
-        LocalDate min = wds.values().stream().min(Comparator.naturalOrder()).orElseThrow();
-        LocalDate max = wds.values().stream().max(Comparator.naturalOrder()).orElseThrow();
-        Map<UUID, List<DayView>> days = att.attendanceFor(employees, min, max, now);
+        Map<UUID, LocalDate> workDates = new HashMap<>();
+        for (AttendanceEmployee employee : employees) workDates.put(employee.id(), attendanceService.currentWorkDate(employee, now));
+        LocalDate min = workDates.values().stream().min(Comparator.naturalOrder()).orElseThrow();
+        LocalDate max = workDates.values().stream().max(Comparator.naturalOrder()).orElseThrow();
+        Map<UUID, List<DayView>> days = attendanceService.attendanceFor(employees, min, max, now);
         for (AttendanceEmployee employee : employees) {
-            LocalDate workDate = wds.get(employee.id());
-            DayView dayView = days.get(employee.id()).stream().filter(x -> x.r.date.equals(workDate)).findFirst().orElseThrow();
+            LocalDate workDate = workDates.get(employee.id());
+            DayView dayView = days.get(employee.id()).stream().filter(x -> x.dayResult.date.equals(workDate)).findFirst().orElseThrow();
             TodayStatus todayStatus;
-            if (dayView.r.openSince != null) todayStatus = new TodayStatus("In since " + AttendanceService.formatTime(dayView.r.openSince, employee.timeZone()), "ok");
-            else if (dayView.r.status == DayStatus.LEAVE) todayStatus = new TodayStatus("On leave", "info");
-            else if (dayView.r.status == DayStatus.HOLIDAY) todayStatus = new TodayStatus(dayView.r.label, "gold");
-            else if (dayView.r.status == DayStatus.WEEKLY_OFF) todayStatus = new TodayStatus("Weekly off", "neutral");
+            if (dayView.dayResult.openSince != null) todayStatus = new TodayStatus("In since " + AttendanceService.formatTime(dayView.dayResult.openSince, employee.timeZone()), "ok");
+            else if (dayView.dayResult.status == DayStatus.LEAVE) todayStatus = new TodayStatus("On leave", "info");
+            else if (dayView.dayResult.status == DayStatus.HOLIDAY) todayStatus = new TodayStatus(dayView.dayResult.label, "gold");
+            else if (dayView.dayResult.status == DayStatus.WEEKLY_OFF) todayStatus = new TodayStatus("Weekly off", "neutral");
             else if (!dayView.punches.isEmpty()) todayStatus = new TodayStatus("Checked out", "neutral");
-            else if (dayView.r.status == DayStatus.ABSENT) todayStatus = new TodayStatus("Absent", "warn");
+            else if (dayView.dayResult.status == DayStatus.ABSENT) todayStatus = new TodayStatus("Absent", "warn");
             else todayStatus = new TodayStatus("Not in yet", "warn");
             out.put(employee.id(), todayStatus);
         }
@@ -145,7 +145,7 @@ public class DashboardService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("headcount", current.size());
         out.put("india", current.stream().filter(e -> "IN".equals(e.region())).count());
-        out.put("us", current.stream().filter(e -> "US".equals(e.region())).count());
+        out.put("unitedStates", current.stream().filter(e -> "US".equals(e.region())).count());
         out.put("accessOff", current.stream().filter(e -> !e.portalAccess()).count());
         out.put("departmentCount", departments.size());
         out.put("checkedInNow", inNow);
@@ -177,8 +177,8 @@ public class DashboardService {
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("myLeaves", showMyLeave ? myLeaves : null);
-        out.put("team", user.hasReports() ? team.stream().map(m -> new TeamCard(m.id().toString(), m.name(), m.title(),
-                statuses.getOrDefault(m.id(), new TodayStatus("Not tracked", "neutral")))).toList() : null);
+        out.put("team", user.hasReports() ? team.stream().map(member -> new TeamCard(member.id().toString(), member.name(), member.title(),
+                statuses.getOrDefault(member.id(), new TodayStatus("Not tracked", "neutral")))).toList() : null);
         if (approver && pending != null) {
             Map<String, Object> view = new LinkedHashMap<>();
             view.put("leaveToo", user.can("appr.leave"));
@@ -208,15 +208,15 @@ public class DashboardService {
 
     /** Intl en-US short time-zone name, with India shown as "IST". */
     static String timeZoneAbbreviation(String timeZone, Instant now) {
-        String z = DateTimeFormatter.ofPattern("zzz", Locale.US).format(now.atZone(ZoneId.of(timeZone)));
-        return "GMT+5:30".equals(z) ? "IST" : z;
+        String zone = DateTimeFormatter.ofPattern("zzz", Locale.US).format(now.atZone(ZoneId.of(timeZone)));
+        return "GMT+5:30".equals(zone) ? "IST" : zone;
     }
 
     /** Everything Home needs; the page lays it out (heatmap, KPIs and bars are derived from {@code days} as before). */
     public Map<String, Object> home(CurrentUser user) {
         Instant now = Instant.now();
-        AttendanceService.ResolvedAttendancePolicy policy = att.policy();
-        List<AttendanceEmployee> found = att.loadAttendanceEmployees("e.id = ?", user.id());
+        AttendanceService.ResolvedAttendancePolicy policy = attendanceService.policy();
+        List<AttendanceEmployee> found = attendanceService.loadAttendanceEmployees("e.id = ?", user.id());
         Map<String, Object> out = new LinkedHashMap<>();
         if (found.isEmpty()) {
             out.put("tracked", false);
@@ -224,43 +224,43 @@ public class DashboardService {
         }
         AttendanceEmployee employee = found.get(0);
         String timeZone = employee.timeZone();
-        LocalDate workDate = att.currentWorkDate(employee, now);
+        LocalDate workDate = attendanceService.currentWorkDate(employee, now);
         LocalDate monday = workDate.minusDays((AttendanceEngine.dowOf(workDate) + 6) % 7);
         LocalDate heatStart = monday.minusDays(15 * 7);
         LocalDate monthStart = workDate.withDayOfMonth(1);
         LocalDate from = heatStart.isBefore(monthStart) ? heatStart : monthStart;
-        List<DayView> days = att.attendanceFor(List.of(employee), from, monday.plusDays(6), now).get(employee.id());
-        DayView today = days.stream().filter(d -> d.r.date.equals(workDate)).findFirst().orElseThrow();
+        List<DayView> days = attendanceService.attendanceFor(List.of(employee), from, monday.plusDays(6), now).get(employee.id());
+        DayView today = days.stream().filter(d -> d.dayResult.date.equals(workDate)).findFirst().orElseThrow();
 
         List<Punch> sorted = new ArrayList<>(today.punches);
-        sorted.sort(Comparator.comparing(Punch::at));
+        sorted.sort(Comparator.comparing(Punch::punchedAt));
         int closed = AttendanceEngine.workedMinutes(today.punches).minutes();
-        boolean on = !sorted.isEmpty() && sorted.get(sorted.size() - 1).kind() == PunchKind.IN;
+        boolean isPunchedIn = !sorted.isEmpty() && sorted.get(sorted.size() - 1).kind() == PunchKind.IN;
         String start = employee.shift().startLocal(), end = employee.shift().endLocal();
-        long s = AttendanceEngine.atLocal(workDate, start, timeZone).toEpochMilli();
-        long e = AttendanceEngine.atLocal(end.compareTo(start) <= 0 ? workDate.plusDays(1) : workDate, end, timeZone).toEpochMilli();
+        long startMillis = AttendanceEngine.atLocal(workDate, start, timeZone).toEpochMilli();
+        long endMillis = AttendanceEngine.atLocal(end.compareTo(start) <= 0 ? workDate.plusDays(1) : workDate, end, timeZone).toEpochMilli();
         List<String> ticks = new ArrayList<>();
-        for (int i = 0; i < 4; i++) ticks.add(AttendanceService.formatTime(Instant.ofEpochMilli(s + (long) Math.floor((e - s) * (double) i / 3)), timeZone));
+        for (int i = 0; i < 4; i++) ticks.add(AttendanceService.formatTime(Instant.ofEpochMilli(startMillis + (long) Math.floor((endMillis - startMillis) * (double) i / 3)), timeZone));
         String abbr = timeZoneAbbreviation(timeZone, now);
         String shiftText = ("IN_NIGHT".equals(employee.shift().code()) ? "Night" : "Day") + " shift · " + AttendanceService.formatTime(AttendanceEngine.atLocal(workDate, start, timeZone), timeZone)
                 + " – " + AttendanceService.formatTime(AttendanceEngine.atLocal(workDate, end, timeZone), timeZone) + " " + abbr;
-        List<PunchLogLine> log = sorted.stream().map(p -> new PunchLogLine(AttendanceService.formatTime(p.at(), timeZone), p.kind() == PunchKind.IN ? "Checked in" : "Checked out",
-                "WEB".equals(p.source()) ? "Web" : "MOBILE".equals(p.source()) ? "Mobile" : "Regularization")).toList();
+        List<PunchLogLine> log = sorted.stream().map(punch -> new PunchLogLine(AttendanceService.formatTime(punch.punchedAt(), timeZone), punch.kind() == PunchKind.IN ? "Checked in" : "Checked out",
+                "WEB".equals(punch.source()) ? "Web" : "MOBILE".equals(punch.source()) ? "Mobile" : "Regularization")).toList();
 
         Double leaveAvail = repo.leaveAvailable(user.id());
 
         out.put("tracked", true);
         out.put("workDate", workDate.toString());
-        out.put("checkedIn", on);
-        out.put("openSince", today.r.openSince == null ? null : Format.isoTimestamp(today.r.openSince));
+        out.put("checkedIn", isPunchedIn);
+        out.put("openSince", today.dayResult.openSince == null ? null : Format.isoTimestamp(today.dayResult.openSince));
         out.put("closedMinutes", closed);
         out.put("shiftText", shiftText);
         out.put("ticks", ticks);
         out.put("targetHours", policy.shiftTargetHours());
         out.put("log", log);
-        out.put("days", days.stream().map(d -> new HomeDay(d.r.date.toString(), d.r.status.name(), d.r.label, d.r.workedMinutes, d.r.future, d.punches.size())).toList());
+        out.put("days", days.stream().map(d -> new HomeDay(d.dayResult.date.toString(), d.dayResult.status.name(), d.dayResult.label, d.dayResult.workedMinutes, d.dayResult.future, d.punches.size())).toList());
         out.put("leaveAvailable", leaveAvail);
-        out.put("holidays", my.upcomingHolidays(employee.region(), workDate, 4));
+        out.put("holidays", myAttendance.upcomingHolidays(employee.region(), workDate, 4));
         out.put("cards", homeCards(user));
         return out;
     }
@@ -280,10 +280,10 @@ public class DashboardService {
         Map<UUID, TodayStatus> status = todayStatuses(team.stream().map(TeamMember::id).toList(), Instant.now());
 
         // Who's away · this week (Mon–Fri) in the manager's zone
-        LocalDate t = Format.todayIn(user.timeZone());
-        LocalDate mon = t.minusDays((AttendanceEngine.dowOf(t) + 6) % 7);
+        LocalDate today = Format.todayIn(user.timeZone());
+        LocalDate monday = today.minusDays((AttendanceEngine.dowOf(today) + 6) % 7);
         List<LocalDate> days = new ArrayList<>();
-        for (int i = 0; i < 5; i++) days.add(mon.plusDays(i));
+        for (int i = 0; i < 5; i++) days.add(monday.plusDays(i));
         List<TeamLeave> leaves = team.isEmpty() ? List.of() : repo.leavesOverlapping(team.stream().map(TeamMember::id).toArray(UUID[]::new), days.get(0), days.get(4));
         List<Holiday> holidays = repo.holidays(days.get(0), days.get(4));
 
@@ -291,13 +291,13 @@ public class DashboardService {
         List<TeamRow> all = team.stream().map(m -> new TeamRow(m.id().toString(), m.code(), m.fullName(), m.designation(), m.shift(), status.get(m.id()), m.photo())).toList();
         List<TeamRow> rows = new ArrayList<>(all.stream().filter(m -> search.isEmpty() || (m.fullName() + " " + m.code() + " " + m.designation()).toLowerCase().contains(search)).toList());
         Map<String, Function<TeamRow, String>> keys = Map.of("name", TeamRow::fullName, "id", TeamRow::code, "title", TeamRow::designation, "status", r -> r.status().label());
-        Comparator<TeamRow> cmp = Comparator.comparing(keys.get(listParams.sort()), LOCALE);
-        rows.sort(listParams.asc() ? cmp : cmp.reversed());
+        Comparator<TeamRow> comparator = Comparator.comparing(keys.get(listParams.sort()), LOCALE);
+        rows.sort(listParams.asc() ? comparator : comparator.reversed());
 
-        List<Away> away = team.stream().map(m -> new Away(m.id().toString(), m.fullName(), days.stream().map(d -> {
-            if (holidays.stream().anyMatch(h -> h.date().equals(d) && ("ALL".equals(h.region()) || h.region().equals(m.region())))) return "hol";
-            TeamLeave l = leaves.stream().filter(x -> x.employeeId().equals(m.id()) && !x.from().isAfter(d) && !x.to().isBefore(d)).findFirst().orElse(null);
-            return l == null ? "" : "APPROVED".equals(l.status()) ? "lv" : "pend";
+        List<Away> away = team.stream().map(member -> new Away(member.id().toString(), member.fullName(), days.stream().map(day -> {
+            if (holidays.stream().anyMatch(h -> h.date().equals(day) && ("ALL".equals(h.region()) || h.region().equals(member.region())))) return "hol";
+            TeamLeave teamLeave = leaves.stream().filter(x -> x.employeeId().equals(member.id()) && !x.from().isAfter(day) && !x.to().isBefore(day)).findFirst().orElse(null);
+            return teamLeave == null ? "" : "APPROVED".equals(teamLeave.status()) ? "lv" : "pend";
         }).toList())).toList();
 
         Map<String, Object> out = new LinkedHashMap<>();

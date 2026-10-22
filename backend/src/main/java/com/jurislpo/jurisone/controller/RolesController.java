@@ -46,42 +46,42 @@ public class RolesController {
 
     @GetMapping
     public ApiResult<List<RolesService.RoleView>> list() {
-        CurrentUser u = auth.requirePage("roles");
-        return ApiResult.success(roles.list(u.can(Permissions.PLATFORM_MANAGE)));
+        CurrentUser currentUser = auth.requirePage("roles");
+        return ApiResult.success(roles.list(currentUser.can(Permissions.PLATFORM_MANAGE)));
     }
 
     /** Grant a permission to the role. */
     @PutMapping("/{id}/permissions/{perm}")
     public ApiResult<Void> grant(@PathVariable String id, @PathVariable String perm, HttpServletRequest request) {
-        return ApiResult.message(roles.setPermission(editor(), id, perm, true, RequestMeta.of(request).ip()));
+        return ApiResult.message(roles.setPermission(editor(), id, perm, true, RequestMeta.of(request).ipAddress()));
     }
 
     /** Take a permission away from the role. */
     @DeleteMapping("/{id}/permissions/{perm}")
     public ApiResult<Void> revoke(@PathVariable String id, @PathVariable String perm, HttpServletRequest request) {
-        return ApiResult.message(roles.setPermission(editor(), id, perm, false, RequestMeta.of(request).ip()));
+        return ApiResult.message(roles.setPermission(editor(), id, perm, false, RequestMeta.of(request).ipAddress()));
     }
 
     /** Let people with this role assign {@code roleId} to others. */
     @PutMapping("/{id}/assignable-roles/{roleId}")
     public ApiResult<Void> allowAssign(@PathVariable String id, @PathVariable String roleId, HttpServletRequest request) {
-        return ApiResult.message(roles.setAssignable(editor(), id, roleId, true, RequestMeta.of(request).ip()));
+        return ApiResult.message(roles.setAssignable(editor(), id, roleId, true, RequestMeta.of(request).ipAddress()));
     }
 
     @DeleteMapping("/{id}/assignable-roles/{roleId}")
     public ApiResult<Void> disallowAssign(@PathVariable String id, @PathVariable String roleId, HttpServletRequest request) {
-        return ApiResult.message(roles.setAssignable(editor(), id, roleId, false, RequestMeta.of(request).ip()));
+        return ApiResult.message(roles.setAssignable(editor(), id, roleId, false, RequestMeta.of(request).ipAddress()));
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> create(@RequestBody CreateRole body) {
-        RolesService.Created c = roles.create(editor(), body.name(), body.fromRoleId());
-        return ApiResult.success("Role “" + c.name() + "” created — adjust its permissions", Map.of("id", c.id()));
+        RolesService.Created created = roles.create(editor(), body.name(), body.fromRoleId());
+        return ApiResult.success("Role “" + created.name() + "” created — adjust its permissions", Map.of("id", created.id()));
     }
 
     @DeleteMapping("/{id}")
     public ApiResult<Void> delete(@PathVariable String id, HttpServletRequest request) {
-        return ApiResult.message(roles.delete(editor(), id, RequestMeta.of(request).ip()));
+        return ApiResult.message(roles.delete(editor(), id, RequestMeta.of(request).ipAddress()));
     }
 }

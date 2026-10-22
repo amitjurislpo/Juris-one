@@ -33,11 +33,11 @@ public final class Phones {
 
     /** Problem with this number for the country, or null when it is valid. */
     public static String problem(String code, String number) {
-        Country c = country(code).orElse(null);
-        if (c == null) return "Choose the country code";
-        String d = number == null ? "" : number.replaceAll("\\D", "");
-        if (d.length() != c.digits()) return c.name() + " numbers have " + c.digits() + " digits";
-        if (!c.firstDigits().isEmpty() && c.firstDigits().indexOf(d.charAt(0)) < 0) return "That isn't a valid " + c.name() + " mobile number";
+        Country country = country(code).orElse(null);
+        if (country == null) return "Choose the country code";
+        String digits = number == null ? "" : number.replaceAll("\\D", "");
+        if (digits.length() != country.digits()) return country.name() + " numbers have " + country.digits() + " digits";
+        if (!country.firstDigits().isEmpty() && country.firstDigits().indexOf(digits.charAt(0)) < 0) return "That isn't a valid " + country.name() + " mobile number";
         return null;
     }
 }

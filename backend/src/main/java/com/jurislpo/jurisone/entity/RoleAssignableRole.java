@@ -18,9 +18,9 @@ public class RoleAssignableRole {
         public Key() {}
         public Key(UUID roleId, UUID assignableRoleId) { this.roleId = roleId; this.assignableRoleId = assignableRoleId; }
 
-        @Override public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Key other)) return false;
+        @Override public boolean equals(Object object) {
+            if (this == object) return true;
+            if (!(object instanceof Key other)) return false;
             return Objects.equals(roleId, other.roleId) && Objects.equals(assignableRoleId, other.assignableRoleId);
         }
         @Override public int hashCode() { return Objects.hash(roleId, assignableRoleId); }

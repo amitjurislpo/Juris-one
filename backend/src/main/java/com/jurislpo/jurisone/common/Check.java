@@ -30,14 +30,14 @@ public final class Check {
         return value;
     }
 
-    public static String str(String value) {
+    public static String requireString(String value) {
         if (value == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected string, received undefined");
         return value;
     }
 
     /** {@code z.string().trim().min(n, msg).max(m, msg2)}. */
     public static String trimmed(String value, int min, String minMsg, int max, String maxMsg) {
-        String text = str(value).trim();
+        String text = requireString(value).trim();
         if (text.length() < min) throw new UserException(HttpStatus.BAD_REQUEST, minMsg);
         if (text.length() > max) throw new UserException(HttpStatus.BAD_REQUEST, maxMsg);
         return text;

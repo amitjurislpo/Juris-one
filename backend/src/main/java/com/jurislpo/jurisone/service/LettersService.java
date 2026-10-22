@@ -57,7 +57,7 @@ public class LettersService {
         this.audit = audit;
     }
 
-    static String iso(Object timestamp) {
+    static String formatIsoTimestamp(Object timestamp) {
         return timestamp == null ? null : Format.isoTimestamp(((Timestamp) timestamp).toInstant());
     }
 
@@ -67,15 +67,15 @@ public class LettersService {
 
     public Map<String, Object> fields() {
         List<Map<String, Object>> fields = new ArrayList<>();
-        for (LetterTemplateEngine.Field f : LetterTemplateEngine.FIELDS) {
-            fields.add(Map.of("name", f.name(), "label", f.label(), "salary", f.salary()));
+        for (LetterTemplateEngine.Field field : LetterTemplateEngine.FIELDS) {
+            fields.add(Map.of("name", field.name(), "label", field.label(), "salary", field.salary()));
         }
         return Map.of("fields", fields, "types", TYPES);
     }
 
     public List<Map<String, Object>> templates() {
         List<Map<String, Object>> out = new ArrayList<>();
-        for (Map<String, Object> r : repo.templates()) out.add(templateView(r, false));
+        for (Map<String, Object> template : repo.templates()) out.add(templateView(template, false));
         return out;
     }
 
@@ -99,7 +99,7 @@ public class LettersService {
         view.put("needsSalary", row.get("needs_salary"));
         view.put("active", row.get("active"));
         view.put("version", row.get("version"));
-        view.put("updatedAt", iso(row.get("updated_at")));
+        view.put("updatedAt", formatIsoTimestamp(row.get("updated_at")));
         return view;
     }
 
@@ -117,7 +117,7 @@ public class LettersService {
         return new ValidatedTemplate(type, name, subject, body, LetterTemplateEngine.usesSalary(subject, body));
     }
 
-    public String createTemplate(CurrentUser user, TemplateInput input, String ip) {
+    public String createTemplate(CurrentUser user, TemplateInput input, String ipAddress) {
         ValidatedTemplate validated = validate(input, true);
         UUID id = UUID.randomUUID();
         try {
@@ -125,11 +125,11 @@ public class LettersService {
         } catch (DuplicateKeyException e) {
             throw new UserException(HttpStatus.CONFLICT, "A template named \"" + validated.name() + "\" already exists.");
         }
-        audit.log(user.id(), "letter_template.create", "letter_template", id.toString(), null, Map.of("name", validated.name(), "type", validated.type()), ip);
+        audit.log(user.id(), "letter_template.create", "letter_template", id.toString(), null, Map.of("name", validated.name(), "type", validated.type()), ipAddress);
         return id.toString();
     }
 
-    public void updateTemplate(CurrentUser user, String idRaw, TemplateInput input, String ip) {
+    public void updateTemplate(CurrentUser user, String idRaw, TemplateInput input, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> before = templateRow(id);
         ValidatedTemplate validated = validate(input, false);
@@ -140,7 +140,7 @@ public class LettersService {
             throw new UserException(HttpStatus.CONFLICT, "A template named \"" + validated.name() + "\" already exists.");
         }
         audit.log(user.id(), "letter_template.update", "letter_template", id.toString(), Map.of("name", before.get("name"), "version", before.get("version")),
-                Map.of("name", validated.name(), "active", active), ip);
+                Map.of("name", validated.name(), "active", active), ipAddress);
     }
 
     // ───────────────────────── employees ─────────────────────────
@@ -172,22 +172,22 @@ public class LettersService {
         return rows.get(0);
     }
 
-    private void checkMaySeeSalary(CurrentUser user, Map<String, Object> tpl) {
-        if (Boolean.TRUE.equals(tpl.get("needs_salary")) && !user.can("struct.manage")) {
+    private void checkMaySeeSalary(CurrentUser user, Map<String, Object> template) {
+        if (Boolean.TRUE.equals(template.get("needs_salary")) && !user.can("struct.manage")) {
             throw new ForbiddenException("This letter states a salary, so only someone who manages salary structures can issue it.");
         }
     }
 
-    private Map<String, String> values(CurrentUser user, Map<String, Object> tpl, Map<String, Object> employee, String lastWorkingDateIn, String reference, LocalDate today) {
-        Map<String, Object> biz = business.findProfile(TenantContext.current());
-        Map<String, String> v = new HashMap<>();
+    private Map<String, String> values(CurrentUser user, Map<String, Object> template, Map<String, Object> employee, String lastWorkingDateIn, String reference, LocalDate today) {
+        Map<String, Object> businessProfile = business.findProfile(TenantContext.current());
+        Map<String, String> values = new HashMap<>();
         LocalDate dateOfJoining = ((Date) employee.get("date_of_joining")).toLocalDate();
-        v.put("employee.name", (String) employee.get("full_name"));
-        v.put("employee.code", (String) employee.get("code"));
-        v.put("employee.email", (String) employee.get("email"));
-        v.put("designation", (String) employee.get("designation"));
-        v.put("department", (String) employee.get("dept"));
-        v.put("joiningDate", Format.formatDayMonthYear(dateOfJoining));
+        values.put("employee.name", (String) employee.get("full_name"));
+        values.put("employee.code", (String) employee.get("code"));
+        values.put("employee.email", (String) employee.get("email"));
+        values.put("designation", (String) employee.get("designation"));
+        values.put("department", (String) employee.get("department_name"));
+        values.put("joiningDate", Format.formatDayMonthYear(dateOfJoining));
         LocalDate last = null;
         if (lastWorkingDateIn != null && !lastWorkingDateIn.isBlank()) {
             Check.isoDate(lastWorkingDateIn, "Enter the last working day as a date.");
@@ -200,25 +200,25 @@ public class LettersService {
             last = ((Date) employee.get("exit_date")).toLocalDate();
         }
         if (last != null && last.isBefore(dateOfJoining)) throw new UserException("The last working day can't be before the joining date.");
-        v.put("lastWorkingDate", last == null ? null : Format.formatDayMonthYear(last));
-        v.put("business.name", (String) biz.get("name"));
-        v.put("business.legalName", biz.get("legal_name") != null ? (String) biz.get("legal_name") : (String) biz.get("name"));
-        v.put("business.address", (String) biz.get("address"));
-        v.put("today", Format.formatDayMonthYear(today));
-        v.put("reference", reference);
-        v.put("issuedBy.name", user.name());
-        if (Boolean.TRUE.equals(tpl.get("needs_salary"))) {
+        values.put("lastWorkingDate", last == null ? null : Format.formatDayMonthYear(last));
+        values.put("business.name", (String) businessProfile.get("name"));
+        values.put("business.legalName", businessProfile.get("legal_name") != null ? (String) businessProfile.get("legal_name") : (String) businessProfile.get("name"));
+        values.put("business.address", (String) businessProfile.get("address"));
+        values.put("today", Format.formatDayMonthYear(today));
+        values.put("reference", reference);
+        values.put("issuedBy.name", user.name());
+        if (Boolean.TRUE.equals(template.get("needs_salary"))) {
             List<Long> gross = repo.monthlyGrossOn((UUID) employee.get("id"), today);
             if (gross.isEmpty()) throw new UserException(employee.get("full_name") + " has no salary structure yet, so a letter with the CTC can't be issued.");
             long annual = gross.get(0) * 12;
-            v.put("ctc", "Rs. " + Format.groupIndian(Math.round(annual / 100.0)));
-            v.put("ctcInWords", PayrollEngine.rupeesInWords(annual / 100.0));
+            values.put("ctc", "Rs. " + Format.groupIndian(Math.round(annual / 100.0)));
+            values.put("ctcInWords", PayrollEngine.rupeesInWords(annual / 100.0));
         }
-        return v;
+        return values;
     }
 
-    private Rendered render(Map<String, Object> tpl, Map<String, String> values) {
-        String subject = (String) tpl.get("subject"), body = (String) tpl.get("body");
+    private Rendered render(Map<String, Object> template, Map<String, String> values) {
+        String subject = (String) template.get("subject"), body = (String) template.get("body");
         return new Rendered(LetterTemplateEngine.render(subject, values, Mode.TEXT), LetterTemplateEngine.render(body, values, Mode.TEXT),
                 LetterTemplateEngine.render(body, values, Mode.HTML));
     }
@@ -233,46 +233,46 @@ public class LettersService {
 
     /** What the letter would say; nothing is saved. A salary letter needs struct.manage even for the preview. */
     public Map<String, Object> preview(CurrentUser user, String templateId, String employeeId, String lastWorkingDate) {
-        Map<String, Object> tpl = templateRow(Check.uuid(templateId, "Choose a template."));
-        checkMaySeeSalary(user, tpl);
+        Map<String, Object> template = templateRow(Check.uuid(templateId, "Choose a template."));
+        checkMaySeeSalary(user, template);
         Map<String, Object> employee = employeeRow(employeeId);
         LocalDate today = today();
-        Rendered rendered = render(tpl, values(user, tpl, employee, lastWorkingDate, "HRL/" + financialYearOf(today) + "/(assigned on issue)", today));
+        Rendered rendered = render(template, values(user, template, employee, lastWorkingDate, "HRL/" + financialYearOf(today) + "/(assigned on issue)", today));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("subject", rendered.subject());
         out.put("text", rendered.text());
         out.put("html", rendered.html());
-        out.put("needsSalary", tpl.get("needs_salary"));
+        out.put("needsSalary", template.get("needs_salary"));
         return out;
     }
 
     /** Issues the letter: renders it, takes the next reference number, stores the immutable record and PDF, tells the employee. */
-    public Map<String, Object> issue(CurrentUser user, IssueInput input, String ip) {
+    public Map<String, Object> issue(CurrentUser user, IssueInput input, String ipAddress) {
         if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Letter details are missing.");
-        Map<String, Object> tpl = templateRow(Check.uuid(input.templateId(), "Choose a template."));
-        if (!Boolean.TRUE.equals(tpl.get("active"))) throw new UserException("This template is switched off. Turn it on or choose another.");
-        checkMaySeeSalary(user, tpl);
+        Map<String, Object> template = templateRow(Check.uuid(input.templateId(), "Choose a template."));
+        if (!Boolean.TRUE.equals(template.get("active"))) throw new UserException("This template is switched off. Turn it on or choose another.");
+        checkMaySeeSalary(user, template);
         Map<String, Object> employee = employeeRow(input.employeeId());
         LocalDate today = today();
         String financialYear = financialYearOf(today);
         String reference = "HRL/" + financialYear + "/" + String.format(java.util.Locale.ROOT, "%04d", repo.nextNumber(financialYear)); // rolls back if rendering fails
-        Rendered rendered = render(tpl, values(user, tpl, employee, input.lastWorkingDate(), reference, today));
+        Rendered rendered = render(template, values(user, template, employee, input.lastWorkingDate(), reference, today));
         String hash = PolicyService.sha256((rendered.subject() + "\n\n" + rendered.text()).getBytes(StandardCharsets.UTF_8));
-        Map<String, Object> biz = business.findProfile(TenantContext.current());
-        byte[] pdf = LetterPdf.render((String) biz.get("name"), (String) biz.get("address"), reference, Format.formatDayMonthYear(today), rendered.subject(), rendered.text(), hash);
+        Map<String, Object> businessProfile = business.findProfile(TenantContext.current());
+        byte[] pdfBytes = LetterPdf.render((String) businessProfile.get("name"), (String) businessProfile.get("address"), reference, Format.formatDayMonthYear(today), rendered.subject(), rendered.text(), hash);
         UUID id = UUID.randomUUID();
-        repo.insertIssued(id, reference, (UUID) tpl.get("id"), (String) tpl.get("name"), ((Number) tpl.get("version")).intValue(), (String) tpl.get("type"),
-                Boolean.TRUE.equals(tpl.get("needs_salary")), (UUID) employee.get("id"), (String) employee.get("code"), (String) employee.get("full_name"), rendered.subject(), rendered.text(), hash, pdf,
-                PolicyService.sha256(pdf), user.id(), user.name());
+        repo.insertIssued(id, reference, (UUID) template.get("id"), (String) template.get("name"), ((Number) template.get("version")).intValue(), (String) template.get("type"),
+                Boolean.TRUE.equals(template.get("needs_salary")), (UUID) employee.get("id"), (String) employee.get("code"), (String) employee.get("full_name"), rendered.subject(), rendered.text(), hash, pdfBytes,
+                PolicyService.sha256(pdfBytes), user.id(), user.name());
         notifications.notify((UUID) employee.get("id"), "A letter was issued to you: " + rendered.subject() + " (" + reference + ")", "/my-letters");
         // by email too (a PDF attached); without mail settings it is only logged, and a failed send never fails the issue
         String to = (String) employee.get("email");
         if (to != null && !to.isBlank()) {
-            mail.send(to, MailTemplates.letter((String) employee.get("full_name"), (String) biz.get("name"), rendered.subject(), reference, appUrl + "/my-letters"),
-                    new MailService.Attachment(reference.replace('/', '-') + ".pdf", pdf, "application/pdf"));
+            mail.send(to, MailTemplates.letter((String) employee.get("full_name"), (String) businessProfile.get("name"), rendered.subject(), reference, appUrl + "/my-letters"),
+                    new MailService.Attachment(reference.replace('/', '-') + ".pdf", pdfBytes, "application/pdf"));
         }
         audit.log(user.id(), "letter.issue", "issued_letter", id.toString(), null,
-                Map.of("reference", reference, "type", tpl.get("type"), "employee", employee.get("code"), "sha256", hash), ip);
+                Map.of("reference", reference, "type", template.get("type"), "employee", employee.get("code"), "sha256", hash), ipAddress);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", id.toString());
         out.put("reference", reference);
@@ -292,7 +292,7 @@ public class LettersService {
         view.put("employeeCode", row.get("employee_code"));
         view.put("employeeName", row.get("employee_name"));
         view.put("issuedBy", row.get("issued_by_name"));
-        view.put("issuedAt", iso(row.get("issued_at")));
+        view.put("issuedAt", formatIsoTimestamp(row.get("issued_at")));
         view.put("needsSalary", row.get("needs_salary"));
         view.put("canOpen", canOpen(user, row));
         return view;
@@ -307,14 +307,14 @@ public class LettersService {
     public List<Map<String, Object>> list(CurrentUser user, String employeeId) {
         UUID employee = employeeId == null || employeeId.isBlank() ? null : Check.uuid(employeeId);
         List<Map<String, Object>> out = new ArrayList<>();
-        for (Map<String, Object> r : repo.issued(employee)) out.add(view(r, user));
+        for (Map<String, Object> letter : repo.issued(employee)) out.add(view(letter, user));
         return out;
     }
 
     /** The signed-in employee's own letters. */
     public List<Map<String, Object>> mine(CurrentUser user) {
         List<Map<String, Object>> out = new ArrayList<>();
-        for (Map<String, Object> r : repo.issuedTo(user.id())) out.add(view(r, user));
+        for (Map<String, Object> letter : repo.issuedTo(user.id())) out.add(view(letter, user));
         return out;
     }
 
@@ -327,18 +327,18 @@ public class LettersService {
     }
 
     public Map<String, Object> detail(CurrentUser user, String idRaw) {
-        Map<String, Object> r = accessible(user, idRaw);
-        Map<String, Object> row = view(r, user);
-        row.put("body", r.get("body"));
-        row.put("bodySha256", r.get("body_sha256"));
-        row.put("pdfSha256", r.get("pdf_sha256"));
+        Map<String, Object> letter = accessible(user, idRaw);
+        Map<String, Object> row = view(letter, user);
+        row.put("body", letter.get("body"));
+        row.put("bodySha256", letter.get("body_sha256"));
+        row.put("pdfSha256", letter.get("pdf_sha256"));
         return row;
     }
 
     public record PdfFile(String filename, byte[] bytes) {}
 
     public PdfFile pdf(CurrentUser user, String idRaw) {
-        Map<String, Object> r = accessible(user, idRaw);
-        return new PdfFile("Letter-" + ((String) r.get("reference_no")).replace('/', '-') + ".pdf", repo.issuedPdf((UUID) r.get("id")));
+        Map<String, Object> letter = accessible(user, idRaw);
+        return new PdfFile("Letter-" + ((String) letter.get("reference_no")).replace('/', '-') + ".pdf", repo.issuedPdf((UUID) letter.get("id")));
     }
 }

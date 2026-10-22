@@ -63,7 +63,7 @@ public class OnboardingController {
     @PostMapping("/api/onboardings")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> start(@RequestBody OnboardingService.Plan body, HttpServletRequest request) {
-        String id = onboarding.start(auth.requirePage("onboarding"), body, RequestMeta.of(request).ip());
+        String id = onboarding.start(auth.requirePage("onboarding"), body, RequestMeta.of(request).ipAddress());
         return ApiResult.success("Onboarding link sent to " + body.personalEmail().trim().toLowerCase(), Map.of("id", id));
     }
 
@@ -79,7 +79,7 @@ public class OnboardingController {
     /** {@code {"requiredDocs": [...]}} — what new onboardings ask for unless HR changes it per candidate. */
     @PutMapping("/api/onboardings/defaults")
     public ApiResult<Void> saveDefaults(@RequestBody DefaultsBody body, HttpServletRequest request) {
-        return ApiResult.message(onboarding.saveDefaults(auth.requirePage("onboarding"), body.requiredDocs(), RequestMeta.of(request).ip()));
+        return ApiResult.message(onboarding.saveDefaults(auth.requirePage("onboarding"), body.requiredDocs(), RequestMeta.of(request).ipAddress()));
     }
 
     @GetMapping("/api/onboardings/{id}")
@@ -90,7 +90,7 @@ public class OnboardingController {
 
     @PutMapping("/api/onboardings/{id}")
     public ApiResult<Void> update(@PathVariable String id, @RequestBody OnboardingService.Plan body, HttpServletRequest request) {
-        onboarding.update(auth.requirePage("onboarding"), id, body, RequestMeta.of(request).ip());
+        onboarding.update(auth.requirePage("onboarding"), id, body, RequestMeta.of(request).ipAddress());
         return ApiResult.message("Saved");
     }
 
@@ -98,13 +98,13 @@ public class OnboardingController {
     @PostMapping("/api/onboardings/{id}/invitations")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> resend(@PathVariable String id, HttpServletRequest request) {
-        return ApiResult.message(onboarding.resend(auth.requirePage("onboarding"), id, RequestMeta.of(request).ip()));
+        return ApiResult.message(onboarding.resend(auth.requirePage("onboarding"), id, RequestMeta.of(request).ipAddress()));
     }
 
     /** {@code {"status": "VERIFIED" | "REJECTED", "comment"?}} */
     @PutMapping("/api/onboardings/{id}/documents/{docId}/status")
     public ApiResult<Void> decide(@PathVariable String id, @PathVariable String docId, @RequestBody OnboardingService.DocDecision body, HttpServletRequest request) {
-        return ApiResult.message(onboarding.decideDocument(auth.requirePage("onboarding"), id, docId, body, RequestMeta.of(request).ip()));
+        return ApiResult.message(onboarding.decideDocument(auth.requirePage("onboarding"), id, docId, body, RequestMeta.of(request).ipAddress()));
     }
 
     @GetMapping("/api/onboardings/{id}/documents/{docId}/file")
@@ -116,15 +116,15 @@ public class OnboardingController {
     /** {@code {"status": "CHANGES_REQUESTED" | "VERIFIED" | "CANCELLED", "comment"?}} */
     @PutMapping("/api/onboardings/{id}/status")
     public ApiResult<Void> status(@PathVariable String id, @RequestBody OnboardingService.StatusInput body, HttpServletRequest request) {
-        return ApiResult.message(onboarding.setStatus(auth.requirePage("onboarding"), id, body, RequestMeta.of(request).ip()));
+        return ApiResult.message(onboarding.setStatus(auth.requirePage("onboarding"), id, body, RequestMeta.of(request).ipAddress()));
     }
 
     /** Creates the employee (portal access off, no invite yet). */
     @PostMapping("/api/onboardings/{id}/employee")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> addEmployee(@PathVariable String id, @RequestBody OnboardingService.AddInput body, HttpServletRequest request) {
-        PeopleService.Saved s = onboarding.addEmployee(auth.requirePage("onboarding"), id, body, RequestMeta.of(request).ip());
-        return ApiResult.success(s.msg(), Map.of("id", s.id(), "code", s.code()));
+        PeopleService.Saved saved = onboarding.addEmployee(auth.requirePage("onboarding"), id, body, RequestMeta.of(request).ipAddress());
+        return ApiResult.success(saved.message(), Map.of("id", saved.id(), "code", saved.code()));
     }
 
     // ───────────── employee record ─────────────
@@ -158,8 +158,8 @@ public class OnboardingController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> candidateUpload(@PathVariable String token, @RequestParam(name = "kind", required = false) String kind,
                                                          @RequestPart(name = "file", required = false) MultipartFile file) throws IOException {
-        Map<String, String> r = onboarding.candidateUpload(token, kind, file == null ? null : file.getOriginalFilename(), file == null ? null : file.getBytes());
-        return ApiResult.success("Uploaded " + r.get("name"), r);
+        Map<String, String> uploaded = onboarding.candidateUpload(token, kind, file == null ? null : file.getOriginalFilename(), file == null ? null : file.getBytes());
+        return ApiResult.success("Uploaded " + uploaded.get("name"), uploaded);
     }
 
     @DeleteMapping("/api/public/onboardings/{token}/documents/{docId}")
@@ -176,6 +176,6 @@ public class OnboardingController {
     @PostMapping("/api/public/onboardings/{token}/submission")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> candidateSubmit(@PathVariable String token, HttpServletRequest request) {
-        return ApiResult.message(onboarding.candidateSubmit(token, RequestMeta.of(request).ip()));
+        return ApiResult.message(onboarding.candidateSubmit(token, RequestMeta.of(request).ipAddress()));
     }
 }

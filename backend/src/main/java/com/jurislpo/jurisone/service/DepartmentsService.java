@@ -49,7 +49,7 @@ public class DepartmentsService {
     }
 
     @Transactional
-    public String create(CurrentUser user, String nameRaw, String headIdRaw, String descRaw, String ip) {
+    public String create(CurrentUser user, String nameRaw, String headIdRaw, String descRaw, String ipAddress) {
         String name = Check.trimmed(nameRaw, 2, "Department name is required.", 80, "Keep the name under 80 characters.");
         UUID headId = headIdRaw == null || headIdRaw.isEmpty() ? null : Check.uuid(headIdRaw);
         String description = descRaw == null ? null : descRaw.trim();
@@ -58,8 +58,8 @@ public class DepartmentsService {
         List<Map<String, Object>> existing = repo.findByNameIgnoreCase(name);
         if (!existing.isEmpty() && existing.get(0).get("archived_at") == null) throw new UserException("This department already exists.");
         if (headId != null) {
-            List<String> st = repo.findEmployeeStatus(headId);
-            if (st.isEmpty() || "EXITED".equals(st.get(0))) throw new UserException("Pick a current employee as head.");
+            List<String> statuses = repo.findEmployeeStatus(headId);
+            if (statuses.isEmpty() || "EXITED".equals(statuses.get(0))) throw new UserException("Pick a current employee as head.");
         }
         String desc = description == null || description.isEmpty() ? null : description;
         UUID id;
@@ -76,16 +76,16 @@ public class DepartmentsService {
         after.put("name", name);
         after.put("headEmployeeId", headId == null ? null : headId.toString());
         if (description != null) after.put("description", description);
-        audit.log(user.id(), restore ? "department.restore" : "department.create", "department", id.toString(), null, after, ip);
+        audit.log(user.id(), restore ? "department.restore" : "department.create", "department", id.toString(), null, after, ipAddress);
         return "Department “" + name + "” created";
     }
 
     @Transactional
-    public String delete(CurrentUser user, String idRaw, String ip) {
+    public String delete(CurrentUser user, String idRaw, String ipAddress) {
         UUID id = Check.uuid(idRaw);
-        List<Map<String, Object>> ds = repo.findForDelete(id);
-        if (ds.isEmpty() || ds.get(0).get("archived_at") != null) throw new UserException("That department no longer exists.");
-        Map<String, Object> row = ds.get(0);
+        List<Map<String, Object>> rows = repo.findForDelete(id);
+        if (rows.isEmpty() || rows.get(0).get("archived_at") != null) throw new UserException("That department no longer exists.");
+        Map<String, Object> row = rows.get(0);
         Integer total = repo.countEmployees(id);
         Integer current = repo.countCurrentEmployees(id);
         if (current != null && current > 0) {
@@ -98,7 +98,7 @@ public class DepartmentsService {
         Map<String, Object> before = new LinkedHashMap<>();
         before.put("name", row.get("name"));
         before.put("description", row.get("description"));
-        audit.log(user.id(), "department.delete", "department", id.toString(), before, archive ? Map.of("archived", true) : null, ip);
+        audit.log(user.id(), "department.delete", "department", id.toString(), before, archive ? Map.of("archived", true) : null, ipAddress);
         return "Department “" + row.get("name") + "” removed";
     }
 }

@@ -30,8 +30,8 @@ public final class PolicyEvidencePdf {
         // version, accepted at, employee id, name, email, IP, browser; the fingerprints go on a second line, in full
         float[] cols = {30, 96, 62, 140, 190, 90, 162};
         String[] heads = {"Ver.", "Accepted at (UTC)", "Employee ID", "Name", "Email", "IP address", "Browser"};
-        try (PDDocument doc = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            PDDocumentInformation info = doc.getDocumentInformation();
+        try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            PDDocumentInformation info = document.getDocumentInformation();
             info.setTitle("Policy acceptance record: " + title);
             info.setCreator("JurisOne");
             PDFont font = new PDType1Font(Standard14Fonts.FontName.HELVETICA), bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
@@ -39,56 +39,56 @@ public final class PolicyEvidencePdf {
             int page = 0, i = 0;
             do {
                 PDPage pDPage = new PDPage(size);
-                doc.addPage(pDPage);
+                document.addPage(pDPage);
                 page++;
-                try (PDPageContentStream c = new PDPageContentStream(doc, pDPage)) {
+                try (PDPageContentStream contentStream = new PDPageContentStream(document, pDPage)) {
                     float y = size.getHeight() - margin;
                     if (page == 1) {
-                        text(c, bold, 15, margin, y, "Policy acceptance record");
+                        text(contentStream, bold, 15, margin, y, "Policy acceptance record");
                         y -= 18;
-                        text(c, font, 10, margin, y, safe(font, title + "  ·  " + business));
+                        text(contentStream, font, 10, margin, y, safe(font, title + "  ·  " + business));
                         y -= 13;
-                        text(c, font, 8, margin, y, safe(font, rows.size() + " acceptance" + (rows.size() == 1 ? "" : "s") + "  ·  generated " + generated
+                        text(contentStream, font, 8, margin, y, safe(font, rows.size() + " acceptance" + (rows.size() == 1 ? "" : "s") + "  ·  generated " + generated
                                 + " by " + generatedBy + "  ·  rows are a permanent record; the fingerprints identify the exact text and PDF accepted"));
                         y -= 18;
                     }
                     // header row
                     float x = margin;
                     for (int k = 0; k < heads.length; k++) {
-                        text(c, bold, 7, x, y, heads[k]);
+                        text(contentStream, bold, 7, x, y, heads[k]);
                         x += cols[k];
                     }
                     y -= 4;
-                    c.moveTo(margin, y);
-                    c.lineTo(margin + width, y);
-                    c.setLineWidth(0.5f);
-                    c.stroke();
+                    contentStream.moveTo(margin, y);
+                    contentStream.lineTo(margin + width, y);
+                    contentStream.setLineWidth(0.5f);
+                    contentStream.stroke();
                     y -= 10;
                     while (i < rows.size() && y > margin + 24) {
-                        List<Object> r = rows.get(i++);
-                        String at = r.get(2) == null ? "" : r.get(2).toString().replace('T', ' ').replaceAll("\\.\\d+Z$", "").replace("Z", "");
-                        String[] cells = {str(r.get(1)), at, str(r.get(3)), str(r.get(4)), str(r.get(5)), str(r.get(6)), str(r.get(7))};
+                        List<Object> row = rows.get(i++);
+                        String acknowledgedAt = row.get(2) == null ? "" : row.get(2).toString().replace('T', ' ').replaceAll("\\.\\d+Z$", "").replace("Z", "");
+                        String[] cells = {textOrEmpty(row.get(1)), acknowledgedAt, textOrEmpty(row.get(3)), textOrEmpty(row.get(4)), textOrEmpty(row.get(5)), textOrEmpty(row.get(6)), textOrEmpty(row.get(7))};
                         x = margin;
                         for (int k = 0; k < cells.length; k++) {
-                            text(c, font, 7, x, y, fit(font, 7, safe(font, cells[k]), cols[k] - 4));
+                            text(contentStream, font, 7, x, y, fit(font, 7, safe(font, cells[k]), cols[k] - 4));
                             x += cols[k];
                         }
                         y -= 9;
-                        String pdf = str(r.get(9));
-                        text(c, font, 6, margin + cols[0], y, "Text SHA-256 " + str(r.get(8)) + (pdf.isEmpty() ? "" : "    PDF SHA-256 " + pdf) + "    Record " + str(r.get(10)));
+                        String pdfSha = textOrEmpty(row.get(9));
+                        text(contentStream, font, 6, margin + cols[0], y, "Text SHA-256 " + textOrEmpty(row.get(8)) + (pdfSha.isEmpty() ? "" : "    PDF SHA-256 " + pdfSha) + "    Record " + textOrEmpty(row.get(10)));
                         y -= 13;
                     }
-                    text(c, font, 7, margin, margin - 14, "JurisOne · " + safe(font, title) + " · page " + page);
+                    text(contentStream, font, 7, margin, margin - 14, "JurisOne · " + safe(font, title) + " · page " + page);
                 }
             } while (i < rows.size());
-            doc.save(out);
+            document.save(out);
             return out.toByteArray();
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
     }
 
-    static String str(Object value) {
+    static String textOrEmpty(Object value) {
         return value == null ? "" : value.toString();
     }
 
@@ -103,11 +103,11 @@ public final class PolicyEvidencePdf {
     /** Characters the standard font can't draw become "?". */
     static String safe(PDFont font, String text) {
         StringBuilder builder = new StringBuilder(text.length());
-        text.codePoints().forEach(cp -> {
-            String ch = new String(Character.toChars(cp));
+        text.codePoints().forEach(codePoint -> {
+            String character = new String(Character.toChars(codePoint));
             try {
-                font.encode(ch);
-                builder.append(ch);
+                font.encode(character);
+                builder.append(character);
             } catch (IOException | IllegalArgumentException e) {
                 builder.append('?');
             }
@@ -118,8 +118,8 @@ public final class PolicyEvidencePdf {
     /** Cuts the text (with "…" as "...") to fit the column. */
     static String fit(PDFont font, float size, String text, float max) throws IOException {
         if (font.getStringWidth(text) / 1000 * size <= max) return text;
-        String t = text;
-        while (t.length() > 1 && font.getStringWidth(t + "...") / 1000 * size > max) t = t.substring(0, t.length() - 1);
-        return t + "...";
+        String remaining = text;
+        while (remaining.length() > 1 && font.getStringWidth(remaining + "...") / 1000 * size > max) remaining = remaining.substring(0, remaining.length() - 1);
+        return remaining + "...";
     }
 }

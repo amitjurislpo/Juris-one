@@ -57,45 +57,45 @@ public class RolesService {
     }
 
     private Map<String, Object> editableRole(UUID roleId) {
-        List<Map<String, Object>> rs = repo.findForEdit(roleId);
-        if (rs.isEmpty()) throw new UserException("That role no longer exists.");
-        Map<String, Object> role = rs.get(0);
+        List<Map<String, Object>> rows = repo.findForEdit(roleId);
+        if (rows.isEmpty()) throw new UserException("That role no longer exists.");
+        Map<String, Object> role = rows.get(0);
         if (Boolean.TRUE.equals(role.get("is_locked"))) throw new UserException(role.get("name") + " has full access and can't be changed.");
         return role;
     }
 
     @Transactional
-    public String setPermission(CurrentUser user, String roleIdRaw, String perm, boolean on, String ip) {
+    public String setPermission(CurrentUser user, String roleIdRaw, String perm, boolean granted, String ipAddress) {
         UUID roleId = Check.uuid(roleIdRaw);
         if (perm == null || !Permissions.isPermission(perm)) throw new UserException("Unknown permission.");
         Map<String, Object> role = editableRole(roleId);
         List<String> before = new ArrayList<>(new TreeSet<>(repo.findPermissions(roleId)));
-        if (on) repo.grantPermission(roleId, perm);
+        if (granted) repo.grantPermission(roleId, perm);
         else repo.revokePermission(roleId, perm);
         List<String> after;
-        if (on) {
-            TreeSet<String> s = new TreeSet<>(before);
-            s.add(perm);
-            after = new ArrayList<>(s);
+        if (granted) {
+            TreeSet<String> permissions = new TreeSet<>(before);
+            permissions.add(perm);
+            after = new ArrayList<>(permissions);
         } else {
             after = before.stream().filter(p -> !p.equals(perm)).toList();
         }
-        audit.log(user.id(), "role.permission_change", "role", roleId.toString(), Map.of("permissions", before), Map.of("permissions", after), ip);
-        return role.get("name") + ": " + (on ? "granted" : "removed") + " “" + Permissions.LABELS.get(perm) + "”";
+        audit.log(user.id(), "role.permission_change", "role", roleId.toString(), Map.of("permissions", before), Map.of("permissions", after), ipAddress);
+        return role.get("name") + ": " + (granted ? "granted" : "removed") + " “" + Permissions.LABELS.get(perm) + "”";
     }
 
     @Transactional
-    public String setAssignable(CurrentUser user, String roleIdRaw, String assignableRaw, boolean on, String ip) {
+    public String setAssignable(CurrentUser user, String roleIdRaw, String assignableRaw, boolean assignable, String ipAddress) {
         UUID roleId = Check.uuid(roleIdRaw);
         UUID assignableId = Check.uuid(assignableRaw);
         Map<String, Object> role = editableRole(roleId);
         List<String> target = repo.findName(assignableId);
         if (target.isEmpty()) throw new UserException("That role no longer exists.");
         String tName = target.get(0);
-        if (on) repo.addAssignable(roleId, assignableId);
+        if (assignable) repo.addAssignable(roleId, assignableId);
         else repo.removeAssignable(roleId, assignableId);
-        audit.log(user.id(), "role.assignable_change", "role", roleId.toString(), Map.of(tName, !on), Map.of(tName, on), ip);
-        return role.get("name") + " " + (on ? "can now" : "can no longer") + " add " + tName + "s";
+        audit.log(user.id(), "role.assignable_change", "role", roleId.toString(), Map.of(tName, !assignable), Map.of(tName, assignable), ipAddress);
+        return role.get("name") + " " + (assignable ? "can now" : "can no longer") + " add " + tName + "s";
     }
 
     public record Created(String id, String name) {}
@@ -104,10 +104,10 @@ public class RolesService {
     public Created create(CurrentUser user, String nameRaw, String fromRaw) {
         String name = Check.trimmed(nameRaw, 2, "Role name is required.", 60, "Keep the name under 60 characters.");
         UUID fromId = Check.uuid(fromRaw);
-        Integer dup = repo.countByNameIgnoreCase(name);
-        if (dup != null && dup > 0) throw new UserException("A role with that name already exists.");
-        List<String> src = repo.findName(fromId);
-        if (src.isEmpty()) throw new UserException("Pick a role to start from.");
+        Integer duplicateCount = repo.countByNameIgnoreCase(name);
+        if (duplicateCount != null && duplicateCount > 0) throw new UserException("A role with that name already exists.");
+        List<String> sourceNames = repo.findName(fromId);
+        if (sourceNames.isEmpty()) throw new UserException("Pick a role to start from.");
         // Copies the source's permissions, but never Administration — that must be granted deliberately.
         List<String> perms = repo.findPermissions(fromId).stream()
                 .filter(p -> !p.equals("roles.manage")).toList();
@@ -115,30 +115,30 @@ public class RolesService {
         String key = "custom_" + slug.substring(0, Math.min(30, slug.length())) + "_" + Long.toString(System.currentTimeMillis(), 36);
         UUID id = UUID.randomUUID();
         repo.insertCustom(id, key, name);
-        for (String p : perms) repo.insertPermission(id, p);
+        for (String perm : perms) repo.insertPermission(id, perm);
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("name", name);
-        after.put("copiedFrom", src.get(0));
+        after.put("copiedFrom", sourceNames.get(0));
         after.put("permissions", perms);
         audit.log(user.id(), "role.create", "role", id.toString(), null, after, null);
         return new Created(id.toString(), name);
     }
 
     @Transactional
-    public String delete(CurrentUser user, String roleIdRaw, String ip) {
+    public String delete(CurrentUser user, String roleIdRaw, String ipAddress) {
         UUID roleId = Check.uuid(roleIdRaw);
-        List<Map<String, Object>> rs = repo.findForDelete(roleId);
-        if (rs.isEmpty()) throw new UserException("That role no longer exists.");
-        if (Boolean.TRUE.equals(rs.get(0).get("is_builtin"))) throw new UserException("Built-in roles can't be deleted.");
+        List<Map<String, Object>> rows = repo.findForDelete(roleId);
+        if (rows.isEmpty()) throw new UserException("That role no longer exists.");
+        if (Boolean.TRUE.equals(rows.get(0).get("is_builtin"))) throw new UserException("Built-in roles can't be deleted.");
         // Past employees keep their role on record, so they count too.
         Integer count = repo.countEmployees(roleId);
         if (count != null && count > 0) throw new UserException("Move everyone (including past employees) to another role first.");
         List<String> perms = repo.findPermissions(roleId);
         repo.delete(roleId);
         Map<String, Object> before = new LinkedHashMap<>();
-        before.put("name", rs.get(0).get("name"));
+        before.put("name", rows.get(0).get("name"));
         before.put("permissions", perms);
         audit.log(user.id(), "role.delete", "role", roleId.toString(), before, null, null);
-        return "Role “" + rs.get(0).get("name") + "” deleted";
+        return "Role “" + rows.get(0).get("name") + "” deleted";
     }
 }

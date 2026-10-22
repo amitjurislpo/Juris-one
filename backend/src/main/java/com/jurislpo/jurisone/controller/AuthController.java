@@ -55,8 +55,8 @@ public class AuthController {
         RequestMeta meta = RequestMeta.of(request);
         com.jurislpo.jurisone.security.AuditTrail.hint(request, "identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(body.identifier()));
         boolean remember = Boolean.TRUE.equals(body.remember());
-        AuthService.LoginResult r = auth.loginWithOtp(body.identifier(), body.otp(), remember, body.next(), meta);
-        return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.SET_COOKIE, setCookies(r.cookies())).body(ApiResult.success(Map.of("redirect", r.redirect())));
+        AuthService.LoginResult loginResult = auth.loginWithOtp(body.identifier(), body.otp(), remember, body.next(), meta);
+        return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.SET_COOKIE, setCookies(loginResult.cookies())).body(ApiResult.success(Map.of("redirect", loginResult.redirect())));
     }
 
     /** Email a 6-digit sign-in code (always the same answer, so it doesn't reveal who has an account). */
@@ -77,8 +77,8 @@ public class AuthController {
             SessionService.Issued issued = sessions.refresh(JwtAuthFilter.cookie(request, SessionService.REFRESH_COOKIE), RequestMeta.of(request));
             return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.SET_COOKIE, setCookies(issued.cookies())).body(ApiResult.success());
         } catch (SessionService.RefreshRefused e) {
-            ProblemDetail p = Problems.of(HttpStatus.UNAUTHORIZED, Problems.UNAUTHENTICATED, UnauthenticatedException.MESSAGE, request.getRequestURI());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).header(HttpHeaders.SET_COOKIE, setCookies(sessions.clearCookies())).body(p);
+            ProblemDetail problem = Problems.of(HttpStatus.UNAUTHORIZED, Problems.UNAUTHENTICATED, UnauthenticatedException.MESSAGE, request.getRequestURI());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).header(HttpHeaders.SET_COOKIE, setCookies(sessions.clearCookies())).body(problem);
         }
     }
 

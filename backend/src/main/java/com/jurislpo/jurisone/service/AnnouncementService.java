@@ -38,8 +38,8 @@ public class AnnouncementService {
 
     /** The announcements shown to this user now (pinned first, newest first). */
     public List<Map<String, Object>> active(CurrentUser user, Integer limit) {
-        int n = limit == null ? 50 : Math.max(1, Math.min(100, limit));
-        return repo.findActive(user.region(), n);
+        int pageSize = limit == null ? 50 : Math.max(1, Math.min(100, limit));
+        return repo.findActive(user.region(), pageSize);
     }
 
     /** Everything ever posted, with whether it is showing now (managers). */
@@ -66,37 +66,37 @@ public class AnnouncementService {
     }
 
     /** Publishes the announcement straight away and notifies everyone it is for. */
-    public String create(CurrentUser user, AnnouncementInput input, String ip) {
+    public String create(CurrentUser user, AnnouncementInput input, String ipAddress) {
         ValidatedAnnouncement validated = validate(input);
         UUID id = UUID.randomUUID();
         repo.insert(id, validated.title(), validated.body(), validated.audience(), validated.pinned(), validated.expiresOn(), user.id());
-        audit.log(user.id(), "announcement.create", "announcement", id.toString(), null, Map.of("title", validated.title(), "audience", validated.audience(), "pinned", validated.pinned()), ip);
+        audit.log(user.id(), "announcement.create", "announcement", id.toString(), null, Map.of("title", validated.title(), "audience", validated.audience(), "pinned", validated.pinned()), ipAddress);
         notifyAll(id, validated.title(), validated.audience());
         return id.toString();
     }
 
     /** Edits it in place (nobody is notified again). */
-    public void update(CurrentUser user, String idRaw, AnnouncementInput input, String ip) {
+    public void update(CurrentUser user, String idRaw, AnnouncementInput input, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> announcement = row(id);
         ValidatedAnnouncement validated = validate(input);
         repo.update(id, validated.title(), validated.body(), validated.audience(), validated.pinned(), validated.expiresOn());
-        audit.log(user.id(), "announcement.update", "announcement", id.toString(), Map.of("title", announcement.get("title")), Map.of("title", validated.title(), "audience", validated.audience()), ip);
+        audit.log(user.id(), "announcement.update", "announcement", id.toString(), Map.of("title", announcement.get("title")), Map.of("title", validated.title(), "audience", validated.audience()), ipAddress);
     }
 
     /** PUBLISHED (again — notifies again) or UNPUBLISHED (hidden from everyone). */
-    public String setStatus(CurrentUser user, String idRaw, String statusRaw, String ip) {
+    public String setStatus(CurrentUser user, String idRaw, String statusRaw, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         String status = Check.oneOf(statusRaw, List.of("PUBLISHED", "UNPUBLISHED"));
         Map<String, Object> announcement = row(id);
         if (status.equals(announcement.get("status"))) throw new UserException("It is already " + status.toLowerCase() + ".");
         repo.setStatus(id, status);
-        audit.log(user.id(), "announcement." + (status.equals("PUBLISHED") ? "publish" : "unpublish"), "announcement", id.toString(), null, Map.of("title", announcement.get("title")), ip);
+        audit.log(user.id(), "announcement." + (status.equals("PUBLISHED") ? "publish" : "unpublish"), "announcement", id.toString(), null, Map.of("title", announcement.get("title")), ipAddress);
         if (status.equals("PUBLISHED")) notifyAll(id, (String) announcement.get("title"), (String) announcement.get("audience"));
         return status.equals("PUBLISHED") ? "Announcement published" : "Announcement unpublished";
     }
 
     private void notifyAll(UUID id, String title, String audience) {
-        for (UUID e : repo.findRecipients(audience)) notifications.notify(e, "Announcement: " + title, "/announcements");
+        for (UUID recipientId : repo.findRecipients(audience)) notifications.notify(recipientId, "Announcement: " + title, "/announcements");
     }
 }

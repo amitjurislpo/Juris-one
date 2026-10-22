@@ -28,28 +28,28 @@ public final class Permissions {
     public static final Map<String, String> LABELS;
 
     static {
-        Map<String, String> m = new LinkedHashMap<>();
-        m.put(SELF, "Own attendance, leave, payslips & tax declarations");
-        m.put(DIR, "Employee directory");
-        m.put(ATT_ALL, "View everyone’s attendance (with time zones)");
-        m.put(APPR_LEAVE, "Approve leave");
-        m.put(APPR_REG, "Approve attendance regularization");
-        m.put(PEOPLE_VIEW, "View employee records");
-        m.put(PEOPLE_ADD, "Add & edit employees");
-        m.put(ACCESS_TOGGLE, "Enable / disable portal access");
-        m.put(DEPT_MANAGE, "Create departments");
-        m.put(HOLIDAYS_MANAGE, "Manage holiday calendar");
-        m.put(LETTERS_MANAGE, "Issue HR letters & edit letter templates");
-        m.put(PAY_VIEW, "View & edit payroll");
-        m.put(PAY_CLOSE, "Close payroll & publish payslips");
-        m.put(STRUCT_MANAGE, "Salary structures");
-        m.put(TAX_VIEW, "Tax & TDS");
-        m.put(PROOFS_VERIFY, "Verify investment proofs");
-        m.put(POLICIES_MANAGE, "Publish company policies & see acknowledgements");
-        m.put(ASSETS_MANAGE, "Manage the asset register & assign assets");
-        m.put(ANNOUNCEMENTS_MANAGE, "Post announcements");
-        m.put(ROLES_MANAGE, "Roles, permissions & policies");
-        LABELS = java.util.Collections.unmodifiableMap(m);
+        Map<String, String> descriptions = new LinkedHashMap<>();
+        descriptions.put(SELF, "Own attendance, leave, payslips & tax declarations");
+        descriptions.put(DIR, "Employee directory");
+        descriptions.put(ATT_ALL, "View everyone’s attendance (with time zones)");
+        descriptions.put(APPR_LEAVE, "Approve leave");
+        descriptions.put(APPR_REG, "Approve attendance regularization");
+        descriptions.put(PEOPLE_VIEW, "View employee records");
+        descriptions.put(PEOPLE_ADD, "Add & edit employees");
+        descriptions.put(ACCESS_TOGGLE, "Enable / disable portal access");
+        descriptions.put(DEPT_MANAGE, "Create departments");
+        descriptions.put(HOLIDAYS_MANAGE, "Manage holiday calendar");
+        descriptions.put(LETTERS_MANAGE, "Issue HR letters & edit letter templates");
+        descriptions.put(PAY_VIEW, "View & edit payroll");
+        descriptions.put(PAY_CLOSE, "Close payroll & publish payslips");
+        descriptions.put(STRUCT_MANAGE, "Salary structures");
+        descriptions.put(TAX_VIEW, "Tax & TDS");
+        descriptions.put(PROOFS_VERIFY, "Verify investment proofs");
+        descriptions.put(POLICIES_MANAGE, "Publish company policies & see acknowledgements");
+        descriptions.put(ASSETS_MANAGE, "Manage the asset register & assign assets");
+        descriptions.put(ANNOUNCEMENTS_MANAGE, "Post announcements");
+        descriptions.put(ROLES_MANAGE, "Roles, permissions & policies");
+        LABELS = java.util.Collections.unmodifiableMap(descriptions);
     }
 
     public static final List<String> KEYS = List.copyOf(LABELS.keySet());

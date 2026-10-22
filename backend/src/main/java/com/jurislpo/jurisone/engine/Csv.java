@@ -20,8 +20,8 @@ public final class Csv {
 
     /** JS number → string: integers without ".0". */
     static String stringOf(Object value) {
-        if (value instanceof Double d && d == Math.rint(d) && !Double.isInfinite(d) && Math.abs(d) < 1e15) return Long.toString(d.longValue());
-        if (value instanceof Float f && f == Math.rint(f)) return Long.toString(f.longValue());
+        if (value instanceof Double doubleValue && doubleValue == Math.rint(doubleValue) && !Double.isInfinite(doubleValue) && Math.abs(doubleValue) < 1e15) return Long.toString(doubleValue.longValue());
+        if (value instanceof Float floatValue && floatValue == Math.rint(floatValue)) return Long.toString(floatValue.longValue());
         return String.valueOf(value);
     }
 
@@ -30,10 +30,10 @@ public final class Csv {
         all.add(header);
         all.addAll(rows);
         StringBuilder builder = new StringBuilder("﻿");
-        for (List<?> r : all) {
-            for (int i = 0; i < r.size(); i++) {
+        for (List<?> row : all) {
+            for (int i = 0; i < row.size(); i++) {
                 if (i > 0) builder.append(',');
-                builder.append(cell(r.get(i)));
+                builder.append(cell(row.get(i)));
             }
             builder.append("\r\n");
         }

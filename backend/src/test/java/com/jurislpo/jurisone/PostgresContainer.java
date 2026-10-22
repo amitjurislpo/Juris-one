@@ -7,8 +7,8 @@ public final class PostgresContainer {
     private PostgresContainer() {}
 
     public static PostgreSQLContainer<?> start() {
-        PostgreSQLContainer<?> c = new PostgreSQLContainer<>("postgres:16-alpine");
-        c.start();
-        return c;
+        PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+        postgres.start();
+        return postgres;
     }
 }

@@ -36,7 +36,7 @@ class PeopleRulesTest {
     static final Actor FM = actor("fm", MANAGE, Set.of("fe"), "d-fin");
     static final Actor HRE = actor("hre", Set.of("people.view"), Set.of(), null);
 
-    static LocalDate d(String s) { return LocalDate.parse(s); }
+    static LocalDate parseDate(String text) { return LocalDate.parse(text); }
 
     @Nested
     @DisplayName("editing employees")
@@ -119,36 +119,36 @@ class PeopleRulesTest {
         @Test
         @DisplayName("new hires are Onboarding until they join, then Probation")
         void initial() {
-            assertThat(initialStatus(d("2026-10-12"), d("2026-10-06"))).isEqualTo(EmployeeStatus.ONBOARDING);
-            assertThat(initialStatus(d("2026-10-06"), d("2026-10-06"))).isEqualTo(EmployeeStatus.PROBATION);
+            assertThat(initialStatus(parseDate("2026-10-12"), parseDate("2026-10-06"))).isEqualTo(EmployeeStatus.ONBOARDING);
+            assertThat(initialStatus(parseDate("2026-10-06"), parseDate("2026-10-06"))).isEqualTo(EmployeeStatus.PROBATION);
         }
 
         @Test
         @DisplayName("becomes Active after the probation months")
         void derived() {
-            assertThat(derivedStatus(EmployeeStatus.PROBATION, d("2026-03-02"), d("2026-09-01"), 6)).isEqualTo(EmployeeStatus.PROBATION);
-            assertThat(derivedStatus(EmployeeStatus.PROBATION, d("2026-03-02"), d("2026-09-02"), 6)).isEqualTo(EmployeeStatus.ACTIVE);
-            assertThat(derivedStatus(EmployeeStatus.ONBOARDING, d("2026-10-06"), d("2026-10-06"), 6)).isEqualTo(EmployeeStatus.PROBATION);
-            assertThat(derivedStatus(EmployeeStatus.EXITED, d("2020-01-01"), d("2026-10-06"), 6)).isEqualTo(EmployeeStatus.EXITED);
+            assertThat(derivedStatus(EmployeeStatus.PROBATION, parseDate("2026-03-02"), parseDate("2026-09-01"), 6)).isEqualTo(EmployeeStatus.PROBATION);
+            assertThat(derivedStatus(EmployeeStatus.PROBATION, parseDate("2026-03-02"), parseDate("2026-09-02"), 6)).isEqualTo(EmployeeStatus.ACTIVE);
+            assertThat(derivedStatus(EmployeeStatus.ONBOARDING, parseDate("2026-10-06"), parseDate("2026-10-06"), 6)).isEqualTo(EmployeeStatus.PROBATION);
+            assertThat(derivedStatus(EmployeeStatus.EXITED, parseDate("2020-01-01"), parseDate("2026-10-06"), 6)).isEqualTo(EmployeeStatus.EXITED);
         }
 
         @Test
         @DisplayName("probation end follows JS Date.UTC month overflow (31 Aug + 6 months = 3 Mar)")
         void jsMonthOverflow() {
-            assertThat(jsAddMonths(d("2026-08-31"), 6)).isEqualTo(d("2027-03-03")); // Node: Date.UTC(2026, 13, 31)
-            assertThat(derivedStatus(EmployeeStatus.PROBATION, d("2026-08-31"), d("2027-03-02"), 6)).isEqualTo(EmployeeStatus.PROBATION);
-            assertThat(derivedStatus(EmployeeStatus.PROBATION, d("2026-08-31"), d("2027-03-03"), 6)).isEqualTo(EmployeeStatus.ACTIVE);
+            assertThat(jsAddMonths(parseDate("2026-08-31"), 6)).isEqualTo(parseDate("2027-03-03")); // Node: Date.UTC(2026, 13, 31)
+            assertThat(derivedStatus(EmployeeStatus.PROBATION, parseDate("2026-08-31"), parseDate("2027-03-02"), 6)).isEqualTo(EmployeeStatus.PROBATION);
+            assertThat(derivedStatus(EmployeeStatus.PROBATION, parseDate("2026-08-31"), parseDate("2027-03-03"), 6)).isEqualTo(EmployeeStatus.ACTIVE);
         }
 
         @Test
         @DisplayName("detects reporting loops")
         void cycles() {
-            Map<String, String> m = new HashMap<>();
-            m.put("a", null);
-            m.put("b", "a");
-            m.put("c", "b");
-            assertThat(createsCycle("a", "c", m)).isTrue(); // a → c → b → a
-            assertThat(createsCycle("c", "a", m)).isFalse();
+            Map<String, String> fields = new HashMap<>();
+            fields.put("a", null);
+            fields.put("b", "a");
+            fields.put("c", "b");
+            assertThat(createsCycle("a", "c", fields)).isTrue(); // a → c → b → a
+            assertThat(createsCycle("c", "a", fields)).isFalse();
         }
     }
 
@@ -161,17 +161,17 @@ class PeopleRulesTest {
         }
 
         static EmployeeInput with(String field, String value) {
-            EmployeeInput b = base();
-            Map<String, String> v = new HashMap<>(Map.ofEntries(
-                    Map.entry("firstName", b.firstName()), Map.entry("middleName", b.middleName()), Map.entry("lastName", b.lastName()),
-                    Map.entry("fatherName", b.fatherName()), Map.entry("email", b.email()), Map.entry("phoneCountry", b.phoneCountry()), Map.entry("phone", b.phone()),
-                    Map.entry("location", b.location()), Map.entry("joiningOffice", b.joiningOffice()), Map.entry("pan", b.pan()), Map.entry("aadhaar", b.aadhaar()),
-                    Map.entry("uan", b.uan()), Map.entry("address", b.address()), Map.entry("designation", b.designation()), Map.entry("departmentId", b.departmentId()),
-                    Map.entry("managerId", b.managerId()), Map.entry("doj", b.dateOfJoining()), Map.entry("shift", b.shift()), Map.entry("roleId", b.roleId())));
-            Stream.of(field.split(",")).forEach(f -> v.put(f, value));
-            return new EmployeeInput(v.get("firstName"), v.get("middleName"), v.get("lastName"), v.get("fatherName"), v.get("email"), v.get("phoneCountry"),
-                    v.get("phone"), v.get("location"), v.get("joiningOffice"), v.get("pan"), v.get("aadhaar"), v.get("uan"), v.get("address"), v.get("designation"),
-                    v.get("departmentId"), v.get("managerId"), v.get("doj"), v.get("shift"), v.get("roleId"));
+            EmployeeInput employeeInput = base();
+            Map<String, String> fields = new HashMap<>(Map.ofEntries(
+                    Map.entry("firstName", employeeInput.firstName()), Map.entry("middleName", employeeInput.middleName()), Map.entry("lastName", employeeInput.lastName()),
+                    Map.entry("fatherName", employeeInput.fatherName()), Map.entry("email", employeeInput.email()), Map.entry("phoneCountry", employeeInput.phoneCountry()), Map.entry("phone", employeeInput.phone()),
+                    Map.entry("location", employeeInput.location()), Map.entry("joiningOffice", employeeInput.joiningOffice()), Map.entry("pan", employeeInput.pan()), Map.entry("aadhaar", employeeInput.aadhaar()),
+                    Map.entry("uan", employeeInput.uan()), Map.entry("address", employeeInput.address()), Map.entry("designation", employeeInput.designation()), Map.entry("departmentId", employeeInput.departmentId()),
+                    Map.entry("managerId", employeeInput.managerId()), Map.entry("doj", employeeInput.dateOfJoining()), Map.entry("shift", employeeInput.shift()), Map.entry("roleId", employeeInput.roleId())));
+            Stream.of(field.split(",")).forEach(f -> fields.put(f, value));
+            return new EmployeeInput(fields.get("firstName"), fields.get("middleName"), fields.get("lastName"), fields.get("fatherName"), fields.get("email"), fields.get("phoneCountry"),
+                    fields.get("phone"), fields.get("location"), fields.get("joiningOffice"), fields.get("pan"), fields.get("aadhaar"), fields.get("uan"), fields.get("address"), fields.get("designation"),
+                    fields.get("departmentId"), fields.get("managerId"), fields.get("doj"), fields.get("shift"), fields.get("roleId"));
         }
 
         @Test
@@ -201,10 +201,10 @@ class PeopleRulesTest {
         @Test
         @DisplayName("skips Indian IDs for the US team, keeps blanks on edit and treats no location as India")
         void usAndEdit() {
-            EmployeeInput us = with("location", "US_ET");
-            us = new EmployeeInput(us.firstName(), us.middleName(), us.lastName(), us.fatherName(), us.email(), us.phoneCountry(), us.phone(), "US_ET",
-                    us.joiningOffice(), "bad", "bad", us.uan(), us.address(), us.designation(), us.departmentId(), us.managerId(), us.dateOfJoining(), us.shift(), us.roleId());
-            assertThat(stepErrors(2, us, false)).isEmpty();
+            EmployeeInput employeeInput = with("location", "US_ET");
+            employeeInput = new EmployeeInput(employeeInput.firstName(), employeeInput.middleName(), employeeInput.lastName(), employeeInput.fatherName(), employeeInput.email(), employeeInput.phoneCountry(), employeeInput.phone(), "US_ET",
+                    employeeInput.joiningOffice(), "bad", "bad", employeeInput.uan(), employeeInput.address(), employeeInput.designation(), employeeInput.departmentId(), employeeInput.managerId(), employeeInput.dateOfJoining(), employeeInput.shift(), employeeInput.roleId());
+            assertThat(stepErrors(2, employeeInput, false)).isEmpty();
             assertThat(stepErrors(1, with("phone", ""), true)).isEmpty();
             assertThat(with("location", "").locationOrDefault()).isEqualTo("IN_IST");
             assertThat(with("middleName", "Rani").fullName()).isEqualTo("Meera Rani Joshi");

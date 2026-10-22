@@ -73,9 +73,9 @@ public final class LetterTemplateEngine {
     /** Rejects unknown fields and stray braces in any of the texts; the message names every offender. */
     public static void validate(String... texts) {
         Set<String> unknown = new LinkedHashSet<>();
-        for (String t : texts) {
-            String text = t == null ? "" : t;
-            for (String f : fieldsIn(text)) if (!NAMES.contains(f)) unknown.add(f);
+        for (String raw : texts) {
+            String text = raw == null ? "" : raw;
+            for (String field : fieldsIn(text)) if (!NAMES.contains(field)) unknown.add(field);
             String rest = TOKEN.matcher(text).replaceAll("");
             if (rest.contains("{{") || rest.contains("}}")) {
                 throw new UserException(HttpStatus.BAD_REQUEST, "The text has a \"{{\" or \"}}\" without its pair. Merge fields look like {{employee.name}}.");
@@ -89,7 +89,7 @@ public final class LetterTemplateEngine {
 
     /** Whether any of the texts uses a salary field. */
     public static boolean usesSalary(String... texts) {
-        for (String t : texts) for (String f : fieldsIn(t)) if (SALARY_NAMES.contains(f)) return true;
+        for (String text : texts) for (String field : fieldsIn(text)) if (SALARY_NAMES.contains(field)) return true;
         return false;
     }
 
@@ -97,20 +97,20 @@ public final class LetterTemplateEngine {
     public static String render(String text, Map<String, String> values, Mode mode) {
         validate(text);
         List<String> missing = new ArrayList<>();
-        for (String f : fieldsIn(text)) {
-            String v = values.get(f);
-            if (v == null || v.isBlank()) missing.add(f);
+        for (String field : fieldsIn(text)) {
+            String value = values.get(field);
+            if (value == null || value.isBlank()) missing.add(field);
         }
         if (!missing.isEmpty()) throw new MissingFieldsException(missing);
         StringBuilder out = new StringBuilder();
         Matcher matcher = TOKEN.matcher(text);
         int last = 0;
         while (matcher.find()) {
-            out.append(lit(text.substring(last, matcher.start()), mode));
-            out.append(lit(clean(values.get(matcher.group(1).strip())), mode));
+            out.append(literal(text.substring(last, matcher.start()), mode));
+            out.append(literal(clean(values.get(matcher.group(1).strip())), mode));
             last = matcher.end();
         }
-        out.append(lit(text.substring(last), mode));
+        out.append(literal(text.substring(last), mode));
         return out.toString();
     }
 
@@ -119,7 +119,7 @@ public final class LetterTemplateEngine {
         return value.replaceAll("\\p{Cntrl}", " ").strip();
     }
 
-    private static String lit(String text, Mode mode) {
+    private static String literal(String text, Mode mode) {
         return mode == Mode.HTML ? escapeHtml(text) : text;
     }
 

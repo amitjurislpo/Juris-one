@@ -15,12 +15,12 @@ import org.junit.jupiter.api.Test;
 class LetterTemplateEngineTest {
 
     static Map<String, String> values() {
-        Map<String, String> v = new HashMap<>();
-        v.put("employee.name", "Asha Rao");
-        v.put("employee.code", "JC-007");
-        v.put("designation", "Analyst");
-        v.put("business.name", "Juris Consultants");
-        return v;
+        Map<String, String> fieldValues = new HashMap<>();
+        fieldValues.put("employee.name", "Asha Rao");
+        fieldValues.put("employee.code", "JC-007");
+        fieldValues.put("designation", "Analyst");
+        fieldValues.put("business.name", "Juris Consultants");
+        return fieldValues;
     }
 
     @Test
@@ -37,9 +37,9 @@ class LetterTemplateEngineTest {
                 .isInstanceOf(UserException.class).hasMessageContaining("{{salary}}").hasMessageContaining("{{foo.bar}}").hasMessageContaining("Unknown merge fields");
         assertThatThrownBy(() -> LetterTemplateEngine.render("Hi {{nope}}", values(), Mode.TEXT)).isInstanceOf(UserException.class).hasMessageContaining("{{nope}}");
         // a value for an unknown field doesn't make it known
-        Map<String, String> v = values();
-        v.put("nope", "x");
-        assertThatThrownBy(() -> LetterTemplateEngine.render("Hi {{nope}}", v, Mode.TEXT)).isInstanceOf(UserException.class);
+        Map<String, String> fieldValues = values();
+        fieldValues.put("nope", "x");
+        assertThatThrownBy(() -> LetterTemplateEngine.render("Hi {{nope}}", fieldValues, Mode.TEXT)).isInstanceOf(UserException.class);
     }
 
     @Test
@@ -52,21 +52,21 @@ class LetterTemplateEngineTest {
     @Test
     @DisplayName("HTML mode escapes the values and the template text; text mode keeps them as typed")
     void escaping() {
-        Map<String, String> v = values();
-        v.put("employee.name", "<script>alert('x')</script> & \"Co\"");
-        String html = LetterTemplateEngine.render("<b>Dear</b> {{employee.name}}", v, Mode.HTML);
+        Map<String, String> fieldValues = values();
+        fieldValues.put("employee.name", "<script>alert('x')</script> & \"Co\"");
+        String html = LetterTemplateEngine.render("<b>Dear</b> {{employee.name}}", fieldValues, Mode.HTML);
         assertThat(html).isEqualTo("&lt;b&gt;Dear&lt;/b&gt; &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt; &amp; &quot;Co&quot;");
         assertThat(html).doesNotContain("<");
-        assertThat(LetterTemplateEngine.render("Dear {{employee.name}}", v, Mode.TEXT)).isEqualTo("Dear <script>alert('x')</script> & \"Co\"");
+        assertThat(LetterTemplateEngine.render("Dear {{employee.name}}", fieldValues, Mode.TEXT)).isEqualTo("Dear <script>alert('x')</script> & \"Co\"");
     }
 
     @Test
     @DisplayName("a known field without a value is an error naming every missing field")
     void missingValue() {
-        Map<String, String> v = values();
-        v.put("department", null);
-        v.put("lastWorkingDate", "   ");
-        assertThatThrownBy(() -> LetterTemplateEngine.render("{{employee.name}} {{department}} {{lastWorkingDate}} {{joiningDate}}", v, Mode.TEXT))
+        Map<String, String> fieldValues = values();
+        fieldValues.put("department", null);
+        fieldValues.put("lastWorkingDate", "   ");
+        assertThatThrownBy(() -> LetterTemplateEngine.render("{{employee.name}} {{department}} {{lastWorkingDate}} {{joiningDate}}", fieldValues, Mode.TEXT))
                 .isInstanceOf(MissingFieldsException.class)
                 .satisfies(e -> assertThat(((MissingFieldsException) e).fields()).containsExactly("department", "lastWorkingDate", "joiningDate"))
                 .hasMessageContaining("{{department}}").hasMessageContaining("{{joiningDate}}");
@@ -75,10 +75,10 @@ class LetterTemplateEngineTest {
     @Test
     @DisplayName("merges once: a value that looks like a field is not merged again; new lines in values become spaces")
     void singlePass() {
-        Map<String, String> v = values();
-        v.put("designation", "{{employee.code}}");
-        v.put("business.name", "Line one\nLine two");
-        assertThat(LetterTemplateEngine.render("{{designation}} / {{business.name}}", v, Mode.TEXT)).isEqualTo("{{employee.code}} / Line one Line two");
+        Map<String, String> fieldValues = values();
+        fieldValues.put("designation", "{{employee.code}}");
+        fieldValues.put("business.name", "Line one\nLine two");
+        assertThat(LetterTemplateEngine.render("{{designation}} / {{business.name}}", fieldValues, Mode.TEXT)).isEqualTo("{{employee.code}} / Line one Line two");
     }
 
     @Test

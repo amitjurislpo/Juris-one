@@ -83,7 +83,7 @@ public class TaxOperationsRepository {
     /** The employee's declaration items for the Declare page (amounts in rupees). */
     public List<ItemView> itemViews(UUID employeeId, String financialYear) {
         return jdbc.query("SELECT id::text, item_key, amount, status::text, proof_name, reject_reason FROM declaration_items WHERE employee_id = ? AND fy = ?",
-                (rs, i) -> new ItemView(rs.getString(1), rs.getString(2), rs.getLong(3) / 100.0, rs.getString(4), rs.getString(5), rs.getString(6)), employeeId, financialYear);
+                (resultSet, i) -> new ItemView(resultSet.getString(1), resultSet.getString(2), resultSet.getLong(3) / 100.0, resultSet.getString(4), resultSet.getString(5), resultSet.getString(6)), employeeId, financialYear);
     }
 
     /** id, amount and status of one declared item (empty when none). */
@@ -135,14 +135,14 @@ public class TaxOperationsRepository {
     /** One row per employee with declarations or proofs this FY. */
     public List<ProofRow> proofRows(String financialYear) {
         return jdbc.query("""
-            SELECT e.id::text, e.full_name, e.code, d.name AS dept, COALESCE((SELECT t.regime::text FROM tax_profiles t WHERE t.employee_id = e.id AND t.fy = ?), 'NEW') AS reg,
-                   (SELECT COALESCE(sum(i.amount), 0) FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ?) AS dec,
-                   (SELECT count(*) FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ? AND i.status = 'PENDING') AS pend,
-                   (SELECT count(*) FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ? AND i.status = 'APPROVED') AS appr
+            SELECT e.id::text, e.full_name, e.code, d.name AS department_name, COALESCE((SELECT t.regime::text FROM tax_profiles t WHERE t.employee_id = e.id AND t.fy = ?), 'NEW') AS regime,
+                   (SELECT COALESCE(sum(i.amount), 0) FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ?) AS declared_amount,
+                   (SELECT count(*) FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ? AND i.status = 'PENDING') AS pending_count,
+                   (SELECT count(*) FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ? AND i.status = 'APPROVED') AS approved_count
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id
             WHERE EXISTS (SELECT 1 FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ? AND (i.amount > 0 OR i.proof_path IS NOT NULL))""",
-                (rs, i) -> new ProofRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4) == null ? "—" : rs.getString(4), rs.getString(5),
-                        rs.getLong(6), rs.getInt(7), rs.getInt(8)), financialYear, financialYear, financialYear, financialYear, financialYear);
+                (resultSet, i) -> new ProofRow(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4) == null ? "—" : resultSet.getString(4), resultSet.getString(5),
+                        resultSet.getLong(6), resultSet.getInt(7), resultSet.getInt(8)), financialYear, financialYear, financialYear, financialYear, financialYear);
     }
 
     public Map<String, Object> employeeNameCode(UUID employeeId) {
@@ -154,9 +154,9 @@ public class TaxOperationsRepository {
         return jdbc.query("""
             SELECT id::text, item_key, section, amount, status::text, proof_name, proof_path, reject_reason FROM declaration_items
             WHERE employee_id = ? AND fy = ? AND (amount > 0 OR proof_path IS NOT NULL) ORDER BY section ASC""",
-                (rs, i) -> new ProofItem(rs.getString(1), rs.getString(2), TaxCatalogue.ITEM_LABEL.getOrDefault(rs.getString(2), rs.getString(2)),
-                        TaxCatalogue.SECTION_OF_ITEM.getOrDefault(rs.getString(2), rs.getString(3)), rs.getLong(4), rs.getString(5), rs.getString(6),
-                        rs.getString(7) != null, rs.getString(8)), employeeId, financialYear);
+                (resultSet, i) -> new ProofItem(resultSet.getString(1), resultSet.getString(2), TaxCatalogue.ITEM_LABEL.getOrDefault(resultSet.getString(2), resultSet.getString(2)),
+                        TaxCatalogue.SECTION_OF_ITEM.getOrDefault(resultSet.getString(2), resultSet.getString(3)), resultSet.getLong(4), resultSet.getString(5), resultSet.getString(6),
+                        resultSet.getString(7) != null, resultSet.getString(8)), employeeId, financialYear);
     }
 
     /** employee_id, item_key and amount of an item (empty when not found). */
