@@ -33,7 +33,7 @@ public class PayrollRepository {
      */
     public List<Map<String, Object>> payrollEmployees(String idFilter, Object[] args) {
         return jdbc.queryForList("""
-            SELECT e.id, e.code, e.full_name, e.designation, e.date_of_joining, e.exit_date, d.name AS dept
+            SELECT e.id, e.code, e.full_name, e.designation, e.date_of_joining, e.exit_date, d.name AS department_name
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id
             WHERE e.region = 'IN' AND e.date_of_joining <= ? AND (e.exit_date IS NULL OR e.exit_date >= ?)
               AND EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?)""" + idFilter + " ORDER BY e.full_name ASC",
@@ -43,7 +43,7 @@ public class PayrollRepository {
     /** India and company-wide holidays in [first, last]. */
     public List<LocalDate> indiaHolidays(LocalDate first, LocalDate last) {
         return jdbc.query("SELECT date FROM holidays WHERE date >= ? AND date <= ? AND region::text IN ('IN', 'ALL')",
-                (rs, i) -> rs.getDate(1).toLocalDate(), Date.valueOf(first), Date.valueOf(last));
+                (resultSet, i) -> resultSet.getDate(1).toLocalDate(), Date.valueOf(first), Date.valueOf(last));
     }
 
     /** The salary structure in force on {@code onDate}. */
@@ -55,7 +55,7 @@ public class PayrollRepository {
     /** (employee id, snapshot JSON text) of every payslip in the month's run. */
     public List<Map.Entry<UUID, String>> payslipSnapshots(String yearMonth) {
         return jdbc.query("SELECT p.employee_id, p.snapshot::text FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE r.month = ?",
-                (rs, i) -> Map.entry((UUID) rs.getObject(1), rs.getString(2)), yearMonth);
+                (resultSet, i) -> Map.entry((UUID) resultSet.getObject(1), resultSet.getString(2)), yearMonth);
     }
 
     public List<Map<String, Object>> findRun(String yearMonth) {

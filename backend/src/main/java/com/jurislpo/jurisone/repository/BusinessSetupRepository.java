@@ -77,7 +77,7 @@ public class BusinessSetupRepository {
     /** Inserts a department unless the business already has one with the name. */
     /** The default HR letter templates of the business (SQL function from V15; templates that exist are left alone). */
     public void seedLetterTemplates(UUID businessId) {
-        jdbc.query("SELECT jurisone_seed_letter_templates(?)", rs -> {}, businessId);
+        jdbc.query("SELECT jurisone_seed_letter_templates(?)", resultSet -> {}, businessId);
     }
 
     public void insertDepartmentIfMissing(UUID id, String name, String description, UUID createdBy) {

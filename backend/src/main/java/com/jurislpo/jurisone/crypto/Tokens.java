@@ -22,9 +22,9 @@ public final class Tokens {
     }
 
     public static String randomToken(int bytes) {
-        byte[] b = new byte[bytes];
-        RANDOM.nextBytes(b);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(b);
+        byte[] randomBytes = new byte[bytes];
+        RANDOM.nextBytes(randomBytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
     }
 
     public static String randomToken() {

@@ -19,14 +19,14 @@ public class FlywayConfig {
     static final int PRISMA_MIGRATIONS = 4;
 
     @Bean
-    FlywayMigrationStrategy prismaAwareMigration(DataSource dataSource, org.springframework.core.env.Environment env) {
+    FlywayMigrationStrategy prismaAwareMigration(DataSource dataSource, org.springframework.core.env.Environment environment) {
         return flyway -> {
             JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-            if ("true".equals(env.getProperty("jurisone.reset"))) {
+            if ("true".equals(environment.getProperty("jurisone.reset"))) {
                 // `reset` command (development only): drop everything in the schema, then migrate from scratch
-                String appUrl = env.getProperty("jurisone.app-url", "http://localhost:3005");
+                String appUrl = environment.getProperty("jurisone.app-url", "http://localhost:3005");
                 boolean local = appUrl.matches("^https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?(/.*)?$");
-                if (!local && !"true".equals(env.getProperty("jurisone.allow-db-reset"))) {
+                if (!local && !"true".equals(environment.getProperty("jurisone.allow-db-reset"))) {
                     throw new IllegalStateException("Refusing to reset a database for " + appUrl + ". Set jurisone.allow-db-reset=true if you really mean it.");
                 }
                 flyway.clean();

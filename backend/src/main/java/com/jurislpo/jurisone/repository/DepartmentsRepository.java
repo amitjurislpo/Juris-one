@@ -24,18 +24,18 @@ public class DepartmentsRepository {
     public List<Row> findActive(String timeZone) {
         return jdbc.query("""
             SELECT d.id, d.name, d.description, h.full_name AS head, c.full_name AS by, d.created_at,
-                   (SELECT count(*) FROM employees e WHERE e.department_id = d.id AND e.status <> 'EXITED') AS n
+                   (SELECT count(*) FROM employees e WHERE e.department_id = d.id AND e.status <> 'EXITED') AS employee_count
             FROM departments d LEFT JOIN employees h ON h.id = d.head_employee_id LEFT JOIN employees c ON c.id = d.created_by
             WHERE d.archived_at IS NULL""",
-                (rs, i) -> new Row(rs.getString("id"), rs.getString("name"), rs.getString("description") == null ? "" : rs.getString("description"),
-                        rs.getString("head") == null ? "" : rs.getString("head"), rs.getInt("n"), rs.getString("by") == null ? "—" : rs.getString("by"),
-                        Format.isoInZone(rs.getTimestamp("created_at").toInstant(), timeZone).toString()));
+                (resultSet, i) -> new Row(resultSet.getString("id"), resultSet.getString("name"), resultSet.getString("description") == null ? "" : resultSet.getString("description"),
+                        resultSet.getString("head") == null ? "" : resultSet.getString("head"), resultSet.getInt("employee_count"), resultSet.getString("by") == null ? "—" : resultSet.getString("by"),
+                        Format.isoInZone(resultSet.getTimestamp("created_at").toInstant(), timeZone).toString()));
     }
 
     /** Current employees who can be picked as head, by name. */
     public List<Person> findHeadCandidates() {
         return jdbc.query("SELECT id, full_name, designation FROM employees WHERE status <> 'EXITED' ORDER BY full_name ASC",
-                (rs, i) -> new Person(rs.getString(1), rs.getString(2), rs.getString(3)));
+                (resultSet, i) -> new Person(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3)));
     }
 
     /** id and archived_at of the department with this name, ignoring case (at most one). */

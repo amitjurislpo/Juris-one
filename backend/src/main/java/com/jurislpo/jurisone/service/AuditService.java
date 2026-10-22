@@ -25,7 +25,7 @@ public class AuditService {
         this.json = json;
     }
 
-    public void log(UUID actorId, String action, String entity, String entityId, Object before, Object after, String ip) {
+    public void log(UUID actorId, String action, String entity, String entityId, Object before, Object after, String ipAddress) {
         AuditLog auditLog = new AuditLog();
         auditLog.setActorId(actorId);
         auditLog.setAction(action);
@@ -33,7 +33,7 @@ public class AuditService {
         auditLog.setEntityId(entityId);
         auditLog.setBefore(toJson(before));
         auditLog.setAfter(toJson(after));
-        auditLog.setIp(ip);
+        auditLog.setIpAddress(ipAddress);
         repo.persist(auditLog);
         if (com.jurislpo.jurisone.tenancy.TenantContext.current() == null && actorId != null) {
             // outside a business request (sign-in, password set): the event belongs to the actor's business, so its
@@ -42,13 +42,13 @@ public class AuditService {
         }
     }
 
-    public void log(UUID actorId, String action, String entity, String entityId, String ip) {
-        log(actorId, action, entity, entityId, null, null, ip);
+    public void log(UUID actorId, String action, String entity, String entityId, String ipAddress) {
+        log(actorId, action, entity, entityId, null, null, ipAddress);
     }
 
     private JsonNode toJson(Object value) {
         if (value == null) return null;
-        JsonNode n = json.valueToTree(value);
-        return n == null || n.isNull() ? null : n;
+        JsonNode node = json.valueToTree(value);
+        return node == null || node.isNull() ? null : node;
     }
 }

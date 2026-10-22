@@ -1,7 +1,7 @@
 package com.jurislpo.jurisone.repository;
 
 import static com.jurislpo.jurisone.service.OnboardingService.KINDS;
-import static com.jurislpo.jurisone.service.OnboardingService.iso;
+import static com.jurislpo.jurisone.service.OnboardingService.formatIsoTimestamp;
 
 import java.sql.Date;
 import java.sql.Timestamp;
@@ -41,20 +41,20 @@ public class OnboardingRepository {
                    (SELECT count(*) FROM onboarding_documents x WHERE x.onboarding_id = o.id AND x.status <> 'REJECTED') AS docs,
                    (SELECT count(*) FROM onboarding_documents x WHERE x.onboarding_id = o.id AND x.status = 'VERIFIED') AS verified, e.code
             FROM onboardings o LEFT JOIN departments d ON d.id = o.department_id LEFT JOIN employees e ON e.id = o.employee_id
-            ORDER BY o.status IN ('ADDED', 'CANCELLED'), o.updated_at DESC""", (rs, i) -> {
+            ORDER BY o.status IN ('ADDED', 'CANCELLED'), o.updated_at DESC""", (resultSet, i) -> {
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", rs.getString(1));
-            row.put("candidateName", rs.getString(2));
-            row.put("personalEmail", rs.getString(3));
-            row.put("designation", rs.getString(4));
-            row.put("department", rs.getString(5));
-            row.put("joiningDate", rs.getDate(6) == null ? null : rs.getDate(6).toLocalDate().toString());
-            row.put("status", rs.getString(7));
-            row.put("updatedAt", iso(rs.getTimestamp(8)));
-            row.put("linkExpiresAt", iso(rs.getTimestamp(9)));
-            row.put("documents", rs.getLong(10));
-            row.put("verified", rs.getLong(11));
-            row.put("employeeCode", rs.getString(12));
+            row.put("id", resultSet.getString(1));
+            row.put("candidateName", resultSet.getString(2));
+            row.put("personalEmail", resultSet.getString(3));
+            row.put("designation", resultSet.getString(4));
+            row.put("department", resultSet.getString(5));
+            row.put("joiningDate", resultSet.getDate(6) == null ? null : resultSet.getDate(6).toLocalDate().toString());
+            row.put("status", resultSet.getString(7));
+            row.put("updatedAt", formatIsoTimestamp(resultSet.getTimestamp(8)));
+            row.put("linkExpiresAt", formatIsoTimestamp(resultSet.getTimestamp(9)));
+            row.put("documents", resultSet.getLong(10));
+            row.put("verified", resultSet.getLong(11));
+            row.put("employeeCode", resultSet.getString(12));
             return row;
         });
     }
@@ -82,18 +82,18 @@ public class OnboardingRepository {
                        String[] required, UUID createdBy) {
         jdbc.update("""
             INSERT INTO onboardings (id, candidate_name, personal_email, designation, department_id, role_id, manager_id, joining_date, location, required_docs, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", ps -> {
-            ps.setObject(1, id);
-            ps.setString(2, name);
-            ps.setString(3, email);
-            ps.setString(4, designation);
-            ps.setObject(5, departmentId);
-            ps.setObject(6, roleId);
-            ps.setObject(7, managerId);
-            ps.setObject(8, joining);
-            ps.setString(9, location);
-            ps.setArray(10, ps.getConnection().createArrayOf("text", required));
-            ps.setObject(11, createdBy);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", statement -> {
+            statement.setObject(1, id);
+            statement.setString(2, name);
+            statement.setString(3, email);
+            statement.setString(4, designation);
+            statement.setObject(5, departmentId);
+            statement.setObject(6, roleId);
+            statement.setObject(7, managerId);
+            statement.setObject(8, joining);
+            statement.setString(9, location);
+            statement.setArray(10, statement.getConnection().createArrayOf("text", required));
+            statement.setObject(11, createdBy);
         });
     }
 
@@ -102,17 +102,17 @@ public class OnboardingRepository {
                            String location, String[] required) {
         jdbc.update("""
             UPDATE onboardings SET candidate_name = ?, personal_email = ?, designation = ?, department_id = ?, role_id = ?, manager_id = ?, joining_date = ?,
-              location = ?, required_docs = ?, updated_at = now() WHERE id = ?""", ps -> {
-            ps.setString(1, name);
-            ps.setString(2, email);
-            ps.setString(3, designation);
-            ps.setObject(4, departmentId);
-            ps.setObject(5, roleId);
-            ps.setObject(6, managerId);
-            ps.setObject(7, joining);
-            ps.setString(8, location);
-            ps.setArray(9, ps.getConnection().createArrayOf("text", required));
-            ps.setObject(10, id);
+              location = ?, required_docs = ?, updated_at = now() WHERE id = ?""", statement -> {
+            statement.setString(1, name);
+            statement.setString(2, email);
+            statement.setString(3, designation);
+            statement.setObject(4, departmentId);
+            statement.setObject(5, roleId);
+            statement.setObject(6, managerId);
+            statement.setObject(7, joining);
+            statement.setString(8, location);
+            statement.setArray(9, statement.getConnection().createArrayOf("text", required));
+            statement.setObject(10, id);
         });
     }
 
@@ -193,19 +193,19 @@ public class OnboardingRepository {
     public List<Map<String, Object>> findDocuments(UUID onboardingId) {
         return jdbc.query("""
             SELECT d.id::text, d.kind, d.file_name, d.mime, d.size_bytes, d.status, d.comment, d.uploaded_at, e.full_name AS verified_by, d.verified_at
-            FROM onboarding_documents d LEFT JOIN employees e ON e.id = d.verified_by WHERE d.onboarding_id = ? ORDER BY d.uploaded_at""", (rs, i) -> {
+            FROM onboarding_documents d LEFT JOIN employees e ON e.id = d.verified_by WHERE d.onboarding_id = ? ORDER BY d.uploaded_at""", (resultSet, i) -> {
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", rs.getString(1));
-            row.put("kind", rs.getString(2));
-            row.put("label", KINDS.get(rs.getString(2)));
-            row.put("fileName", rs.getString(3));
-            row.put("mime", rs.getString(4));
-            row.put("size", rs.getInt(5));
-            row.put("status", rs.getString(6));
-            row.put("comment", rs.getString(7));
-            row.put("uploadedAt", iso(rs.getTimestamp(8)));
-            row.put("verifiedBy", rs.getString(9));
-            row.put("verifiedAt", iso(rs.getTimestamp(10)));
+            row.put("id", resultSet.getString(1));
+            row.put("kind", resultSet.getString(2));
+            row.put("label", KINDS.get(resultSet.getString(2)));
+            row.put("fileName", resultSet.getString(3));
+            row.put("mime", resultSet.getString(4));
+            row.put("size", resultSet.getInt(5));
+            row.put("status", resultSet.getString(6));
+            row.put("comment", resultSet.getString(7));
+            row.put("uploadedAt", formatIsoTimestamp(resultSet.getTimestamp(8)));
+            row.put("verifiedBy", resultSet.getString(9));
+            row.put("verifiedAt", formatIsoTimestamp(resultSet.getTimestamp(10)));
             return row;
         }, onboardingId);
     }
@@ -228,13 +228,13 @@ public class OnboardingRepository {
 
     /** Documents on an employee's record, by kind then upload time. */
     public List<Map<String, Object>> findEmployeeDocuments(UUID employeeId) {
-        return jdbc.query("SELECT id::text, kind, file_name, uploaded_at FROM onboarding_documents WHERE employee_id = ? ORDER BY kind, uploaded_at", (rs, i) -> {
+        return jdbc.query("SELECT id::text, kind, file_name, uploaded_at FROM onboarding_documents WHERE employee_id = ? ORDER BY kind, uploaded_at", (resultSet, i) -> {
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", rs.getString(1));
-            row.put("kind", rs.getString(2));
-            row.put("label", KINDS.get(rs.getString(2)));
-            row.put("fileName", rs.getString(3));
-            row.put("uploadedAt", iso(rs.getTimestamp(4)));
+            row.put("id", resultSet.getString(1));
+            row.put("kind", resultSet.getString(2));
+            row.put("label", KINDS.get(resultSet.getString(2)));
+            row.put("fileName", resultSet.getString(3));
+            row.put("uploadedAt", formatIsoTimestamp(resultSet.getTimestamp(4)));
             return row;
         }, employeeId);
     }

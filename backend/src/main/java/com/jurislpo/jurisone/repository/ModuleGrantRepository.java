@@ -25,13 +25,13 @@ public class ModuleGrantRepository {
         return jdbc.query("""
             SELECT id::text, module, source, price_paise, starts_on, ends_on, notes, created_at, revoked_at
             FROM business_modules WHERE business_id = ? ORDER BY revoked_at IS NOT NULL, starts_on DESC, created_at DESC""",
-                (rs, i) -> {
-                    LocalDate starts = rs.getDate(5).toLocalDate();
-                    LocalDate ends = rs.getDate(6) == null ? null : rs.getDate(6).toLocalDate();
-                    String state = rs.getTimestamp(9) != null ? "REVOKED" : starts.isAfter(today) ? "UPCOMING" : ends != null && ends.isBefore(today) ? "ENDED" : "ACTIVE";
-                    return new Grant(rs.getString(1), rs.getString(2), rs.getString(3), rs.getLong(4), starts.toString(), ends == null ? null : ends.toString(),
-                            rs.getString(7), Format.isoTimestamp(rs.getTimestamp(8).toInstant()),
-                            rs.getTimestamp(9) == null ? null : Format.isoTimestamp(rs.getTimestamp(9).toInstant()), state);
+                (resultSet, i) -> {
+                    LocalDate starts = resultSet.getDate(5).toLocalDate();
+                    LocalDate ends = resultSet.getDate(6) == null ? null : resultSet.getDate(6).toLocalDate();
+                    String state = resultSet.getTimestamp(9) != null ? "REVOKED" : starts.isAfter(today) ? "UPCOMING" : ends != null && ends.isBefore(today) ? "ENDED" : "ACTIVE";
+                    return new Grant(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getLong(4), starts.toString(), ends == null ? null : ends.toString(),
+                            resultSet.getString(7), Format.isoTimestamp(resultSet.getTimestamp(8).toInstant()),
+                            resultSet.getTimestamp(9) == null ? null : Format.isoTimestamp(resultSet.getTimestamp(9).toInstant()), state);
                 }, businessId);
     }
 

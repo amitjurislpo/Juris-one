@@ -41,16 +41,16 @@ public class SessionService {
     }
 
     private final SessionRepository repo;
-    private final JwtService jwt;
+    private final JwtService jwtService;
     private final int ttlDays;
     private final boolean secureCookie;
     private final Duration reuseGrace;
 
-    public SessionService(SessionRepository repo, JwtService jwt, @Value("${jurisone.security.session-ttl-days:30}") int ttlDays,
+    public SessionService(SessionRepository repo, JwtService jwtService, @Value("${jurisone.security.session-ttl-days:30}") int ttlDays,
                           @Value("${jurisone.security.cookie-secure:${jurisone.app-url:http://localhost:3005}}") String secure,
                           @Value("${jurisone.refresh-reuse-grace-seconds:30}") long reuseGraceSeconds) {
         this.repo = repo;
-        this.jwt = jwt;
+        this.jwtService = jwtService;
         this.ttlDays = ttlDays;
         this.reuseGrace = Duration.ofSeconds(reuseGraceSeconds);
         // Secure cookies whenever the app is served over https, or COOKIE_SECURE=true
@@ -60,12 +60,12 @@ public class SessionService {
     /** Starts a session for a successful sign-in and returns its cookies. */
     @Transactional
     public Issued create(UUID employeeId, boolean remember, RequestMeta meta) {
-        String sid = Tokens.randomToken(24);
-        Duration ttl = remember ? Duration.ofDays(ttlDays) : Duration.ofHours(SHORT_SESSION_HOURS);
-        Instant expiresAt = Instant.now().plus(ttl).truncatedTo(ChronoUnit.MILLIS);
-        repo.insertSession(sid, employeeId, expiresAt, meta.ip(), meta.userAgent());
-        String refresh = newRefreshToken(sid, expiresAt, meta);
-        return new Issued(sid, cookies(employeeId, sid, refresh, remember ? ttl : null));
+        String sessionId = Tokens.randomToken(24);
+        Duration sessionLifetime = remember ? Duration.ofDays(ttlDays) : Duration.ofHours(SHORT_SESSION_HOURS);
+        Instant expiresAt = Instant.now().plus(sessionLifetime).truncatedTo(ChronoUnit.MILLIS);
+        repo.insertSession(sessionId, employeeId, expiresAt, meta.ipAddress(), meta.userAgent());
+        String refresh = newRefreshToken(sessionId, expiresAt, meta);
+        return new Issued(sessionId, cookies(employeeId, sessionId, refresh, remember ? sessionLifetime : null));
     }
 
     /**
@@ -78,47 +78,47 @@ public class SessionService {
         if (refreshToken == null || refreshToken.isEmpty()) throw new RefreshRefused("missing");
         List<Map<String, Object>> rows = repo.findRefreshTokenForUpdate(Tokens.sha256(refreshToken));
         if (rows.isEmpty()) throw new RefreshRefused("unknown");
-        Map<String, Object> r = rows.get(0);
-        String sid = (String) r.get("sid");
+        Map<String, Object> row = rows.get(0);
+        String sessionId = (String) row.get("session_id");
         Instant now = Instant.now();
-        if (r.get("revoked_at") != null) throw new RefreshRefused("revoked");
-        if (r.get("used_at") != null) {
-            Instant usedAt = ((Timestamp) r.get("used_at")).toInstant();
+        if (row.get("revoked_at") != null) throw new RefreshRefused("revoked");
+        if (row.get("used_at") != null) {
+            Instant usedAt = ((Timestamp) row.get("used_at")).toInstant();
             if (Duration.between(usedAt, now).compareTo(reuseGrace) >= 0) {
-                revoke(sid, "refresh_reuse");
+                revoke(sessionId, "refresh_reuse");
                 throw new RefreshRefused("reused");
             }
         }
-        Instant sessionExpires = ((Timestamp) r.get("session_expires")).toInstant();
+        Instant sessionExpires = ((Timestamp) row.get("session_expires")).toInstant();
         if (!sessionExpires.isAfter(now)) throw new RefreshRefused("expired");
-        if (!Boolean.TRUE.equals(r.get("portal_access")) || "EXITED".equals(r.get("status")) || r.get("user_id") == null
-                || "SUSPENDED".equals(r.get("business_status"))) {
-            revoke(sid, "access_ended");
+        if (!Boolean.TRUE.equals(row.get("portal_access")) || "EXITED".equals(row.get("status")) || row.get("user_id") == null
+                || "SUSPENDED".equals(row.get("business_status"))) {
+            revoke(sessionId, "access_ended");
             throw new RefreshRefused("blocked");
         }
-        if (r.get("used_at") == null) repo.markRefreshTokenUsed(Tokens.sha256(refreshToken), now);
-        repo.updateLastSeen(sid, now);
-        String next = newRefreshToken(sid, sessionExpires, meta);
-        Instant created = ((Timestamp) r.get("created_at")).toInstant();
+        if (row.get("used_at") == null) repo.markRefreshTokenUsed(Tokens.sha256(refreshToken), now);
+        repo.updateLastSeen(sessionId, now);
+        String next = newRefreshToken(sessionId, sessionExpires, meta);
+        Instant created = ((Timestamp) row.get("created_at")).toInstant();
         boolean remember = Duration.between(created, sessionExpires).compareTo(Duration.ofHours(SHORT_SESSION_HOURS + 1)) > 0;
-        return new Issued(sid, cookies((UUID) r.get("employee_id"), sid, next, remember ? Duration.between(now, sessionExpires) : null));
+        return new Issued(sessionId, cookies((UUID) row.get("employee_id"), sessionId, next, remember ? Duration.between(now, sessionExpires) : null));
     }
 
-    private String newRefreshToken(String sid, Instant expiresAt, RequestMeta meta) {
+    private String newRefreshToken(String sessionId, Instant expiresAt, RequestMeta meta) {
         String token = Tokens.randomToken(32);
-        repo.insertRefreshToken(Tokens.sha256(token), sid, expiresAt, meta.ip(), meta.userAgent());
+        repo.insertRefreshToken(Tokens.sha256(token), sessionId, expiresAt, meta.ipAddress(), meta.userAgent());
         return token;
     }
 
     /** {@code maxAge} null = browser-session cookies (no "keep me signed in"). */
-    private List<ResponseCookie> cookies(UUID employeeId, String sid, String refresh, Duration maxAge) {
-        ResponseCookie.ResponseCookieBuilder at = base(ACCESS_COOKIE, jwt.issue(employeeId, sid));
+    private List<ResponseCookie> cookies(UUID employeeId, String sessionId, String refresh, Duration maxAge) {
+        ResponseCookie.ResponseCookieBuilder accessCookie = base(ACCESS_COOKIE, jwtService.issue(employeeId, sessionId));
         ResponseCookie.ResponseCookieBuilder responseCookieBuilder = base(REFRESH_COOKIE, refresh);
         if (maxAge != null) {
-            at.maxAge(maxAge);
+            accessCookie.maxAge(maxAge);
             responseCookieBuilder.maxAge(maxAge);
         }
-        return List.of(at.build(), responseCookieBuilder.build(), expired(LEGACY_COOKIE));
+        return List.of(accessCookie.build(), responseCookieBuilder.build(), expired(LEGACY_COOKIE));
     }
 
     private ResponseCookie.ResponseCookieBuilder base(String name, String value) {
@@ -145,8 +145,8 @@ public class SessionService {
     @Transactional
     public void revokeByRefreshToken(String refreshToken, String reason) {
         if (refreshToken == null || refreshToken.isEmpty()) return;
-        List<String> sid = repo.findSessionIdByRefreshToken(Tokens.sha256(refreshToken));
-        if (!sid.isEmpty()) revoke(sid.get(0), reason);
+        List<String> sessionId = repo.findSessionIdByRefreshToken(Tokens.sha256(refreshToken));
+        if (!sessionId.isEmpty()) revoke(sessionId.get(0), reason);
     }
 
     /** Ends every active session of an employee immediately (access disabled, exit, password reset). */

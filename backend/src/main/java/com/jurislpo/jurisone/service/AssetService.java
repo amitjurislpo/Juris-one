@@ -104,16 +104,16 @@ public class AssetService {
                 purchased, status, optional(input.notes(), 500, "the notes"));
     }
 
-    public String create(CurrentUser user, AssetInput input, String ip) {
+    public String create(CurrentUser user, AssetInput input, String ipAddress) {
         ValidatedAsset validated = validate(input);
         if (repo.tagTaken(validated.tag(), null)) throw new UserException(HttpStatus.CONFLICT, "An asset with the tag \"" + validated.tag() + "\" already exists.");
         UUID id = UUID.randomUUID();
         repo.insert(id, validated.tag(), validated.type(), validated.make(), validated.model(), validated.serial(), validated.purchaseDate(), validated.status() == null ? "AVAILABLE" : validated.status(), validated.notes(), user.id());
-        audit.log(user.id(), "asset.create", "asset", id.toString(), null, Map.of("tag", validated.tag(), "type", validated.type()), ip);
+        audit.log(user.id(), "asset.create", "asset", id.toString(), null, Map.of("tag", validated.tag(), "type", validated.type()), ipAddress);
         return id.toString();
     }
 
-    public void update(CurrentUser user, String idRaw, AssetInput input, String ip) {
+    public void update(CurrentUser user, String idRaw, AssetInput input, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> asset = row(id);
         ValidatedAsset validated = validate(input);
@@ -122,48 +122,48 @@ public class AssetService {
         String status = validated.status() == null ? current : validated.status();
         if ("ASSIGNED".equals(current) && !"ASSIGNED".equals(status)) throw new UserException("Return the asset before changing its status.");
         repo.update(id, validated.tag(), validated.type(), validated.make(), validated.model(), validated.serial(), validated.purchaseDate(), status, validated.notes());
-        audit.log(user.id(), "asset.update", "asset", id.toString(), Map.of("tag", asset.get("tag"), "status", current), Map.of("tag", validated.tag(), "status", status), ip);
+        audit.log(user.id(), "asset.update", "asset", id.toString(), Map.of("tag", asset.get("tag"), "status", current), Map.of("tag", validated.tag(), "status", status), ipAddress);
     }
 
     /** Deletes an asset that was never assigned (otherwise retire it: the history stays). */
-    public void delete(CurrentUser user, String idRaw, String ip) {
+    public void delete(CurrentUser user, String idRaw, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> asset = row(id);
         if (repo.everAssigned(id)) throw new UserException("An asset with assignment history can't be deleted — mark it retired instead.");
         repo.delete(id);
-        audit.log(user.id(), "asset.delete", "asset", id.toString(), Map.of("tag", asset.get("tag")), null, ip);
+        audit.log(user.id(), "asset.delete", "asset", id.toString(), Map.of("tag", asset.get("tag")), null, ipAddress);
     }
 
     /** Hands an available asset to an employee. */
-    public String assign(CurrentUser user, String idRaw, AssignInput input, String ip) {
+    public String assign(CurrentUser user, String idRaw, AssignInput input, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Assignment details are missing.");
         UUID employeeId = Check.uuid(input.employeeId(), "Choose the employee.");
-        LocalDate on = input.assignedOn() == null || input.assignedOn().isBlank() ? LocalDate.now() : date(input.assignedOn(), "Enter the date as YYYY-MM-DD.");
+        LocalDate date = input.assignedOn() == null || input.assignedOn().isBlank() ? LocalDate.now() : date(input.assignedOn(), "Enter the date as YYYY-MM-DD.");
         String notes = optional(input.notes(), 500, "the notes");
         Map<String, Object> asset = row(id);
         if (!"AVAILABLE".equals(asset.get("status"))) throw new UserException("Only an available asset can be assigned (this one is " + asset.get("status") + ").");
         if (!repo.assignable(employeeId)) throw new UserException(HttpStatus.NOT_FOUND, "Employee not found.");
-        repo.insertAssignment(UUID.randomUUID(), id, employeeId, on, user.id(), notes);
+        repo.insertAssignment(UUID.randomUUID(), id, employeeId, date, user.id(), notes);
         repo.setStatus(id, "ASSIGNED");
-        audit.log(user.id(), "asset.assign", "asset", id.toString(), null, Map.of("tag", asset.get("tag"), "employeeId", employeeId.toString(), "assignedOn", on.toString()), ip);
+        audit.log(user.id(), "asset.assign", "asset", id.toString(), null, Map.of("tag", asset.get("tag"), "employeeId", employeeId.toString(), "assignedOn", date.toString()), ipAddress);
         notifications.notify(employeeId, "Asset assigned to you: " + asset.get("tag") + " (" + label(asset) + ")", "/my-assets");
         return "Assigned " + asset.get("tag");
     }
 
     /** Takes the asset back with the condition it came back in (damaged → in repair, lost → retired). */
-    public String giveBack(CurrentUser user, String idRaw, ReturnInput input, String ip) {
+    public String giveBack(CurrentUser user, String idRaw, ReturnInput input, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Return details are missing.");
         String condition = Check.oneOf(input.condition(), CONDITIONS);
-        LocalDate on = input.returnedOn() == null || input.returnedOn().isBlank() ? LocalDate.now() : date(input.returnedOn(), "Enter the date as YYYY-MM-DD.");
+        LocalDate date = input.returnedOn() == null || input.returnedOn().isBlank() ? LocalDate.now() : date(input.returnedOn(), "Enter the date as YYYY-MM-DD.");
         String notes = optional(input.notes(), 500, "the notes");
         Map<String, Object> asset = row(id);
         List<Map<String, Object>> open = repo.findOpenAssignment(id);
         if (open.isEmpty()) throw new UserException("This asset isn't assigned to anyone.");
         Map<String, Object> row = open.get(0);
-        if (on.isBefore(LocalDate.parse((String) row.get("assignedOn")))) throw new UserException("The return date can't be before the assignment date (" + row.get("assignedOn") + ").");
-        repo.closeAssignment(UUID.fromString((String) row.get("id")), on, user.id(), condition, notes);
+        if (date.isBefore(LocalDate.parse((String) row.get("assignedOn")))) throw new UserException("The return date can't be before the assignment date (" + row.get("assignedOn") + ").");
+        repo.closeAssignment(UUID.fromString((String) row.get("id")), date, user.id(), condition, notes);
         String next = switch (condition) {
             case "DAMAGED" -> "IN_REPAIR";
             case "LOST" -> "RETIRED";
@@ -171,13 +171,13 @@ public class AssetService {
         };
         repo.setStatus(id, next);
         audit.log(user.id(), "asset.return", "asset", id.toString(), null,
-                Map.of("tag", asset.get("tag"), "employeeId", row.get("employeeId"), "returnedOn", on.toString(), "condition", condition), ip);
+                Map.of("tag", asset.get("tag"), "employeeId", row.get("employeeId"), "returnedOn", date.toString(), "condition", condition), ipAddress);
         return "Returned " + asset.get("tag") + (next.equals("AVAILABLE") ? "" : " — marked " + next.toLowerCase().replace('_', ' '));
     }
 
     static String label(Map<String, Object> row) {
-        String t = ((String) row.get("type")).toLowerCase();
-        String mm = ((row.get("make") == null ? "" : row.get("make") + " ") + (row.get("model") == null ? "" : row.get("model"))).trim();
-        return mm.isEmpty() ? t : mm;
+        String type = ((String) row.get("type")).toLowerCase();
+        String makeAndModel = ((row.get("make") == null ? "" : row.get("make") + " ") + (row.get("model") == null ? "" : row.get("model"))).trim();
+        return makeAndModel.isEmpty() ? type : makeAndModel;
     }
 }

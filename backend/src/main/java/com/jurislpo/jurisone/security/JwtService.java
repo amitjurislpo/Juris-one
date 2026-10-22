@@ -78,16 +78,16 @@ public class JwtService {
      * forged or from another issuer.
      */
     public AccessClaims verify(String token) {
-        Jwt jwt;
+        Jwt decodedJwt;
         try {
-            jwt = decoder.decode(token);
+            decodedJwt = decoder.decode(token);
         } catch (JwtValidationException e) {
-            if (e.getErrors().stream().anyMatch(err -> err.getDescription() != null && err.getDescription().contains("expired"))) throw new ExpiredException();
+            if (e.getErrors().stream().anyMatch(error -> error.getDescription() != null && error.getDescription().contains("expired"))) throw new ExpiredException();
             throw e;
         }
-        if (!ISSUER.equals(jwt.getClaimAsString("iss"))) throw new JwtException("wrong issuer");
-        String sid = jwt.getClaimAsString("sid");
-        if (sid == null || jwt.getSubject() == null) throw new JwtException("missing claims");
-        return new AccessClaims(UUID.fromString(jwt.getSubject()), sid);
+        if (!ISSUER.equals(decodedJwt.getClaimAsString("iss"))) throw new JwtException("wrong issuer");
+        String sessionId = decodedJwt.getClaimAsString("sid");
+        if (sessionId == null || decodedJwt.getSubject() == null) throw new JwtException("missing claims");
+        return new AccessClaims(UUID.fromString(decodedJwt.getSubject()), sessionId);
     }
 }

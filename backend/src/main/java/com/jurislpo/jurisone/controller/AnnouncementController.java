@@ -54,19 +54,19 @@ public class AnnouncementController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> create(@RequestBody AnnouncementService.AnnouncementInput body, HttpServletRequest request) {
-        String id = announcements.create(manager(), body, RequestMeta.of(request).ip());
+        String id = announcements.create(manager(), body, RequestMeta.of(request).ipAddress());
         return ApiResult.success("Announcement published", Map.of("id", id));
     }
 
     @PutMapping("/{id}")
     public ApiResult<Void> update(@PathVariable String id, @RequestBody AnnouncementService.AnnouncementInput body, HttpServletRequest request) {
-        announcements.update(manager(), id, body, RequestMeta.of(request).ip());
+        announcements.update(manager(), id, body, RequestMeta.of(request).ipAddress());
         return ApiResult.message("Announcement saved");
     }
 
     /** {@code {"status": "PUBLISHED" | "UNPUBLISHED"}} */
     @PutMapping("/{id}/status")
     public ApiResult<Void> status(@PathVariable String id, @RequestBody StatusBody body, HttpServletRequest request) {
-        return ApiResult.message(announcements.setStatus(manager(), id, body.status(), RequestMeta.of(request).ip()));
+        return ApiResult.message(announcements.setStatus(manager(), id, body.status(), RequestMeta.of(request).ipAddress()));
     }
 }

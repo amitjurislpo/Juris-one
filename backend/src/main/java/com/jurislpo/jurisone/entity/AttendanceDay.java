@@ -24,9 +24,9 @@ public class AttendanceDay {
         public Key() {}
         public Key(UUID employeeId, LocalDate workDate) { this.employeeId = employeeId; this.workDate = workDate; }
 
-        @Override public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Key other)) return false;
+        @Override public boolean equals(Object object) {
+            if (this == object) return true;
+            if (!(object instanceof Key other)) return false;
             return Objects.equals(employeeId, other.employeeId) && Objects.equals(workDate, other.workDate);
         }
         @Override public int hashCode() { return Objects.hash(employeeId, workDate); }

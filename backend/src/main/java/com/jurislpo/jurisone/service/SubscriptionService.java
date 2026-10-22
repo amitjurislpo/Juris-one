@@ -51,22 +51,22 @@ public class SubscriptionService {
 
     /** Current subscription of the business in {@link TenantContext} (or of {@code businessId} in system mode). */
     public Current current(UUID businessId) {
-        UUID b = businessId != null ? businessId : TenantContext.current();
-        if (b == null) throw new IllegalStateException("No business");
+        UUID resolvedBusinessId = businessId != null ? businessId : TenantContext.current();
+        if (resolvedBusinessId == null) throw new IllegalStateException("No business");
         LocalDate today = today();
-        long employees = repo.countActiveEmployees(b);
-        if (isPlatform(b)) return new Current("ACTIVE", true, "Platform company", null, null, null, null, MODULES, employees); // never needs a plan
-        List<Current> now = repo.findCovering(b, today, employees);
+        long employees = repo.countActiveEmployees(resolvedBusinessId);
+        if (isPlatform(resolvedBusinessId)) return new Current("ACTIVE", true, "Platform company", null, null, null, null, MODULES, employees); // never needs a plan
+        List<Current> now = repo.findCovering(resolvedBusinessId, today, employees);
         if (!now.isEmpty()) {
             // the plan's modules plus modules granted on their own (complimentary or paid) that cover today
             Current current = now.get(0);
             java.util.TreeSet<String> all = new java.util.TreeSet<>(current.modules());
-            all.addAll(grantedModules(b, today));
+            all.addAll(grantedModules(resolvedBusinessId, today));
             return new Current(current.state(), current.active(), current.planName(), current.startsOn(), current.endsOn(), current.daysLeft(), current.maxEmployees(), List.copyOf(all), current.employees());
         }
-        List<Current> later = repo.findUpcoming(b, today, employees);
+        List<Current> later = repo.findUpcoming(resolvedBusinessId, today, employees);
         if (!later.isEmpty()) return later.get(0);
-        List<Current> past = repo.findLastExpired(b, today, employees);
+        List<Current> past = repo.findLastExpired(resolvedBusinessId, today, employees);
         return past.isEmpty() ? new Current("NONE", false, null, null, null, null, null, List.of(), employees) : past.get(0);
     }
 
@@ -78,8 +78,8 @@ public class SubscriptionService {
     /** Modules the business can use today: none before its subscription starts or without one; an ended one keeps them view-only. */
     public java.util.Set<String> activeModules(UUID businessId) {
         if (businessId == null) return java.util.Set.of();
-        Current c = current(businessId);
-        return c.active() || "EXPIRED".equals(c.state()) ? java.util.Set.copyOf(c.modules()) : java.util.Set.of(); // an ended subscription keeps them view-only
+        Current current = current(businessId);
+        return current.active() || "EXPIRED".equals(current.state()) ? java.util.Set.copyOf(current.modules()) : java.util.Set.of(); // an ended subscription keeps them view-only
     }
 
     /** The JurisOne operator's own business (needs no subscription). */
@@ -104,11 +104,11 @@ public class SubscriptionService {
 
     /** The plan's employee limit: adding (or re-enabling) one more employee must stay within it. */
     public void checkRoomForOneMore() {
-        UUID b = TenantContext.current();
-        if (b == null) return;
-        Current c = current(b);
-        if (c.maxEmployees() != null && c.employees() + 1 > c.maxEmployees()) {
-            throw new UserException("Your plan (" + c.planName() + ") allows up to " + c.maxEmployees() + " employees. Contact JurisOne to upgrade.");
+        UUID businessId = TenantContext.current();
+        if (businessId == null) return;
+        Current current = current(businessId);
+        if (current.maxEmployees() != null && current.employees() + 1 > current.maxEmployees()) {
+            throw new UserException("Your plan (" + current.planName() + ") allows up to " + current.maxEmployees() + " employees. Contact JurisOne to upgrade.");
         }
     }
 
@@ -137,7 +137,7 @@ public class SubscriptionService {
             throw new UserException(HttpStatus.BAD_REQUEST, "The employee limit is 1 to 100,000 (or empty for no limit).");
         }
         List<String> mods = input.modules() == null ? List.of() : input.modules();
-        for (String m : mods) if (!MODULES.contains(m)) throw new UserException(HttpStatus.BAD_REQUEST, "Unknown module " + m + ".");
+        for (String moduleKey : mods) if (!MODULES.contains(moduleKey)) throw new UserException(HttpStatus.BAD_REQUEST, "Unknown module " + moduleKey + ".");
         return new ValidatedPlan(name, desc == null || desc.isEmpty() ? null : desc, Math.round(input.price() * 100), input.periodMonths(), input.maxEmployees(),
                 mods.stream().distinct().toArray(String[]::new), input.active() == null || input.active());
     }
@@ -152,8 +152,8 @@ public class SubscriptionService {
     public void updatePlan(String idRaw, PlanInput input) {
         UUID id = Check.uuid(idRaw);
         ValidatedPlan validated = validate(input);
-        int n = repo.updatePlan(id, validated.name(), validated.description(), validated.pricePaise(), validated.periodMonths(), validated.maxEmployees(), validated.modules(), validated.active());
-        if (n == 0) throw new UserException(HttpStatus.NOT_FOUND, "Plan not found.");
+        int updatedCount = repo.updatePlan(id, validated.name(), validated.description(), validated.pricePaise(), validated.periodMonths(), validated.maxEmployees(), validated.modules(), validated.active());
+        if (updatedCount == 0) throw new UserException(HttpStatus.NOT_FOUND, "Plan not found.");
     }
 
     // ───────────────────────── subscriptions (super admin, system mode) ─────────────────────────

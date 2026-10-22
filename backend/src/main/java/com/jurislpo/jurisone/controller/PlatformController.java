@@ -60,14 +60,14 @@ public class PlatformController {
      * The super admins belong to the platform company, so their requests carry it; the console works across every
      * business, outside any of them (system mode).
      */
-    private static <T> T sys(java.util.function.Supplier<T> work) {
+    private static <T> T asPlatform(java.util.function.Supplier<T> work) {
         return com.jurislpo.jurisone.tenancy.TenantContext.call(null, work);
     }
 
     // businesses
     @GetMapping("/businesses")
     public ApiResult<List<BusinessAdminService.BusinessRow>> list() {
-        return sys(() -> {
+        return asPlatform(() -> {
             admin();
             return ApiResult.success(businesses.list());
         });
@@ -77,15 +77,15 @@ public class PlatformController {
     @PostMapping("/businesses")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> create(@RequestBody BusinessAdminService.CreateInput body, HttpServletRequest request) {
-        return sys(() -> {
-            Map<String, String> ids = businesses.create(admin(), body, RequestMeta.of(request).ip());
+        return asPlatform(() -> {
+            Map<String, String> ids = businesses.create(admin(), body, RequestMeta.of(request).ipAddress());
             return ApiResult.success("Business created", ids);
         });
     }
 
     @GetMapping("/businesses/{id}")
     public ApiResult<Map<String, Object>> detail(@PathVariable String id) {
-        return sys(() -> {
+        return asPlatform(() -> {
             admin();
             return ApiResult.success(businesses.detail(id));
         });
@@ -93,8 +93,8 @@ public class PlatformController {
 
     @PutMapping("/businesses/{id}")
     public ApiResult<Void> update(@PathVariable String id, @RequestBody BusinessAdminService.ProfileInput body, HttpServletRequest request) {
-        return sys(() -> {
-            businesses.update(admin(), id, body, RequestMeta.of(request).ip());
+        return asPlatform(() -> {
+            businesses.update(admin(), id, body, RequestMeta.of(request).ipAddress());
             return ApiResult.message("Business details saved");
         });
     }
@@ -102,8 +102,8 @@ public class PlatformController {
     /** {@code {"status": "ACTIVE" | "SUSPENDED"}} */
     @PutMapping("/businesses/{id}/status")
     public ApiResult<Void> status(@PathVariable String id, @RequestBody StatusBody body, HttpServletRequest request) {
-        return sys(() -> {
-            return ApiResult.message(businesses.setStatus(admin(), id, body.status(), RequestMeta.of(request).ip()));
+        return asPlatform(() -> {
+            return ApiResult.message(businesses.setStatus(admin(), id, body.status(), RequestMeta.of(request).ipAddress()));
         });
     }
 
@@ -112,13 +112,13 @@ public class PlatformController {
     @PostMapping("/businesses/{id}/roles")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> addRole(@PathVariable String id, @RequestBody TemplateKeyBody body, HttpServletRequest request) {
-        return sys(() -> ApiResult.success("Role added", businesses.addRole(admin(), id, body.templateKey(), RequestMeta.of(request).ip())));
+        return asPlatform(() -> ApiResult.success("Role added", businesses.addRole(admin(), id, body.templateKey(), RequestMeta.of(request).ipAddress())));
     }
 
     @DeleteMapping("/businesses/{id}/roles/{roleId}")
     public ApiResult<Void> removeRole(@PathVariable String id, @PathVariable String roleId, HttpServletRequest request) {
-        return sys(() -> {
-            businesses.removeRole(admin(), id, roleId, RequestMeta.of(request).ip());
+        return asPlatform(() -> {
+            businesses.removeRole(admin(), id, roleId, RequestMeta.of(request).ipAddress());
             return ApiResult.message("Role removed");
         });
     }
@@ -127,13 +127,13 @@ public class PlatformController {
     @PostMapping("/businesses/{id}/roles/{roleId}/template-syncs")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> syncRole(@PathVariable String id, @PathVariable String roleId, HttpServletRequest request) {
-        return sys(() -> ApiResult.message(businesses.syncRole(admin(), id, roleId, RequestMeta.of(request).ip())));
+        return asPlatform(() -> ApiResult.message(businesses.syncRole(admin(), id, roleId, RequestMeta.of(request).ipAddress())));
     }
 
     // role templates
     @GetMapping("/role-templates")
     public ApiResult<Map<String, Object>> roleTemplates() {
-        return sys(() -> {
+        return asPlatform(() -> {
             admin();
             return ApiResult.success(roleTemplates.list());
         });
@@ -143,22 +143,22 @@ public class PlatformController {
     @PostMapping("/role-templates")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> createRoleTemplate(@RequestBody RoleTemplateService.TemplateInput body, HttpServletRequest request) {
-        return sys(() -> ApiResult.success("Role template created", roleTemplates.create(admin(), body, RequestMeta.of(request).ip())));
+        return asPlatform(() -> ApiResult.success("Role template created", roleTemplates.create(admin(), body, RequestMeta.of(request).ipAddress())));
     }
 
     /** {@code {name, permissions[], assignable[], active}} — businesses that already have the role keep their copy until it is synced. */
     @PutMapping("/role-templates/{key}")
     public ApiResult<Void> updateRoleTemplate(@PathVariable String key, @RequestBody RoleTemplateService.TemplateInput body, HttpServletRequest request) {
-        return sys(() -> {
-            roleTemplates.update(admin(), key, body, RequestMeta.of(request).ip());
+        return asPlatform(() -> {
+            roleTemplates.update(admin(), key, body, RequestMeta.of(request).ipAddress());
             return ApiResult.message("Role template saved");
         });
     }
 
     @DeleteMapping("/role-templates/{key}")
     public ApiResult<Void> deleteRoleTemplate(@PathVariable String key, HttpServletRequest request) {
-        return sys(() -> {
-            roleTemplates.delete(admin(), key, RequestMeta.of(request).ip());
+        return asPlatform(() -> {
+            roleTemplates.delete(admin(), key, RequestMeta.of(request).ipAddress());
             return ApiResult.message("Role template deleted");
         });
     }
@@ -168,16 +168,16 @@ public class PlatformController {
     @PostMapping("/businesses/{id}/owners")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> addOwner(@PathVariable String id, @RequestBody BusinessAdminService.OwnerInput body, HttpServletRequest request) {
-        return sys(() -> {
-            Map<String, String> r = businesses.addOwner(admin(), id, body, RequestMeta.of(request).ip());
-            return ApiResult.success("Sub admin added as " + r.get("code"), r);
+        return asPlatform(() -> {
+            Map<String, String> owner = businesses.addOwner(admin(), id, body, RequestMeta.of(request).ipAddress());
+            return ApiResult.success("Sub admin added as " + owner.get("code"), owner);
         });
     }
 
     @PutMapping("/businesses/{id}/owners/{ownerId}/access")
     public ApiResult<Void> ownerAccess(@PathVariable String id, @PathVariable String ownerId, @RequestBody AccessBody body, HttpServletRequest request) {
-        return sys(() -> {
-            return ApiResult.message(businesses.setOwnerAccess(admin(), id, ownerId, body.enabled(), RequestMeta.of(request).ip()));
+        return asPlatform(() -> {
+            return ApiResult.message(businesses.setOwnerAccess(admin(), id, ownerId, body.enabled(), RequestMeta.of(request).ipAddress()));
         });
     }
 
@@ -185,22 +185,22 @@ public class PlatformController {
     @PostMapping("/businesses/{id}/subscriptions")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> addSubscription(@PathVariable String id, @RequestBody SubscriptionService.SubscriptionInput body, HttpServletRequest request) {
-        return sys(() -> {
+        return asPlatform(() -> {
             CurrentUser user = admin();
             java.util.UUID business = com.jurislpo.jurisone.common.Check.uuid(id);
-            String sid = subscriptions.addSubscription(business, body, user.id());
-            audit.log(user.id(), "subscription.add", "business_subscription", sid, null, Map.of("business", id, "plan", String.valueOf(body.planId())), RequestMeta.of(request).ip());
-            return ApiResult.success("Subscription added", Map.of("id", sid));
+            String subscriptionId = subscriptions.addSubscription(business, body, user.id());
+            audit.log(user.id(), "subscription.add", "business_subscription", subscriptionId, null, Map.of("business", id, "plan", String.valueOf(body.planId())), RequestMeta.of(request).ipAddress());
+            return ApiResult.success("Subscription added", Map.of("id", subscriptionId));
         });
     }
 
     /** Change dates / notes, or {@code "status": "CANCELLED"}. */
     @PutMapping("/subscriptions/{id}")
     public ApiResult<Void> updateSubscription(@PathVariable String id, @RequestBody SubscriptionService.SubscriptionUpdate body, HttpServletRequest request) {
-        return sys(() -> {
+        return asPlatform(() -> {
             CurrentUser user = admin();
             subscriptions.updateSubscription(id, body);
-            audit.log(user.id(), "subscription.update", "business_subscription", id, null, Map.of("status", String.valueOf(body.status())), RequestMeta.of(request).ip());
+            audit.log(user.id(), "subscription.update", "business_subscription", id, null, Map.of("status", String.valueOf(body.status())), RequestMeta.of(request).ipAddress());
             return ApiResult.message("CANCELLED".equals(body.status()) ? "Subscription cancelled" : "Subscription updated");
         });
     }
@@ -208,7 +208,7 @@ public class PlatformController {
     // modules granted on their own (Juris Track: complimentary or paid)
     @GetMapping("/businesses/{id}/modules")
     public ApiResult<List<ModuleGrantService.Grant>> modules(@PathVariable String id) {
-        return sys(() -> {
+        return asPlatform(() -> {
             admin();
             return ApiResult.success(grants.list(com.jurislpo.jurisone.common.Check.uuid(id)));
         });
@@ -218,20 +218,20 @@ public class PlatformController {
     @PostMapping("/businesses/{id}/modules")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> grantModule(@PathVariable String id, @RequestBody ModuleGrantService.GrantInput body, HttpServletRequest request) {
-        return sys(() -> {
+        return asPlatform(() -> {
             CurrentUser user = admin();
-            String gid = grants.grant(com.jurislpo.jurisone.common.Check.uuid(id), body, user.id());
-            audit.log(user.id(), "module.grant", "business_module", gid, null, Map.of("business", id, "source", String.valueOf(body.source())), RequestMeta.of(request).ip());
-            return ApiResult.success("Juris Track granted", Map.of("id", gid));
+            String grantId = grants.grant(com.jurislpo.jurisone.common.Check.uuid(id), body, user.id());
+            audit.log(user.id(), "module.grant", "business_module", grantId, null, Map.of("business", id, "source", String.valueOf(body.source())), RequestMeta.of(request).ipAddress());
+            return ApiResult.success("Juris Track granted", Map.of("id", grantId));
         });
     }
 
     @PutMapping("/modules/{id}")
     public ApiResult<Void> updateModule(@PathVariable String id, @RequestBody ModuleGrantService.GrantInput body, HttpServletRequest request) {
-        return sys(() -> {
+        return asPlatform(() -> {
             CurrentUser user = admin();
             grants.update(id, body);
-            audit.log(user.id(), "module.update", "business_module", id, null, Map.of("source", String.valueOf(body.source())), RequestMeta.of(request).ip());
+            audit.log(user.id(), "module.update", "business_module", id, null, Map.of("source", String.valueOf(body.source())), RequestMeta.of(request).ipAddress());
             return ApiResult.message("Grant saved");
         });
     }
@@ -239,10 +239,10 @@ public class PlatformController {
     /** Revokes the grant at once (the record is kept). */
     @DeleteMapping("/modules/{id}")
     public ApiResult<Void> revokeModule(@PathVariable String id, HttpServletRequest request) {
-        return sys(() -> {
+        return asPlatform(() -> {
             CurrentUser user = admin();
             grants.revoke(id);
-            audit.log(user.id(), "module.revoke", "business_module", id, null, Map.of(), RequestMeta.of(request).ip());
+            audit.log(user.id(), "module.revoke", "business_module", id, null, Map.of(), RequestMeta.of(request).ipAddress());
             return ApiResult.message("Grant revoked");
         });
     }
@@ -250,7 +250,7 @@ public class PlatformController {
     // plans
     @GetMapping("/plans")
     public ApiResult<List<SubscriptionService.Plan>> plans() {
-        return sys(() -> {
+        return asPlatform(() -> {
             admin();
             return ApiResult.success(subscriptions.plans());
         });
@@ -259,20 +259,20 @@ public class PlatformController {
     @PostMapping("/plans")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> createPlan(@RequestBody SubscriptionService.PlanInput body, HttpServletRequest request) {
-        return sys(() -> {
+        return asPlatform(() -> {
             CurrentUser user = admin();
             String id = subscriptions.createPlan(body);
-            audit.log(user.id(), "plan.create", "subscription_plan", id, null, Map.of("name", String.valueOf(body.name())), RequestMeta.of(request).ip());
+            audit.log(user.id(), "plan.create", "subscription_plan", id, null, Map.of("name", String.valueOf(body.name())), RequestMeta.of(request).ipAddress());
             return ApiResult.success("Plan created", Map.of("id", id));
         });
     }
 
     @PutMapping("/plans/{id}")
     public ApiResult<Void> updatePlan(@PathVariable String id, @RequestBody SubscriptionService.PlanInput body, HttpServletRequest request) {
-        return sys(() -> {
+        return asPlatform(() -> {
             CurrentUser user = admin();
             subscriptions.updatePlan(id, body);
-            audit.log(user.id(), "plan.update", "subscription_plan", id, null, Map.of("name", String.valueOf(body.name())), RequestMeta.of(request).ip());
+            audit.log(user.id(), "plan.update", "subscription_plan", id, null, Map.of("name", String.valueOf(body.name())), RequestMeta.of(request).ipAddress());
             return ApiResult.message("Plan saved");
         });
     }

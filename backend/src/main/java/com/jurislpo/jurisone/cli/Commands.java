@@ -31,7 +31,7 @@ public class Commands {
 
     /** The command named in the arguments, or null to run the API. */
     public static String of(String[] args) {
-        for (String a : args) if (NAMES.contains(a)) return a;
+        for (String argument : args) if (NAMES.contains(argument)) return argument;
         return null;
     }
 

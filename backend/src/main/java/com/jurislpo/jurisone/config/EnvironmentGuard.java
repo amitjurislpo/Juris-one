@@ -20,17 +20,17 @@ public class EnvironmentGuard {
     static final List<String> STRICT = List.of("uat", "prd");
     private static final List<String> SECRETS = List.of("jurisone.security.jwt-secret", "jurisone.security.pii-encryption-key", "spring.datasource.password");
 
-    private final Environment env;
+    private final Environment environment;
 
-    public EnvironmentGuard(Environment env) {
-        this.env = env;
+    public EnvironmentGuard(Environment environment) {
+        this.environment = environment;
     }
 
     @PostConstruct
     void check() {
-        List<String> problems = problems(env::getProperty);
+        List<String> problems = problems(environment::getProperty);
         if (!problems.isEmpty()) {
-            throw new IllegalStateException("Unsafe configuration for jurisone.env=" + env.getProperty("jurisone.env", "dev") + ":\n - " + String.join("\n - ", problems));
+            throw new IllegalStateException("Unsafe configuration for jurisone.env=" + environment.getProperty("jurisone.env", "dev") + ":\n - " + String.join("\n - ", problems));
         }
     }
 
@@ -49,8 +49,8 @@ public class EnvironmentGuard {
         if ("true".equalsIgnoreCase(blankTo(get.apply("jurisone.seed.demo"), "false"))) out.add("jurisone.seed.demo must be false (no demo data outside dev and sqe)");
         if (!blankTo(get.apply("jurisone.app-url"), "").startsWith("https://")) out.add("jurisone.app-url must be an https:// URL");
         for (String key : SECRETS) {
-            String v = blankTo(get.apply(key), "");
-            if (v.isBlank() || v.contains("<")) out.add(key + " is not set (still a placeholder or empty)");
+            String value = blankTo(get.apply(key), "");
+            if (value.isBlank() || value.contains("<")) out.add(key + " is not set (still a placeholder or empty)");
         }
         return out;
     }

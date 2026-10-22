@@ -37,35 +37,35 @@ public class PhotoService {
     public record Photo(String contentType, byte[] data, long version) {}
 
     /** The stored type for these bytes (JPEG, PNG or WebP by magic bytes), checked against the declared header. */
-    static String checkedType(String declared, byte[] b) {
-        String d = declared == null ? "" : declared.split(";")[0].trim().toLowerCase(java.util.Locale.ROOT);
-        if (!List.of("image/jpeg", "image/png", "image/webp").contains(d)) throw new UserException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Use a JPEG, PNG or WebP image.");
-        if (b == null || b.length == 0) throw new UserException("Choose a photo to upload.");
-        if (b.length > MAX_BYTES) throw new UserException(HttpStatus.PAYLOAD_TOO_LARGE, "The photo is too large. Keep it under 400 KB.");
-        String real = b.length >= 3 && (b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8 && (b[2] & 0xFF) == 0xFF ? "image/jpeg"
-                : b.length >= 8 && (b[0] & 0xFF) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G' && b[4] == 0x0D && b[5] == 0x0A && b[6] == 0x1A && b[7] == 0x0A ? "image/png"
-                : b.length >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P' ? "image/webp" : null;
-        if (real == null || !real.equals(d)) throw new UserException("That file isn't a valid " + d.substring(6).toUpperCase(java.util.Locale.ROOT) + " image.");
+    static String checkedType(String declared, byte[] bytes) {
+        String type = declared == null ? "" : declared.split(";")[0].trim().toLowerCase(java.util.Locale.ROOT);
+        if (!List.of("image/jpeg", "image/png", "image/webp").contains(type)) throw new UserException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Use a JPEG, PNG or WebP image.");
+        if (bytes == null || bytes.length == 0) throw new UserException("Choose a photo to upload.");
+        if (bytes.length > MAX_BYTES) throw new UserException(HttpStatus.PAYLOAD_TOO_LARGE, "The photo is too large. Keep it under 400 KB.");
+        String real = bytes.length >= 3 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8 && (bytes[2] & 0xFF) == 0xFF ? "image/jpeg"
+                : bytes.length >= 8 && (bytes[0] & 0xFF) == 0x89 && bytes[1] == 'P' && bytes[2] == 'N' && bytes[3] == 'G' && bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A ? "image/png"
+                : bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F' && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P' ? "image/webp" : null;
+        if (real == null || !real.equals(type)) throw new UserException("That file isn't a valid " + type.substring(6).toUpperCase(java.util.Locale.ROOT) + " image.");
         return real;
     }
 
     /** Own photo ({@code /api/profile/photo}). Returns the new version stamp (epoch millis). */
-    public long setOwn(CurrentUser user, String declaredType, byte[] data, String ip) {
-        return store(user.id(), user.id(), declaredType, data, ip);
+    public long setOwn(CurrentUser user, String declaredType, byte[] data, String ipAddress) {
+        return store(user.id(), user.id(), declaredType, data, ipAddress);
     }
 
-    public void removeOwn(CurrentUser user, String ip) {
-        drop(user.id(), user.id(), ip);
+    public void removeOwn(CurrentUser user, String ipAddress) {
+        drop(user.id(), user.id(), ipAddress);
     }
 
     /** Someone else's photo: the same rule as editing that employee (people.add, role in reach); never an exited employee. */
-    public long setFor(CurrentUser user, String idRaw, String declaredType, byte[] data, String ip) {
+    public long setFor(CurrentUser user, String idRaw, String declaredType, byte[] data, String ipAddress) {
         UUID id = mayEdit(user, idRaw);
-        return store(user.id(), id, declaredType, data, ip);
+        return store(user.id(), id, declaredType, data, ipAddress);
     }
 
-    public void removeFor(CurrentUser user, String idRaw, String ip) {
-        drop(user.id(), mayEdit(user, idRaw), ip);
+    public void removeFor(CurrentUser user, String idRaw, String ipAddress) {
+        drop(user.id(), mayEdit(user, idRaw), ipAddress);
     }
 
     private UUID mayEdit(CurrentUser user, String idRaw) {
@@ -75,28 +75,28 @@ public class PhotoService {
         return id;
     }
 
-    private long store(UUID actor, UUID target, String declaredType, byte[] data, String ip) {
+    private long store(UUID actor, UUID target, String declaredType, byte[] data, String ipAddress) {
         String type = checkedType(declaredType, data);
-        Timestamp at = repo.savePhoto(target, type, data);
-        audit.log(actor, "employee.photo_set", "employee", target.toString(), null, Map.of("contentType", type, "bytes", data.length), ip);
-        return at.getTime();
+        Timestamp timestamp = repo.savePhoto(target, type, data);
+        audit.log(actor, "employee.photo_set", "employee", target.toString(), null, Map.of("contentType", type, "bytes", data.length), ipAddress);
+        return timestamp.getTime();
     }
 
-    private void drop(UUID actor, UUID target, String ip) {
-        if (repo.deletePhoto(target)) audit.log(actor, "employee.photo_remove", "employee", target.toString(), null, null, ip);
+    private void drop(UUID actor, UUID target, String ipAddress) {
+        if (repo.deletePhoto(target)) audit.log(actor, "employee.photo_remove", "employee", target.toString(), null, null, ipAddress);
     }
 
     /** The photo of any employee of the signed-in user's business (tenant row-level security scopes the lookup); null when none. */
     public Photo read(String idRaw) {
         UUID id = Check.uuid(idRaw);
-        List<Map<String, Object>> r = repo.findPhoto(id);
-        if (r.isEmpty()) return null;
-        Map<String, Object> m = r.get(0);
-        return new Photo((String) m.get("content_type"), (byte[]) m.get("data"), ((Timestamp) m.get("updated_at")).getTime());
+        List<Map<String, Object>> rows = repo.findPhoto(id);
+        if (rows.isEmpty()) return null;
+        Map<String, Object> row = rows.get(0);
+        return new Photo((String) row.get("content_type"), (byte[]) row.get("data"), ((Timestamp) row.get("updated_at")).getTime());
     }
 
     /** Epoch millis of a {@code photo_updated_at} column value (null stays null) — the {@code photo} field of every payload. */
     public static Long version(Object timestamp) {
-        return timestamp instanceof Timestamp t ? Long.valueOf(t.getTime()) : null;
+        return timestamp instanceof Timestamp stamp ? Long.valueOf(stamp.getTime()) : null;
     }
 }

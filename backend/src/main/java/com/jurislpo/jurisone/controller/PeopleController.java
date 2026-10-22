@@ -66,33 +66,33 @@ public class PeopleController {
         PhotoService.Photo photo = photos.read(id);
         if (photo == null) throw new com.jurislpo.jurisone.exception.UserException(HttpStatus.NOT_FOUND, "No photo.");
         String etag = "\"" + photo.version() + "\"";
-        ResponseEntity.BodyBuilder ok = etag.equals(ifNoneMatch) ? ResponseEntity.status(HttpStatus.NOT_MODIFIED) : ResponseEntity.ok();
-        ok = ok.eTag(etag).header(HttpHeaders.CACHE_CONTROL, "private, max-age=3600").header("X-Content-Type-Options", "nosniff");
-        return etag.equals(ifNoneMatch) ? ok.build() : ok.contentType(MediaType.parseMediaType(photo.contentType())).body(photo.data());
+        ResponseEntity.BodyBuilder builder = etag.equals(ifNoneMatch) ? ResponseEntity.status(HttpStatus.NOT_MODIFIED) : ResponseEntity.ok();
+        builder = builder.eTag(etag).header(HttpHeaders.CACHE_CONTROL, "private, max-age=3600").header("X-Content-Type-Options", "nosniff");
+        return etag.equals(ifNoneMatch) ? builder.build() : builder.contentType(MediaType.parseMediaType(photo.contentType())).body(photo.data());
     }
 
     /** HR / the admin set someone's photo (raw image bytes as the body, as for My profile): the same rule as editing that employee. */
     @PutMapping("/api/people/{id}/photo")
     public ApiResult<Map<String, Long>> setPhoto(@PathVariable String id, @RequestBody(required = false) byte[] body, @RequestHeader(value = HttpHeaders.CONTENT_TYPE, required = false) String type, HttpServletRequest request) {
-        long v = photos.setFor(auth.assertPerm("people.add"), id, type, body, RequestMeta.of(request).ip());
-        return ApiResult.success("Photo saved", Map.of("photo", v));
+        long photoVersion = photos.setFor(auth.assertPerm("people.add"), id, type, body, RequestMeta.of(request).ipAddress());
+        return ApiResult.success("Photo saved", Map.of("photo", photoVersion));
     }
 
     @DeleteMapping("/api/people/{id}/photo")
     public ApiResult<Void> removePhoto(@PathVariable String id, HttpServletRequest request) {
-        photos.removeFor(auth.assertPerm("people.add"), id, RequestMeta.of(request).ip());
+        photos.removeFor(auth.assertPerm("people.add"), id, RequestMeta.of(request).ipAddress());
         return ApiResult.message("Photo removed");
     }
 
     /** Full phone number and address (people.add); every read is audited. */
     @GetMapping("/api/people/{id}/contact")
     public ApiResult<Map<String, String>> reveal(@PathVariable String id, HttpServletRequest request) {
-        return ApiResult.success(people.reveal(auth.assertPerm("people.add"), id, RequestMeta.of(request).ip()));
+        return ApiResult.success(people.reveal(auth.assertPerm("people.add"), id, RequestMeta.of(request).ipAddress()));
     }
 
     @PutMapping("/api/people/{id}/access")
     public ApiResult<Void> access(@PathVariable String id, @RequestBody AccessChange body, HttpServletRequest request) {
-        return ApiResult.message(people.toggleAccess(auth.assertPerm("access.toggle"), id, body.enabled(), RequestMeta.of(request).ip()));
+        return ApiResult.message(people.toggleAccess(auth.assertPerm("access.toggle"), id, body.enabled(), RequestMeta.of(request).ipAddress()));
     }
 
     /**
@@ -101,11 +101,11 @@ public class PeopleController {
      */
     @PutMapping("/api/people/{id}/status")
     public ApiResult<Void> setStatus(@PathVariable String id, @RequestBody StatusChange body, HttpServletRequest request) {
-        String ip = RequestMeta.of(request).ip();
+        String ipAddress = RequestMeta.of(request).ipAddress();
         String status = body == null || body.status() == null ? "" : body.status();
         return switch (status) {
-            case "ACTIVE" -> ApiResult.message(people.confirmEmployee(auth.assertPerm("people.add"), id, ip));
-            case "EXITED" -> ApiResult.message(people.markExited(auth.assertPerm("people.add"), id, body.exitDate(), ip));
+            case "ACTIVE" -> ApiResult.message(people.confirmEmployee(auth.assertPerm("people.add"), id, ipAddress));
+            case "EXITED" -> ApiResult.message(people.markExited(auth.assertPerm("people.add"), id, body.exitDate(), ipAddress));
             default -> throw new com.jurislpo.jurisone.exception.UserException(HttpStatus.BAD_REQUEST, "The status can be set to ACTIVE or EXITED.");
         };
     }
@@ -119,21 +119,21 @@ public class PeopleController {
     @PostMapping("/api/people")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> create(@RequestBody EmployeeInput body, HttpServletRequest request) {
-        PeopleService.Saved s = people.save(auth.assertPerm("people.add"), body, null, RequestMeta.of(request).ip());
-        return ApiResult.success(s.msg(), Map.of("id", s.id(), "code", s.code()));
+        PeopleService.Saved saved = people.save(auth.assertPerm("people.add"), body, null, RequestMeta.of(request).ipAddress());
+        return ApiResult.success(saved.message(), Map.of("id", saved.id(), "code", saved.code()));
     }
 
     @PutMapping("/api/people/{id}")
     public ApiResult<Map<String, String>> update(@PathVariable String id, @RequestBody EmployeeInput body, HttpServletRequest request) {
-        PeopleService.Saved s = people.save(auth.assertPerm("people.add"), body, id, RequestMeta.of(request).ip());
-        return ApiResult.success(s.msg(), Map.of("id", s.id(), "code", s.code()));
+        PeopleService.Saved saved = people.save(auth.assertPerm("people.add"), body, id, RequestMeta.of(request).ipAddress());
+        return ApiResult.success(saved.message(), Map.of("id", saved.id(), "code", saved.code()));
     }
 
     /** CSV (people.view): same filters as the page; no salary and no identity numbers. */
     @GetMapping("/api/people/export")
     public ResponseEntity<byte[]> export(@RequestParam Map<String, String> queryParams) {
-        PeopleService.Export e = people.export(auth.assertPerm("people.view"), queryParams);
-        return csv(e.filename(), e.body());
+        PeopleService.Export exportFile = people.export(auth.assertPerm("people.view"), queryParams);
+        return csv(exportFile.filename(), exportFile.body());
     }
 
     public static ResponseEntity<byte[]> csv(String filename, String body) {

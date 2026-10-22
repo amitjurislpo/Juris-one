@@ -53,15 +53,15 @@ public class PolicyService {
         this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
     }
 
-    public static String sha256(byte[] b) {
+    public static String sha256(byte[] bytes) {
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(b));
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
     }
 
-    public static String iso(Object timestamp) {
+    public static String formatIsoTimestamp(Object timestamp) {
         return timestamp == null ? null : Format.isoTimestamp(((Timestamp) timestamp).toInstant());
     }
 
@@ -94,22 +94,22 @@ public class PolicyService {
     }
 
     /** Records "I have read and accept" for the current version (idempotent). 409 when a newer version has been published. */
-    public String acknowledge(CurrentUser user, String policyIdRaw, Integer version, String ip, String userAgent) {
+    public String acknowledge(CurrentUser user, String policyIdRaw, Integer version, String ipAddress, String userAgent) {
         UUID policyId = Check.uuid(policyIdRaw);
         if (!mustAcknowledge(user)) throw new UserException("Owners don't acknowledge their own business's policies.");
         if (version == null) throw new UserException(HttpStatus.BAD_REQUEST, "Say which version you read.");
         List<Map<String, Object>> rows = repo.findCurrentVersion(policyId);
         if (rows.isEmpty() || !"PUBLISHED".equals(rows.get(0).get("status"))) throw new UserException(HttpStatus.NOT_FOUND, "Policy not found.");
-        Map<String, Object> v = rows.get(0);
-        if (((Number) v.get("version")).intValue() != version) {
+        Map<String, Object> current = rows.get(0);
+        if (((Number) current.get("version")).intValue() != version) {
             throw new UserException(HttpStatus.CONFLICT, "A newer version of this policy has been published. Please read it before accepting.");
         }
         Map<String, Object> row = repo.findEmployeeSnapshot(user.id());
-        int count = repo.insertAcknowledgement(policyId, v.get("id"), version, v.get("title"), v.get("body_sha256"), v.get("file_sha256"),
-                user.id(), row.get("code"), row.get("full_name"), row.get("email"), ip, userAgent == null ? null : userAgent.substring(0, Math.min(400, userAgent.length())));
+        int count = repo.insertAcknowledgement(policyId, current.get("id"), version, current.get("title"), current.get("body_sha256"), current.get("file_sha256"),
+                user.id(), row.get("code"), row.get("full_name"), row.get("email"), ipAddress, userAgent == null ? null : userAgent.substring(0, Math.min(400, userAgent.length())));
         notifications.clearPolicy(user.id(), policyId);
-        if (count > 0) audit.log(user.id(), "policy.acknowledge", "policy", policyId.toString(), null, Map.of("version", version, "title", String.valueOf(v.get("title"))), ip);
-                return count == 0 ? "Already accepted" : "Thank you — \"" + v.get("title") + "\" accepted";
+        if (count > 0) audit.log(user.id(), "policy.acknowledge", "policy", policyId.toString(), null, Map.of("version", version, "title", String.valueOf(current.get("title"))), ipAddress);
+                return count == 0 ? "Already accepted" : "Thank you — \"" + current.get("title") + "\" accepted";
     }
 
     // ───────────────────────── HR: list, detail, edit, publish ─────────────────────────
@@ -123,12 +123,12 @@ public class PolicyService {
             view.put("title", listRow.title());
             view.put("status", listRow.status());
             view.put("version", listRow.version());
-            view.put("requiresAck", listRow.requiresAck());
+            view.put("requiresAcknowledgement", listRow.requiresAcknowledgement());
             view.put("updatedAt", listRow.updatedAt());
             view.put("publishedAt", listRow.publishedAt());
-            UUID vid = listRow.versionId();
-            view.put("hasChanges", vid == null || changed(listRow.title(), listRow.body(), listRow.fileSha(), listRow.requiresAck(), listRow.vTitle(), listRow.vBodySha(), listRow.vFileSha(), listRow.vAck()));
-            view.put("acknowledged", vid == null ? 0 : acknowledgedCount(vid));
+            UUID versionId = listRow.versionId();
+            view.put("hasChanges", versionId == null || changed(listRow.title(), listRow.body(), listRow.fileSha(), listRow.requiresAcknowledgement(), listRow.versionTitle(), listRow.versionBodySha(), listRow.versionFileSha(), listRow.versionRequiresAcknowledgement()));
+            view.put("acknowledged", versionId == null ? 0 : acknowledgedCount(versionId));
             view.put("required", total);
             out.add(view);
         }
@@ -139,8 +139,8 @@ public class PolicyService {
         return repo.countAcknowledged(versionId);
     }
 
-    static boolean changed(String title, String body, String fileSha, boolean ack, String vTitle, String vBodySha, String vFileSha, boolean vAck) {
-        return !title.equals(vTitle) || !sha256(body.getBytes(StandardCharsets.UTF_8)).equals(vBodySha) || !Objects.equals(fileSha, vFileSha) || ack != vAck;
+    static boolean changed(String title, String body, String fileSha, boolean requiresAcknowledgement, String versionTitle, String versionBodySha, String versionFileSha, boolean versionRequiresAcknowledgement) {
+        return !title.equals(versionTitle) || !sha256(body.getBytes(StandardCharsets.UTF_8)).equals(versionBodySha) || !Objects.equals(fileSha, versionFileSha) || requiresAcknowledgement != versionRequiresAcknowledgement;
     }
 
     Map<String, Object> row(UUID id) {
@@ -158,16 +158,16 @@ public class PolicyService {
         out.put("title", policy.get("title"));
         out.put("body", policy.get("body"));
         out.put("fileName", policy.get("file_name"));
-        out.put("requiresAck", policy.get("requires_ack"));
+        out.put("requiresAcknowledgement", policy.get("requires_ack"));
         out.put("status", policy.get("status"));
         out.put("version", policy.get("version"));
-        out.put("updatedAt", iso(policy.get("updated_at")));
+        out.put("updatedAt", formatIsoTimestamp(policy.get("updated_at")));
         List<Map<String, Object>> versions = repo.findVersions(id);
         out.put("versions", versions);
         Map<String, Object> current = versions.isEmpty() ? null : versions.get(0);
         out.put("hasChanges", current == null || changed((String) policy.get("title"), (String) policy.get("body"), (String) policy.get("file_sha256"),
                 (Boolean) policy.get("requires_ack"), (String) current.get("title"), (String) current.get("bodySha256"), (String) current.get("fileSha256"),
-                (Boolean) current.get("requiresAck")));
+                (Boolean) current.get("requiresAcknowledgement")));
         List<Map<String, Object>> people = new ArrayList<>();
         if (current != null) {
             people = repo.findRequiredPeople(current.get("versionId"), id);
@@ -176,46 +176,46 @@ public class PolicyService {
         return out;
     }
 
-    public record PolicyInput(String title, String body, Boolean requiresAck) {}
+    public record PolicyInput(String title, String body, Boolean requiresAcknowledgement) {}
 
-    record ValidatedPolicy(String title, String body, boolean requiresAck) {}
+    record ValidatedPolicy(String title, String body, boolean requiresAcknowledgement) {}
 
     static ValidatedPolicy validate(PolicyInput input) {
         if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Policy details are missing.");
         String title = Check.trimmed(input.title(), 3, "Enter the policy title.", 160, "Keep the title under 160 characters.");
         String body = input.body() == null ? "" : input.body().replace("\r\n", "\n").strip();
         if (body.length() > 100_000) throw new UserException(HttpStatus.BAD_REQUEST, "The policy text is too long (100,000 characters at most) — attach a PDF instead.");
-        return new ValidatedPolicy(title, body, input.requiresAck() == null || input.requiresAck());
+        return new ValidatedPolicy(title, body, input.requiresAcknowledgement() == null || input.requiresAcknowledgement());
     }
 
-    public String create(CurrentUser user, PolicyInput input, String ip) {
+    public String create(CurrentUser user, PolicyInput input, String ipAddress) {
         ValidatedPolicy validated = validate(input);
         UUID id = UUID.randomUUID();
-        repo.insert(id, validated.title(), validated.body(), validated.requiresAck(), user.id());
-        audit.log(user.id(), "policy.create", "policy", id.toString(), null, Map.of("title", validated.title()), ip);
+        repo.insert(id, validated.title(), validated.body(), validated.requiresAcknowledgement(), user.id());
+        audit.log(user.id(), "policy.create", "policy", id.toString(), null, Map.of("title", validated.title()), ipAddress);
         return id.toString();
     }
 
-    public void update(CurrentUser user, String idRaw, PolicyInput input, String ip) {
+    public void update(CurrentUser user, String idRaw, PolicyInput input, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> policy = row(id);
         if ("ARCHIVED".equals(policy.get("status"))) throw new UserException("Archived policies can't be edited — publish it again first.");
         ValidatedPolicy validated = validate(input);
-        repo.updateDraft(id, validated.title(), validated.body(), validated.requiresAck());
-        audit.log(user.id(), "policy.update", "policy", id.toString(), Map.of("title", policy.get("title")), Map.of("title", validated.title()), ip);
+        repo.updateDraft(id, validated.title(), validated.body(), validated.requiresAcknowledgement());
+        audit.log(user.id(), "policy.update", "policy", id.toString(), Map.of("title", policy.get("title")), Map.of("title", validated.title()), ipAddress);
     }
 
     /** Deletes a policy that has never been published (published ones are archived instead). */
-    public void delete(CurrentUser user, String idRaw, String ip) {
+    public void delete(CurrentUser user, String idRaw, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> policy = row(id);
         if (((Number) policy.get("version")).intValue() > 0) throw new UserException("A published policy can't be deleted — archive it instead.");
         repo.delete(id);
-        audit.log(user.id(), "policy.delete", "policy", id.toString(), Map.of("title", policy.get("title")), null, ip);
+        audit.log(user.id(), "policy.delete", "policy", id.toString(), Map.of("title", policy.get("title")), null, ipAddress);
     }
 
     /** Attaches a PDF to the draft (a new file each time; files of published versions stay untouched). */
-    public String attach(CurrentUser user, String idRaw, String fileName, byte[] bytes, String ip) {
+    public String attach(CurrentUser user, String idRaw, String fileName, byte[] bytes, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> policy = row(id);
         if ("ARCHIVED".equals(policy.get("status"))) throw new UserException("Archived policies can't be edited — publish it again first.");
@@ -237,23 +237,23 @@ public class PolicyService {
         if (name.isBlank()) name = "policy.pdf";
         if (!name.toLowerCase(java.util.Locale.ROOT).endsWith(".pdf")) name += ".pdf";
         repo.setFile(id, storageDir.relativize(absolutePath).toString().replace('\\', '/'), name, sha256(bytes));
-        audit.log(user.id(), "policy.attach", "policy", id.toString(), null, Map.of("file", name), ip);
+        audit.log(user.id(), "policy.attach", "policy", id.toString(), null, Map.of("file", name), ipAddress);
         return name;
     }
 
-    public void detach(CurrentUser user, String idRaw, String ip) {
+    public void detach(CurrentUser user, String idRaw, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> policy = row(id);
         if ("ARCHIVED".equals(policy.get("status"))) throw new UserException("Archived policies can't be edited — publish it again first.");
         repo.clearFile(id);
-        audit.log(user.id(), "policy.detach", "policy", id.toString(), ip);
+        audit.log(user.id(), "policy.detach", "policy", id.toString(), ipAddress);
     }
 
     /**
      * PUBLISHED: publishes the draft as the next version (or re-publishes an archived policy unchanged) and tells everyone
      * who must acknowledge it. ARCHIVED: takes it out of everyone's list (versions and acknowledgements are kept).
      */
-    public String setStatus(CurrentUser user, String idRaw, String statusRaw, String ip) {
+    public String setStatus(CurrentUser user, String idRaw, String statusRaw, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         String status = Check.oneOf(statusRaw, List.of("PUBLISHED", "ARCHIVED"));
         Map<String, Object> policy = row(id);
@@ -262,7 +262,7 @@ public class PolicyService {
             if (!"PUBLISHED".equals(policy.get("status"))) throw new UserException("Only a published policy can be archived.");
             repo.archive(id);
             notifications.clearPolicy(null, id);
-            audit.log(user.id(), "policy.archive", "policy", id.toString(), null, Map.of("version", version), ip);
+            audit.log(user.id(), "policy.archive", "policy", id.toString(), null, Map.of("version", version), ipAddress);
             return "Policy archived — it no longer appears to employees";
         }
         boolean hasChanges = true;
@@ -274,7 +274,7 @@ public class PolicyService {
         if (!hasChanges) {
             if ("PUBLISHED".equals(policy.get("status"))) throw new UserException("Nothing has changed since version " + version + ".");
             repo.republish(id);
-            audit.log(user.id(), "policy.publish", "policy", id.toString(), null, Map.of("version", version, "republished", true), ip);
+            audit.log(user.id(), "policy.publish", "policy", id.toString(), null, Map.of("version", version, "republished", true), ipAddress);
             return "Policy published again (version " + version + ")";
         }
         String body = (String) policy.get("body");
@@ -283,28 +283,28 @@ public class PolicyService {
         repo.insertVersion(id, next, policy.get("title"), body, sha256(body.getBytes(StandardCharsets.UTF_8)), policy.get("file_path"), policy.get("file_name"),
                 policy.get("file_sha256"), policy.get("requires_ack"), user.id());
         repo.markPublished(id, next);
-        audit.log(user.id(), "policy.publish", "policy", id.toString(), null, Map.of("version", next, "title", policy.get("title")), ip);
-        boolean ack = Boolean.TRUE.equals(policy.get("requires_ack"));
-        String text = (next == 1 ? "New policy: " : "Updated policy: ") + policy.get("title") + (ack ? " — please read and accept it" : "");
-        for (UUID e : repo.findRequiredIds()) {
-            if (ack) notifications.notifyPolicy(e, text, "/my-policies", id); // stays until accepted
+        audit.log(user.id(), "policy.publish", "policy", id.toString(), null, Map.of("version", next, "title", policy.get("title")), ipAddress);
+        boolean requiresAcknowledgement = Boolean.TRUE.equals(policy.get("requires_ack"));
+        String text = (next == 1 ? "New policy: " : "Updated policy: ") + policy.get("title") + (requiresAcknowledgement ? " — please read and accept it" : "");
+        for (UUID employeeId : repo.findRequiredIds()) {
+            if (requiresAcknowledgement) notifications.notifyPolicy(employeeId, text, "/my-policies", id); // stays until accepted
             else {
-                notifications.clearPolicy(e, id);
-                notifications.notify(e, text, "/my-policies");
+                notifications.clearPolicy(employeeId, id);
+                notifications.notify(employeeId, text, "/my-policies");
             }
         }
-        return "Version " + next + " published" + (ack ? " — everyone will be asked to accept it" : "");
+        return "Version " + next + " published" + (requiresAcknowledgement ? " — everyone will be asked to accept it" : "");
     }
 
     /** Reminds everyone who hasn't accepted the current version yet (bell). */
-    public int remind(CurrentUser user, String idRaw, String ip) {
+    public int remind(CurrentUser user, String idRaw, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> policy = row(id);
         if (!"PUBLISHED".equals(policy.get("status")) || !Boolean.TRUE.equals(policy.get("requires_ack"))) throw new UserException("Only published policies that need acceptance have reminders.");
-        UUID vid = repo.findVersionId(id, policy.get("version"));
-        List<UUID> pending = repo.findNotAcknowledged(vid);
-        for (UUID e : pending) notifications.notify(e, "Reminder: please read and accept \"" + policy.get("title") + "\"", "/my-policies");
-        audit.log(user.id(), "policy.remind", "policy", id.toString(), null, Map.of("count", pending.size()), ip);
+        UUID versionId = repo.findVersionId(id, policy.get("version"));
+        List<UUID> pending = repo.findNotAcknowledged(versionId);
+        for (UUID employeeId : pending) notifications.notify(employeeId, "Reminder: please read and accept \"" + policy.get("title") + "\"", "/my-policies");
+        audit.log(user.id(), "policy.remind", "policy", id.toString(), null, Map.of("count", pending.size()), ipAddress);
         return pending.size();
     }
 
@@ -316,21 +316,21 @@ public class PolicyService {
             "Policy text SHA-256", "PDF SHA-256", "Acknowledgement ID");
 
     /** Every acknowledgement of every version of this policy, as recorded (CSV). */
-    public Export evidence(CurrentUser user, String idRaw, String ip) {
+    public Export evidence(CurrentUser user, String idRaw, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> policy = row(id);
         List<List<Object>> rows = repo.findAcknowledgements(id);
-        audit.log(user.id(), "policy.evidence_export", "policy", id.toString(), null, Map.of("rows", rows.size()), ip);
+        audit.log(user.id(), "policy.evidence_export", "policy", id.toString(), null, Map.of("rows", rows.size()), ipAddress);
         String slug = ((String) policy.get("title")).toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
         return new Export("policy-acknowledgements-" + (slug.isEmpty() ? "policy" : slug) + ".csv", Csv.toCsv(EVIDENCE, rows));
     }
 
     /** The same evidence as a printable PDF (audited like the CSV). */
-    public PolicyFile evidencePdf(CurrentUser user, String idRaw, String ip) {
+    public PolicyFile evidencePdf(CurrentUser user, String idRaw, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> policy = row(id);
         List<List<Object>> rows = repo.findAcknowledgements(id);
-        audit.log(user.id(), "policy.evidence_export", "policy", id.toString(), null, Map.of("rows", rows.size(), "format", "pdf"), ip);
+        audit.log(user.id(), "policy.evidence_export", "policy", id.toString(), null, Map.of("rows", rows.size(), "format", "pdf"), ipAddress);
         String slug = ((String) policy.get("title")).toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
         return new PolicyFile("policy-acknowledgements-" + (slug.isEmpty() ? "policy" : slug) + ".pdf",
                 PolicyEvidencePdf.render(repo.businessName(), (String) policy.get("title"), user.name() + " (" + user.code() + ")", rows));

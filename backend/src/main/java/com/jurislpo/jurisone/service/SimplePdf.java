@@ -24,15 +24,15 @@ final class SimplePdf implements AutoCloseable {
             PANEL = new Color(244, 244, 247);
     static final double W = 210, H = 297, M = 18, BOTTOM = 18;
 
-    final PDDocument doc = new PDDocument();
+    final PDDocument document = new PDDocument();
     final PDFont font = new PDType1Font(Standard14Fonts.FontName.HELVETICA), bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
-    private PDPageContentStream cs;
+    private PDPageContentStream contentStream;
     private final String footer;
     private int pages;
     double y;
 
     SimplePdf(String title, String author, String footer) {
-        PDDocumentInformation info = doc.getDocumentInformation();
+        PDDocumentInformation info = document.getDocumentInformation();
         info.setTitle(title);
         info.setAuthor(author);
         info.setCreator("JurisOne");
@@ -40,19 +40,19 @@ final class SimplePdf implements AutoCloseable {
         newPage();
     }
 
-    static float mm(double v) {
-        return (float) (v * 72 / 25.4);
+    static float millimetresToPoints(double millimetres) {
+        return (float) (millimetres * 72 / 25.4);
     }
 
     private void newPage() {
         try {
-            if (cs != null) {
+            if (contentStream != null) {
                 footer();
-                cs.close();
+                contentStream.close();
             }
-            PDPage page = new PDPage(new PDRectangle(mm(W), mm(H)));
-            doc.addPage(page);
-            cs = new PDPageContentStream(doc, page);
+            PDPage page = new PDPage(new PDRectangle(millimetresToPoints(W), millimetresToPoints(H)));
+            document.addPage(page);
+            contentStream = new PDPageContentStream(document, page);
             pages++;
             y = M;
         } catch (IOException e) {
@@ -69,42 +69,42 @@ final class SimplePdf implements AutoCloseable {
         if (y + h > H - BOTTOM) newPage();
     }
 
-    void gap(double mm) {
-        y += mm;
+    void gap(double millimetres) {
+        y += millimetres;
     }
 
-    float width(String t, PDFont font, float size) {
+    float width(String text, PDFont font, float size) {
         try {
-            return font.getStringWidth(PolicyEvidencePdf.safe(font, t)) / 1000 * size;
+            return font.getStringWidth(PolicyEvidencePdf.safe(font, text)) / 1000 * size;
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
     }
 
-    private void raw(String t, double x, double yMm, float size, PDFont font, Color color, boolean right) throws IOException {
-        float w = font.getStringWidth(t) / 1000 * size;
-        cs.beginText();
-        cs.setFont(font, size);
-        cs.setNonStrokingColor(color);
-        cs.newLineAtOffset(mm(x) - (right ? w : 0), mm(H - yMm));
-        cs.showText(t);
-        cs.endText();
+    private void raw(String text, double x, double yMm, float size, PDFont font, Color color, boolean right) throws IOException {
+        float w = font.getStringWidth(text) / 1000 * size;
+        contentStream.beginText();
+        contentStream.setFont(font, size);
+        contentStream.setNonStrokingColor(color);
+        contentStream.newLineAtOffset(millimetresToPoints(x) - (right ? w : 0), millimetresToPoints(H - yMm));
+        contentStream.showText(text);
+        contentStream.endText();
     }
 
     /** One line at the current y (does not move y). {@code x} is the left edge, or the right edge when {@code right}. */
-    void text(String t, double x, float size, boolean isBold, Color color, boolean right) {
+    void text(String text, double x, float size, boolean isBold, Color color, boolean right) {
         try {
-            raw(PolicyEvidencePdf.safe(isBold ? bold : font, t), x, y + size * 0.3528 * 0.8, size, isBold ? bold : font, color, right);
+            raw(PolicyEvidencePdf.safe(isBold ? bold : font, text), x, y + size * 0.3528 * 0.8, size, isBold ? bold : font, color, right);
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
     }
 
     /** A line of text that moves y down by its height. */
-    void line(String t, float size, boolean isBold, Color color) {
+    void line(String text, float size, boolean isBold, Color color) {
         double h = size * 0.3528 * 1.45;
         ensure(h);
-        text(t, M, size, isBold, color, false);
+        text(text, M, size, isBold, color, false);
         y += h;
     }
 
@@ -116,9 +116,9 @@ final class SimplePdf implements AutoCloseable {
                 y += h * 0.6;
                 continue;
             }
-            for (String l : wrap(para, W - 2 * M, size)) {
+            for (String line : wrap(para, W - 2 * M, size)) {
                 ensure(h);
-                text(l, M, size, false, color, false);
+                text(line, M, size, false, color, false);
                 y += h;
             }
         }
@@ -126,27 +126,27 @@ final class SimplePdf implements AutoCloseable {
 
     List<String> wrap(String para, double widthMm, float size) {
         List<String> out = new ArrayList<>();
-        StringBuilder cur = new StringBuilder();
+        StringBuilder currentLine = new StringBuilder();
         for (String word : para.split(" ")) {
-            String next = cur.length() == 0 ? word : cur + " " + word;
-            if (width(next, font, size) > mm(widthMm) && cur.length() > 0) {
-                out.add(cur.toString());
-                cur = new StringBuilder(word);
+            String next = currentLine.length() == 0 ? word : currentLine + " " + word;
+            if (width(next, font, size) > millimetresToPoints(widthMm) && currentLine.length() > 0) {
+                out.add(currentLine.toString());
+                currentLine = new StringBuilder(word);
             } else {
-                cur = new StringBuilder(next);
+                currentLine = new StringBuilder(next);
             }
         }
-        if (cur.length() > 0) out.add(cur.toString());
+        if (currentLine.length() > 0) out.add(currentLine.toString());
         return out;
     }
 
     void rule(Color color, float thickness) {
         try {
-            cs.setStrokingColor(color);
-            cs.setLineWidth(thickness);
-            cs.moveTo(mm(M), mm(H - y));
-            cs.lineTo(mm(W - M), mm(H - y));
-            cs.stroke();
+            contentStream.setStrokingColor(color);
+            contentStream.setLineWidth(thickness);
+            contentStream.moveTo(millimetresToPoints(M), millimetresToPoints(H - y));
+            contentStream.lineTo(millimetresToPoints(W - M), millimetresToPoints(H - y));
+            contentStream.stroke();
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
@@ -154,28 +154,28 @@ final class SimplePdf implements AutoCloseable {
 
     void panel(double h, Color color) {
         try {
-            cs.setNonStrokingColor(color);
-            cs.addRect(mm(M), mm(H - y - h), mm(W - 2 * M), mm(h));
-            cs.fill();
+            contentStream.setNonStrokingColor(color);
+            contentStream.addRect(millimetresToPoints(M), millimetresToPoints(H - y - h), millimetresToPoints(W - 2 * M), millimetresToPoints(h));
+            contentStream.fill();
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
     }
 
     /** A table row: cells at the given left x positions (mm); {@code rightEdge[i]} true = x is the cell's right edge. */
-    void row(String[] cells, double[] xs, boolean[] rightEdge, float size, boolean isBold, Color color) {
+    void row(String[] cells, double[] columnX, boolean[] rightEdge, float size, boolean isBold, Color color) {
         double h = size * 0.3528 * 1.7;
         ensure(h);
-        for (int i = 0; i < cells.length; i++) text(cells[i], xs[i], size, isBold, color, rightEdge[i]);
+        for (int i = 0; i < cells.length; i++) text(cells[i], columnX[i], size, isBold, color, rightEdge[i]);
         y += h;
     }
 
     byte[] finish() {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             footer();
-            cs.close();
-            cs = null;
-            doc.save(out);
+            contentStream.close();
+            contentStream = null;
+            document.save(out);
             return out.toByteArray();
         } catch (IOException e) {
             throw new IllegalStateException(e);
@@ -184,7 +184,7 @@ final class SimplePdf implements AutoCloseable {
 
     @Override
     public void close() throws IOException {
-        if (cs != null) cs.close();
-        doc.close();
+        if (contentStream != null) contentStream.close();
+        document.close();
     }
 }

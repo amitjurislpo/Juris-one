@@ -24,33 +24,33 @@ class ExistingPrismaDatabaseTest {
         "20261005220955_init", "20261006134356_department_archive", "20261006143825_attendance_engine", FlywayConfig.LAST_PRISMA_MIGRATION,
     };
 
-    static void prismaDatabase(PostgreSQLContainer<?> pg, int migrationsApplied) throws Exception {
-        try (Connection c = DriverManager.getConnection(pg.getJdbcUrl(), pg.getUsername(), pg.getPassword()); Statement st = c.createStatement()) {
-            st.execute(Files.readString(Path.of("src/main/resources/db/migration/V1__baseline.sql")));
-            st.execute("CREATE TABLE _prisma_migrations (id varchar(36) PRIMARY KEY, checksum varchar(64) NOT NULL, finished_at timestamptz, "
+    static void prismaDatabase(PostgreSQLContainer<?> postgres, int migrationsApplied) throws Exception {
+        try (Connection connection = DriverManager.getConnection(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()); Statement statement = connection.createStatement()) {
+            statement.execute(Files.readString(Path.of("src/main/resources/db/migration/V1__baseline.sql")));
+            statement.execute("CREATE TABLE _prisma_migrations (id varchar(36) PRIMARY KEY, checksum varchar(64) NOT NULL, finished_at timestamptz, "
                     + "migration_name varchar(255) NOT NULL, logs text, rolled_back_at timestamptz, started_at timestamptz NOT NULL DEFAULT now(), "
                     + "applied_steps_count int NOT NULL DEFAULT 0)");
             for (int i = 0; i < migrationsApplied; i++) {
-                st.execute("INSERT INTO _prisma_migrations (id, checksum, finished_at, migration_name, applied_steps_count) "
+                statement.execute("INSERT INTO _prisma_migrations (id, checksum, finished_at, migration_name, applied_steps_count) "
                         + "VALUES ('m" + i + "', 'x', now(), '" + MIGRATIONS[i] + "', 1)");
             }
-            st.execute("INSERT INTO roles (id, key, name) VALUES ('11111111-1111-1111-1111-111111111111', 'admin', 'Admin')");
+            statement.execute("INSERT INTO roles (id, key, name) VALUES ('11111111-1111-1111-1111-111111111111', 'admin', 'Admin')");
         }
     }
 
-    static ConfigurableApplicationContext start(PostgreSQLContainer<?> pg) {
+    static ConfigurableApplicationContext start(PostgreSQLContainer<?> postgres) {
         return new SpringApplicationBuilder(JurisOneApplication.class).run(
-                "--spring.datasource.url=" + pg.getJdbcUrl(), "--spring.datasource.username=" + pg.getUsername(),
-                "--spring.datasource.password=" + pg.getPassword(), "--server.port=0", "--jurisone.jobs-enabled=false");
+                "--spring.datasource.url=" + postgres.getJdbcUrl(), "--spring.datasource.username=" + postgres.getUsername(),
+                "--spring.datasource.password=" + postgres.getPassword(), "--server.port=0", "--jurisone.jobs-enabled=false");
     }
 
     @Test
     void fullyMigratedPrismaDatabaseIsBaselinedAndKeepsItsData() throws Exception {
-        PostgreSQLContainer<?> pg = PostgresContainer.start();
+        PostgreSQLContainer<?> postgres = PostgresContainer.start();
         try {
-            prismaDatabase(pg, 4);
-            try (ConfigurableApplicationContext ctx = start(pg)) {
-                JdbcTemplate jdbc = ctx.getBean(JdbcTemplate.class);
+            prismaDatabase(postgres, 4);
+            try (ConfigurableApplicationContext applicationContext = start(postgres)) {
+                JdbcTemplate jdbc = applicationContext.getBean(JdbcTemplate.class);
                 assertThat(jdbc.queryForObject("SELECT type FROM flyway_schema_history WHERE version = '1'", String.class)).isEqualTo("BASELINE");
                 assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history ORDER BY installed_rank", String.class)).startsWith("1", "2", "3", "4", "5", "6", "7", "8", "9").contains("12", "15"); // baseline, then later migrations 
                 // (the platform company, created at startup, has roles of its own)
@@ -58,18 +58,18 @@ class ExistingPrismaDatabaseTest {
                         String.class)).containsExactly("Admin");
             }
         } finally {
-            pg.stop();
+            postgres.stop();
         }
     }
 
     @Test
     void partiallyMigratedPrismaDatabaseIsRefused() throws Exception {
-        PostgreSQLContainer<?> pg = PostgresContainer.start();
+        PostgreSQLContainer<?> postgres = PostgresContainer.start();
         try {
-            prismaDatabase(pg, 3);
-            assertThatThrownBy(() -> start(pg).close()).hasStackTraceContaining("Apply the remaining Prisma migrations");
+            prismaDatabase(postgres, 3);
+            assertThatThrownBy(() -> start(postgres).close()).hasStackTraceContaining("Apply the remaining Prisma migrations");
         } finally {
-            pg.stop();
+            postgres.stop();
         }
     }
 }

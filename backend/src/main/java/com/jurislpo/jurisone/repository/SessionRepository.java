@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 public class SessionRepository {
 
     private static final String USER_SQL = """
-        SELECT s.id AS sid, s.employee_id AS session_employee, s.expires_at, s.revoked_at, s.last_seen_at,
+        SELECT s.id AS session_id, s.employee_id AS session_employee, s.expires_at, s.revoked_at, s.last_seen_at,
                e.id, e.business_id, e.code, e.full_name, e.email, e.designation, e.role_id, e.portal_access, e.status::text AS status,
                e.region::text AS region, e.time_zone, e.photo_updated_at, u.is_super_admin, u.employee_id AS user_id, r.key AS role_key, r.name AS role_name,
                EXISTS (SELECT 1 FROM employees d WHERE d.reporting_manager_id = e.id AND d.status <> 'EXITED') AS has_reports,
@@ -30,9 +30,9 @@ public class SessionRepository {
         this.jdbc = jdbc;
     }
 
-    public void insertSession(String sid, UUID employeeId, Instant expiresAt, String ip, String userAgent) {
+    public void insertSession(String sessionId, UUID employeeId, Instant expiresAt, String ipAddress, String userAgent) {
         jdbc.update("INSERT INTO sessions (id, employee_id, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?)",
-                sid, employeeId, Timestamp.from(expiresAt), ip, userAgent);
+                sessionId, employeeId, Timestamp.from(expiresAt), ipAddress, userAgent);
     }
 
     /**
@@ -41,7 +41,7 @@ public class SessionRepository {
      */
     public List<Map<String, Object>> findRefreshTokenForUpdate(String tokenHash) {
         return jdbc.queryForList("""
-            SELECT t.used_at, t.expires_at, s.id AS sid, s.created_at, s.expires_at AS session_expires, s.revoked_at, s.employee_id,
+            SELECT t.used_at, t.expires_at, s.id AS session_id, s.created_at, s.expires_at AS session_expires, s.revoked_at, s.employee_id,
                    e.portal_access, e.status::text AS status, (SELECT u.employee_id FROM users u WHERE u.employee_id = e.id) AS user_id,
                    (SELECT b.status FROM businesses b WHERE b.id = e.business_id) AS business_status
             FROM refresh_tokens t JOIN sessions s ON s.id = t.session_id JOIN employees e ON e.id = s.employee_id
@@ -52,18 +52,18 @@ public class SessionRepository {
         jdbc.update("UPDATE refresh_tokens SET used_at = ? WHERE token_hash = ?", Timestamp.from(usedAt), tokenHash);
     }
 
-    public void updateLastSeen(String sid, Instant at) {
-        jdbc.update("UPDATE sessions SET last_seen_at = ? WHERE id = ?", Timestamp.from(at), sid);
+    public void updateLastSeen(String sessionId, Instant instant) {
+        jdbc.update("UPDATE sessions SET last_seen_at = ? WHERE id = ?", Timestamp.from(instant), sessionId);
     }
 
-    public void insertRefreshToken(String tokenHash, String sid, Instant expiresAt, String ip, String userAgent) {
+    public void insertRefreshToken(String tokenHash, String sessionId, Instant expiresAt, String ipAddress, String userAgent) {
         jdbc.update("INSERT INTO refresh_tokens (token_hash, session_id, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?)",
-                tokenHash, sid, Timestamp.from(expiresAt), ip, userAgent);
+                tokenHash, sessionId, Timestamp.from(expiresAt), ipAddress, userAgent);
     }
 
     /** Revokes one session unless already revoked. */
-    public void revoke(String sessionId, String reason, Instant at) {
-        jdbc.update("UPDATE sessions SET revoked_at = ?, revoked_reason = ? WHERE id = ? AND revoked_at IS NULL", Timestamp.from(at), reason, sessionId);
+    public void revoke(String sessionId, String reason, Instant instant) {
+        jdbc.update("UPDATE sessions SET revoked_at = ?, revoked_reason = ? WHERE id = ? AND revoked_at IS NULL", Timestamp.from(instant), reason, sessionId);
     }
 
     /** The session id (zero or one) of a refresh token. */
@@ -72,9 +72,9 @@ public class SessionRepository {
     }
 
     /** Revokes every active session of an employee. */
-    public void revokeAll(UUID employeeId, String reason, Instant at) {
+    public void revokeAll(UUID employeeId, String reason, Instant instant) {
         jdbc.update("UPDATE sessions SET revoked_at = ?, revoked_reason = ? WHERE employee_id = ? AND revoked_at IS NULL",
-                Timestamp.from(at), reason, employeeId);
+                Timestamp.from(instant), reason, employeeId);
     }
 
     // ── access-token authentication (JwtAuthFilter) ──

@@ -26,7 +26,7 @@ public class TaxPositionsRepository {
     public Map<UUID, Integer> pendingDeclarationCounts(String financialYear) {
         Map<UUID, Integer> pending = new HashMap<>();
         jdbc.query("SELECT employee_id, count(*) FROM declaration_items WHERE fy = ? AND status = 'PENDING' GROUP BY employee_id",
-                rs -> { pending.put((UUID) rs.getObject(1), rs.getInt(2)); }, financialYear);
+                resultSet -> { pending.put((UUID) resultSet.getObject(1), resultSet.getInt(2)); }, financialYear);
         return pending;
     }
 }

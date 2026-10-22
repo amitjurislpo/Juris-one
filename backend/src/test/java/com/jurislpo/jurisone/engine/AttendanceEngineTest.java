@@ -23,39 +23,39 @@ class AttendanceEngineTest {
     static final ShiftDef US = new ShiftDef("09:00", "18:00", 15);
     static final Policy POLICY = new Policy(8, 4, Set.of(0, 6), 120, 3);
 
-    static LocalDate d(String iso) { return LocalDate.parse(iso); }
-    static Instant at(String date, String hm) { return atLocal(d(date), hm, IST); }
-    static Instant at(String date, String hm, String timeZone) { return atLocal(d(date), hm, timeZone); }
-    static Punch p(String date, String hm, PunchKind kind) { return new Punch(at(date, hm), kind); }
-    static Punch p(String date, String hm, PunchKind kind, String timeZone) { return new Punch(at(date, hm, timeZone), kind); }
+    static LocalDate parseDate(String isoDate) { return LocalDate.parse(isoDate); }
+    static Instant instantAt(String date, String time) { return atLocal(parseDate(date), time, IST); }
+    static Instant instantAt(String date, String time, String timeZone) { return atLocal(parseDate(date), time, timeZone); }
+    static Punch punchAt(String date, String time, PunchKind kind) { return new Punch(instantAt(date, time), kind); }
+    static Punch punchAt(String date, String time, PunchKind kind, String timeZone) { return new Punch(instantAt(date, time, timeZone), kind); }
     static final PunchKind IN = PunchKind.IN, OUT = PunchKind.OUT;
 
     /** The TS `day({...})` helper: defaults, overridable per field. */
     static final class Day {
-        LocalDate date = d("2026-09-16");
-        Instant now = at("2026-10-06", "12:00");
+        LocalDate date = parseDate("2026-09-16");
+        Instant now = instantAt("2026-10-06", "12:00");
         String timeZone = IST;
         ShiftDef shift = NIGHT;
-        LocalDate dateOfJoining = d("2025-01-01");
+        LocalDate dateOfJoining = parseDate("2025-01-01");
         LocalDate exitDate = null;
         String holiday = null;
         Leave leave = null;
         List<Punch> punches = List.of();
         Regularization regularization = Regularization.NONE;
 
-        Day date(String v) { date = d(v); return this; }
-        Day now(Instant v) { now = v; return this; }
-        Day timeZone(String v) { timeZone = v; return this; }
-        Day shift(ShiftDef v) { shift = v; return this; }
-        Day dateOfJoining(String v) { dateOfJoining = d(v); return this; }
-        Day exitDate(String v) { exitDate = d(v); return this; }
-        Day holiday(String v) { holiday = v; return this; }
-        Day leave(Leave v) { leave = v; return this; }
+        Day date(String text) { date = parseDate(text); return this; }
+        Day now(Instant instant) { now = instant; return this; }
+        Day timeZone(String zone) { timeZone = zone; return this; }
+        Day shift(ShiftDef shiftDef) { shift = shiftDef; return this; }
+        Day dateOfJoining(String text) { dateOfJoining = parseDate(text); return this; }
+        Day exitDate(String text) { exitDate = parseDate(text); return this; }
+        Day holiday(String name) { holiday = name; return this; }
+        Day leave(Leave value) { leave = value; return this; }
         Day punches(Punch... v) { punches = List.of(v); return this; }
         Day regularization(boolean absent, boolean lateWaived) { regularization = new Regularization(absent, lateWaived); return this; }
 
         DayResult compute() {
-            return computeDay(new DayInput(date, now, timeZone, shift, POLICY, dateOfJoining, exitDate, d("2026-04-01"), holiday, leave, punches, regularization));
+            return computeDay(new DayInput(date, now, timeZone, shift, POLICY, dateOfJoining, exitDate, parseDate("2026-04-01"), holiday, leave, punches, regularization));
         }
     }
 
@@ -67,24 +67,24 @@ class AttendanceEngineTest {
         @Test
         @DisplayName("assigns a 2 AM check-out to the shift that started the evening before")
         void attributesNightPunches() {
-            assertThat(workDateOf(at("2026-09-17", "02:00"), NIGHT, IST)).isEqualTo(d("2026-09-16"));
-            assertThat(workDateOf(at("2026-09-16", "19:25"), NIGHT, IST)).isEqualTo(d("2026-09-16"));
-            assertThat(workDateOf(at("2026-09-16", "15:29"), NIGHT, IST)).isEqualTo(d("2026-09-15"));
+            assertThat(workDateOf(instantAt("2026-09-17", "02:00"), NIGHT, IST)).isEqualTo(parseDate("2026-09-16"));
+            assertThat(workDateOf(instantAt("2026-09-16", "19:25"), NIGHT, IST)).isEqualTo(parseDate("2026-09-16"));
+            assertThat(workDateOf(instantAt("2026-09-16", "15:29"), NIGHT, IST)).isEqualTo(parseDate("2026-09-15"));
         }
 
         @Test
         @DisplayName("day shift: an early 6 AM check-in is the same day")
         void earlyDayCheckIn() {
-            assertThat(workDateOf(at("2026-09-16", "06:00"), DAY, IST)).isEqualTo(d("2026-09-16"));
+            assertThat(workDateOf(instantAt("2026-09-16", "06:00"), DAY, IST)).isEqualTo(parseDate("2026-09-16"));
         }
 
         @Test
         @DisplayName("night window ends the next morning")
         void nightWindow() {
-            ShiftWindow w = shiftWindow(d("2026-09-16"), NIGHT, IST);
-            assertThat(w.start()).isEqualTo(Instant.parse("2026-09-16T14:00:00Z"));
-            assertThat(w.end()).isEqualTo(Instant.parse("2026-09-16T23:00:00Z"));
-            assertThat(w.graceUntil()).isEqualTo(Instant.parse("2026-09-16T14:15:00Z"));
+            ShiftWindow shiftWindow = shiftWindow(parseDate("2026-09-16"), NIGHT, IST);
+            assertThat(shiftWindow.start()).isEqualTo(Instant.parse("2026-09-16T14:00:00Z"));
+            assertThat(shiftWindow.end()).isEqualTo(Instant.parse("2026-09-16T23:00:00Z"));
+            assertThat(shiftWindow.graceUntil()).isEqualTo(Instant.parse("2026-09-16T14:15:00Z"));
         }
     }
 
@@ -94,55 +94,55 @@ class AttendanceEngineTest {
         @Test
         @DisplayName("sums multiple pairs")
         void sumsPairs() {
-            List<Punch> ps = List.of(p("2026-09-16", "19:30", IN), p("2026-09-16", "23:30", OUT), p("2026-09-17", "00:00", IN), p("2026-09-17", "04:45", OUT));
-            assertThat(workedMinutes(ps).minutes()).isEqualTo(4 * 60 + 4 * 60 + 45);
+            List<Punch> punches = List.of(punchAt("2026-09-16", "19:30", IN), punchAt("2026-09-16", "23:30", OUT), punchAt("2026-09-17", "00:00", IN), punchAt("2026-09-17", "04:45", OUT));
+            assertThat(workedMinutes(punches).minutes()).isEqualTo(4 * 60 + 4 * 60 + 45);
         }
 
         @Test
         @DisplayName("counts an open check-in up to now while live")
         void openCheckIn() {
-            Worked r = workedMinutes(List.of(p("2026-10-06", "09:30", IN)), at("2026-10-06", "11:00"));
-            assertThat(r.minutes()).isEqualTo(90);
-            assertThat(r.openSince()).isNotNull();
+            Worked worked = workedMinutes(List.of(punchAt("2026-10-06", "09:30", IN)), instantAt("2026-10-06", "11:00"));
+            assertThat(worked.minutes()).isEqualTo(90);
+            assertThat(worked.openSince()).isNotNull();
         }
     }
 
     @Nested
     @DisplayName("day status")
     class DayStatusTests {
-        final Punch[] full = {p("2026-09-16", "19:31", IN), p("2026-09-17", "04:40", OUT)};
+        final Punch[] full = {punchAt("2026-09-16", "19:31", IN), punchAt("2026-09-17", "04:40", OUT)};
 
         @Test
         @DisplayName("present when 8h+ is worked")
         void present() {
-            DayResult r = day().punches(full).compute();
-            assertThat(r.status).isEqualTo(DayStatus.PRESENT);
-            assertThat(r.late).isFalse();
-            assertThat(r.lopDays).isZero();
+            DayResult dayResult = day().punches(full).compute();
+            assertThat(dayResult.status).isEqualTo(DayStatus.PRESENT);
+            assertThat(dayResult.late).isFalse();
+            assertThat(dayResult.lopDays).isZero();
         }
 
         @Test
         @DisplayName("late after the 15-minute grace")
         void late() {
-            assertThat(day().punches(p("2026-09-16", "19:46", IN), p("2026-09-17", "04:50", OUT)).compute().late).isTrue();
-            assertThat(day().punches(p("2026-09-16", "19:45", IN), p("2026-09-17", "04:50", OUT)).compute().late).isFalse();
+            assertThat(day().punches(punchAt("2026-09-16", "19:46", IN), punchAt("2026-09-17", "04:50", OUT)).compute().late).isTrue();
+            assertThat(day().punches(punchAt("2026-09-16", "19:45", IN), punchAt("2026-09-17", "04:50", OUT)).compute().late).isFalse();
         }
 
         @Test
         @DisplayName("a regularized late mark is waived")
         void lateWaived() {
-            DayResult r = day().punches(p("2026-09-16", "20:10", IN), p("2026-09-17", "05:00", OUT)).regularization(false, true).compute();
-            assertThat(r.late).isFalse();
-            assertThat(r.lateWaived).isTrue();
+            DayResult dayResult = day().punches(punchAt("2026-09-16", "20:10", IN), punchAt("2026-09-17", "05:00", OUT)).regularization(false, true).compute();
+            assertThat(dayResult.late).isFalse();
+            assertThat(dayResult.lateWaived).isTrue();
         }
 
         @Test
         @DisplayName("half day between 4h and 8h; absent below 4h")
         void halfAndAbsent() {
-            DayResult half = day().punches(p("2026-09-16", "19:30", IN), p("2026-09-17", "01:00", OUT)).compute();
+            DayResult half = day().punches(punchAt("2026-09-16", "19:30", IN), punchAt("2026-09-17", "01:00", OUT)).compute();
             assertThat(half.status).isEqualTo(DayStatus.HALF_DAY);
             assertThat(half.lopDays).isEqualTo(0.5);
-            DayResult absent = day().punches(p("2026-09-16", "19:30", IN), p("2026-09-16", "22:00", OUT)).compute();
+            DayResult absent = day().punches(punchAt("2026-09-16", "19:30", IN), punchAt("2026-09-16", "22:00", OUT)).compute();
             assertThat(absent.status).isEqualTo(DayStatus.ABSENT);
             assertThat(absent.lopDays).isEqualTo(1);
         }
@@ -151,56 +151,56 @@ class AttendanceEngineTest {
         @DisplayName("no check-in: pending until shift end + buffer, then absent (LOP)")
         void noCheckIn() {
             // night shift of 6 Oct ends 4:30 AM on 7 Oct; buffer 2h → 6:30 AM
-            assertThat(day().date("2026-10-06").now(at("2026-10-07", "06:00")).compute().status).isEqualTo(DayStatus.PENDING);
-            DayResult r = day().date("2026-10-06").now(at("2026-10-07", "06:31")).compute();
-            assertThat(r.status).isEqualTo(DayStatus.ABSENT);
-            assertThat(r.lopDays).isEqualTo(1);
+            assertThat(day().date("2026-10-06").now(instantAt("2026-10-07", "06:00")).compute().status).isEqualTo(DayStatus.PENDING);
+            DayResult dayResult = day().date("2026-10-06").now(instantAt("2026-10-07", "06:31")).compute();
+            assertThat(dayResult.status).isEqualTo(DayStatus.ABSENT);
+            assertThat(dayResult.lopDays).isEqualTo(1);
         }
 
         @Test
         @DisplayName("an approved absence regularization makes the day paid")
         void absenceRegularized() {
-            DayResult r = day().regularization(true, false).compute();
-            assertThat(r.status).isEqualTo(DayStatus.PRESENT);
-            assertThat(r.lopDays).isZero();
-            assertThat(r.regularized).isTrue();
+            DayResult dayResult = day().regularization(true, false).compute();
+            assertThat(dayResult.status).isEqualTo(DayStatus.PRESENT);
+            assertThat(dayResult.lopDays).isZero();
+            assertThat(dayResult.regularized).isTrue();
         }
 
         @Test
         @DisplayName("missed check-out is flagged")
         void missedCheckout() {
-            DayResult r = day().punches(p("2026-09-16", "19:30", IN)).compute();
-            assertThat(r.missedCheckout).isTrue();
-            assertThat(r.status).isEqualTo(DayStatus.ABSENT);
+            DayResult dayResult = day().punches(punchAt("2026-09-16", "19:30", IN)).compute();
+            assertThat(dayResult.missedCheckout).isTrue();
+            assertThat(dayResult.status).isEqualTo(DayStatus.ABSENT);
         }
 
         @Test
         @DisplayName("in progress while checked in today")
         void inProgress() {
-            DayResult r = day().date("2026-10-06").shift(DAY).now(at("2026-10-06", "12:00")).punches(p("2026-10-06", "09:31", IN)).compute();
-            assertThat(r.status).isEqualTo(DayStatus.PENDING);
-            assertThat(r.label).isEqualTo("In progress");
-            assertThat(r.live).isTrue();
-            assertThat(r.workedMinutes).isEqualTo(149);
+            DayResult dayResult = day().date("2026-10-06").shift(DAY).now(instantAt("2026-10-06", "12:00")).punches(punchAt("2026-10-06", "09:31", IN)).compute();
+            assertThat(dayResult.status).isEqualTo(DayStatus.PENDING);
+            assertThat(dayResult.label).isEqualTo("In progress");
+            assertThat(dayResult.live).isTrue();
+            assertThat(dayResult.workedMinutes).isEqualTo(149);
         }
 
         @Test
         @DisplayName("holidays and weekly offs are never leave or LOP")
         void offDays() {
-            DayResult hol = day().date("2026-10-02").holiday("Gandhi Jayanti").compute();
-            assertThat(hol.status).isEqualTo(DayStatus.HOLIDAY);
-            assertThat(hol.lopDays).isZero();
-            assertThat(hol.leaveDays).isZero();
-            DayResult wo = day().date("2026-09-19").compute();
-            assertThat(wo.status).isEqualTo(DayStatus.WEEKLY_OFF);
-            assertThat(wo.lopDays).isZero();
+            DayResult holidayResult = day().date("2026-10-02").holiday("Gandhi Jayanti").compute();
+            assertThat(holidayResult.status).isEqualTo(DayStatus.HOLIDAY);
+            assertThat(holidayResult.lopDays).isZero();
+            assertThat(holidayResult.leaveDays).isZero();
+            DayResult dayResult = day().date("2026-09-19").compute();
+            assertThat(dayResult.status).isEqualTo(DayStatus.WEEKLY_OFF);
+            assertThat(dayResult.lopDays).isZero();
         }
 
         @Test
         @DisplayName("holiday work of 4h+ is a comp-off candidate")
         void holidayWork() {
-            DayResult r = day().date("2026-10-02").holiday("Gandhi Jayanti").punches(p("2026-10-02", "19:30", IN), p("2026-10-03", "04:10", OUT)).compute();
-            assertThat(r.offDayWork).isTrue();
+            DayResult dayResult = day().date("2026-10-02").holiday("Gandhi Jayanti").punches(punchAt("2026-10-02", "19:30", IN), punchAt("2026-10-03", "04:10", OUT)).compute();
+            assertThat(dayResult.offDayWork).isTrue();
         }
 
         @Test
@@ -215,7 +215,7 @@ class AttendanceEngineTest {
             assertThat(unpaid.leaveDays).isZero();
             assertThat(unpaid.lopDays).isEqualTo(1);
             Leave half = new Leave("CL", "Casual leave", LeavePart.FIRST_HALF, 1);
-            DayResult worked = day().leave(half).punches(p("2026-09-16", "23:30", IN), p("2026-09-17", "04:00", OUT)).compute();
+            DayResult worked = day().leave(half).punches(punchAt("2026-09-16", "23:30", IN), punchAt("2026-09-17", "04:00", OUT)).compute();
             assertThat(worked.leaveDays).isEqualTo(0.5);
             assertThat(worked.lopDays).isZero();
             DayResult notWorked = day().leave(half).compute();
@@ -238,10 +238,10 @@ class AttendanceEngineTest {
         @Test
         @DisplayName("future days are not judged")
         void future() {
-            DayResult r = day().date("2026-10-20").compute();
-            assertThat(r.status).isEqualTo(DayStatus.PENDING);
-            assertThat(r.future).isTrue();
-            assertThat(r.lopDays).isZero();
+            DayResult dayResult = day().date("2026-10-20").compute();
+            assertThat(dayResult.status).isEqualTo(DayStatus.PENDING);
+            assertThat(dayResult.future).isTrue();
+            assertThat(dayResult.lopDays).isZero();
         }
     }
 
@@ -250,12 +250,12 @@ class AttendanceEngineTest {
     class UsTimeZones {
         @Test
         @DisplayName("uses the employee's local shift, including DST")
-        void dst() {
-            assertThat(shiftWindow(d("2026-09-16"), US, NY).start()).isEqualTo(Instant.parse("2026-09-16T13:00:00Z")); // EDT
-            assertThat(shiftWindow(d("2026-12-16"), US, NY).start()).isEqualTo(Instant.parse("2026-12-16T14:00:00Z")); // EST
-            DayResult r = day().timeZone(NY).shift(US).punches(p("2026-09-16", "09:20", IN, NY), p("2026-09-16", "18:05", OUT, NY)).compute();
-            assertThat(r.status).isEqualTo(DayStatus.PRESENT);
-            assertThat(r.late).isTrue();
+        void daylightSavingDay() {
+            assertThat(shiftWindow(parseDate("2026-09-16"), US, NY).start()).isEqualTo(Instant.parse("2026-09-16T13:00:00Z")); // EDT
+            assertThat(shiftWindow(parseDate("2026-12-16"), US, NY).start()).isEqualTo(Instant.parse("2026-12-16T14:00:00Z")); // EST
+            DayResult dayResult = day().timeZone(NY).shift(US).punches(punchAt("2026-09-16", "09:20", IN, NY), punchAt("2026-09-16", "18:05", OUT, NY)).compute();
+            assertThat(dayResult.status).isEqualTo(DayStatus.PRESENT);
+            assertThat(dayResult.late).isTrue();
         }
     }
 
@@ -265,12 +265,12 @@ class AttendanceEngineTest {
         @Test
         @DisplayName("3 late marks = ½ day LOP")
         void lateMarks() {
-            DayResult late = day().punches(p("2026-09-16", "20:00", IN), p("2026-09-17", "05:00", OUT)).compute();
-            MonthSummary s = summarize(List.of(late, late, late, late), POLICY);
-            assertThat(s.lateMarks).isEqualTo(4);
-            assertThat(s.lateLopDays).isEqualTo(0.5);
-            assertThat(s.lopDays).isEqualTo(0.5);
-            assertThat(s.present).isEqualTo(4);
+            DayResult late = day().punches(punchAt("2026-09-16", "20:00", IN), punchAt("2026-09-17", "05:00", OUT)).compute();
+            MonthSummary monthSummary = summarize(List.of(late, late, late, late), POLICY);
+            assertThat(monthSummary.lateMarks).isEqualTo(4);
+            assertThat(monthSummary.lateLopDays).isEqualTo(0.5);
+            assertThat(monthSummary.lopDays).isEqualTo(0.5);
+            assertThat(monthSummary.present).isEqualTo(4);
         }
     }
 }

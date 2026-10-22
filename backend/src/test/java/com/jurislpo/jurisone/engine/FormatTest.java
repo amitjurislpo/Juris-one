@@ -16,8 +16,8 @@ class FormatTest {
     @Test
     @DisplayName("formats paise as Indian rupees")
     void inr() {
-        assertThat(Format.inr(1492600)).isEqualTo("₹14,926");
-        assertThat(Format.inr(75000000L)).isEqualTo("₹7,50,000");
+        assertThat(Format.formatRupees(1492600)).isEqualTo("₹14,926");
+        assertThat(Format.formatRupees(75000000L)).isEqualTo("₹7,50,000");
     }
 
     @Test
@@ -30,9 +30,9 @@ class FormatTest {
     @Test
     @DisplayName("resolves the calendar date in the employee's zone")
     void zone() {
-        Instant at = Instant.parse("2026-10-06T20:00:00Z"); // 01:30 IST next day, 16:00 ET
-        assertThat(Format.isoInZone(at, "Asia/Kolkata")).isEqualTo(LocalDate.parse("2026-10-07"));
-        assertThat(Format.isoInZone(at, "America/New_York")).isEqualTo(LocalDate.parse("2026-10-06"));
+        Instant instant = Instant.parse("2026-10-06T20:00:00Z"); // 01:30 IST next day, 16:00 ET
+        assertThat(Format.isoInZone(instant, "Asia/Kolkata")).isEqualTo(LocalDate.parse("2026-10-07"));
+        assertThat(Format.isoInZone(instant, "America/New_York")).isEqualTo(LocalDate.parse("2026-10-06"));
     }
 
     @Test

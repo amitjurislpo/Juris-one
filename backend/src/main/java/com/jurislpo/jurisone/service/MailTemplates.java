@@ -6,7 +6,7 @@ public final class MailTemplates {
 
     public record Content(String subject, String text, String html) {}
 
-    static String esc(String text) {
+    static String escapeHtml(String text) {
         StringBuilder builder = new StringBuilder();
         for (char character : text.toCharArray()) {
             switch (character) {
@@ -44,10 +44,10 @@ public final class MailTemplates {
         return new Content(subject,
                 "Hi " + name + ",\n\n" + intro + (back ? "\n\nWhat to change: " + note : "") + "\n\nOpen your personal link (valid until " + expires + "):\n" + link
                         + "\n\nKeep this link to yourself — anyone with it can see what you entered.",
-                shell(esc(subject), "<p>Hi " + esc(name) + ", " + esc(intro) + "</p>"
-                        + (back ? "<p style=\"color:#5D5F6D\">What to change: " + esc(note) + "</p>" : "")
+                shell(escapeHtml(subject), "<p>Hi " + escapeHtml(name) + ", " + escapeHtml(intro) + "</p>"
+                        + (back ? "<p style=\"color:#5D5F6D\">What to change: " + escapeHtml(note) + "</p>" : "")
                         + button(link, back ? "Update my details" : "Start onboarding")
-                        + "<p style=\"color:#5D5F6D;font-size:12px\">The link works until " + esc(expires) + ". Keep it to yourself — anyone with it can see what you entered.</p>"));
+                        + "<p style=\"color:#5D5F6D;font-size:12px\">The link works until " + escapeHtml(expires) + ". Keep it to yourself — anyone with it can see what you entered.</p>"));
     }
 
     public static Content decision(String name, String what, boolean approved, String by, String note) {
@@ -57,8 +57,8 @@ public final class MailTemplates {
                 what + " " + verb,
                 "Hi " + name + ",\n\nYour " + what.toLowerCase() + " was " + verb + " by " + by + "." + (hasNote ? "\n\nNote: " + note : "")
                         + "\n\nOpen JurisOne for details.",
-                shell(esc(what) + " " + verb, "<p>Hi " + esc(name) + ", your " + esc(what.toLowerCase()) + " was <b>" + verb + "</b> by " + esc(by) + ".</p>"
-                        + (hasNote ? "<p style=\"color:#5D5F6D\">Note: " + esc(note) + "</p>" : "")));
+                shell(escapeHtml(what) + " " + verb, "<p>Hi " + escapeHtml(name) + ", your " + escapeHtml(what.toLowerCase()) + " was <b>" + verb + "</b> by " + escapeHtml(by) + ".</p>"
+                        + (hasNote ? "<p style=\"color:#5D5F6D\">Note: " + escapeHtml(note) + "</p>" : "")));
     }
 
     /** An HR letter was issued to the employee; the PDF is attached and also lives under My letters. */
@@ -66,8 +66,8 @@ public final class MailTemplates {
         return new Content(
                 subject + " (" + reference + ")",
                 "Hi " + name + ",\n\n" + business + " has issued you a letter: " + subject + " (reference " + reference + "). The PDF is attached; you can also find it under My letters in JurisOne: " + link,
-                shell(esc(subject), "<p>Hi " + esc(name) + ", " + esc(business) + " has issued you a letter: <b>" + esc(subject) + "</b> (reference " + esc(reference) + ").</p>"
-                        + "<p style=\"color:#5D5F6D\">The PDF is attached. You can also find it under <a href=\"" + esc(link) + "\">My letters</a> in JurisOne.</p>"));
+                shell(escapeHtml(subject), "<p>Hi " + escapeHtml(name) + ", " + escapeHtml(business) + " has issued you a letter: <b>" + escapeHtml(subject) + "</b> (reference " + escapeHtml(reference) + ").</p>"
+                        + "<p style=\"color:#5D5F6D\">The PDF is attached. You can also find it under <a href=\"" + escapeHtml(link) + "\">My letters</a> in JurisOne.</p>"));
     }
 
     /** Subscription ending soon ({@code daysLeft} > 0) or ended ({@code daysLeft} &lt;= 0). */
@@ -80,8 +80,8 @@ public final class MailTemplates {
                 : "Renew it before then so your team keeps working without a break.";
         return new Content(subject,
                 "Hi " + name + ",\n\nThe " + plan + " subscription for " + business + " " + when + ".\n" + after + "\n\nContact JurisOne to renew.\n" + link,
-                shell(esc(subject), "<p>Hi " + esc(name) + ", the <b>" + esc(plan) + "</b> subscription for <b>" + esc(business) + "</b> " + esc(when) + ".</p>"
-                        + "<p style=\"color:#5D5F6D\">" + esc(after) + " Contact JurisOne to renew.</p>" + button(link, "View subscription")));
+                shell(escapeHtml(subject), "<p>Hi " + escapeHtml(name) + ", the <b>" + escapeHtml(plan) + "</b> subscription for <b>" + escapeHtml(business) + "</b> " + escapeHtml(when) + ".</p>"
+                        + "<p style=\"color:#5D5F6D\">" + escapeHtml(after) + " Contact JurisOne to renew.</p>" + button(link, "View subscription")));
     }
 
     public static Content otp(String name, String code, int minutes) {
@@ -89,8 +89,8 @@ public final class MailTemplates {
                 "Your JurisOne sign-in code: " + code,
                 "Hi " + name + ",\n\nYour sign-in code is " + code + ". It works once and expires in " + minutes + " minutes."
                         + "\n\nIf you didn't try to sign in, you can ignore this email.",
-                shell("Your sign-in code", "<p>Hi " + esc(name) + ", use this code to sign in. It works once and expires in " + minutes + " minutes.</p>"
-                        + "<p style=\"font-size:28px;letter-spacing:6px;font-weight:600\">" + esc(code) + "</p>"
+                shell("Your sign-in code", "<p>Hi " + escapeHtml(name) + ", use this code to sign in. It works once and expires in " + minutes + " minutes.</p>"
+                        + "<p style=\"font-size:28px;letter-spacing:6px;font-weight:600\">" + escapeHtml(code) + "</p>"
                         + "<p style=\"color:#5D5F6D;font-size:13px\">If you didn't try to sign in, ignore this email.</p>"));
     }
 
@@ -100,7 +100,7 @@ public final class MailTemplates {
                 "Your JurisOne sign-in request",
                 "Hi " + name + ",\n\nSomeone asked for a sign-in code for this email, but no code was sent. " + reason
                         + "\n\nIf this wasn't you, you can ignore this email.",
-                shell("No sign-in code sent", "<p>Hi " + esc(name) + ", a sign-in code was requested for this email, but none was sent.</p><p>" + esc(reason) + "</p>"
+                shell("No sign-in code sent", "<p>Hi " + escapeHtml(name) + ", a sign-in code was requested for this email, but none was sent.</p><p>" + escapeHtml(reason) + "</p>"
                         + "<p style=\"color:#5D5F6D;font-size:13px\">If this wasn't you, ignore this email.</p>"));
     }
 }

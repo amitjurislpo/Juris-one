@@ -23,8 +23,8 @@ public class HolidaysRepository {
         return jdbc.query("""
             SELECT h.id, h.date, h.name, h.region::text AS region, c.full_name AS by
             FROM holidays h LEFT JOIN employees c ON c.id = h.created_by ORDER BY h.date ASC""",
-                (rs, i) -> new Item(rs.getString("id"), rs.getDate("date").toLocalDate().toString(), rs.getString("name"), rs.getString("region"),
-                        rs.getString("by") == null ? "—" : rs.getString("by")));
+                (resultSet, i) -> new Item(resultSet.getString("id"), resultSet.getDate("date").toLocalDate().toString(), resultSet.getString("name"), resultSet.getString("region"),
+                        resultSet.getString("by") == null ? "—" : resultSet.getString("by")));
     }
 
     /** The name of a holiday already on this date for one of the three regions (at most one). */

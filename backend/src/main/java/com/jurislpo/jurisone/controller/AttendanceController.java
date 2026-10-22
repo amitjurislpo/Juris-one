@@ -34,7 +34,7 @@ public class AttendanceController {
         this.register = register;
     }
 
-    /** ?m=YYYY-MM&d=YYYY-MM-DD; {@code tracked:false} when attendance isn't tracked for the user. */
+    /** ?month=YYYY-MM&date=YYYY-MM-DD; {@code tracked:false} when attendance isn't tracked for the user. */
     @GetMapping("/api/attendance/mine")
     public ApiResult<MyAttendanceService.Page> me(@RequestParam Map<String, String> queryParams) {
         return ApiResult.success(mine.page(auth.requirePage("attendance"), queryParams));
@@ -43,7 +43,7 @@ public class AttendanceController {
     @PostMapping("/api/attendance/regularizations")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> requestRegularization(@RequestBody MyAttendanceService.RegularizationInput body, HttpServletRequest request) {
-        return ApiResult.message(mine.requestRegularization(auth.assertPerm("self"), body, RequestMeta.of(request).ip()));
+        return ApiResult.message(mine.requestRegularization(auth.assertPerm("self"), body, RequestMeta.of(request).ipAddress()));
     }
 
     @DeleteMapping("/api/attendance/regularizations/{id}")
@@ -55,11 +55,11 @@ public class AttendanceController {
     @PostMapping("/api/attendance/punches")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> punch(@RequestBody PunchRequest body, HttpServletRequest request) {
-        MyAttendanceService.PunchResult r = mine.punch(auth.assertPerm("self"), body.expect(), RequestMeta.of(request).ip());
-        return ApiResult.success(r.msg(), Map.of("kind", r.kind()));
+        MyAttendanceService.PunchResult punchResult = mine.punch(auth.assertPerm("self"), body.expect(), RequestMeta.of(request).ipAddress());
+        return ApiResult.success(punchResult.message(), Map.of("kind", punchResult.kind()));
     }
 
-    /** Register page data: daily log (?day=&tz=&st=) or monthly grid (?view=month&ym=), paged 50. */
+    /** Register page data: daily log (?date=&timeZone=&status=) or monthly grid (?view=month&month=), paged 50. */
     @GetMapping("/api/attendance/register")
     public ApiResult<Map<String, Object>> registerPage(@RequestParam Map<String, String> queryParams) {
         return ApiResult.success(register.page(auth.requirePage("register"), queryParams));
@@ -68,7 +68,7 @@ public class AttendanceController {
     /** CSV (att.all) — same filters as the page. */
     @GetMapping("/api/attendance/register/export")
     public ResponseEntity<byte[]> export(@RequestParam Map<String, String> queryParams) {
-        RegisterService.Export e = register.export(auth.assertPerm("att.all"), queryParams);
-        return PeopleController.csv(e.filename(), e.body());
+        RegisterService.Export exportFile = register.export(auth.assertPerm("att.all"), queryParams);
+        return PeopleController.csv(exportFile.filename(), exportFile.body());
     }
 }

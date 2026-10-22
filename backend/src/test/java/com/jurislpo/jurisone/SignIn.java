@@ -15,10 +15,10 @@ public final class SignIn {
     private SignIn() {}
 
     /** Requests a code for {@code email} and signs in with it; the returned actions are those of the sign-in call. */
-    public static ResultActions session(MockMvc mvc, String email) throws Exception {
-        mvc.perform(post("/api/auth/otp-requests").header("origin", "http://localhost:3005").header("host", "localhost:3005")
+    public static ResultActions session(MockMvc mockMvc, String email) throws Exception {
+        mockMvc.perform(post("/api/auth/otp-requests").header("origin", "http://localhost:3005").header("host", "localhost:3005")
                 .contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
-        return mvc.perform(post("/api/auth/session").header("origin", "http://localhost:3005").header("host", "localhost:3005")
+        return mockMvc.perform(post("/api/auth/session").header("origin", "http://localhost:3005").header("host", "localhost:3005")
                 .contentType(MediaType.APPLICATION_JSON).content("{\"identifier\":\"" + email + "\",\"otp\":\"" + CODE + "\"}"));
     }
 }

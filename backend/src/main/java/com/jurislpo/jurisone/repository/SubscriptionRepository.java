@@ -25,8 +25,8 @@ public class SubscriptionRepository {
         this.jdbc = jdbc;
     }
 
-    private static List<String> modules(Array a) throws java.sql.SQLException {
-        return a == null ? List.of() : Arrays.asList((String[]) a.getArray());
+    private static List<String> modules(Array array) throws java.sql.SQLException {
+        return array == null ? List.of() : Arrays.asList((String[]) array.getArray());
     }
 
     // ── current business ──
@@ -41,10 +41,10 @@ public class SubscriptionRepository {
         return jdbc.query("""
             SELECT p.name, s.starts_on, s.ends_on, p.max_employees, p.modules FROM business_subscriptions s JOIN subscription_plans p ON p.id = s.plan_id
             WHERE s.business_id = ? AND s.status = 'ACTIVE' AND s.starts_on <= ? AND s.ends_on >= ? ORDER BY s.ends_on DESC LIMIT 1""",
-                (rs, i) -> {
-                    LocalDate ends = rs.getDate(3).toLocalDate();
-                    return new Current("ACTIVE", true, rs.getString(1), rs.getDate(2).toLocalDate().toString(), ends.toString(),
-                            (int) ChronoUnit.DAYS.between(today, ends), (Integer) rs.getObject(4), modules(rs.getArray(5)), employees);
+                (resultSet, i) -> {
+                    LocalDate ends = resultSet.getDate(3).toLocalDate();
+                    return new Current("ACTIVE", true, resultSet.getString(1), resultSet.getDate(2).toLocalDate().toString(), ends.toString(),
+                            (int) ChronoUnit.DAYS.between(today, ends), (Integer) resultSet.getObject(4), modules(resultSet.getArray(5)), employees);
                 }, businessId, Date.valueOf(today), Date.valueOf(today));
     }
 
@@ -53,8 +53,8 @@ public class SubscriptionRepository {
         return jdbc.query("""
             SELECT p.name, s.starts_on, s.ends_on, p.max_employees, p.modules FROM business_subscriptions s JOIN subscription_plans p ON p.id = s.plan_id
             WHERE s.business_id = ? AND s.status = 'ACTIVE' AND s.starts_on > ? ORDER BY s.starts_on LIMIT 1""",
-                (rs, i) -> new Current("UPCOMING", false, rs.getString(1), rs.getDate(2).toLocalDate().toString(), rs.getDate(3).toLocalDate().toString(), null,
-                        (Integer) rs.getObject(4), modules(rs.getArray(5)), employees), businessId, Date.valueOf(today));
+                (resultSet, i) -> new Current("UPCOMING", false, resultSet.getString(1), resultSet.getDate(2).toLocalDate().toString(), resultSet.getDate(3).toLocalDate().toString(), null,
+                        (Integer) resultSet.getObject(4), modules(resultSet.getArray(5)), employees), businessId, Date.valueOf(today));
     }
 
     /** The latest active subscription that ended before {@code today} (zero or one), as EXPIRED. */
@@ -62,8 +62,8 @@ public class SubscriptionRepository {
         return jdbc.query("""
             SELECT p.name, s.starts_on, s.ends_on, p.max_employees, p.modules FROM business_subscriptions s JOIN subscription_plans p ON p.id = s.plan_id
             WHERE s.business_id = ? AND s.status = 'ACTIVE' AND s.ends_on < ? ORDER BY s.ends_on DESC LIMIT 1""",
-                (rs, i) -> new Current("EXPIRED", false, rs.getString(1), rs.getDate(2).toLocalDate().toString(), rs.getDate(3).toLocalDate().toString(), 0,
-                        (Integer) rs.getObject(4), modules(rs.getArray(5)), employees), businessId, Date.valueOf(today));
+                (resultSet, i) -> new Current("EXPIRED", false, resultSet.getString(1), resultSet.getDate(2).toLocalDate().toString(), resultSet.getDate(3).toLocalDate().toString(), 0,
+                        (Integer) resultSet.getObject(4), modules(resultSet.getArray(5)), employees), businessId, Date.valueOf(today));
     }
 
     /** Modules granted to the business on their own that cover {@code day} (not revoked). */
@@ -91,8 +91,8 @@ public class SubscriptionRepository {
         return jdbc.query("""
             SELECT s.id::text, s.plan_id::text, p.name, s.starts_on, s.ends_on, s.price_paise, s.status, s.notes, s.created_at
             FROM business_subscriptions s JOIN subscription_plans p ON p.id = s.plan_id WHERE s.business_id = ? ORDER BY s.starts_on DESC, s.created_at DESC""",
-                (rs, i) -> new Subscription(rs.getString(1), rs.getString(2), rs.getString(3), rs.getDate(4).toLocalDate().toString(), rs.getDate(5).toLocalDate().toString(),
-                        rs.getLong(6), rs.getString(7), rs.getString(8), Format.isoTimestamp(rs.getTimestamp(9).toInstant())), businessId);
+                (resultSet, i) -> new Subscription(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getDate(4).toLocalDate().toString(), resultSet.getDate(5).toLocalDate().toString(),
+                        resultSet.getLong(6), resultSet.getString(7), resultSet.getString(8), Format.isoTimestamp(resultSet.getTimestamp(9).toInstant())), businessId);
     }
 
     // ── plans ──
@@ -103,22 +103,22 @@ public class SubscriptionRepository {
             SELECT p.id::text, p.name, p.description, p.price_paise, p.period_months, p.max_employees, p.modules, p.active,
                    (SELECT count(DISTINCT s.business_id) FROM business_subscriptions s WHERE s.plan_id = p.id AND s.status = 'ACTIVE' AND s.ends_on >= ?) AS businesses
             FROM subscription_plans p ORDER BY p.active DESC, p.price_paise, p.name""",
-                (rs, i) -> new Plan(rs.getString(1), rs.getString(2), rs.getString(3), rs.getLong(4), rs.getInt(5), (Integer) rs.getObject(6), modules(rs.getArray(7)),
-                        rs.getBoolean(8), rs.getLong(9)), Date.valueOf(today));
+                (resultSet, i) -> new Plan(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getLong(4), resultSet.getInt(5), (Integer) resultSet.getObject(6), modules(resultSet.getArray(7)),
+                        resultSet.getBoolean(8), resultSet.getLong(9)), Date.valueOf(today));
     }
 
     public void insertPlan(UUID id, String name, String description, long pricePaise, int periodMonths, Integer maxEmployees, String[] modules, boolean active) {
         jdbc.update("""
             INSERT INTO subscription_plans (id, name, description, price_paise, period_months, max_employees, modules, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                ps -> {
-                    ps.setObject(1, id);
-                    ps.setString(2, name);
-                    ps.setString(3, description);
-                    ps.setLong(4, pricePaise);
-                    ps.setInt(5, periodMonths);
-                    ps.setObject(6, maxEmployees);
-                    ps.setArray(7, ps.getConnection().createArrayOf("text", modules));
-                    ps.setBoolean(8, active);
+                statement -> {
+                    statement.setObject(1, id);
+                    statement.setString(2, name);
+                    statement.setString(3, description);
+                    statement.setLong(4, pricePaise);
+                    statement.setInt(5, periodMonths);
+                    statement.setObject(6, maxEmployees);
+                    statement.setArray(7, statement.getConnection().createArrayOf("text", modules));
+                    statement.setBoolean(8, active);
                 });
     }
 
@@ -127,15 +127,15 @@ public class SubscriptionRepository {
         return jdbc.update("""
             UPDATE subscription_plans SET name = ?, description = ?, price_paise = ?, period_months = ?, max_employees = ?, modules = ?, active = ?, updated_at = now()
             WHERE id = ?""",
-                ps -> {
-                    ps.setString(1, name);
-                    ps.setString(2, description);
-                    ps.setLong(3, pricePaise);
-                    ps.setInt(4, periodMonths);
-                    ps.setObject(5, maxEmployees);
-                    ps.setArray(6, ps.getConnection().createArrayOf("text", modules));
-                    ps.setBoolean(7, active);
-                    ps.setObject(8, id);
+                statement -> {
+                    statement.setString(1, name);
+                    statement.setString(2, description);
+                    statement.setLong(3, pricePaise);
+                    statement.setInt(4, periodMonths);
+                    statement.setObject(5, maxEmployees);
+                    statement.setArray(6, statement.getConnection().createArrayOf("text", modules));
+                    statement.setBoolean(7, active);
+                    statement.setObject(8, id);
                 });
     }
 

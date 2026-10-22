@@ -9,14 +9,14 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class AuditRepository {
 
-    private final EntityManager em;
+    private final EntityManager entityManager;
 
-    public AuditRepository(EntityManager em) {
-        this.em = em;
+    public AuditRepository(EntityManager entityManager) {
+        this.entityManager = entityManager;
     }
 
     public void persist(AuditLog auditLog) {
-        em.persist(auditLog);
+        entityManager.persist(auditLog);
     }
 
     /**
@@ -24,8 +24,8 @@ public class AuditRepository {
      * written outside a business request.
      */
     public void assignActorBusiness(UUID auditId, UUID actorId) {
-        em.flush();
-        em.createNativeQuery("UPDATE audit_log SET business_id = (SELECT business_id FROM employees WHERE id = ?1) WHERE id = ?2 AND business_id IS NULL")
+        entityManager.flush();
+        entityManager.createNativeQuery("UPDATE audit_log SET business_id = (SELECT business_id FROM employees WHERE id = ?1) WHERE id = ?2 AND business_id IS NULL")
                 .setParameter(1, actorId).setParameter(2, auditId).executeUpdate();
     }
 }

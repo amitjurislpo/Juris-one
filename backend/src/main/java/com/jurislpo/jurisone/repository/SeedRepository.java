@@ -162,12 +162,12 @@ public class SeedRepository {
         return jdbc.query("""
             SELECT e.id, e.code, e.date_of_joining, e.exit_date, e.time_zone, e.region::text, s.start_local FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id
             WHERE e.code = ANY (?) AND EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = e.role_id AND rp.permission_key = 'self')""",
-                (rs, i) -> new PunchEmployee((UUID) rs.getObject(1), rs.getString(2), rs.getDate(3).toLocalDate(), rs.getDate(4) == null ? null : rs.getDate(4).toLocalDate(),
-                        rs.getString(5), rs.getString(6), rs.getString(7)), (Object) codes);
+                (resultSet, i) -> new PunchEmployee((UUID) resultSet.getObject(1), resultSet.getString(2), resultSet.getDate(3).toLocalDate(), resultSet.getDate(4) == null ? null : resultSet.getDate(4).toLocalDate(),
+                        resultSet.getString(5), resultSet.getString(6), resultSet.getString(7)), (Object) codes);
     }
 
     public List<HolidayDay> findHolidays() {
-        return jdbc.query("SELECT date, region::text FROM holidays", (rs, i) -> new HolidayDay(rs.getDate(1).toLocalDate(), rs.getString(2)));
+        return jdbc.query("SELECT date, region::text FROM holidays", (resultSet, i) -> new HolidayDay(resultSet.getDate(1).toLocalDate(), resultSet.getString(2)));
     }
 
     /** Inserts web punches; each row is {id, employee_id, at, kind}. */
@@ -252,7 +252,7 @@ public class SeedRepository {
     /** Department ids by name. */
     public Map<String, UUID> findDepartmentIds() {
         Map<String, UUID> ids = new HashMap<>();
-        jdbc.query("SELECT name, id FROM departments", rs -> { ids.put(rs.getString(1), (UUID) rs.getObject(2)); });
+        jdbc.query("SELECT name, id FROM departments", resultSet -> { ids.put(resultSet.getString(1), (UUID) resultSet.getObject(2)); });
         return ids;
     }
 
@@ -322,11 +322,11 @@ public class SeedRepository {
     /** Inserts a free 12-month plan with no employee limit. */
     public void insertStarterPlan(UUID id, String name, String description, String[] modules) {
         jdbc.update("INSERT INTO subscription_plans (id, name, description, price_paise, period_months, max_employees, modules) VALUES (?, ?, ?, 0, 12, NULL, ?)",
-                ps -> {
-                    ps.setObject(1, id);
-                    ps.setString(2, name);
-                    ps.setString(3, description);
-                    ps.setArray(4, ps.getConnection().createArrayOf("text", modules));
+                statement -> {
+                    statement.setObject(1, id);
+                    statement.setString(2, name);
+                    statement.setString(3, description);
+                    statement.setArray(4, statement.getConnection().createArrayOf("text", modules));
                 });
     }
 

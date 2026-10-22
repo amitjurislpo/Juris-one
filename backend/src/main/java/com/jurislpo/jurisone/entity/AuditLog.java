@@ -38,10 +38,10 @@ public class AuditLog {
     private JsonNode after;
 
     @Column(name = "at", nullable = false)
-    private Instant at;
+    private Instant occurredAt;
 
     @Column(name = "ip")
-    private String ip;
+    private String ipAddress;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "actor_id", insertable = false, updatable = false)
@@ -50,7 +50,7 @@ public class AuditLog {
     @PrePersist
     void prePersist() {
         if (id == null) id = UUID.randomUUID();
-        if (at == null) at = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        if (occurredAt == null) occurredAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
     }
 
     public UUID getId() { return id; }
@@ -67,10 +67,10 @@ public class AuditLog {
     public void setBefore(JsonNode before) { this.before = before; }
     public JsonNode getAfter() { return after; }
     public void setAfter(JsonNode after) { this.after = after; }
-    public Instant getAt() { return at; }
-    public void setAt(Instant at) { this.at = at; }
-    public String getIp() { return ip; }
-    public void setIp(String ip) { this.ip = ip; }
+    public Instant getOccurredAt() { return occurredAt; }
+    public void setOccurredAt(Instant occurredAt) { this.occurredAt = occurredAt; }
+    public String getIpAddress() { return ipAddress; }
+    public void setIpAddress(String ipAddress) { this.ipAddress = ipAddress; }
     /** Read-only navigation; set actorId to change it. */
     public Employee getActor() { return actor; }
 }

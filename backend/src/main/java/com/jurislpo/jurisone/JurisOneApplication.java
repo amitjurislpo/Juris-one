@@ -27,8 +27,8 @@ public class JurisOneApplication {
             System.setProperty("jurisone.reset", "true");               // FlywayConfig cleans before migrating
             System.setProperty("spring.flyway.clean-disabled", "false");
         }
-        ConfigurableApplicationContext ctx = app.run(args);
-        int code = ctx.getBean(Commands.class).run(command);
-        System.exit(SpringApplication.exit(ctx, () -> code));
+        ConfigurableApplicationContext applicationContext = app.run(args);
+        int code = applicationContext.getBean(Commands.class).run(command);
+        System.exit(SpringApplication.exit(applicationContext, () -> code));
     }
 }

@@ -23,7 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 /** Home, overview, My team and the audit log through the API. */
 class DashboardApiTest extends IntegrationTest {
 
-    @Autowired MockMvc mvc;
+    @Autowired MockMvc mockMvc;
     @Autowired JdbcTemplate jdbc;
     TestData data;
     UUID empRole, adminRole;
@@ -33,30 +33,30 @@ class DashboardApiTest extends IntegrationTest {
         data = new TestData(jdbc);
         empRole = data.role("dash-employee", "self", "dir");
         adminRole = data.role("dash-admin", "self", "dir", "roles.manage", "people.view");
-        UUID shift = jdbc.query("SELECT id FROM shifts WHERE code = 'IN_DAY'", rs -> rs.next() ? (UUID) rs.getObject(1) : null);
+        UUID shift = jdbc.query("SELECT id FROM shifts WHERE code = 'IN_DAY'", resultSet -> resultSet.next() ? (UUID) resultSet.getObject(1) : null);
         if (shift == null) {
             jdbc.update("INSERT INTO shifts (id, code, name, start_local, end_local, grace_minutes, region) VALUES (?, 'IN_DAY', 'India Day', '09:30', '18:30', 15, 'IN')", UUID.randomUUID());
         }
     }
 
-    static int seq = 9000;
+    static int sequence = 9000;
 
     record Person(UUID id, Cookie cookie) {}
 
     Person person(UUID role) throws Exception {
-        String c = "JC-" + (++seq) + (int) (Math.random() * 1000);
-        UUID id = data.employee(c, c.toLowerCase() + "@example.com", role);
+        String code = "JC-" + (++sequence) + (int) (Math.random() * 1000);
+        UUID id = data.employee(code, code.toLowerCase() + "@example.com", role);
         jdbc.update("UPDATE employees SET shift_id = (SELECT id FROM shifts WHERE code = 'IN_DAY') WHERE id = ?", id);
-        String set = SignIn.session(mvc, c.toLowerCase() + "@example.com").andReturn().getResponse().getHeader("Set-Cookie");
-        Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
-        assertThat(m.find()).isTrue();
-        return new Person(id, new Cookie("jo_at", m.group(1)));
+        String set = SignIn.session(mockMvc, code.toLowerCase() + "@example.com").andReturn().getResponse().getHeader("Set-Cookie");
+        Matcher matcher = Pattern.compile("jo_at=([^;]+)").matcher(set);
+        assertThat(matcher.find()).isTrue();
+        return new Person(id, new Cookie("jo_at", matcher.group(1)));
     }
 
     @Test
     void homeShowsTheEmployeesDayAndCards() throws Exception {
         Person employee = person(empRole);
-        mvc.perform(get("/api/home").cookie(employee.cookie())).andExpect(status().isOk())
+        mockMvc.perform(get("/api/home").cookie(employee.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.tracked").value(true))
                 .andExpect(jsonPath("$.data.shiftText").value(org.hamcrest.Matchers.startsWith("Day shift · 9:30 AM – 6:30 PM IST")))
                 .andExpect(jsonPath("$.data.ticks.length()").value(4))
@@ -72,20 +72,20 @@ class DashboardApiTest extends IntegrationTest {
     void managersSeeTheirTeamAndOthersDont() throws Exception {
         Person boss = person(empRole), report = person(empRole);
         jdbc.update("UPDATE employees SET reporting_manager_id = ? WHERE id = ?", boss.id(), report.id());
-        mvc.perform(get("/api/team").cookie(boss.cookie())).andExpect(status().isOk())
+        mockMvc.perform(get("/api/team").cookie(boss.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.size").value(1))
                 .andExpect(jsonPath("$.data.rows[0].shift").value("Day · 9:30 AM – 6:30 PM IST"))
                 .andExpect(jsonPath("$.data.days.length()").value(5))
                 .andExpect(jsonPath("$.data.away[0].cells.length()").value(5));
-        mvc.perform(get("/api/team").cookie(report.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/team").cookie(report.cookie())).andExpect(status().isForbidden());
     }
 
     @Test
     void overviewAndAuditAreForAdminsAndPayIsRedacted() throws Exception {
         Person employee = person(empRole), admin = person(adminRole);
-        mvc.perform(get("/api/overview").cookie(employee.cookie())).andExpect(status().isForbidden());
-        mvc.perform(get("/api/audit").cookie(employee.cookie())).andExpect(status().isForbidden());
-        mvc.perform(get("/api/overview").cookie(admin.cookie())).andExpect(status().isOk())
+        mockMvc.perform(get("/api/overview").cookie(employee.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/audit").cookie(employee.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/overview").cookie(admin.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.headcount").isNumber()).andExpect(jsonPath("$.data.payroll.month").isString());
 
         jdbc.update("INSERT INTO audit_log (id, actor_id, action, entity, entity_id, after, at, business_id) VALUES (?, ?, 'payroll.close', 'payroll_run', 'x', '{\"net\": 123}'::jsonb, now(), ?)",
@@ -93,16 +93,16 @@ class DashboardApiTest extends IntegrationTest {
         jdbc.update("INSERT INTO audit_log (id, actor_id, action, entity, entity_id, after, at, business_id) VALUES (?, ?, 'employee.update', 'employee', ?, '{\"name\": \"A_B\"}'::jsonb, now(), ?)",
                 UUID.randomUUID(), admin.id(), employee.id().toString(), data.business());
         // no salary permission → payroll payloads are hidden
-        mvc.perform(get("/api/audit").param("eventGroup", "payroll").param("actorId", admin.id().toString()).cookie(admin.cookie())).andExpect(status().isOk())
+        mockMvc.perform(get("/api/audit").param("eventGroup", "payroll").param("actorId", admin.id().toString()).cookie(admin.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.rows[0].redacted").value(true))
                 .andExpect(jsonPath("$.data.rows[0].after").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.data.rows[0].at").value(org.hamcrest.Matchers.matchesPattern("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$")));
+                .andExpect(jsonPath("$.data.rows[0].occurredAt").value(org.hamcrest.Matchers.matchesPattern("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$")));
         // subject is named; "_" in the search is literal
-        mvc.perform(get("/api/audit").param("eventGroup", "people").param("actorId", admin.id().toString()).cookie(admin.cookie())).andExpect(status().isOk())
+        mockMvc.perform(get("/api/audit").param("eventGroup", "people").param("actorId", admin.id().toString()).cookie(admin.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rows[0].subject").value(org.hamcrest.Matchers.startsWith("Person ")))
                 .andExpect(jsonPath("$.data.rows[0].after.name").value("A_B"));
-        mvc.perform(get("/api/audit").param("search", "employee_update").param("actorId", admin.id().toString()).cookie(admin.cookie()))
+        mockMvc.perform(get("/api/audit").param("search", "employee_update").param("actorId", admin.id().toString()).cookie(admin.cookie()))
                 .andExpect(jsonPath("$.data.total").value(0));
     }
 }

@@ -1,6 +1,5 @@
 package com.jurislpo.jurisone.service;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,7 +28,7 @@ public class SettingsService {
             "payroll.policy", """
                 {"pfRate":0.12,"pfWageCeiling":15000,"professionalTax":{"state":"Default","monthly":200}}""",
             "tax.policy", """
-                {"fy":"2026-27","regimeChangeUntil":"2027-01-31","proofWindowFrom":"2026-04-01","proofWindowUntil":"2027-01-31","maxProofMb":5}""",
+                {"financialYear":"2026-27","regimeChangeUntil":"2027-01-31","proofWindowFrom":"2026-04-01","proofWindowUntil":"2027-01-31","maxProofMb":5}""",
             "company", """
                 {"name":"Juris Consultants","address":"[Registered office address]"}""",
             "onboarding.policy", """
@@ -49,7 +48,7 @@ public class SettingsService {
 
     public record PayrollPolicy(double pfRate, double pfWageCeiling, ProfessionalTax professionalTax) {}
 
-    public record TaxPolicy(@JsonProperty("fy") String financialYear, String regimeChangeUntil, String proofWindowFrom, String proofWindowUntil, double maxProofMb) {}
+    public record TaxPolicy(String financialYear, String regimeChangeUntil, String proofWindowFrom, String proofWindowUntil, double maxProofMb) {}
 
     /** {@code tan} / {@code pan}: the deductor's tax numbers for Form 16 (optional; absent until Finance sets them). */
     public record Company(String name, String address, String tan, String pan) {}
@@ -70,13 +69,13 @@ public class SettingsService {
      * business (sign-in, the super admin) the platform defaults apply.
      */
     public ObjectNode get(String key) {
-        String d = DEFAULTS.get(key);
-        if (d == null) throw new IllegalArgumentException("Unknown setting " + key);
+        String defaults = DEFAULTS.get(key);
+        if (defaults == null) throw new IllegalArgumentException("Unknown setting " + key);
         try {
-            ObjectNode base = (ObjectNode) json.readTree(d);
+            ObjectNode base = (ObjectNode) json.readTree(defaults);
             if (com.jurislpo.jurisone.tenancy.TenantContext.current() == null) return base;
             Setting row = repo.find(key); // row-level security: only this business's row is visible
-            if (row != null && row.getValue() instanceof ObjectNode o) base.setAll(o);
+            if (row != null && row.getValue() instanceof ObjectNode node) base.setAll(node);
             return base;
         } catch (java.io.IOException e) {
             throw new IllegalStateException(e);

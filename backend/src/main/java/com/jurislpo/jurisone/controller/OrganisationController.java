@@ -43,12 +43,12 @@ public class OrganisationController {
     @PostMapping("/api/departments")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> createDepartment(@RequestBody CreateDepartment body, HttpServletRequest request) {
-        return ApiResult.message(departments.create(auth.assertPerm("dept.manage"), body.name(), body.headId(), body.description(), RequestMeta.of(request).ip()));
+        return ApiResult.message(departments.create(auth.assertPerm("dept.manage"), body.name(), body.headId(), body.description(), RequestMeta.of(request).ipAddress()));
     }
 
     @DeleteMapping("/api/departments/{id}")
     public ApiResult<Void> deleteDepartment(@PathVariable String id, HttpServletRequest request) {
-        return ApiResult.message(departments.delete(auth.assertPerm("dept.manage"), id, RequestMeta.of(request).ip()));
+        return ApiResult.message(departments.delete(auth.assertPerm("dept.manage"), id, RequestMeta.of(request).ipAddress()));
     }
 
     @GetMapping("/api/holidays")
@@ -59,11 +59,11 @@ public class OrganisationController {
     @PostMapping("/api/holidays")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> addHoliday(@RequestBody AddHoliday body, HttpServletRequest request) {
-        return ApiResult.message(holidays.add(auth.assertPerm("holidays.manage"), body.date(), body.name(), body.region(), RequestMeta.of(request).ip()));
+        return ApiResult.message(holidays.add(auth.assertPerm("holidays.manage"), body.date(), body.name(), body.region(), RequestMeta.of(request).ipAddress()));
     }
 
     @DeleteMapping("/api/holidays/{id}")
     public ApiResult<Void> deleteHoliday(@PathVariable String id, HttpServletRequest request) {
-        return ApiResult.message(holidays.delete(auth.assertPerm("holidays.manage"), id, RequestMeta.of(request).ip()));
+        return ApiResult.message(holidays.delete(auth.assertPerm("holidays.manage"), id, RequestMeta.of(request).ipAddress()));
     }
 }

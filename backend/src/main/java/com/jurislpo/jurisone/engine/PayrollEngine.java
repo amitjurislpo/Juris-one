@@ -38,21 +38,21 @@ public final class PayrollEngine {
     public record PayResult(int daysInMonth, int eligibleDays, double lopDays, double paidDays, List<PayLine> components, long bonus,
                             long grossEarned, long pf, long pt, long tds, long otherDeduction, long totalDeductions, long net) {}
 
-    public static PayResult computePay(PayInput i) {
-        double lop = Math.min(Math.max(0, i.lopDays()), i.eligibleDays());
-        double paidDays = Math.max(0, i.eligibleDays() - lop);
-        Structure structure = i.structure();
+    public static PayResult computePay(PayInput payInput) {
+        double lop = Math.min(Math.max(0, payInput.lopDays()), payInput.eligibleDays());
+        double paidDays = Math.max(0, payInput.eligibleDays() - lop);
+        Structure structure = payInput.structure();
         List<PayLine> components = List.of(
-                new PayLine("Basic", structure.basic(), earned(structure.basic(), paidDays, i.daysInMonth())),
-                new PayLine("House rent allowance", structure.hra(), earned(structure.hra(), paidDays, i.daysInMonth())),
-                new PayLine("Leave travel allowance", structure.lta(), earned(structure.lta(), paidDays, i.daysInMonth())),
-                new PayLine("Special allowance", structure.special(), earned(structure.special(), paidDays, i.daysInMonth())));
-        long grossEarned = components.stream().mapToLong(PayLine::earned).sum() + i.bonus();
-        long pf = Math.round(i.pfRate() * Math.min(components.get(0).earned(), i.pfWageCeiling()));
-        long pt = grossEarned > 0 ? i.professionalTax() : 0;
-        long totalDeductions = pf + pt + i.tds() + i.otherDeduction();
-        return new PayResult(i.daysInMonth(), i.eligibleDays(), lop, paidDays, components, i.bonus(), grossEarned, pf, pt, i.tds(),
-                i.otherDeduction(), totalDeductions, grossEarned - totalDeductions);
+                new PayLine("Basic", structure.basic(), earned(structure.basic(), paidDays, payInput.daysInMonth())),
+                new PayLine("House rent allowance", structure.hra(), earned(structure.hra(), paidDays, payInput.daysInMonth())),
+                new PayLine("Leave travel allowance", structure.lta(), earned(structure.lta(), paidDays, payInput.daysInMonth())),
+                new PayLine("Special allowance", structure.special(), earned(structure.special(), paidDays, payInput.daysInMonth())));
+        long grossEarned = components.stream().mapToLong(PayLine::earned).sum() + payInput.bonus();
+        long pf = Math.round(payInput.pfRate() * Math.min(components.get(0).earned(), payInput.pfWageCeiling()));
+        long professionalTax = grossEarned > 0 ? payInput.professionalTax() : 0;
+        long totalDeductions = pf + professionalTax + payInput.tds() + payInput.otherDeduction();
+        return new PayResult(payInput.daysInMonth(), payInput.eligibleDays(), lop, paidDays, components, payInput.bonus(), grossEarned, pf, professionalTax, payInput.tds(),
+                payInput.otherDeduction(), totalDeductions, grossEarned - totalDeductions);
     }
 
     /** Earned amounts are rounded to whole rupees (100 paise), as on a printed payslip. */
@@ -87,23 +87,23 @@ public final class PayrollEngine {
         "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"};
     private static final String[] B = {"", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"};
 
-    private static String two(long x) {
-        return x < 20 ? A[(int) x] : B[(int) (x / 10)] + (x % 10 != 0 ? " " + A[(int) (x % 10)] : "");
+    private static String twoDigits(long number) {
+        return number < 20 ? A[(int) number] : B[(int) (number / 10)] + (number % 10 != 0 ? " " + A[(int) (number % 10)] : "");
     }
 
-    private static String three(long x) {
-        return (x >= 100 ? A[(int) (x / 100)] + " Hundred" + (x % 100 != 0 ? " " : "") : "") + (x % 100 != 0 ? two(x % 100) : "");
+    private static String three(long number) {
+        return (number >= 100 ? A[(int) (number / 100)] + " Hundred" + (number % 100 != 0 ? " " : "") : "") + (number % 100 != 0 ? twoDigits(number % 100) : "");
     }
 
     /** Rupees in words, Indian system (for the payslip). */
     public static String rupeesInWords(double amount) {
-        long n = Math.round(amount);
-        if (n == 0) return "Zero";
+        long rounded = Math.round(amount);
+        if (rounded == 0) return "Zero";
         List<String> parts = new ArrayList<>();
-        long cr = n / 10_000_000L, lk = (n / 100_000L) % 100, th = (n / 1_000L) % 100, rest = n % 1000;
-        if (cr != 0) parts.add((cr >= 100 ? three(cr) : two(cr)) + " Crore");
-        if (lk != 0) parts.add(two(lk) + " Lakh");
-        if (th != 0) parts.add(two(th) + " Thousand");
+        long crore = rounded / 10_000_000L, lakh = (rounded / 100_000L) % 100, thousand = (rounded / 1_000L) % 100, rest = rounded % 1000;
+        if (crore != 0) parts.add((crore >= 100 ? three(crore) : twoDigits(crore)) + " Crore");
+        if (lakh != 0) parts.add(twoDigits(lakh) + " Lakh");
+        if (thousand != 0) parts.add(twoDigits(thousand) + " Thousand");
         if (rest != 0) parts.add(three(rest));
         return String.join(" ", parts);
     }

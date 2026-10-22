@@ -36,7 +36,7 @@ public class AuthService {
     static final String MSG_SUSPENDED = "Your organisation's JurisOne account is suspended. Please contact JurisOne.";
 
     private final AuthRepository repo;
-    private final TransactionTemplate tx;
+    private final TransactionTemplate transactionTemplate;
     private final RateLimiter limiter;
     private final SessionService sessions;
     private final SettingsService settings;
@@ -46,7 +46,7 @@ public class AuthService {
     private final MailService mail;
     private final SubscriptionService subscriptions;
 
-    public AuthService(AuthRepository repo, TransactionTemplate tx, RateLimiter limiter, SessionService sessions,
+    public AuthService(AuthRepository repo, TransactionTemplate transactionTemplate, RateLimiter limiter, SessionService sessions,
                        SettingsService settings, AuditService audit, OtpService otps,
                        @org.springframework.beans.factory.annotation.Value("${jurisone.otp.requests-per-ip:10}") int otpPerIp,
                        @org.springframework.beans.factory.annotation.Value("${jurisone.otp.requests-per-email:5}") int otpPerEmail, MailService mail,
@@ -57,7 +57,7 @@ public class AuthService {
         this.mail = mail;
         this.otps = otps;
         this.repo = repo;
-        this.tx = tx;
+        this.transactionTemplate = transactionTemplate;
         this.limiter = limiter;
         this.sessions = sessions;
         this.settings = settings;
@@ -75,8 +75,8 @@ public class AuthService {
     /** Signed in: where to go, and the cookies (JWT access token + refresh token). */
     public record LoginResult(String redirect, java.util.List<ResponseCookie> cookies) {}
 
-    private static UserException fail(String msg) {
-        return new UserException(HttpStatus.UNAUTHORIZED, msg);
+    private static UserException fail(String message) {
+        return new UserException(HttpStatus.UNAUTHORIZED, message);
     }
 
     /**
@@ -91,18 +91,18 @@ public class AuthService {
     }
 
     private void history(Employee employee, String identifier, boolean success, String reason, RequestMeta meta) {
-        tx.executeWithoutResult(s -> {
+        transactionTemplate.executeWithoutResult(transactionStatus -> {
             LoginHistory loginHistory = new LoginHistory();
             loginHistory.setEmployeeId(employee != null ? employee.getId() : null);
             loginHistory.setIdentifier(identifier.substring(0, Math.min(200, identifier.length())));
             loginHistory.setSuccess(success);
             loginHistory.setReason(reason);
-            loginHistory.setIp(meta.ip());
+            loginHistory.setIpAddress(meta.ipAddress());
             loginHistory.setUserAgent(meta.userAgent());
             repo.persistLoginHistory(loginHistory);
             if (!success) { // every refused or failed sign-in step is in the audit trail too (identifier masked)
                 audit.log(employee != null ? employee.getId() : null, "auth.login_failed", "session", employee != null ? employee.getId().toString() : null, null,
-                        java.util.Map.of("reason", reason, "identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(identifier)), meta.ip());
+                        java.util.Map.of("reason", reason, "identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(identifier)), meta.ipAddress());
             }
         });
     }
@@ -126,18 +126,18 @@ public class AuthService {
             throw fail(MSG_SUSPENDED);
         }
         if (employee.getBusinessId() != null) { // no subscription yet, or none at all: no sign-in (an ended one signs in read-only)
-            SubscriptionService.Current sub = TenantContext.call(null, () -> subscriptions.current(employee.getBusinessId()));
-            if ("UPCOMING".equals(sub.state()) || "NONE".equals(sub.state())) {
-                history(employee, identifier, false, "subscription_" + sub.state().toLowerCase(), meta);
-                String when = "UPCOMING".equals(sub.state())
-                        ? java.time.LocalDate.parse(sub.startsOn()).format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH)) : null;
+            SubscriptionService.Current subscription = TenantContext.call(null, () -> subscriptions.current(employee.getBusinessId()));
+            if ("UPCOMING".equals(subscription.state()) || "NONE".equals(subscription.state())) {
+                history(employee, identifier, false, "subscription_" + subscription.state().toLowerCase(), meta);
+                String when = "UPCOMING".equals(subscription.state())
+                        ? java.time.LocalDate.parse(subscription.startsOn()).format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH)) : null;
                 throw new ApiException(HttpStatus.PAYMENT_REQUIRED, "SUBSCRIPTION_INACTIVE", when != null
                         ? "Your organisation's subscription starts on " + when + ". You can sign in from then."
                         : "Your organisation has no active subscription. Please contact your administrator.");
             }
         }
 
-        SessionService.Issued issued = tx.execute(s -> {
+        SessionService.Issued issued = transactionTemplate.execute(transactionStatus -> {
             User user = repo.findUser(employee.getId());
             if (user == null) { // first sign-in
                 user = new User();
@@ -152,7 +152,7 @@ public class AuthService {
         history(employee, identifier, true, "ok", meta);
         Map<String, Object> after = new java.util.HashMap<>();
         after.put("userAgent", meta.userAgent());
-        audit.log(employee.getId(), "auth.login", "session", employee.getId().toString(), null, after, meta.ip());
+        audit.log(employee.getId(), "auth.login", "session", employee.getId().toString(), null, after, meta.ipAddress());
 
         Set<String> perms = new HashSet<>(repo.findPermissionKeys(employee.getRoleId()));
         String target = next != null && next.startsWith("/") && !next.startsWith("//") ? next : Nav.landingFor(perms);
@@ -170,17 +170,17 @@ public class AuthService {
         String email = emailRaw == null ? "" : emailRaw.trim().toLowerCase();
         if (email.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter your email.");
         if (email.length() > 200 || !email.contains("@")) throw new UserException(HttpStatus.BAD_REQUEST, "Enter a valid email.");
-        String ip = meta.ip() != null ? meta.ip() : "unknown";
-        RateLimiter.Result byIp = limiter.rateLimit("otp-ip:" + ip, otpPerIp, 15 * 60_000L);
+        String ipAddress = meta.ipAddress() != null ? meta.ipAddress() : "unknown";
+        RateLimiter.Result byIp = limiter.rateLimit("otp-ip:" + ipAddress, otpPerIp, 15 * 60_000L);
         RateLimiter.Result byMail = limiter.rateLimit("otp-mail:" + email, otpPerEmail, 15 * 60_000L);
         if (byIp.limited() || byMail.limited()) {
             throw new UserException(HttpStatus.TOO_MANY_REQUESTS, "Too many code requests. Try again in " + minutes(Math.max(byIp.retryInMs(), byMail.retryInMs())) + " minute(s).");
         }
         Employee employee = findByIdentifier(email);
         if (canReceiveOtp(employee)) {
-            otps.issue(email, employee.getFullName(), meta.ip());
+            otps.issue(email, employee.getFullName(), meta.ipAddress());
             audit.log(employee.getId(), "auth.otp_requested", "session", employee.getId().toString(), null,
-                    java.util.Map.of("identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(email)), meta.ip());
+                    java.util.Map.of("identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(email)), meta.ipAddress());
         }
         else if (employee != null) { // the person is told by email why no code comes (the page still answers the same for everyone)
             history(employee, email, false, employee.getStatus() == EmployeeStatus.EXITED ? "exited" : !Boolean.TRUE.equals(employee.getPortalAccess()) ? "access_disabled" : "business_suspended", meta);
@@ -196,7 +196,7 @@ public class AuthService {
         if (email.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter your email.");
         if (code == null || !code.trim().matches("[0-9]{6}")) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the 6-digit code.");
         AuthPolicy policy = settings.auth();
-        String ipKey = "login:" + (meta.ip() != null ? meta.ip() : "unknown");
+        String ipKey = "login:" + (meta.ipAddress() != null ? meta.ipAddress() : "unknown");
         RateLimiter.Result result = limiter.limited(ipKey, policy.ipMaxAttempts());
         if (result.limited()) {
             throw new UserException(HttpStatus.TOO_MANY_REQUESTS, "Too many failed sign-in attempts. Try again in " + minutes(result.retryInMs()) + " minute(s).");
@@ -220,6 +220,6 @@ public class AuthService {
     public void logout(CurrentUser user, String refreshToken, RequestMeta meta) {
         if (user != null) sessions.revoke(user.sessionId(), "logout");
         else sessions.revokeByRefreshToken(refreshToken, "logout");
-        if (user != null) audit.log(user.id(), "auth.logout", "session", user.id().toString(), meta.ip());
+        if (user != null) audit.log(user.id(), "auth.logout", "session", user.id().toString(), meta.ipAddress());
     }
 }

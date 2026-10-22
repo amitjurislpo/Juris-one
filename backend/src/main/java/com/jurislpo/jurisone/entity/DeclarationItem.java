@@ -19,7 +19,7 @@ public class DeclarationItem {
     private UUID employeeId;
 
     @Column(name = "fy", nullable = false)
-    private String fy;
+    private String financialYear;
 
     @Column(name = "section", nullable = false)
     private String section;
@@ -76,8 +76,8 @@ public class DeclarationItem {
     public void setId(UUID id) { this.id = id; }
     public UUID getEmployeeId() { return employeeId; }
     public void setEmployeeId(UUID employeeId) { this.employeeId = employeeId; }
-    public String getFy() { return fy; }
-    public void setFy(String fy) { this.fy = fy; }
+    public String getFinancialYear() { return financialYear; }
+    public void setFinancialYear(String financialYear) { this.financialYear = financialYear; }
     public String getSection() { return section; }
     public void setSection(String section) { this.section = section; }
     public String getItemKey() { return itemKey; }

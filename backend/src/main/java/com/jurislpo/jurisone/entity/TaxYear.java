@@ -15,23 +15,23 @@ public class TaxYear {
 
     /** Composite primary key. */
     public static class Key implements Serializable {
-        private String fy;
+        private String financialYear;
         private TaxRegime regime;
 
         public Key() {}
-        public Key(String fy, TaxRegime regime) { this.fy = fy; this.regime = regime; }
+        public Key(String financialYear, TaxRegime regime) { this.financialYear = financialYear; this.regime = regime; }
 
-        @Override public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Key other)) return false;
-            return Objects.equals(fy, other.fy) && Objects.equals(regime, other.regime);
+        @Override public boolean equals(Object object) {
+            if (this == object) return true;
+            if (!(object instanceof Key other)) return false;
+            return Objects.equals(financialYear, other.financialYear) && Objects.equals(regime, other.regime);
         }
-        @Override public int hashCode() { return Objects.hash(fy, regime); }
+        @Override public int hashCode() { return Objects.hash(financialYear, regime); }
     }
 
     @Id
     @Column(name = "fy", nullable = false)
-    private String fy;  // "2026-27"
+    private String financialYear;  // "2026-27"
 
     @Id
     @Enumerated(EnumType.STRING)
@@ -59,8 +59,8 @@ public class TaxYear {
     @Column(name = "surcharge", nullable = false)
     private JsonNode surcharge;  // [{ above: number, rate: number }]
 
-    public String getFy() { return fy; }
-    public void setFy(String fy) { this.fy = fy; }
+    public String getFinancialYear() { return financialYear; }
+    public void setFinancialYear(String financialYear) { this.financialYear = financialYear; }
     public TaxRegime getRegime() { return regime; }
     public void setRegime(TaxRegime regime) { this.regime = regime; }
     public Integer getStdDeduction() { return stdDeduction; }

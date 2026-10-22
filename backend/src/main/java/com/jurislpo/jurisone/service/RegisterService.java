@@ -43,12 +43,12 @@ public class RegisterService {
     /** registerParams. */
     public record RegisterParams(String view, LocalDate day, String month, String timeZone, LocalDate today, String region, String department, String status, ListParams listParams) {}
 
-    private final AttendanceService att;
+    private final AttendanceService attendanceService;
     private final RegisterRepository repo;
     private final AuditService audit;
 
     public RegisterService(AttendanceService attendance, RegisterRepository repo, AuditService audit) {
-        this.att = attendance;
+        this.attendanceService = attendance;
         this.repo = repo;
         this.audit = audit;
     }
@@ -56,46 +56,46 @@ public class RegisterService {
     public static RegisterParams params(Map<String, String> queryParams, String viewerTimeZone) {
         LocalDate today = Format.todayIn("Asia/Kolkata");
         String view = ListParams.pick(queryParams, "view", List.of("day", "month"), "day");
-        String dayS = ListParams.str(queryParams, "date", today.toString());
-        LocalDate day = dayS.matches("^\\d{4}-\\d{2}-\\d{2}$") && dayS.compareTo(today.toString()) <= 0 ? LocalDate.parse(dayS) : today;
-        String yearMonth = ListParams.str(queryParams, "month", today.toString().substring(0, 7));
+        String dayText = ListParams.text(queryParams, "date", today.toString());
+        LocalDate day = dayText.matches("^\\d{4}-\\d{2}-\\d{2}$") && dayText.compareTo(today.toString()) <= 0 ? LocalDate.parse(dayText) : today;
+        String yearMonth = ListParams.text(queryParams, "month", today.toString().substring(0, 7));
         if (!yearMonth.matches("^\\d{4}-\\d{2}$") || yearMonth.compareTo(today.toString().substring(0, 7)) > 0) yearMonth = today.toString().substring(0, 7);
         List<String> zones = ZONES.stream().map(ZoneOption::value).toList();
         String timeZone = ListParams.pick(queryParams, "timeZone", zones, zones.contains(viewerTimeZone) ? viewerTimeZone : "Asia/Kolkata");
         ListParams listParams = "day".equals(view) ? ListParams.of(queryParams, DAY_SORTS, "name", 50, "asc") : ListParams.of(queryParams, MONTH_SORTS, "name", 50, "asc");
-        return new RegisterParams(view, day, yearMonth, timeZone, today, ListParams.pick(queryParams, "region", List.of("All", "IN", "US"), "All"), ListParams.str(queryParams, "departmentId", "All"),
+        return new RegisterParams(view, day, yearMonth, timeZone, today, ListParams.pick(queryParams, "region", List.of("All", "IN", "US"), "All"), ListParams.text(queryParams, "departmentId", "All"),
                 ListParams.pick(queryParams, "status", DAY_STATUSES, "All"), listParams);
     }
 
     private List<AttendanceEmployee> employees(RegisterParams registerParams, LocalDate from, LocalDate to) {
-        List<String> and = new ArrayList<>(List.of("e.date_of_joining <= ?", "(e.exit_date IS NULL OR e.exit_date >= ?)"));
+        List<String> conditions = new ArrayList<>(List.of("e.date_of_joining <= ?", "(e.exit_date IS NULL OR e.exit_date >= ?)"));
         List<Object> args = new ArrayList<>(List.of(Date.valueOf(to), Date.valueOf(from)));
         if (!"All".equals(registerParams.region())) {
-            and.add("e.region = ?::\"Region\"");
+            conditions.add("e.region = ?::\"Region\"");
             args.add(registerParams.region());
         }
         if (!"All".equals(registerParams.department()) && registerParams.department().matches("^[0-9a-f-]{36}$")) {
-            and.add("e.department_id = ?::uuid");
+            conditions.add("e.department_id = ?::uuid");
             args.add(registerParams.department());
         }
         if (!registerParams.listParams().search().isEmpty()) {
-            and.add("(e.full_name ILIKE ? OR e.code ILIKE ? OR e.designation ILIKE ?)");
+            conditions.add("(e.full_name ILIKE ? OR e.code ILIKE ? OR e.designation ILIKE ?)");
             for (int i = 0; i < 3; i++) args.add(PeopleQuery.like(registerParams.listParams().search()));
         }
-        return att.loadAttendanceEmployees(String.join(" AND ", and), args.toArray());
+        return attendanceService.loadAttendanceEmployees(String.join(" AND ", conditions), args.toArray());
     }
 
     /** Daily-log status wording (prototype register). */
     public static String dayStatusLabel(DayView dayView) {
-        return switch (dayView.r.status) {
+        return switch (dayView.dayResult.status) {
             case PRESENT -> "Present";
             case HALF_DAY -> "Half day";
             case ABSENT -> "Absent";
             case LEAVE -> "On leave";
             case HOLIDAY -> "Holiday";
             case WEEKLY_OFF -> "Weekly off";
-            case PENDING -> dayView.r.openSince != null ? "Working" : !dayView.punches.isEmpty() ? "Present" : "Not checked in";
-            default -> dayView.r.label == null || dayView.r.label.isEmpty() ? "—" : dayView.r.label;
+            case PENDING -> dayView.dayResult.openSince != null ? "Working" : !dayView.punches.isEmpty() ? "Present" : "Not checked in";
+            default -> dayView.dayResult.label == null || dayView.dayResult.label.isEmpty() ? "—" : dayView.dayResult.label;
         };
     }
 
@@ -105,16 +105,16 @@ public class RegisterService {
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("h:mm a z", Locale.US);
 
     /** Intl en-US {hour, minute, timeZoneName short} with "GMT+5:30" shown as "IST". */
-    static String clockText(Instant at, String timeZone) {
-        return CLOCK.format(at.atZone(ZoneId.of(timeZone))).replace("GMT+05:30", "IST");
+    static String clockText(Instant instant, String timeZone) {
+        return CLOCK.format(instant.atZone(ZoneId.of(timeZone))).replace("GMT+05:30", "IST");
     }
 
-    public static Clock clock(Instant at, String zone, AttendanceEmployee employee, LocalDate rowDay) {
-        if (at == null) return null;
-        String z = "local".equals(zone) ? employee.timeZone() : zone;
-        LocalDate day = AttendanceEngine.localParts(at, z).date();
+    public static Clock clock(Instant instant, String zone, AttendanceEmployee employee, LocalDate rowDay) {
+        if (instant == null) return null;
+        String zoneId = "local".equals(zone) ? employee.timeZone() : zone;
+        LocalDate day = AttendanceEngine.localParts(instant, zoneId).date();
         String shift = day.equals(rowDay) ? "" : day.isAfter(rowDay) ? " (+1)" : " (−1)";
-        return new Clock(clockText(at, z) + shift, !"local".equals(zone) && !z.equals(employee.timeZone()) ? clockText(at, employee.timeZone()) : null);
+        return new Clock(clockText(instant, zoneId) + shift, !"local".equals(zone) && !zoneId.equals(employee.timeZone()) ? clockText(instant, employee.timeZone()) : null);
     }
 
     public record DailyRow(String id, String code, String name, String department, String region, String timeZone, String location, String shiftName, String status,
@@ -126,13 +126,13 @@ public class RegisterService {
 
     public Daily dailyLog(RegisterParams registerParams) {
         List<AttendanceEmployee> employees = employees(registerParams, registerParams.day(), registerParams.day());
-        Map<UUID, List<DayView>> all = att.attendanceFor(employees, registerParams.day(), registerParams.day(), Instant.now());
+        Map<UUID, List<DayView>> all = attendanceService.attendanceFor(employees, registerParams.day(), registerParams.day(), Instant.now());
         List<DailyRow> rows = new ArrayList<>();
         for (AttendanceEmployee employee : employees) {
             DayView dayView = all.get(employee.id()).get(0);
             rows.add(new DailyRow(employee.id().toString(), employee.code(), employee.name(), employee.department(), employee.region(), employee.timeZone(), PeopleRules.locationOfTimeZone(employee.timeZone()).label(),
-                    employee.shift().name(), dayStatusLabel(dayView), dayView.r.late, clock(dayView.r.firstIn, registerParams.timeZone(), employee, registerParams.day()), clock(dayView.r.lastOut, registerParams.timeZone(), employee, registerParams.day()),
-                    dayView.r.workedMinutes / 60.0, dayView.r.firstIn, dayView.r.lastOut));
+                    employee.shift().name(), dayStatusLabel(dayView), dayView.dayResult.late, clock(dayView.dayResult.firstIn, registerParams.timeZone(), employee, registerParams.day()), clock(dayView.dayResult.lastOut, registerParams.timeZone(), employee, registerParams.day()),
+                    dayView.dayResult.workedMinutes / 60.0, dayView.dayResult.firstIn, dayView.dayResult.lastOut));
         }
         DailySummary sum = new DailySummary(rows.size(), (int) rows.stream().filter(r -> List.of("Present", "Working", "Half day").contains(r.status())).count(),
                 (int) rows.stream().filter(r -> r.status().equals("Not checked in")).count(), (int) rows.stream().filter(r -> r.status().equals("On leave")).count(),
@@ -154,10 +154,10 @@ public class RegisterService {
             DayStatus.WEEKLY_OFF, new String[] {"", "off"});
 
     public static Cell cellCode(DayView dayView) {
-        if (dayView.r.future) return new Cell("", "none");
-        if (dayView.r.status == DayStatus.PENDING) return !dayView.punches.isEmpty() ? new Cell("P", "ok") : dayView.r.live ? new Cell("–", "warn") : new Cell("", "none");
-        String[] c = CODE.get(dayView.r.status);
-        return c != null ? new Cell(c[0], c[1]) : new Cell("", "none");
+        if (dayView.dayResult.future) return new Cell("", "none");
+        if (dayView.dayResult.status == DayStatus.PENDING) return !dayView.punches.isEmpty() ? new Cell("P", "ok") : dayView.dayResult.live ? new Cell("–", "warn") : new Cell("", "none");
+        String[] codes = CODE.get(dayView.dayResult.status);
+        return codes != null ? new Cell(codes[0], codes[1]) : new Cell("", "none");
     }
 
     public record GridDay(String date, int day, String weekday, boolean weeklyOff) {}
@@ -170,22 +170,22 @@ public class RegisterService {
     public record Monthly(List<GridRow> rows, List<GridDay> days, String from, String to) {}
 
     public Monthly monthlyGrid(RegisterParams registerParams) {
-        AttendanceService.ResolvedAttendancePolicy policy = att.policy();
+        AttendanceService.ResolvedAttendancePolicy policy = attendanceService.policy();
         YearMonth yearMonth = YearMonth.parse(registerParams.month());
         LocalDate from = yearMonth.atDay(1), to = yearMonth.atEndOfMonth();
         List<AttendanceEmployee> employees = employees(registerParams, from, to);
-        Map<UUID, List<DayView>> all = att.attendanceFor(employees, from, to, Instant.now());
+        Map<UUID, List<DayView>> all = attendanceService.attendanceFor(employees, from, to, Instant.now());
         List<GridDay> days = new ArrayList<>();
-        for (LocalDate k = from; !k.isAfter(to); k = k.plusDays(1)) {
-            int dow = AttendanceEngine.dowOf(k);
-            days.add(new GridDay(k.toString(), k.getDayOfMonth(), String.valueOf("SMTWTFS".charAt(dow)), policy.engine().weeklyOffs().contains(dow)));
+        for (LocalDate day = from; !day.isAfter(to); day = day.plusDays(1)) {
+            int dayOfWeek = AttendanceEngine.dowOf(day);
+            days.add(new GridDay(day.toString(), day.getDayOfMonth(), String.valueOf("SMTWTFS".charAt(dayOfWeek)), policy.engine().weeklyOffs().contains(dayOfWeek)));
         }
         List<GridRow> rows = new ArrayList<>();
         for (AttendanceEmployee employee : employees) {
             List<DayView> dayViews = all.get(employee.id());
-            MonthSummary summary = AttendanceEngine.summarize(dayViews.stream().filter(x -> !x.r.future).map(x -> x.r).toList(), policy.engine());
+            MonthSummary summary = AttendanceEngine.summarize(dayViews.stream().filter(x -> !x.dayResult.future).map(x -> x.dayResult).toList(), policy.engine());
             rows.add(new GridRow(employee.id().toString(), employee.code(), employee.name(), employee.department(), employee.region(), dayViews.stream().map(RegisterService::cellCode).toList(),
-                    dayViews.stream().map(x -> new DayTip(x.r.date.toString(), x.r.label, x.r.workedMinutes)).toList(), summary.present, summary.absent, summary.leave));
+                    dayViews.stream().map(x -> new DayTip(x.dayResult.date.toString(), x.dayResult.label, x.dayResult.workedMinutes)).toList(), summary.present, summary.absent, summary.leave));
         }
         Map<String, Function<GridRow, ? extends Comparable>> keys = Map.of("name", GridRow::name, "present", GridRow::present, "absent", GridRow::absent, "leave", GridRow::leave);
         rows.sort(registerParams.listParams().comparator(keys));
@@ -226,7 +226,7 @@ public class RegisterService {
             out.put("total", monthly.rows().size());
             out.put("rows", monthly.rows().subList(Math.min(registerParams.listParams().skip(), monthly.rows().size()), Math.min(registerParams.listParams().skip() + registerParams.listParams().take(), monthly.rows().size())));
             out.put("days", monthly.days());
-            out.put("months", months(att.policy().trackingStart(), registerParams.today()));
+            out.put("months", months(attendanceService.policy().trackingStart(), registerParams.today()));
         }
         return out;
     }

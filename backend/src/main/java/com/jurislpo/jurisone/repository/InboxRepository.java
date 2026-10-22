@@ -34,8 +34,8 @@ public class InboxRepository {
     /** One page: unread first, then newest. */
     public List<Item> page(UUID employeeId, boolean unreadOnly, int size, int offset) {
         return jdbc.query("SELECT id::text, text, link, created_at, read_at, kind FROM notifications WHERE " + where(unreadOnly)
-                + " ORDER BY read_at IS NOT NULL, created_at DESC LIMIT ? OFFSET ?", (rs, i) -> InboxService.item(rs.getString(1), rs.getString(2), rs.getString(3),
-                rs.getTimestamp(4), rs.getTimestamp(5), rs.getString(6)), employeeId, size, offset);
+                + " ORDER BY read_at IS NOT NULL, created_at DESC LIMIT ? OFFSET ?", (resultSet, i) -> InboxService.item(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3),
+                resultSet.getTimestamp(4), resultSet.getTimestamp(5), resultSet.getString(6)), employeeId, size, offset);
     }
 
     /** kind and read_at of one of the employee's notifications (empty when not theirs / not found). */
@@ -56,6 +56,6 @@ public class InboxRepository {
     /** The newest n: unread first. */
     public List<Item> recent(UUID employeeId, int count) {
         return jdbc.query("SELECT id::text, text, link, created_at, read_at, kind FROM notifications WHERE employee_id = ? ORDER BY read_at IS NOT NULL, created_at DESC LIMIT ?",
-                (rs, i) -> InboxService.item(rs.getString(1), rs.getString(2), rs.getString(3), rs.getTimestamp(4), rs.getTimestamp(5), rs.getString(6)), employeeId, count);
+                (resultSet, i) -> InboxService.item(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getTimestamp(4), resultSet.getTimestamp(5), resultSet.getString(6)), employeeId, count);
     }
 }

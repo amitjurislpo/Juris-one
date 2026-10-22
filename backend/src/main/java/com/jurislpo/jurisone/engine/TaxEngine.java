@@ -36,7 +36,7 @@ public final class TaxEngine {
      * @param base       after rebate / marginal relief
      * @param total      annual tax liability, rounded to the rupee
      */
-    public record TaxResult(Regime regime, double gross, double std, double deductions, long taxable, double slabTax, double rebate,
+    public record TaxResult(Regime regime, double gross, double standardDeduction, double deductions, long taxable, double slabTax, double rebate,
                             double base, double surcharge, double cess, long total, List<SlabLine> lines) {}
 
     public record SlabTax(double tax, List<SlabLine> lines) {}
@@ -46,9 +46,9 @@ public final class TaxEngine {
         List<SlabLine> lines = new ArrayList<>();
         for (Slab slab : slabs) {
             double top = slab.upto() == null ? Double.POSITIVE_INFINITY : slab.upto();
-            double amt = taxable > previous ? (Math.min(taxable, top) - previous) * slab.rate() : 0;
-            lines.add(new SlabLine(previous, slab.upto(), slab.rate(), amt));
-            tax += amt;
+            double amount = taxable > previous ? (Math.min(taxable, top) - previous) * slab.rate() : 0;
+            lines.add(new SlabLine(previous, slab.upto(), slab.rate(), amount));
+            tax += amount;
             if (taxable <= top) break;
             previous = top;
         }
@@ -61,21 +61,21 @@ public final class TaxEngine {
         tiers.removeIf(t -> !(taxable > t.above()));
         if (tiers.isEmpty()) return 0;
         Surcharge tier = tiers.get(tiers.size() - 1);
-        double s = base * tier.rate();
+        double tierTax = base * tier.rate();
         // marginal relief: tax + surcharge may not exceed tax at the threshold + income above it
-        double atT = slabTax(tier.above(), taxYearConfig.slabs()).tax();
+        double taxAtTier = slabTax(tier.above(), taxYearConfig.slabs()).tax();
         double prevRate = tiers.size() > 1 ? tiers.get(tiers.size() - 2).rate() : 0;
-        double capAtThreshold = atT * (1 + prevRate) + (taxable - tier.above());
-        if (base + s > capAtThreshold) s = Math.max(0, capAtThreshold - base);
-        return s;
+        double capAtThreshold = taxAtTier * (1 + prevRate) + (taxable - tier.above());
+        if (base + tierTax > capAtThreshold) tierTax = Math.max(0, capAtThreshold - base);
+        return tierTax;
     }
 
     /** Annual tax on {@code gross} income after the standard deduction and {@code deductions}. */
     public static TaxResult computeTax(double gross, double deductions, TaxYearConfig taxYearConfig) {
-        double std = Math.min(taxYearConfig.stdDeduction(), Math.max(0, gross));
-        long taxable = Math.max(0, Math.round(gross - std - deductions));
-        SlabTax st = slabTax(taxable, taxYearConfig.slabs());
-        double tax = st.tax();
+        double standardDeduction = Math.min(taxYearConfig.stdDeduction(), Math.max(0, gross));
+        long taxable = Math.max(0, Math.round(gross - standardDeduction - deductions));
+        SlabTax slabTax = slabTax(taxable, taxYearConfig.slabs());
+        double tax = slabTax.tax();
         double base = tax;
         double rebate = 0;
         if (taxable <= taxYearConfig.rebateLimit()) {
@@ -87,7 +87,7 @@ public final class TaxEngine {
         }
         double surcharge = surchargeOn(taxable, base, taxYearConfig);
         double cess = (base + surcharge) * taxYearConfig.cessRate();
-        return new TaxResult(taxYearConfig.regime(), gross, std, deductions, taxable, tax, rebate, base, surcharge, cess, Math.round(base + surcharge + cess), st.lines());
+        return new TaxResult(taxYearConfig.regime(), gross, standardDeduction, deductions, taxable, tax, rebate, base, surcharge, cess, Math.round(base + surcharge + cess), slabTax.lines());
     }
 
     // ───────────────────────── old-regime deductions ─────────────────────────
@@ -97,16 +97,16 @@ public final class TaxEngine {
     /** Declared amounts in rupees (the TS {@code Declared}); starts as NO_DECLARATIONS. */
     public static final class Declared {
         public double rent; public boolean metro; public boolean parentsSenior;
-        public double ppf, elss, lic, ssy, tuition, hlp, nsc;
-        public double nps, medSelf, medParents, hli, edu, don, sav;
+        public double ppf, elss, lic, ssy, tuition, homeLoanPrincipal, nsc;
+        public double nps, medSelf, medParents, homeLoanInterest, educationLoanInterest, donations, savingsInterest;
 
         /** Sets a declaration item by its key ("rent", "ppf", …); unknown keys are ignored. */
-        public void set(String key, double v) {
+        public void set(String key, double value) {
             switch (key) {
-                case "rent" -> rent = v; case "ppf" -> ppf = v; case "elss" -> elss = v; case "lic" -> lic = v; case "ssy" -> ssy = v;
-                case "tuition" -> tuition = v; case "hlp" -> hlp = v; case "nsc" -> nsc = v; case "nps" -> nps = v;
-                case "medSelf" -> medSelf = v; case "medParents" -> medParents = v; case "hli" -> hli = v; case "edu" -> edu = v;
-                case "don" -> don = v; case "sav" -> sav = v;
+                case "rent" -> rent = value; case "ppf" -> ppf = value; case "elss" -> elss = value; case "lic" -> lic = value; case "ssy" -> ssy = value;
+                case "tuition" -> tuition = value; case "hlp" -> homeLoanPrincipal = value; case "nsc" -> nsc = value; case "nps" -> nps = value;
+                case "medSelf" -> medSelf = value; case "medParents" -> medParents = value; case "hli" -> homeLoanInterest = value; case "edu" -> educationLoanInterest = value;
+                case "don" -> donations = value; case "sav" -> savingsInterest = value;
                 default -> { }
             }
         }
@@ -127,30 +127,30 @@ public final class TaxEngine {
 
     /** HRA exemption = least of (HRA received, rent − 10% of Basic, 50% metro / 40% of Basic); caps per section. */
     public static Deductions oldRegimeDeductions(double basicAnnual, double hraAnnual, double epfAnnual, Declared declared, DeductionCaps caps, Map<String, String> labels) {
-        Map<String, String> lb = labels == null ? Map.of() : labels;
+        Map<String, String> labelsOrEmpty = labels == null ? Map.of() : labels;
         double hra = declared.rent != 0 ? Math.max(0, Math.min(Math.min(hraAnnual, declared.rent - 0.1 * basicAnnual), (declared.metro ? 0.5 : 0.4) * basicAnnual)) : 0;
-        double c80C = Math.min(caps.c80C(), epfAnnual + declared.ppf + declared.elss + declared.lic + declared.ssy + declared.tuition + declared.hlp + declared.nsc);
+        double c80C = Math.min(caps.c80C(), epfAnnual + declared.ppf + declared.elss + declared.lic + declared.ssy + declared.tuition + declared.homeLoanPrincipal + declared.nsc);
         double nps = Math.min(caps.c80CCD1B(), declared.nps);
-        double med = Math.min(caps.c80DSelf(), declared.medSelf) + Math.min(declared.parentsSenior ? caps.c80DParentsSenior() : caps.c80DParents(), declared.medParents);
-        double hli = Math.min(caps.c24B(), declared.hli);
-        double sav = Math.min(caps.c80TTA(), declared.sav);
+        double medicalDeduction = Math.min(caps.c80DSelf(), declared.medSelf) + Math.min(declared.parentsSenior ? caps.c80DParentsSenior() : caps.c80DParents(), declared.medParents);
+        double homeLoanInterestDeduction = Math.min(caps.c24B(), declared.homeLoanInterest);
+        double savingsInterestDeduction = Math.min(caps.c80TTA(), declared.savingsInterest);
         Object[][] raw = {
-            {lb.getOrDefault("HRA", "HRA") + " exemption", hra},
-            {lb.getOrDefault("80C", "80C") + " (incl. PF)", c80C},
-            {lb.getOrDefault("80CCD1B", "80CCD(1B)") + " NPS", nps},
-            {lb.getOrDefault("80D_SELF", "80D") + " medical", med},
-            {lb.getOrDefault("24B", "24(b)") + " home loan interest", hli},
-            {lb.getOrDefault("80E", "80E") + " education loan", declared.edu},
-            {lb.getOrDefault("80G", "80G") + " donations", declared.don},
-            {lb.getOrDefault("80TTA", "80TTA") + " savings interest", sav},
+            {labelsOrEmpty.getOrDefault("HRA", "HRA") + " exemption", hra},
+            {labelsOrEmpty.getOrDefault("80C", "80C") + " (incl. PF)", c80C},
+            {labelsOrEmpty.getOrDefault("80CCD1B", "80CCD(1B)") + " NPS", nps},
+            {labelsOrEmpty.getOrDefault("80D_SELF", "80D") + " medical", medicalDeduction},
+            {labelsOrEmpty.getOrDefault("24B", "24(b)") + " home loan interest", homeLoanInterestDeduction},
+            {labelsOrEmpty.getOrDefault("80E", "80E") + " education loan", declared.educationLoanInterest},
+            {labelsOrEmpty.getOrDefault("80G", "80G") + " donations", declared.donations},
+            {labelsOrEmpty.getOrDefault("80TTA", "80TTA") + " savings interest", savingsInterestDeduction},
         };
         double sum = 0;
         List<DeductionLine> lines = new ArrayList<>();
-        for (Object[] r : raw) {
-            double v = (double) r[1];
-            if (v > 0) {
-                sum += v;
-                lines.add(new DeductionLine((String) r[0], Math.round(v)));
+        for (Object[] row : raw) {
+            double value = (double) row[1];
+            if (value > 0) {
+                sum += value;
+                lines.add(new DeductionLine((String) row[0], Math.round(value)));
             }
         }
         return new Deductions(Math.round(sum), lines, Math.round(hra), Math.round(c80C));
@@ -162,9 +162,9 @@ public final class TaxEngine {
 
     /** FY months from April: "2026-09" → index 5; remaining months including the current one. */
     public static FinancialYear financialYearOf(String yearMonth) {
-        int y = Integer.parseInt(yearMonth.substring(0, 4)), m = Integer.parseInt(yearMonth.substring(5, 7));
-        int start = m >= 4 ? y : y - 1;
-        int index = (m - 4 + 12) % 12;
+        int year = Integer.parseInt(yearMonth.substring(0, 4)), month = Integer.parseInt(yearMonth.substring(5, 7));
+        int start = month >= 4 ? year : year - 1;
+        int index = (month - 4 + 12) % 12;
         return new FinancialYear(start + "-" + String.format(java.util.Locale.ROOT, "%02d", (start + 1) % 100), index, 12 - index);
     }
 

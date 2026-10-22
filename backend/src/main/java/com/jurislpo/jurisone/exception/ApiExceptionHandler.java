@@ -47,8 +47,8 @@ public class ApiExceptionHandler {
     /** {@code @PreAuthorize} denial: 401 when signed out, 403 otherwise. */
     @ExceptionHandler(AccessDeniedException.class)
     ResponseEntity<ProblemDetail> denied(AccessDeniedException e, HttpServletRequest request) {
-        Authentication a = SecurityContextHolder.getContext().getAuthentication();
-        if (a == null || a instanceof AnonymousAuthenticationToken || !a.isAuthenticated()) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication instanceof AnonymousAuthenticationToken || !authentication.isAuthenticated()) {
             return respond(Problems.of(HttpStatus.UNAUTHORIZED, UnauthenticatedException.MESSAGE, request.getRequestURI()));
         }
         return respond(Problems.of(HttpStatus.FORBIDDEN, ForbiddenException.DEFAULT, request.getRequestURI()));
@@ -57,18 +57,18 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ProblemDetail> invalid(MethodArgumentNotValidException e, HttpServletRequest request) {
         List<Problems.FieldError> errors = e.getBindingResult().getFieldErrors().stream()
-                .map(fe -> new Problems.FieldError(fe.getField(), fe.getDefaultMessage() != null ? fe.getDefaultMessage() : INVALID)).toList();
+                .map(fieldError -> new Problems.FieldError(fieldError.getField(), fieldError.getDefaultMessage() != null ? fieldError.getDefaultMessage() : INVALID)).toList();
         // the first issue is the message shown, like before
-        String msg = errors.isEmpty() ? e.getBindingResult().getAllErrors().stream().findFirst().map(err -> err.getDefaultMessage()).orElse(INVALID) : errors.get(0).message();
-        return respond(Problems.withErrors(Problems.of(HttpStatus.BAD_REQUEST, msg == null ? INVALID : msg, request.getRequestURI()), errors));
+        String message = errors.isEmpty() ? e.getBindingResult().getAllErrors().stream().findFirst().map(fieldError -> fieldError.getDefaultMessage()).orElse(INVALID) : errors.get(0).message();
+        return respond(Problems.withErrors(Problems.of(HttpStatus.BAD_REQUEST, message == null ? INVALID : message, request.getRequestURI()), errors));
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
     ResponseEntity<ProblemDetail> invalid(ConstraintViolationException e, HttpServletRequest request) {
         List<Problems.FieldError> errors = e.getConstraintViolations().stream()
                 .map(v -> new Problems.FieldError(String.valueOf(v.getPropertyPath()), v.getMessage())).toList();
-        String msg = errors.isEmpty() ? INVALID : errors.get(0).message();
-        return respond(Problems.withErrors(Problems.of(HttpStatus.BAD_REQUEST, msg, request.getRequestURI()), errors));
+        String message = errors.isEmpty() ? INVALID : errors.get(0).message();
+        return respond(Problems.withErrors(Problems.of(HttpStatus.BAD_REQUEST, message, request.getRequestURI()), errors));
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
@@ -93,14 +93,14 @@ public class ApiExceptionHandler {
     @ExceptionHandler(Exception.class)
     ResponseEntity<ProblemDetail> unexpected(Exception e, HttpServletRequest request) {
         // Spring's own 404 / 405 / 415 … keep their status and headers (Allow, Accept)
-        if (e instanceof ErrorResponse er && !er.getStatusCode().is5xxServerError()) {
-            String msg = switch (er.getStatusCode().value()) {
+        if (e instanceof ErrorResponse errorResponse && !errorResponse.getStatusCode().is5xxServerError()) {
+            String message = switch (errorResponse.getStatusCode().value()) {
                 case 404 -> "Not found.";
                 case 405 -> "Method not allowed.";
                 case 415 -> "Unsupported content type.";
                 default -> INVALID;
             };
-            return ResponseEntity.status(er.getStatusCode()).headers(er.getHeaders()).body(Problems.of(er.getStatusCode(), msg, request.getRequestURI()));
+            return ResponseEntity.status(errorResponse.getStatusCode()).headers(errorResponse.getHeaders()).body(Problems.of(errorResponse.getStatusCode(), message, request.getRequestURI()));
         }
         log.error("[api] {} {}", request.getMethod(), request.getRequestURI(), e);
         return respond(Problems.of(HttpStatus.INTERNAL_SERVER_ERROR, GENERIC, request.getRequestURI()));
