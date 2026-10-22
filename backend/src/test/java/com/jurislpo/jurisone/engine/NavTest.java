@@ -22,9 +22,9 @@ class NavTest {
 
     static final Set<String> ADMIN;
     static {
-        Set<String> s = new HashSet<>(Permissions.KEYS);
-        s.remove("self");
-        ADMIN = Set.copyOf(s);
+        Set<String> permissions = new HashSet<>(Permissions.KEYS);
+        permissions.remove("self");
+        ADMIN = Set.copyOf(permissions);
     }
     static final Set<String> HR_MANAGER = set("self", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "holidays.manage");
     static final Set<String> FIN_EXEC = set("self", "dir", "appr.reg", "pay.view", "tax.view", "proofs.verify");
@@ -41,16 +41,16 @@ class NavTest {
     @Test
     @DisplayName("gives Admin no self-service pages")
     void adminNoSelf() {
-        List<String> v = visible(ADMIN, false);
-        assertThat(v).doesNotContain("home", "attendance", "leave", "payslips", "declare");
-        assertThat(v).contains("roles");
+        List<String> visibleIds = visible(ADMIN, false);
+        assertThat(visibleIds).doesNotContain("home", "attendance", "leave", "payslips", "declare");
+        assertThat(visibleIds).contains("roles");
     }
 
     @Test
     @DisplayName("never shows finance pages to HR")
     void hrNoFinance() {
         assertThat(visible(HR_MANAGER, false)).doesNotContain("payroll", "structures", "tax", "proofs");
-        for (String p : Permissions.SALARY) assertThat(HR_MANAGER).doesNotContain(p);
+        for (String permission : Permissions.SALARY) assertThat(HR_MANAGER).doesNotContain(permission);
     }
 
     @Test
@@ -63,9 +63,9 @@ class NavTest {
     @Test
     @DisplayName("lets Finance Executive approve regularizations but not leave")
     void finExec() {
-        List<String> v = visible(FIN_EXEC, false);
-        assertThat(v).contains("approvals", "payroll");
-        assertThat(v).doesNotContain("register");
+        List<String> visibleIds = visible(FIN_EXEC, false);
+        assertThat(visibleIds).contains("approvals", "payroll");
+        assertThat(visibleIds).doesNotContain("register");
     }
 
     @Test
@@ -81,9 +81,9 @@ class NavTest {
     @DisplayName("shows My letters to everyone with self; HR letters only to those who manage them")
     void letters() {
         assertThat(visible(EMPLOYEE, false)).contains("my-letters").doesNotContain("letters");
-        Set<String> hr = new HashSet<>(HR_MANAGER);
-        hr.add("letters.manage");
-        assertThat(visible(hr, false)).contains("letters");
+        Set<String> hrPermissions = new HashSet<>(HR_MANAGER);
+        hrPermissions.add("letters.manage");
+        assertThat(visible(hrPermissions, false)).contains("letters");
         assertThat(visible(ADMIN, false)).contains("letters");
         assertThat(Permissions.SALARY).doesNotContain(Permissions.LETTERS_MANAGE);
     }

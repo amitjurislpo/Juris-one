@@ -51,11 +51,11 @@ public class OriginCheckFilter extends OncePerRequestFilter {
     /** {@code new URL(origin).host}: host plus a non-default port. */
     static String hostOf(String origin) {
         try {
-            URI uRI = URI.create(origin);
-            if (uRI.getHost() == null) return "";
-            int port = uRI.getPort();
-            boolean defaultValue = port == -1 || ("http".equals(uRI.getScheme()) && port == 80) || ("https".equals(uRI.getScheme()) && port == 443);
-            return defaultValue ? uRI.getHost() : uRI.getHost() + ":" + port;
+            URI originUri = URI.create(origin);
+            if (originUri.getHost() == null) return "";
+            int port = originUri.getPort();
+            boolean defaultValue = port == -1 || ("http".equals(originUri.getScheme()) && port == 80) || ("https".equals(originUri.getScheme()) && port == 443);
+            return defaultValue ? originUri.getHost() : originUri.getHost() + ":" + port;
         } catch (IllegalArgumentException e) {
             return "";
         }

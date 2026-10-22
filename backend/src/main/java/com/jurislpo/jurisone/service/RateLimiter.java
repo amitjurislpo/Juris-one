@@ -12,10 +12,10 @@ import org.springframework.stereotype.Component;
 public class RateLimiter {
 
     private static final class Window {
-        int n;
+        int count;
         final long reset;
 
-        Window(long reset) { this.n = 1; this.reset = reset; }
+        Window(long reset) { this.count = 1; this.reset = reset; }
     }
 
     public record Result(boolean limited, long retryInMs) {}
@@ -23,25 +23,25 @@ public class RateLimiter {
     private final Map<String, Window> hits = new ConcurrentHashMap<>();
 
     private Window live(String key) {
-        Window cur = hits.get(key);
-        if (cur != null && cur.reset <= System.currentTimeMillis()) {
+        Window window = hits.get(key);
+        if (window != null && window.reset <= System.currentTimeMillis()) {
             hits.remove(key);
             return null;
         }
-        return cur;
+        return window;
     }
 
     /** True when {@code key} has used up {@code max} hits in its current window. */
     public synchronized Result limited(String key, int max) {
-        Window cur = live(key);
-        return cur != null && cur.n >= max ? new Result(true, cur.reset - System.currentTimeMillis()) : new Result(false, 0);
+        Window window = live(key);
+        return window != null && window.count >= max ? new Result(true, window.reset - System.currentTimeMillis()) : new Result(false, 0);
     }
 
     public synchronized void hit(String key, long windowMs) {
-        Window cur = live(key);
-        if (cur != null) cur.n += 1;
+        Window window = live(key);
+        if (window != null) window.count += 1;
         else hits.put(key, new Window(System.currentTimeMillis() + windowMs));
-        if (hits.size() > 10_000) for (String k : hits.keySet().toArray(new String[0])) live(k);
+        if (hits.size() > 10_000) for (String windowKey : hits.keySet().toArray(new String[0])) live(windowKey);
     }
 
     /** Counts every call (used for endpoints like "forgot password"); {@code limited=false} means allowed. */

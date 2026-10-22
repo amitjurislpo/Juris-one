@@ -29,9 +29,9 @@ public class ActorService {
     }
 
     public Target target(UUID id) {
-        List<Map<String, Object>> rs = repo.findTarget(id);
-        if (rs.isEmpty()) return null;
-        Map<String, Object> row = rs.get(0);
+        List<Map<String, Object>> rows = repo.findTarget(id);
+        if (rows.isEmpty()) return null;
+        Map<String, Object> row = rows.get(0);
         return new Target((String) row.get("id"), (String) row.get("role_id"), (String) row.get("role_key"), EmployeeStatus.valueOf((String) row.get("status")),
                 Boolean.TRUE.equals(row.get("is_super_admin")));
     }

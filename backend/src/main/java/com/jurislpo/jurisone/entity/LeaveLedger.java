@@ -41,7 +41,7 @@ public class LeaveLedger {
     private LocalDate expiresOn;  // comp-off credits
 
     @Column(name = "at", nullable = false)
-    private Instant at;
+    private Instant recordedAt;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "employee_id", insertable = false, updatable = false)
@@ -54,7 +54,7 @@ public class LeaveLedger {
     @PrePersist
     void prePersist() {
         if (id == null) id = UUID.randomUUID();
-        if (at == null) at = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        if (recordedAt == null) recordedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
     }
 
     public UUID getId() { return id; }
@@ -73,8 +73,8 @@ public class LeaveLedger {
     public void setNote(String note) { this.note = note; }
     public LocalDate getExpiresOn() { return expiresOn; }
     public void setExpiresOn(LocalDate expiresOn) { this.expiresOn = expiresOn; }
-    public Instant getAt() { return at; }
-    public void setAt(Instant at) { this.at = at; }
+    public Instant getRecordedAt() { return recordedAt; }
+    public void setRecordedAt(Instant recordedAt) { this.recordedAt = recordedAt; }
     /** Read-only navigation; set employeeId to change it. */
     public Employee getEmployee() { return employee; }
     /** Read-only navigation; set leaveType to change it. */

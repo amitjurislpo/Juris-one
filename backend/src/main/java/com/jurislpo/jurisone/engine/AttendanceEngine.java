@@ -31,8 +31,8 @@ public final class AttendanceEngine {
     /** {@code weeklyOffs}: 0 = Sunday … 6 = Saturday (JS getUTCDay numbering). */
     public record Policy(double fullDayHours, double halfDayHours, Set<Integer> weeklyOffs, int absenceJobBufferMinutes, int lateMarksPerHalfDayLop) {}
 
-    public record Punch(Instant at, PunchKind kind, String source) {
-        public Punch(Instant at, PunchKind kind) { this(at, kind, null); }
+    public record Punch(Instant punchedAt, PunchKind kind, String source) {
+        public Punch(Instant instant, PunchKind kind) { this(instant, kind, null); }
     }
 
     public enum LeavePart { FULL, FIRST_HALF, SECOND_HALF }
@@ -93,16 +93,16 @@ public final class AttendanceEngine {
     public static final int WINDOW_LEAD_MIN = 240;
 
     static int toMin(String time) {
-        String[] p = time.split(":");
-        return Integer.parseInt(p[0]) * 60 + Integer.parseInt(p[1]);
+        String[] parts = time.split(":");
+        return Integer.parseInt(parts[0]) * 60 + Integer.parseInt(parts[1]);
     }
 
     /** Local calendar date + minutes-after-midnight of an instant in {@code tz}. */
-    public record LocalParts(LocalDate date, int minutes, int dow) {}
+    public record LocalParts(LocalDate date, int minutes, int dayOfWeek) {}
 
-    public static LocalParts localParts(Instant at, String timeZone) {
-        ZonedDateTime z = at.atZone(ZoneId.of(timeZone));
-        return new LocalParts(z.toLocalDate(), z.getHour() * 60 + z.getMinute(), dowOf(z.toLocalDate()));
+    public static LocalParts localParts(Instant instant, String timeZone) {
+        ZonedDateTime zoned = instant.atZone(ZoneId.of(timeZone));
+        return new LocalParts(zoned.toLocalDate(), zoned.getHour() * 60 + zoned.getMinute(), dowOf(zoned.toLocalDate()));
     }
 
     /** 0 = Sunday … 6 = Saturday. */
@@ -112,15 +112,15 @@ public final class AttendanceEngine {
 
     /** The instant of a local wall-clock time on {@code date} in {@code tz}. */
     public static Instant atLocal(LocalDate date, String time, String timeZone) {
-        String[] p = time.split(":");
-        return ZonedDateTime.of(date, LocalTime.of(Integer.parseInt(p[0]), Integer.parseInt(p[1])), ZoneId.of(timeZone)).toInstant();
+        String[] parts = time.split(":");
+        return ZonedDateTime.of(date, LocalTime.of(Integer.parseInt(parts[0]), Integer.parseInt(parts[1])), ZoneId.of(timeZone)).toInstant();
     }
 
     /** Which work date a punch belongs to. */
-    public static LocalDate workDateOf(Instant at, ShiftDef shift, String timeZone) {
-        LocalParts lp = localParts(at, timeZone);
+    public static LocalDate workDateOf(Instant instant, ShiftDef shift, String timeZone) {
+        LocalParts parts = localParts(instant, timeZone);
         int anchor = (toMin(shift.startLocal()) - WINDOW_LEAD_MIN + 1440) % 1440;
-        return lp.minutes() < anchor ? lp.date().minusDays(1) : lp.date();
+        return parts.minutes() < anchor ? parts.date().minusDays(1) : parts.date();
     }
 
     public record ShiftWindow(Instant start, Instant graceUntil, Instant end) {}
@@ -137,14 +137,14 @@ public final class AttendanceEngine {
 
     /** Sum of check-in → check-out pairs; an open check-in counts up to {@code liveUntil} if given. */
     public static Worked workedMinutes(List<Punch> punches, Instant liveUntil) {
-        List<Punch> ps = sorted(punches);
+        List<Punch> sortedPunches = sorted(punches);
         long millis = 0;
         Instant open = null;
-        for (Punch punch : ps) {
+        for (Punch punch : sortedPunches) {
             if (punch.kind() == PunchKind.IN) {
-                if (open == null) open = punch.at();
+                if (open == null) open = punch.punchedAt();
             } else if (open != null) {
-                millis += Duration.between(open, punch.at()).toMillis();
+                millis += Duration.between(open, punch.punchedAt()).toMillis();
                 open = null;
             }
         }
@@ -157,9 +157,9 @@ public final class AttendanceEngine {
     }
 
     private static List<Punch> sorted(List<Punch> punches) {
-        List<Punch> ps = new ArrayList<>(punches);
-        ps.sort(Comparator.comparing(Punch::at)); // stable, like Array.prototype.sort
-        return ps;
+        List<Punch> punchList = new ArrayList<>(punches);
+        punchList.sort(Comparator.comparing(Punch::punchedAt)); // stable, like Array.prototype.sort
+        return punchList;
     }
 
     // ───────────────────────── day status ─────────────────────────
@@ -176,30 +176,30 @@ public final class AttendanceEngine {
     }
 
     private static DayResult withLeave(DayResult dayResult, Leave leave) {
-        double[] s = leaveSplit(leave);
-        dayResult.leaveDays = s[0];
-        dayResult.lopDays = s[1];
+        double[] split = leaveSplit(leave);
+        dayResult.leaveDays = split[0];
+        dayResult.lopDays = split[1];
         return dayResult;
     }
 
-    public static DayResult computeDay(DayInput i) {
-        LocalDate today = localParts(i.now(), i.timeZone()).date();
+    public static DayResult computeDay(DayInput dayInput) {
+        LocalDate today = localParts(dayInput.now(), dayInput.timeZone()).date();
         DayResult base = new DayResult();
-        base.date = i.date();
-        base.future = i.date().isAfter(today);
-        if (i.date().isBefore(i.trackingStart())) return base.with(DayStatus.NOT_TRACKED, "Not tracked");
-        if (i.exitDate() != null && i.date().isAfter(i.exitDate())) return base.with(DayStatus.AFTER_EXIT, "After exit");
-        if (i.date().isBefore(i.dateOfJoining())) return base.with(DayStatus.BEFORE_JOINING, "Before joining");
+        base.date = dayInput.date();
+        base.future = dayInput.date().isAfter(today);
+        if (dayInput.date().isBefore(dayInput.trackingStart())) return base.with(DayStatus.NOT_TRACKED, "Not tracked");
+        if (dayInput.exitDate() != null && dayInput.date().isAfter(dayInput.exitDate())) return base.with(DayStatus.AFTER_EXIT, "After exit");
+        if (dayInput.date().isBefore(dayInput.dateOfJoining())) return base.with(DayStatus.BEFORE_JOINING, "Before joining");
 
-        ShiftWindow win = shiftWindow(i.date(), i.shift(), i.timeZone());
-        boolean dayOver = !i.now().isBefore(win.end().plus(Duration.ofMinutes(i.policy().absenceJobBufferMinutes())));
-        List<Punch> sorted = sorted(i.punches());
-        Instant firstIn = sorted.stream().filter(p -> p.kind() == PunchKind.IN).map(Punch::at).findFirst().orElse(null);
+        ShiftWindow window = shiftWindow(dayInput.date(), dayInput.shift(), dayInput.timeZone());
+        boolean dayOver = !dayInput.now().isBefore(window.end().plus(Duration.ofMinutes(dayInput.policy().absenceJobBufferMinutes())));
+        List<Punch> sorted = sorted(dayInput.punches());
+        Instant firstIn = sorted.stream().filter(p -> p.kind() == PunchKind.IN).map(Punch::punchedAt).findFirst().orElse(null);
         Instant lastOut = null;
-        for (int k = sorted.size() - 1; k >= 0; k--) if (sorted.get(k).kind() == PunchKind.OUT) { lastOut = sorted.get(k).at(); break; }
-        Worked worked = workedMinutes(sorted, dayOver ? null : i.now());
+        for (int k = sorted.size() - 1; k >= 0; k--) if (sorted.get(k).kind() == PunchKind.OUT) { lastOut = sorted.get(k).punchedAt(); break; }
+        Worked worked = workedMinutes(sorted, dayOver ? null : dayInput.now());
         boolean lastIsIn = !sorted.isEmpty() && sorted.get(sorted.size() - 1).kind() == PunchKind.IN;
-        boolean rawLate = firstIn != null && firstIn.isAfter(win.graceUntil());
+        boolean rawLate = firstIn != null && firstIn.isAfter(window.graceUntil());
 
         // the TS "punchFacts" spread
         DayResult facts = base.copy();
@@ -207,51 +207,51 @@ public final class AttendanceEngine {
         facts.lastOut = lastOut;
         facts.workedMinutes = worked.minutes();
         facts.openSince = worked.openSince();
-        facts.late = rawLate && !i.regularization().lateWaived();
-        facts.lateWaived = rawLate && i.regularization().lateWaived();
+        facts.late = rawLate && !dayInput.regularization().lateWaived();
+        facts.lateWaived = rawLate && dayInput.regularization().lateWaived();
         facts.missedCheckout = lastIsIn && dayOver;
         facts.live = !dayOver && !base.future;
 
         // Off days: never leave or LOP; work on them is a comp-off candidate.
-        String off = i.holiday() != null ? i.holiday() : (i.policy().weeklyOffs().contains(dowOf(i.date())) ? "Weekly off" : null);
-        if (off != null) {
-            DayResult dayResult = facts.with(i.holiday() != null ? DayStatus.HOLIDAY : DayStatus.WEEKLY_OFF, off);
+        String nonWorkingReason = dayInput.holiday() != null ? dayInput.holiday() : (dayInput.policy().weeklyOffs().contains(dowOf(dayInput.date())) ? "Weekly off" : null);
+        if (nonWorkingReason != null) {
+            DayResult dayResult = facts.with(dayInput.holiday() != null ? DayStatus.HOLIDAY : DayStatus.WEEKLY_OFF, nonWorkingReason);
             dayResult.late = false;
             dayResult.lateWaived = false;
-            dayResult.offDayWork = worked.minutes() >= i.policy().halfDayHours() * 60;
+            dayResult.offDayWork = worked.minutes() >= dayInput.policy().halfDayHours() * 60;
             return dayResult;
         }
         if (base.future) {
-            if (i.leave() != null) {
-                Leave l = i.leave();
-                return withLeave(base.with(DayStatus.LEAVE, l.part() == LeavePart.FULL ? l.name() : l.name() + " · half day"), l);
+            if (dayInput.leave() != null) {
+                Leave leave = dayInput.leave();
+                return withLeave(base.with(DayStatus.LEAVE, leave.part() == LeavePart.FULL ? leave.name() : leave.name() + " · half day"), leave);
             }
             return base.with(DayStatus.PENDING, "");
         }
 
-        double full = i.policy().fullDayHours() * 60;
-        double half = i.policy().halfDayHours() * 60;
+        double full = dayInput.policy().fullDayHours() * 60;
+        double half = dayInput.policy().halfDayHours() * 60;
 
-        if (i.leave() != null && i.leave().part() == LeavePart.FULL) {
-            DayResult dayResult = withLeave(facts.with(DayStatus.LEAVE, i.leave().name()), i.leave());
+        if (dayInput.leave() != null && dayInput.leave().part() == LeavePart.FULL) {
+            DayResult dayResult = withLeave(facts.with(DayStatus.LEAVE, dayInput.leave().name()), dayInput.leave());
             dayResult.late = false;
             return dayResult;
         }
 
         // Half-day leave: the other half needs half-day hours.
-        if (i.leave() != null) {
+        if (dayInput.leave() != null) {
             boolean shortDay = dayOver && worked.minutes() < half; // the working half wasn't worked
-            boolean regularized = shortDay && i.regularization().absent();
-            double[] s = leaveSplit(i.leave());
-            DayResult dayResult = facts.with(DayStatus.LEAVE, i.leave().name() + " · half day");
+            boolean regularized = shortDay && dayInput.regularization().absent();
+            double[] split = leaveSplit(dayInput.leave());
+            DayResult dayResult = facts.with(DayStatus.LEAVE, dayInput.leave().name() + " · half day");
             dayResult.regularized = regularized;
-            dayResult.leaveDays = s[0];
-            dayResult.lopDays = s[1] + (shortDay && !regularized ? 0.5 : 0);
+            dayResult.leaveDays = split[0];
+            dayResult.lopDays = split[1] + (shortDay && !regularized ? 0.5 : 0);
             return dayResult;
         }
 
         if (sorted.isEmpty()) {
-            if (i.regularization().absent()) {
+            if (dayInput.regularization().absent()) {
                 DayResult dayResult = base.with(DayStatus.PRESENT, "Regularized");
                 dayResult.regularized = true;
                 dayResult.live = false;
@@ -270,7 +270,7 @@ public final class AttendanceEngine {
         if (!dayOver && (lastIsIn || worked.minutes() < full)) {
             return facts.with(DayStatus.PENDING, lastIsIn ? "In progress" : "Checked out");
         }
-        if (i.regularization().absent() && worked.minutes() < full) {
+        if (dayInput.regularization().absent() && worked.minutes() < full) {
             DayResult dayResult = facts.with(DayStatus.PRESENT, "Regularized");
             dayResult.regularized = true;
             return dayResult;

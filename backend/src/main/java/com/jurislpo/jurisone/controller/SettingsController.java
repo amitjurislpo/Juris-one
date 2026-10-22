@@ -56,7 +56,7 @@ public class SettingsController {
 
     @PutMapping("/attendance")
     public ApiResult<Void> updateAttendance(@RequestBody PoliciesService.AttendancePolicyInput body, HttpServletRequest request) {
-        policies.updateAttendancePolicy(auth.assertPerm("roles.manage"), body, RequestMeta.of(request).ip());
+        policies.updateAttendancePolicy(auth.assertPerm("roles.manage"), body, RequestMeta.of(request).ipAddress());
         return ApiResult.message("Attendance policy saved");
     }
 }

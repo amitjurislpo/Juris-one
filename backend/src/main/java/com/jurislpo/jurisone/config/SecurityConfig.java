@@ -38,7 +38,7 @@ public class SecurityConfig {
             "/api/public/onboardings/**"}; // the candidate's one-time link is the credential
 
     @Bean
-    SecurityFilterChain api(HttpSecurity http, JwtAuthFilter sessions, OriginCheckFilter origin, SubscriptionGateFilter subscription,
+    SecurityFilterChain apiFilterChain(HttpSecurity http, JwtAuthFilter sessions, OriginCheckFilter origin, SubscriptionGateFilter subscription,
                                PolicyGateFilter policyGate, JsonAuthEntryPoint entryPoint)
             throws Exception {
         http
@@ -54,7 +54,7 @@ public class SecurityConfig {
             .addFilterAfter(subscription, JwtAuthFilter.class) // needs the business the JWT filter set
             .addFilterAfter(policyGate, SubscriptionGateFilter.class) // 402 before 428: a paused business can't accept anything
             .exceptionHandling(e -> e.authenticationEntryPoint(entryPoint))
-            .authorizeHttpRequests(a -> a
+            .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(HttpMethod.GET, "/actuator/health/**", "/actuator/health").permitAll()
                 .requestMatchers(PUBLIC).permitAll()
                 .requestMatchers("/api/**").authenticated()
@@ -99,8 +99,8 @@ public class SecurityConfig {
         corsConfiguration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE"));
         corsConfiguration.setAllowedHeaders(List.of("Content-Type", "Accept"));
         corsConfiguration.setAllowCredentials(true);
-        UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
-        src.registerCorsConfiguration("/api/**", corsConfiguration);
-        return src;
+        UrlBasedCorsConfigurationSource corsConfigurationSource = new UrlBasedCorsConfigurationSource();
+        corsConfigurationSource.registerCorsConfiguration("/api/**", corsConfiguration);
+        return corsConfigurationSource;
     }
 }

@@ -42,8 +42,8 @@ public class TaxPositions {
 
     /** Re-project one payroll row with different declarations / regime (same month figures). */
     public Projection reproject(PayRow row, String month, DeclarationMode declaration, String regime) {
-        var p = row.pay();
-        return tax.projectTax(row.employeeId(), month, new MonthFigures(p.grossEarned(), p.components().get(0).earned(), p.components().get(1).earned(), p.pf()),
+        var pay = row.pay();
+        return tax.projectTax(row.employeeId(), month, new MonthFigures(pay.grossEarned(), pay.components().get(0).earned(), pay.components().get(1).earned(), pay.pf()),
                 row.structure().gross(), row.structure().basic(), row.structure().hra(), declaration, regime);
     }
 
@@ -65,22 +65,22 @@ public class TaxPositions {
     /** One row per India payroll employee for the Tax page and its export. */
     public Rows taxRows(Map<String, String> queryParams) {
         ListParams listParams = ListParams.of(queryParams, SORTS, "name", 200, "asc");
-        String reg = ListParams.pick(queryParams, "regime", List.of("All", "NEW", "OLD"), "All");
+        String regime = ListParams.pick(queryParams, "regime", List.of("All", "NEW", "OLD"), "All");
         String financialYear = settings.tax().financialYear();
-        Positions pos = taxPositions(null);
+        Positions allPositions = taxPositions(null);
         Map<UUID, Integer> pending = repo.pendingDeclarationCounts(financialYear);
         List<Row> all = new ArrayList<>();
-        for (PayRow payRow : pos.rows()) {
+        for (PayRow payRow : allPositions.rows()) {
             Projection projection = payRow.tax();
-            all.add(new Row(payRow.employeeId().toString(), payRow.code(), payRow.name(), payRow.designation(), projection.regime(), projection.income(), projection.current().std() + projection.current().deductions(),
+            all.add(new Row(payRow.employeeId().toString(), payRow.code(), payRow.name(), payRow.designation(), projection.regime(), projection.income(), projection.current().standardDeduction() + projection.current().deductions(),
                     projection.current().taxable(), projection.current().total(), projection.monthly(), pending.getOrDefault(payRow.employeeId(), 0), projection.regimeOverridden()));
         }
         String search = listParams.search().toLowerCase();
-        List<Row> out = new ArrayList<>(all.stream().filter(r -> (search.isEmpty() || (r.name() + " " + r.code()).toLowerCase().contains(search))
-                && ("All".equals(reg) || r.regime().equals(reg))).toList());
-        Map<String, Function<Row, ? extends Comparable>> keys = Map.of("name", Row::name, "reg", Row::regime, "inc", Row::income, "taxable", Row::taxable,
-                "tax", Row::tax, "tds", Row::tds, "pend", Row::pending);
+        List<Row> out = new ArrayList<>(all.stream().filter(row -> (search.isEmpty() || (row.name() + " " + row.code()).toLowerCase().contains(search))
+                && ("All".equals(regime) || row.regime().equals(regime))).toList());
+        Map<String, Function<Row, ? extends Comparable>> keys = Map.of("name", Row::name, "regime", Row::regime, "income", Row::income, "taxable", Row::taxable,
+                "tax", Row::tax, "tds", Row::tds, "pending", Row::pending);
         out.sort(listParams.comparator(keys));
-        return new Rows(pos.month(), financialYear, all, out);
+        return new Rows(allPositions.month(), financialYear, all, out);
     }
 }

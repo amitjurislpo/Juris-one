@@ -45,33 +45,33 @@ public final class AuditTrail {
 
     public static boolean isRecorded(String method, String path) {
         if (!path.startsWith("/api/")) return false;
-        for (String s : SKIP) if (path.equals(s)) return false;
+        for (String skipPath : SKIP) if (path.equals(skipPath)) return false;
         if ("HEAD".equals(method) || "OPTIONS".equals(method)) return false;
         if (!"GET".equals(method)) return true;
-        for (Pattern p : SENSITIVE_GETS) if (p.matcher(path).matches()) return true;
+        for (Pattern pattern : SENSITIVE_GETS) if (pattern.matcher(path).matches()) return true;
         return false;
     }
 
     /** The path as stored: secrets in it replaced, length capped. */
     public static String storedPath(String path) {
-        String p = TOKEN_PATH.matcher(path).replaceFirst("$1{token}$2");
-        return p.length() > 300 ? p.substring(0, 300) : p;
+        String maskedPath = TOKEN_PATH.matcher(path).replaceFirst("$1{token}$2");
+        return maskedPath.length() > 300 ? maskedPath.substring(0, 300) : maskedPath;
     }
 
     /** a***@example.com: enough to spot who tried, not enough to harvest addresses. */
     public static String maskEmail(String email) {
         if (email == null || email.isBlank()) return "";
-        String e = email.trim();
-        int at = e.indexOf('@');
-        if (at < 1) return "***";
-        return e.charAt(0) + "***" + e.substring(at);
+        String trimmedEmail = email.trim();
+        int atIndex = trimmedEmail.indexOf('@');
+        if (atIndex < 1) return "***";
+        return trimmedEmail.charAt(0) + "***" + trimmedEmail.substring(atIndex);
     }
 
     /** Adds a fact to this request's audit row. */
     @SuppressWarnings("unchecked")
     public static void hint(HttpServletRequest request, String key, Object value) {
-        Object h = request.getAttribute(HINT_ATTR);
-        Map<String, Object> view = h instanceof Map<?, ?> ? (Map<String, Object>) h : new LinkedHashMap<>();
+        Object hint = request.getAttribute(HINT_ATTR);
+        Map<String, Object> view = hint instanceof Map<?, ?> ? (Map<String, Object>) hint : new LinkedHashMap<>();
         view.put(key, value);
         request.setAttribute(HINT_ATTR, view);
     }

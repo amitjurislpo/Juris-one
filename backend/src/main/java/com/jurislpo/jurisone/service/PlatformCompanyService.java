@@ -62,8 +62,8 @@ public class PlatformCompanyService {
             if (roles.isEmpty()) {
                 repo.insertSuperAdminRole(role, SUPER_ADMIN, business);
             }
-            for (String p : superAdminPerms()) {
-                repo.grantPermission(role, p);
+            for (String permission : superAdminPerms()) {
+                repo.grantPermission(role, permission);
             }
             repo.grantAssignableRoles(role, business, SUPER_ADMIN);
             int moved = repo.placeSuperAdmins(business, role);

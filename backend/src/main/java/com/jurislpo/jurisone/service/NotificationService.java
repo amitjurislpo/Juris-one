@@ -50,9 +50,9 @@ public class NotificationService {
 
     /** Bell + email for a leave / regularization decision (REQUIREMENTS §5.14). Call after the decision has committed. */
     public void notifyDecision(UUID employeeId, String what, boolean approved, String by, String link, String note) {
-        Employee e = repo.findEmployee(employeeId);
-        if (e == null) return;
+        Employee employee = repo.findEmployee(employeeId);
+        if (employee == null) return;
         notify(employeeId, what + " " + (approved ? "approved" : "declined") + " by " + by, link);
-        mail.send(e.getEmail(), MailTemplates.decision(e.getFullName(), what, approved, by, note));
+        mail.send(employee.getEmail(), MailTemplates.decision(employee.getFullName(), what, approved, by, note));
     }
 }

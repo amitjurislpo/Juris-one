@@ -32,23 +32,23 @@ public class JobsRepository {
      * connection. Empty when another session holds the lock.
      */
     public <T> Optional<T> withAdvisoryLock(long lockId, Supplier<T> body) {
-        javax.sql.DataSource ds = jdbc.getDataSource();
-        try (java.sql.Connection lockConn = ds.getConnection()) {
+        javax.sql.DataSource dataSource = jdbc.getDataSource();
+        try (java.sql.Connection lockConn = dataSource.getConnection()) {
             lockConn.setAutoCommit(true);
-            boolean ok;
-            try (java.sql.PreparedStatement st = lockConn.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
-                st.setLong(1, lockId);
-                try (java.sql.ResultSet rs = st.executeQuery()) {
-                    ok = rs.next() && rs.getBoolean(1);
+            boolean acquired;
+            try (java.sql.PreparedStatement statement = lockConn.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
+                statement.setLong(1, lockId);
+                try (java.sql.ResultSet resultSet = statement.executeQuery()) {
+                    acquired = resultSet.next() && resultSet.getBoolean(1);
                 }
             }
-            if (!ok) return Optional.empty();
+            if (!acquired) return Optional.empty();
             try {
                 return Optional.of(body.get());
             } finally {
-                try (java.sql.PreparedStatement st = lockConn.prepareStatement("SELECT pg_advisory_unlock(?)")) {
-                    st.setLong(1, lockId);
-                    st.execute();
+                try (java.sql.PreparedStatement statement = lockConn.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+                    statement.setLong(1, lockId);
+                    statement.execute();
                 }
             }
         } catch (java.sql.SQLException e) {
@@ -110,7 +110,7 @@ public class JobsRepository {
     public Set<String> findAccrualKeys() {
         Set<String> done = new HashSet<>();
         jdbc.query("SELECT employee_id, ref_id FROM leave_ledger WHERE reason = 'ACCRUAL' AND ref_id LIKE 'accrual:%'",
-                rs -> { done.add(rs.getObject(1) + "|" + rs.getString(2)); });
+                resultSet -> { done.add(resultSet.getObject(1) + "|" + resultSet.getString(2)); });
         return done;
     }
 
@@ -122,15 +122,15 @@ public class JobsRepository {
     /** Every comp-off credit. */
     public List<CompOffRow> findCompOffCredits() {
         return jdbc.query("SELECT id, employee_id, delta, reason::text, ref_id, expires_on FROM leave_ledger WHERE leave_type = 'CO' AND reason = 'COMP_OFF_CREDIT'",
-                (rs, i) -> new CompOffRow((UUID) rs.getObject(1), (UUID) rs.getObject(2), rs.getBigDecimal(3).doubleValue(), rs.getString(4), rs.getString(5),
-                        rs.getDate(6) == null ? null : rs.getDate(6).toLocalDate()));
+                (resultSet, i) -> new CompOffRow((UUID) resultSet.getObject(1), (UUID) resultSet.getObject(2), resultSet.getBigDecimal(3).doubleValue(), resultSet.getString(4), resultSet.getString(5),
+                        resultSet.getDate(6) == null ? null : resultSet.getDate(6).toLocalDate()));
     }
 
     /** The employee's comp-off usage, cancellations, expiries and adjustments ({@code expiresOn} null). */
     public List<CompOffRow> findCompOffDebits(UUID employeeId) {
         return jdbc.query("SELECT id, employee_id, delta, reason::text, ref_id, expires_on FROM leave_ledger WHERE employee_id = ? AND leave_type = 'CO' "
                 + "AND reason IN ('USED', 'CANCELLED', 'EXPIRED', 'ADJUSTMENT')",
-                (rs, i) -> new CompOffRow((UUID) rs.getObject(1), (UUID) rs.getObject(2), rs.getBigDecimal(3).doubleValue(), rs.getString(4), rs.getString(5), null), employeeId);
+                (resultSet, i) -> new CompOffRow((UUID) resultSet.getObject(1), (UUID) resultSet.getObject(2), resultSet.getBigDecimal(3).doubleValue(), resultSet.getString(4), resultSet.getString(5), null), employeeId);
     }
 
     /** Expires part of a comp-off credit ({@code creditId} is the ledger row it comes from). */
@@ -150,7 +150,7 @@ public class JobsRepository {
 
     /** employee_id and balance (s) of the leave type up to {@code end}. */
     public List<Map<String, Object>> sumBalancesUntil(Object leaveType, Timestamp end) {
-        return jdbc.queryForList("SELECT employee_id, sum(delta) AS s FROM leave_ledger WHERE leave_type = ? AND at <= ? GROUP BY employee_id",
+        return jdbc.queryForList("SELECT employee_id, sum(delta) AS total_delta FROM leave_ledger WHERE leave_type = ? AND at <= ? GROUP BY employee_id",
                 leaveType, end);
     }
 

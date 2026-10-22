@@ -23,16 +23,16 @@ import org.springframework.stereotype.Service;
 public class ProfileService {
 
     private final ProfileRepository repo;
-    private final PiiCrypto pii;
+    private final PiiCrypto piiCrypto;
     private final AuditService audit;
 
-    public ProfileService(ProfileRepository repo, PiiCrypto pii, AuditService audit) {
+    public ProfileService(ProfileRepository repo, PiiCrypto piiCrypto, AuditService audit) {
         this.repo = repo;
-        this.pii = pii;
+        this.piiCrypto = piiCrypto;
         this.audit = audit;
     }
 
-    static String nz(Object value) {
+    static String emptyIfNull(Object value) {
         return value == null ? "" : value.toString();
     }
 
@@ -50,7 +50,7 @@ public class ProfileService {
         out.put("email", row.get("email"));
         out.put("phone", row.get("phone_last4") == null ? null : (row.get("phone_country") == null ? "" : row.get("phone_country") + " ") + Masks.phone((String) row.get("phone_last4")));
         out.put("designation", row.get("designation"));
-        out.put("department", row.get("dept"));
+        out.put("department", row.get("department_name"));
         out.put("manager", row.get("manager"));
         out.put("role", row.get("role_name"));
         out.put("dateOfJoining", row.get("date_of_joining").toString());
@@ -59,14 +59,14 @@ public class ProfileService {
         out.put("shift", row.get("shift_name"));
         out.put("pan", row.get("pan_last4") == null ? null : Masks.pan((String) row.get("pan_last4")));
         out.put("aadhaar", row.get("aadhaar_last4") == null ? null : Masks.aadhaar((String) row.get("aadhaar_last4")));
-        out.put("bank", row.get("bank_account_last4") == null ? null : nz(row.get("bank_name")) + " · " + Masks.bank((String) row.get("bank_account_last4")));
+        out.put("bank", row.get("bank_account_last4") == null ? null : emptyIfNull(row.get("bank_name")) + " · " + Masks.bank((String) row.get("bank_account_last4")));
         // editable by the employee
-        out.put("fatherName", nz(row.get("father_name")));
+        out.put("fatherName", emptyIfNull(row.get("father_name")));
         out.put("dateOfBirth", row.get("date_of_birth") == null ? "" : row.get("date_of_birth").toString());
-        out.put("currentAddress", row.get("address_enc") == null ? "" : pii.decrypt((String) row.get("address_enc")));
-        out.put("permanentAddress", row.get("permanent_address_enc") == null ? "" : pii.decrypt((String) row.get("permanent_address_enc")));
-        out.put("emergencyName", nz(row.get("emergency_name")));
-        out.put("emergencyRelation", nz(row.get("emergency_relation")));
+        out.put("currentAddress", row.get("address_enc") == null ? "" : piiCrypto.decrypt((String) row.get("address_enc")));
+        out.put("permanentAddress", row.get("permanent_address_enc") == null ? "" : piiCrypto.decrypt((String) row.get("permanent_address_enc")));
+        out.put("emergencyName", emptyIfNull(row.get("emergency_name")));
+        out.put("emergencyRelation", emptyIfNull(row.get("emergency_relation")));
         out.put("emergencyPhoneCountry", emergency[0]);
         out.put("emergencyPhone", emergency[1]);
         return out;
@@ -75,34 +75,34 @@ public class ProfileService {
     /** "+91 9810044556" → ["+91", "9810044556"]. */
     static String[] splitPhone(String stored) {
         if (stored == null || stored.isBlank()) return new String[] {"+91", ""};
-        String t = stored.trim();
-        int sp = t.indexOf(' ');
-        if (t.startsWith("+") && sp > 0) return new String[] {t.substring(0, sp), PeopleRules.digits(t.substring(sp + 1))};
-        return new String[] {"+91", PeopleRules.digits(t)};
+        String text = stored.trim();
+        int spaceIndex = text.indexOf(' ');
+        if (text.startsWith("+") && spaceIndex > 0) return new String[] {text.substring(0, spaceIndex), PeopleRules.digits(text.substring(spaceIndex + 1))};
+        return new String[] {"+91", PeopleRules.digits(text)};
     }
 
     public record ProfileInput(String fatherName, String dateOfBirth, String currentAddress, String permanentAddress, String emergencyName,
                                String emergencyRelation, String emergencyPhoneCountry, String emergencyPhone) {}
 
-    static UserException bad(String m) {
-        return new UserException(HttpStatus.BAD_REQUEST, m);
+    static UserException bad(String message) {
+        return new UserException(HttpStatus.BAD_REQUEST, message);
     }
 
     static String text(String value, int max, String field) {
-        String t = value == null ? "" : value.trim();
-        if (t.length() > max) throw bad("Keep the " + field + " under " + max + " characters.");
-        return t;
+        String text = value == null ? "" : value.trim();
+        if (text.length() > max) throw bad("Keep the " + field + " under " + max + " characters.");
+        return text;
     }
 
-    public String update(CurrentUser user, ProfileInput input, String ip) {
+    public String update(CurrentUser user, ProfileInput input, String ipAddress) {
         if (input == null) throw bad("Your details are missing.");
         String father = text(input.fatherName(), 120, "father's name");
         if (father.length() < 2) throw bad("Enter your father's name.");
-        String dob = text(input.dateOfBirth(), 10, "date of birth");
+        String dateOfBirth = text(input.dateOfBirth(), 10, "date of birth");
         LocalDate birth = null;
-        if (!dob.isEmpty()) {
+        if (!dateOfBirth.isEmpty()) {
             try {
-                birth = LocalDate.parse(dob);
+                birth = LocalDate.parse(dateOfBirth);
             } catch (java.time.DateTimeException e) {
                 throw bad("Check your date of birth.");
             }
@@ -115,15 +115,15 @@ public class ProfileService {
         String eCode = text(input.emergencyPhoneCountry(), 5, "country code");
         String ePhone = PeopleRules.digits(text(input.emergencyPhone(), 30, "phone"));
         if (!ePhone.isEmpty()) {
-            String p = Phones.problem(eCode.isEmpty() ? "+91" : eCode, ePhone);
-            if (p != null) throw bad("Emergency contact: " + p + ".");
+            String phoneProblem = Phones.problem(eCode.isEmpty() ? "+91" : eCode, ePhone);
+            if (phoneProblem != null) throw bad("Emergency contact: " + phoneProblem + ".");
         }
         if (!ePhone.isEmpty() && eName.length() < 2) throw bad("Enter your emergency contact's name.");
         repo.updateSelfService(user.id(),
-                father, birth == null ? null : Date.valueOf(birth), current.isEmpty() ? null : pii.encrypt(current), permanent.isEmpty() ? null : pii.encrypt(permanent),
+                father, birth == null ? null : Date.valueOf(birth), current.isEmpty() ? null : piiCrypto.encrypt(current), permanent.isEmpty() ? null : piiCrypto.encrypt(permanent),
                 eName.isEmpty() ? null : eName, eRel.isEmpty() ? null : eRel, ePhone.isEmpty() ? null : (eCode.isEmpty() ? "+91" : eCode) + " " + ePhone);
         audit.log(user.id(), "profile.self_update", "employee", user.id().toString(), null,
-                Map.of("fields", List.of("fatherName", "dateOfBirth", "address", "permanentAddress", "emergencyContact")), ip);
+                Map.of("fields", List.of("fatherName", "dateOfBirth", "address", "permanentAddress", "emergencyContact")), ipAddress);
         return "Your profile was saved";
     }
 }

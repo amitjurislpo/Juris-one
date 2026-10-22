@@ -28,7 +28,7 @@ public class AttendanceRepository {
 
     public record RegularizationRow(UUID employeeId, LocalDate date, String kind) {}
 
-    public record PunchRow(UUID employeeId, Instant at, PunchKind kind, String source) {}
+    public record PunchRow(UUID employeeId, Instant punchedAt, PunchKind kind, String source) {}
 
     public record HolidayRow(LocalDate date, String name, String region) {}
 
@@ -46,16 +46,16 @@ public class AttendanceRepository {
      */
     public List<AttendanceEmployee> findAttendanceEmployees(String where, Shift defaultShift, int grace, Object... args) {
         String sql = """
-            SELECT e.id, e.code, e.full_name, e.designation, d.name AS dept, e.department_id, e.time_zone, e.region::text AS region,
-                   e.date_of_joining, e.exit_date, s.code AS s_code, s.name AS s_name, s.start_local, s.end_local, s.grace_minutes
+            SELECT e.id, e.code, e.full_name, e.designation, d.name AS department_name, e.department_id, e.time_zone, e.region::text AS region,
+                   e.date_of_joining, e.exit_date, s.code AS shift_code, s.name AS shift_name, s.start_local, s.end_local, s.grace_minutes
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN shifts s ON s.id = e.shift_id
             WHERE""" + " " + TRACKED + (where == null || where.isBlank() ? "" : " AND (" + where + ")") + " ORDER BY e.full_name ASC";
-        return jdbc.query(sql, (rs, i) -> new AttendanceEmployee(
-                (UUID) rs.getObject("id"), rs.getString("code"), rs.getString("full_name"), rs.getString("designation"),
-                rs.getString("dept") == null ? "—" : rs.getString("dept"), (UUID) rs.getObject("department_id"), rs.getString("time_zone"),
-                rs.getString("region"), rs.getDate("date_of_joining").toLocalDate(), rs.getDate("exit_date") == null ? null : rs.getDate("exit_date").toLocalDate(),
-                rs.getString("s_code") == null ? new Shift(defaultShift.code(), defaultShift.name(), defaultShift.startLocal(), defaultShift.endLocal(), grace)
-                        : new Shift(rs.getString("s_code"), rs.getString("s_name"), rs.getString("start_local"), rs.getString("end_local"), grace)),
+        return jdbc.query(sql, (resultSet, i) -> new AttendanceEmployee(
+                (UUID) resultSet.getObject("id"), resultSet.getString("code"), resultSet.getString("full_name"), resultSet.getString("designation"),
+                resultSet.getString("department_name") == null ? "—" : resultSet.getString("department_name"), (UUID) resultSet.getObject("department_id"), resultSet.getString("time_zone"),
+                resultSet.getString("region"), resultSet.getDate("date_of_joining").toLocalDate(), resultSet.getDate("exit_date") == null ? null : resultSet.getDate("exit_date").toLocalDate(),
+                resultSet.getString("shift_code") == null ? new Shift(defaultShift.code(), defaultShift.name(), defaultShift.startLocal(), defaultShift.endLocal(), grace)
+                        : new Shift(resultSet.getString("shift_code"), resultSet.getString("shift_name"), resultSet.getString("start_local"), resultSet.getString("end_local"), grace)),
                 args);
     }
 
@@ -65,9 +65,9 @@ public class AttendanceRepository {
             SELECT l.id, l.employee_id, l.leave_type, t.name, t.paid, l.from_date, l.to_date, l.part::text AS part, l.days, l.lop_days
             FROM leave_requests l JOIN leave_types t ON t.code = l.leave_type
             WHERE l.employee_id = ANY (?) AND l.status = 'APPROVED' AND l.from_date <= ? AND l.to_date >= ?""",
-                (rs, i) -> new LeaveRow((UUID) rs.getObject("id"), (UUID) rs.getObject("employee_id"), rs.getString("leave_type"), rs.getString("name"),
-                        rs.getBoolean("paid"), rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(), LeavePart.valueOf(rs.getString("part")),
-                        rs.getBigDecimal("days"), rs.getBigDecimal("lop_days")),
+                (resultSet, i) -> new LeaveRow((UUID) resultSet.getObject("id"), (UUID) resultSet.getObject("employee_id"), resultSet.getString("leave_type"), resultSet.getString("name"),
+                        resultSet.getBoolean("paid"), resultSet.getDate("from_date").toLocalDate(), resultSet.getDate("to_date").toLocalDate(), LeavePart.valueOf(resultSet.getString("part")),
+                        resultSet.getBigDecimal("days"), resultSet.getBigDecimal("lop_days")),
                 idArr, Date.valueOf(to), Date.valueOf(from));
     }
 
@@ -76,7 +76,7 @@ public class AttendanceRepository {
         return jdbc.query("""
             SELECT employee_id, work_date, kind::text AS kind FROM regularization_requests
             WHERE employee_id = ANY (?) AND status = 'APPROVED' AND work_date >= ? AND work_date <= ?""",
-                (rs, i) -> new RegularizationRow((UUID) rs.getObject(1), rs.getDate(2).toLocalDate(), rs.getString(3)), idArr, Date.valueOf(from), Date.valueOf(to));
+                (resultSet, i) -> new RegularizationRow((UUID) resultSet.getObject(1), resultSet.getDate(2).toLocalDate(), resultSet.getString(3)), idArr, Date.valueOf(from), Date.valueOf(to));
     }
 
     /** Punches of these employees in [fromAt, toAt), oldest first. */
@@ -84,7 +84,7 @@ public class AttendanceRepository {
         return jdbc.query("""
             SELECT employee_id, at, kind::text AS kind, source::text AS source FROM punches
             WHERE employee_id = ANY (?) AND at >= ? AND at < ? ORDER BY at ASC""",
-                (rs, i) -> new PunchRow((UUID) rs.getObject(1), rs.getTimestamp(2).toInstant(), PunchKind.valueOf(rs.getString(3)), rs.getString(4)),
+                (resultSet, i) -> new PunchRow((UUID) resultSet.getObject(1), resultSet.getTimestamp(2).toInstant(), PunchKind.valueOf(resultSet.getString(3)), resultSet.getString(4)),
                 idArr, Timestamp.from(fromAt), Timestamp.from(toAt));
     }
 
@@ -94,26 +94,26 @@ public class AttendanceRepository {
         jdbc.query("""
             SELECT employee_id, work_date, status::text AS status, label, first_in, last_out, worked_minutes, late, late_waived, missed_checkout, regularized,
                    lop_days, leave_days FROM attendance_days WHERE employee_id = ANY (?) AND locked AND work_date >= ? AND work_date <= ?""",
-                rs -> {
+                resultSet -> {
                     Map<String, Object> row = new HashMap<>();
-                    for (String c : List.of("status", "label", "first_in", "last_out", "worked_minutes", "late", "late_waived", "missed_checkout", "regularized", "lop_days", "leave_days")) {
-                        row.put(c, rs.getObject(c));
+                    for (String column : List.of("status", "label", "first_in", "last_out", "worked_minutes", "late", "late_waived", "missed_checkout", "regularized", "lop_days", "leave_days")) {
+                        row.put(column, resultSet.getObject(column));
                     }
-                    locked.put(rs.getObject("employee_id") + "|" + rs.getDate("work_date").toLocalDate(), row);
+                    locked.put(resultSet.getObject("employee_id") + "|" + resultSet.getDate("work_date").toLocalDate(), row);
                 }, idArr, Date.valueOf(from), Date.valueOf(to));
         return locked;
     }
 
     public List<HolidayRow> holidays(LocalDate from, LocalDate to) {
         return jdbc.query("SELECT date, name, region::text FROM holidays WHERE date >= ? AND date <= ?",
-                (rs, i) -> new HolidayRow(rs.getDate(1).toLocalDate(), rs.getString(2), rs.getString(3)), Date.valueOf(from), Date.valueOf(to));
+                (resultSet, i) -> new HolidayRow(resultSet.getDate(1).toLocalDate(), resultSet.getString(2), resultSet.getString(3)), Date.valueOf(from), Date.valueOf(to));
     }
 
     /** Keys "employeeId|date" of the locked attendance days in [from, to]. */
     public Set<String> lockedDayKeys(UUID[] idArr, LocalDate from, LocalDate to) {
         Set<String> isLocked = new HashSet<>();
         jdbc.query("SELECT employee_id, work_date FROM attendance_days WHERE employee_id = ANY (?) AND locked AND work_date >= ? AND work_date <= ?",
-                rs -> { isLocked.add(rs.getObject(1) + "|" + rs.getDate(2).toLocalDate()); }, idArr, Date.valueOf(from), Date.valueOf(to));
+                resultSet -> { isLocked.add(resultSet.getObject(1) + "|" + resultSet.getDate(2).toLocalDate()); }, idArr, Date.valueOf(from), Date.valueOf(to));
         return isLocked;
     }
 
@@ -127,11 +127,11 @@ public class AttendanceRepository {
               last_out = EXCLUDED.last_out, worked_minutes = EXCLUDED.worked_minutes, late = EXCLUDED.late, late_waived = EXCLUDED.late_waived,
               regularized = EXCLUDED.regularized, missed_checkout = EXCLUDED.missed_checkout, lop_days = EXCLUDED.lop_days,
               leave_days = EXCLUDED.leave_days, locked = EXCLUDED.locked, updated_at = now()""",
-                employeeId, Date.valueOf(dayResult.date), dayResult.status.name(), dayResult.label, ts(dayResult.firstIn), ts(dayResult.lastOut), dayResult.workedMinutes, dayResult.late || dayResult.lateWaived,
+                employeeId, Date.valueOf(dayResult.date), dayResult.status.name(), dayResult.label, toTimestamp(dayResult.firstIn), toTimestamp(dayResult.lastOut), dayResult.workedMinutes, dayResult.late || dayResult.lateWaived,
                 dayResult.lateWaived, dayResult.regularized, dayResult.missedCheckout, BigDecimal.valueOf(dayResult.lopDays), BigDecimal.valueOf(dayResult.leaveDays), lock);
     }
 
-    private static Timestamp ts(Instant i) {
-        return i == null ? null : Timestamp.from(i);
+    private static Timestamp toTimestamp(Instant instant) {
+        return instant == null ? null : Timestamp.from(instant);
     }
 }

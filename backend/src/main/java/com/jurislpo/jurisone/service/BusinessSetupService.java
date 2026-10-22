@@ -28,28 +28,28 @@ public class BusinessSetupService {
                               String contactPhone, String address, String gstin) {}
 
     private final BusinessSetupRepository repo;
-    private final TransactionTemplate tx;
+    private final TransactionTemplate transactionTemplate;
     private final RoleTemplateService templates;
 
-    public BusinessSetupService(BusinessSetupRepository repo, TransactionTemplate tx, RoleTemplateService templates) {
+    public BusinessSetupService(BusinessSetupRepository repo, TransactionTemplate transactionTemplate, RoleTemplateService templates) {
         this.repo = repo;
-        this.tx = tx;
+        this.transactionTemplate = transactionTemplate;
         this.templates = templates;
     }
 
     /** A URL-safe code from a name: "Juris Consultants" → "juris-consultants". */
     public static String slug(String name) {
-        String s = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
-        return s.isEmpty() ? "business" : s.substring(0, Math.min(40, s.length()));
+        String slug = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
+        return slug.isEmpty() ? "business" : slug.substring(0, Math.min(40, slug.length()));
     }
 
     /** A default employee ID prefix: initials of the name ("Juris Consultants" → "JC"), 2–5 letters. */
     public static String defaultPrefix(String name) {
         StringBuilder builder = new StringBuilder();
-        for (String w : name.trim().split("\\s+")) if (!w.isEmpty() && Character.isLetter(w.charAt(0))) builder.append(Character.toUpperCase(w.charAt(0)));
-        String p = builder.length() >= 2 ? builder.toString() : name.replaceAll("[^A-Za-z]", "").toUpperCase(Locale.ROOT);
-        if (p.length() < 2) p = (p + "XX").substring(0, 2);
-        return p.substring(0, Math.min(5, p.length()));
+        for (String word : name.trim().split("\\s+")) if (!word.isEmpty() && Character.isLetter(word.charAt(0))) builder.append(Character.toUpperCase(word.charAt(0)));
+        String prefix = builder.length() >= 2 ? builder.toString() : name.replaceAll("[^A-Za-z]", "").toUpperCase(Locale.ROOT);
+        if (prefix.length() < 2) prefix = (prefix + "XX").substring(0, 2);
+        return prefix.substring(0, Math.min(5, prefix.length()));
     }
 
     /** Creates the business with every active role template (the demo seed and the platform company). */
@@ -93,22 +93,22 @@ public class BusinessSetupService {
             long has = repo.countPermissions(id);
             if (has == 0 || template.locked()) {
                 repo.deletePermissions(id);
-                for (String p : template.permissions()) repo.insertPermission(id, p);
+                for (String permission : template.permissions()) repo.insertPermission(id, permission);
             }
             long hasAssign = repo.countAssignableRoles(id);
             if (hasAssign == 0 || template.locked()) {
                 repo.deleteAssignableRoles(id);
-                for (String a : template.assignable()) {
-                    UUID target = ids.containsKey(a) ? ids.get(a) : repo.findRoleIds(a).stream().findFirst().orElse(null);
+                for (String assignableKey : template.assignable()) {
+                    UUID target = ids.containsKey(assignableKey) ? ids.get(assignableKey) : repo.findRoleIds(assignableKey).stream().findFirst().orElse(null);
                     if (target != null) repo.insertAssignableRole(id, target);
                 }
             }
         }
-        for (Map.Entry<String, String> e : SettingsService.DEFAULTS.entrySet()) {
-            repo.insertSettingIfMissing(e.getKey(), e.getValue());
+        for (Map.Entry<String, String> setting : SettingsService.DEFAULTS.entrySet()) {
+            repo.insertSettingIfMissing(setting.getKey(), setting.getValue());
         }
-        for (String[] d : new String[][] {{"Human Resources", "People operations, hiring and policies"}, {"Finance", "Payroll, tax and accounts"}}) {
-            repo.insertDepartmentIfMissing(UUID.randomUUID(), d[0], d[1], createdBy);
+        for (String[] department : new String[][] {{"Human Resources", "People operations, hiring and policies"}, {"Finance", "Payroll, tax and accounts"}}) {
+            repo.insertDepartmentIfMissing(UUID.randomUUID(), department[0], department[1], createdBy);
         }
         repo.seedLetterTemplates(TenantContext.current());
         return ids;
@@ -140,8 +140,8 @@ public class BusinessSetupService {
     }
 
     private void copyTemplate(UUID roleId, RoleTemplateRepository.Template template) {
-        for (String p : template.permissions()) repo.insertPermission(roleId, p);
-        for (String a : template.assignable()) repo.findRoleIds(a).stream().findFirst().ifPresent(target -> repo.addAssignableRole(roleId, target));
+        for (String permission : template.permissions()) repo.insertPermission(roleId, permission);
+        for (String assignableKey : template.assignable()) repo.findRoleIds(assignableKey).stream().findFirst().ifPresent(target -> repo.addAssignableRole(roleId, target));
     }
 
     public record NewOwner(String name, String email, String designation) {}
@@ -152,13 +152,13 @@ public class BusinessSetupService {
      */
     public UUID addOwner(NewOwner newOwner, UUID createdBy) {
         requireBusiness();
-        return tx.execute(s -> insertOwner(newOwner, createdBy)); // the code allocation lock holds until commit
+        return transactionTemplate.execute(s -> insertOwner(newOwner, createdBy)); // the code allocation lock holds until commit
     }
 
     private UUID insertOwner(NewOwner newOwner, UUID createdBy) {
-        Map<String, Object> biz = repo.findCurrentPrefixAndZone();
-        String prefix = (String) biz.get("employee_prefix");
-        String timeZone = (String) biz.get("time_zone");
+        Map<String, Object> currentBusiness = repo.findCurrentPrefixAndZone();
+        String prefix = (String) currentBusiness.get("employee_prefix");
+        String timeZone = (String) currentBusiness.get("time_zone");
         UUID role = repo.findRoleId(OWNER);
         repo.lockCodeAllocation();
         Integer count = repo.findMaxCodeNumber(prefix);

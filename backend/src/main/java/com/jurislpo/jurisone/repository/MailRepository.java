@@ -13,16 +13,16 @@ import org.springframework.stereotype.Repository;
 public class MailRepository {
 
     private final JdbcTemplate jdbc;
-    private final EntityManager em;
+    private final EntityManager entityManager;
 
-    public MailRepository(JdbcTemplate jdbc, EntityManager em) {
+    public MailRepository(JdbcTemplate jdbc, EntityManager entityManager) {
         this.jdbc = jdbc;
-        this.em = em;
+        this.entityManager = entityManager;
     }
 
     /** Queues the row (needs a transaction); its id is set once persisted. */
     public void insert(EmailOutbox row) {
-        em.persist(row);
+        entityManager.persist(row);
     }
 
     /** Sets the status and when it was sent (or logged). */

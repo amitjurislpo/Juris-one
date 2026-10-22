@@ -70,14 +70,14 @@ public class LettersController {
     @PostMapping("/templates")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> createTemplate(@RequestBody LettersService.TemplateInput body, HttpServletRequest request) {
-        String id = letters.createTemplate(auth.requirePage("letters"), body, RequestMeta.of(request).ip());
+        String id = letters.createTemplate(auth.requirePage("letters"), body, RequestMeta.of(request).ipAddress());
         return ApiResult.success("Template saved", Map.of("id", id));
     }
 
     /** {@code {name, subject, body, active?}} */
     @PutMapping("/templates/{id}")
     public ApiResult<Void> updateTemplate(@PathVariable String id, @RequestBody LettersService.TemplateInput body, HttpServletRequest request) {
-        letters.updateTemplate(auth.requirePage("letters"), id, body, RequestMeta.of(request).ip());
+        letters.updateTemplate(auth.requirePage("letters"), id, body, RequestMeta.of(request).ipAddress());
         return ApiResult.message("Template saved");
     }
 
@@ -100,7 +100,7 @@ public class LettersController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, Object>> issue(@RequestBody LettersService.IssueInput body, HttpServletRequest request) {
-        Map<String, Object> out = letters.issue(auth.requirePage("letters"), body, RequestMeta.of(request).ip());
+        Map<String, Object> out = letters.issue(auth.requirePage("letters"), body, RequestMeta.of(request).ipAddress());
         return ApiResult.success("Letter " + out.get("reference") + " issued · emailed to the employee and added to their My letters", out);
     }
 

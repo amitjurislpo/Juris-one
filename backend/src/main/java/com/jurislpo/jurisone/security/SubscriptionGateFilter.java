@@ -72,8 +72,8 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
     }
 
     private static boolean isRead(HttpServletRequest request) {
-        String m = request.getMethod();
-        return "GET".equals(m) || "HEAD".equals(m) || "OPTIONS".equals(m);
+        String method = request.getMethod();
+        return "GET".equals(method) || "HEAD".equals(method) || "OPTIONS".equals(method);
     }
 
     private void refuse(HttpServletRequest request, HttpServletResponse response, String message) throws IOException {

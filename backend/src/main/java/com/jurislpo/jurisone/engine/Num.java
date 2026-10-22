@@ -10,7 +10,7 @@ public final class Num {
     }
 
     /** {@code Math.round(n * 100) / 100} — the app's round2. */
-    public static double round2(double n) {
-        return Math.round(n * 100) / 100.0;
+    public static double round2(double number) {
+        return Math.round(number * 100) / 100.0;
     }
 }

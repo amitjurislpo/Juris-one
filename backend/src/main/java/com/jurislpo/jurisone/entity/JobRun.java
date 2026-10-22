@@ -27,7 +27,7 @@ public class JobRun {
     private Instant ranAt;
 
     @Column(name = "ok", nullable = false)
-    private Boolean ok = true;
+    private Boolean isSuccessful = true;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "detail")
@@ -47,8 +47,8 @@ public class JobRun {
     public void setKey(String key) { this.key = key; }
     public Instant getRanAt() { return ranAt; }
     public void setRanAt(Instant ranAt) { this.ranAt = ranAt; }
-    public Boolean getOk() { return ok; }
-    public void setOk(Boolean ok) { this.ok = ok; }
+    public Boolean isSuccessful() { return isSuccessful; }
+    public void setSuccessful(Boolean isSuccessful) { this.isSuccessful = isSuccessful; }
     public JsonNode getDetail() { return detail; }
     public void setDetail(JsonNode detail) { this.detail = detail; }
 }

@@ -41,17 +41,17 @@ public class PeopleRepository {
         args.add(peopleQuery.listParams.skip());
         return jdbc.query("""
             SELECT e.id::text AS id, e.code, e.full_name, e.designation, e.status::text AS status, e.portal_access, e.time_zone, e.region::text AS region,
-                   e.role_id::text AS role_id, e.date_of_joining, d.name AS dept, m.full_name AS manager, r.name AS role_name, r.key AS role_key,
+                   e.role_id::text AS role_id, e.date_of_joining, d.name AS department_name, m.full_name AS manager, r.name AS role_name, r.key AS role_key,
                    (SELECT u.is_super_admin FROM users u WHERE u.employee_id = e.id) AS super_admin, e.photo_updated_at
             """ + PeopleQuery.FROM + peopleQuery.where + peopleQuery.orderBy + " LIMIT ? OFFSET ?",
-                (rs, i) -> {
-                    Target target = new Target(rs.getString("id"), rs.getString("role_id"), rs.getString("role_key"), EmployeeStatus.valueOf(rs.getString("status")),
-                            rs.getBoolean("super_admin"));
-                    return new PersonRow(rs.getString("id"), rs.getString("code"), rs.getString("full_name"), rs.getString("designation"),
-                            rs.getString("dept") == null ? "—" : rs.getString("dept"), rs.getString("manager") == null ? "—" : rs.getString("manager"),
-                            PeopleRules.locationOfTimeZone(rs.getString("time_zone")).label(), "IN".equals(rs.getString("region")), rs.getString("role_name"),
-                            rs.getString("status"), rs.getBoolean("portal_access"), rs.getDate("date_of_joining").toLocalDate().toString(),
-                            canToggle.test(target), PhotoService.version(rs.getTimestamp("photo_updated_at")));
+                (resultSet, i) -> {
+                    Target target = new Target(resultSet.getString("id"), resultSet.getString("role_id"), resultSet.getString("role_key"), EmployeeStatus.valueOf(resultSet.getString("status")),
+                            resultSet.getBoolean("super_admin"));
+                    return new PersonRow(resultSet.getString("id"), resultSet.getString("code"), resultSet.getString("full_name"), resultSet.getString("designation"),
+                            resultSet.getString("department_name") == null ? "—" : resultSet.getString("department_name"), resultSet.getString("manager") == null ? "—" : resultSet.getString("manager"),
+                            PeopleRules.locationOfTimeZone(resultSet.getString("time_zone")).label(), "IN".equals(resultSet.getString("region")), resultSet.getString("role_name"),
+                            resultSet.getString("status"), resultSet.getBoolean("portal_access"), resultSet.getDate("date_of_joining").toLocalDate().toString(),
+                            canToggle.test(target), PhotoService.version(resultSet.getTimestamp("photo_updated_at")));
                 }, args.toArray());
     }
 
@@ -62,22 +62,22 @@ public class PeopleRepository {
 
     /** Non-archived departments by name. */
     public List<DepartmentSummary> findActiveDepartments() {
-        return jdbc.query("SELECT id::text, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (rs, i) -> new DepartmentSummary(rs.getString(1), rs.getString(2)));
+        return jdbc.query("SELECT id::text, name FROM departments WHERE archived_at IS NULL ORDER BY name ASC", (resultSet, i) -> new DepartmentSummary(resultSet.getString(1), resultSet.getString(2)));
     }
 
-    /** Tab counts (cur, us, off, past) over everyone but the owner, super admin and the viewer. */
+    /** Tab counts (current, united states, access off, past) over everyone but the owner, super admin and the viewer. */
     public Map<String, Integer> countTabs(UUID viewerId) {
         return jdbc.queryForObject("""
-            SELECT count(*) FILTER (WHERE status <> 'EXITED') AS cur, count(*) FILTER (WHERE status <> 'EXITED' AND region = 'US') AS us,
+            SELECT count(*) FILTER (WHERE status <> 'EXITED') AS current_count, count(*) FILTER (WHERE status <> 'EXITED' AND region = 'US') AS united_states_count,
                    count(*) FILTER (WHERE status <> 'EXITED' AND NOT portal_access) AS off, count(*) FILTER (WHERE status = 'EXITED') AS past
             FROM employees e JOIN roles r ON r.id = e.role_id WHERE r.key NOT IN ('owner', 'super_admin') AND e.id <> ?""",
-                (rs, i) -> {
-                    Map<String, Integer> m = new LinkedHashMap<>();
-                    m.put("current", rs.getInt("cur"));
-                    m.put("usTeam", rs.getInt("us"));
-                    m.put("accessDisabled", rs.getInt("off"));
-                    m.put("past", rs.getInt("past"));
-                    return m;
+                (resultSet, i) -> {
+                    Map<String, Integer> counts = new LinkedHashMap<>();
+                    counts.put("current", resultSet.getInt("current_count"));
+                    counts.put("usTeam", resultSet.getInt("united_states_count"));
+                    counts.put("accessDisabled", resultSet.getInt("off"));
+                    counts.put("past", resultSet.getInt("past"));
+                    return counts;
                 }, viewerId);
     }
 
@@ -89,7 +89,7 @@ public class PeopleRepository {
         pageArgs.add(take);
         pageArgs.add(skip);
         return jdbc.query("SELECT id::text, full_name, email, designation, status::text, photo_updated_at FROM employees" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
-                (rs, i) -> new DirectoryRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), PhotoService.version(rs.getTimestamp(6))), pageArgs.toArray());
+                (resultSet, i) -> new DirectoryRow(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4), resultSet.getString(5), PhotoService.version(resultSet.getTimestamp(6))), pageArgs.toArray());
     }
 
     public Integer countDirectory(String where, List<Object> args) {
@@ -105,16 +105,16 @@ public class PeopleRepository {
     /** The employee row with department, manager, role, shift and user columns (empty when not found). */
     public List<Map<String, Object>> findProfile(UUID id) {
         return jdbc.queryForList("""
-            SELECT e.*, e.status::text AS status_s, e.region::text AS region_s, d.name AS dept, m.full_name AS manager, r.name AS role_name, r.key AS role_key,
+            SELECT e.*, e.status::text AS status_s, e.region::text AS region_s, d.name AS department_name, m.full_name AS manager, r.name AS role_name, r.key AS role_key,
                    s.code AS shift_code, s.start_local, s.end_local, us.is_super_admin
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees m ON m.id = e.reporting_manager_id
             JOIN roles r ON r.id = e.role_id LEFT JOIN shifts s ON s.id = e.shift_id LEFT JOIN users us ON us.employee_id = e.id WHERE e.id = ?""", id);
     }
 
     /** Monthly gross of the salary structure in force on {@code on} (empty when none). */
-    public List<Long> findGross(UUID employeeId, Date on) {
+    public List<Long> findGross(UUID employeeId, Date date) {
         return jdbc.queryForList("SELECT basic + hra + lta + special FROM salary_structures WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1",
-                Long.class, employeeId, on);
+                Long.class, employeeId, date);
     }
 
     /** Names of the manager's current direct reports. */
@@ -132,8 +132,8 @@ public class PeopleRepository {
         return jdbc.queryForMap("SELECT full_name, portal_access FROM employees WHERE id = ?", id);
     }
 
-    public void setPortalAccess(UUID id, boolean on) {
-        jdbc.update("UPDATE employees SET portal_access = ?, updated_at = now() WHERE id = ?", on, id);
+    public void setPortalAccess(UUID id, boolean enabled) {
+        jdbc.update("UPDATE employees SET portal_access = ?, updated_at = now() WHERE id = ?", enabled, id);
     }
 
     /** full_name, date_of_joining, status, portal_access and the count of current direct reports. */
@@ -179,13 +179,13 @@ public class PeopleRepository {
 
     public List<DepartmentOption> findDepartmentOptions() {
         return jdbc.query("SELECT id::text, name, head_employee_id::text FROM departments WHERE archived_at IS NULL ORDER BY name ASC",
-                (rs, i) -> new DepartmentOption(rs.getString(1), rs.getString(2), rs.getString(3)));
+                (resultSet, i) -> new DepartmentOption(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3)));
     }
 
     /** The one department (if non-archived) as an option. */
     public List<DepartmentOption> findDepartmentOption(String departmentId) {
         return jdbc.query("SELECT id::text, name, head_employee_id::text FROM departments WHERE archived_at IS NULL AND id = ?::uuid ORDER BY name ASC",
-                (rs, i) -> new DepartmentOption(rs.getString(1), rs.getString(2), rs.getString(3)), departmentId);
+                (resultSet, i) -> new DepartmentOption(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3)), departmentId);
     }
 
     /** Current employees who can be a reporting manager, excluding {@code excludeId} (may be null). */
@@ -193,20 +193,20 @@ public class PeopleRepository {
         return jdbc.query("""
             SELECT e.id::text, e.full_name, e.designation, d.name FROM employees e LEFT JOIN departments d ON d.id = e.department_id
             WHERE e.status <> 'EXITED' AND (?::uuid IS NULL OR e.id <> ?::uuid) ORDER BY e.full_name ASC""",
-                (rs, i) -> new Manager(rs.getString(1), rs.getString(2), rs.getString(3) + (rs.getString(4) != null ? " · " + rs.getString(4) : "")),
+                (resultSet, i) -> new Manager(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3) + (resultSet.getString(4) != null ? " · " + resultSet.getString(4) : "")),
                 excludeId, excludeId);
     }
 
     /** Every role with its permission count, by creation. */
     public List<RoleRow> findRoles() {
         return jdbc.query("SELECT r.id::text, r.key, r.name, (SELECT count(*) FROM role_permissions p WHERE p.role_id = r.id) FROM roles r ORDER BY r.created_at ASC",
-                (rs, i) -> new RoleRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getInt(4)));
+                (resultSet, i) -> new RoleRow(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getInt(4)));
     }
 
     /** Shift id → code. */
     public Map<String, String> findShiftCodesById() {
         Map<String, String> shiftCodes = new HashMap<>();
-        jdbc.query("SELECT id::text, code FROM shifts", rs -> { shiftCodes.put(rs.getString(1), rs.getString(2)); });
+        jdbc.query("SELECT id::text, code FROM shifts", resultSet -> { shiftCodes.put(resultSet.getString(1), resultSet.getString(2)); });
         return shiftCodes;
     }
 
@@ -228,7 +228,7 @@ public class PeopleRepository {
     /** Employee id → reporting manager id (null when none), for every employee. */
     public Map<String, String> findManagerByEmployee() {
         Map<String, String> managerOf = new HashMap<>();
-        jdbc.query("SELECT id::text, reporting_manager_id::text FROM employees", rs -> { managerOf.put(rs.getString(1), rs.getString(2)); });
+        jdbc.query("SELECT id::text, reporting_manager_id::text FROM employees", resultSet -> { managerOf.put(resultSet.getString(1), resultSet.getString(2)); });
         return managerOf;
     }
 
@@ -299,8 +299,8 @@ public class PeopleRepository {
     /** Writes the changed PII columns (camelCase keys → snake_case columns), one statement per column in map order. */
     public void updatePii(UUID id, Map<String, String> cols) {
         for (Map.Entry<String, String> entry : cols.entrySet()) {
-            String col = entry.getKey().replaceAll("([A-Z])", "_$1").toLowerCase();
-            jdbc.update("UPDATE employees SET " + col + " = ? WHERE id = ?", entry.getValue(), id);
+            String columnName = entry.getKey().replaceAll("([A-Z])", "_$1").toLowerCase();
+            jdbc.update("UPDATE employees SET " + columnName + " = ? WHERE id = ?", entry.getValue(), id);
         }
     }
 
@@ -310,18 +310,18 @@ public class PeopleRepository {
     public List<List<Object>> findExportRows(PeopleQuery peopleQuery) {
         List<Object> args = new ArrayList<>(peopleQuery.args);
         return jdbc.query("""
-            SELECT e.code, e.full_name, e.email, e.designation, d.name AS dept, m.full_name AS mname, m.code AS mcode, e.time_zone, s.name AS shift,
+            SELECT e.code, e.full_name, e.email, e.designation, d.name AS department_name, m.full_name AS manager_name, m.code AS manager_code, e.time_zone, s.name AS shift,
                    r.name AS role, e.status::text AS status, e.portal_access, e.date_of_joining, e.exit_date
             """ + PeopleQuery.FROM + " LEFT JOIN shifts s ON s.id = e.shift_id" + peopleQuery.where + peopleQuery.orderBy + " LIMIT 20000",
-                (rs, i) -> Arrays.asList(rs.getString("code"), rs.getString("full_name"), rs.getString("email"), rs.getString("designation"),
-                        nz(rs.getString("dept")), nz(rs.getString("mname")), nz(rs.getString("mcode")), PeopleRules.locationOfTimeZone(rs.getString("time_zone")).label(),
-                        rs.getString("time_zone"), nz(rs.getString("shift")), rs.getString("role"), rs.getString("status"),
-                        rs.getBoolean("portal_access") ? "Enabled" : "Disabled", rs.getDate("date_of_joining").toLocalDate().toString(),
-                        rs.getDate("exit_date") == null ? "" : rs.getDate("exit_date").toLocalDate().toString()),
+                (resultSet, i) -> Arrays.asList(resultSet.getString("code"), resultSet.getString("full_name"), resultSet.getString("email"), resultSet.getString("designation"),
+                        emptyIfNull(resultSet.getString("department_name")), emptyIfNull(resultSet.getString("manager_name")), emptyIfNull(resultSet.getString("manager_code")), PeopleRules.locationOfTimeZone(resultSet.getString("time_zone")).label(),
+                        resultSet.getString("time_zone"), emptyIfNull(resultSet.getString("shift")), resultSet.getString("role"), resultSet.getString("status"),
+                        resultSet.getBoolean("portal_access") ? "Enabled" : "Disabled", resultSet.getDate("date_of_joining").toLocalDate().toString(),
+                        resultSet.getDate("exit_date") == null ? "" : resultSet.getDate("exit_date").toLocalDate().toString()),
                 args.toArray());
     }
 
-    private static String nz(String text) {
+    private static String emptyIfNull(String text) {
         return text == null ? "" : text;
     }
 }

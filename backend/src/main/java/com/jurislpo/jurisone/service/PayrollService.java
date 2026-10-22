@@ -1,6 +1,5 @@
 package com.jurislpo.jurisone.service;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.service.AttendanceService.AttendanceEmployee;
@@ -35,14 +34,14 @@ import org.springframework.stereotype.Service;
 public class PayrollService {
 
     private final PayrollRepository repo;
-    private final AttendanceService att;
+    private final AttendanceService attendanceService;
     private final SettingsService settings;
     private final TaxService tax;
     private final ObjectMapper json;
 
     public PayrollService(PayrollRepository repo, AttendanceService attendance, SettingsService settings, TaxService tax, ObjectMapper json) {
         this.repo = repo;
-        this.att = attendance;
+        this.attendanceService = attendance;
         this.settings = settings;
         this.tax = tax;
         this.json = json;
@@ -55,7 +54,7 @@ public class PayrollService {
     // ── snapshot (immutable JSON stored on payslips.snapshot) ──
     public record SnapshotCompany(String name, String address) {}
 
-    public record SnapshotEmployee(String code, String name, String designation, String department, @JsonProperty("doj") String dateOfJoining, String panLast4, String uanLast4, String bankName,
+    public record SnapshotEmployee(String code, String name, String designation, String department, String dateOfJoining, String panLast4, String uanLast4, String bankName,
                                String bankLast4) {}
 
     public record SnapshotAttendance(int daysInMonth, int eligibleDays, int weeklyOffs, int holidays, double present, double lopDays, double paidDays) {}
@@ -64,14 +63,26 @@ public class PayrollService {
 
     public record SnapshotDeduction(String label, long amount) {}
 
-    public record Snapshot(int version, @JsonProperty("ym") String month, SnapshotCompany company, SnapshotEmployee employee, String regime, String payDate, SnapshotAttendance attendance,
+    public record Snapshot(int version, String month, SnapshotCompany company, SnapshotEmployee employee, String regime, String payDate, SnapshotAttendance attendance,
                            List<SnapshotLine> components, long bonus, long grossEarned, long pf, long pt, long tds, long otherDeduction, List<SnapshotDeduction> deductions,
                            long totalDeductions, long net, String netWords, String note) {}
+
+    /**
+     * Payslips closed before the field rename store {@code ym} and {@code employee.doj}; this returns the snapshot with
+     * {@code month} and {@code employee.dateOfJoining}, so the API and the PDF see one format.
+     */
+    public static JsonNode currentSnapshotFormat(JsonNode stored) {
+        if (!(stored instanceof com.fasterxml.jackson.databind.node.ObjectNode snapshot)) return stored;
+        com.fasterxml.jackson.databind.node.ObjectNode current = snapshot.deepCopy();
+        if (current.has("ym")) current.set("month", current.remove("ym"));
+        if (current.get("employee") instanceof com.fasterxml.jackson.databind.node.ObjectNode employee && employee.has("doj")) employee.set("dateOfJoining", employee.remove("doj"));
+        return current;
+    }
 
     public Snapshot toSnapshot(PayRow row, String yearMonth, Map<String, Object> employee, SettingsService.Company company, String payDate) {
         PayResult payResult = row.pay();
         List<SnapshotLine> comps = new ArrayList<>();
-        for (PayLine c : payResult.components()) comps.add(new SnapshotLine(c.label(), c.rate(), c.earned()));
+        for (PayLine component : payResult.components()) comps.add(new SnapshotLine(component.label(), component.rate(), component.earned()));
         if (payResult.bonus() != 0) comps.add(new SnapshotLine("Bonus / arrears", 0, payResult.bonus()));
         List<SnapshotDeduction> deductions = new ArrayList<>(List.of(new SnapshotDeduction("Provident fund (12% of Basic)", payResult.pf()),
                 new SnapshotDeduction("Professional tax", payResult.pt()), new SnapshotDeduction("Income tax (TDS)", payResult.tds())));
@@ -87,62 +98,62 @@ public class PayrollService {
 
     /** Live computation for an open run (optionally for some employees only). */
     public List<PayRow> computeRun(String yearMonth, List<UUID> ids) {
-        YearMonth m = YearMonth.parse(yearMonth);
-        LocalDate first = m.atDay(1), last = m.atEndOfMonth();
+        YearMonth month = YearMonth.parse(yearMonth);
+        LocalDate first = month.atDay(1), last = month.atEndOfMonth();
         List<Map<String, Object>> runs = repo.runIds(yearMonth);
         Map<UUID, Map<String, Object>> adjustments = new HashMap<>();
         if (!runs.isEmpty()) {
-            for (Map<String, Object> a : repo.adjustments(runs.get(0).get("id"))) {
-                adjustments.put((UUID) a.get("employee_id"), a);
+            for (Map<String, Object> adjustment : repo.adjustments(runs.get(0).get("id"))) {
+                adjustments.put((UUID) adjustment.get("employee_id"), adjustment);
             }
         }
         SettingsService.PayrollPolicy pay = settings.payroll();
-        AttendanceService.ResolvedAttendancePolicy policy = att.policy();
+        AttendanceService.ResolvedAttendancePolicy policy = attendanceService.policy();
         String idFilter = ids == null ? "" : " AND e.id = ANY (?)";
         List<Object> args = new ArrayList<>(List.of(Date.valueOf(last), Date.valueOf(first), Date.valueOf(last)));
         if (ids != null) args.add(ids.toArray(UUID[]::new));
         // India employees on payroll that month (structure on the last day, employed some day of it)
         List<Map<String, Object>> employees = repo.payrollEmployees(idFilter, args.toArray());
         List<UUID> employeeIds = employees.stream().map(e -> (UUID) e.get("id")).toList();
-        List<AttendanceEmployee> attEmps = employeeIds.isEmpty() ? List.of() : att.loadAttendanceEmployees("e.id = ANY (?)", (Object) employeeIds.toArray(UUID[]::new));
+        List<AttendanceEmployee> attEmps = employeeIds.isEmpty() ? List.of() : attendanceService.loadAttendanceEmployees("e.id = ANY (?)", (Object) employeeIds.toArray(UUID[]::new));
         Instant now = Instant.ofEpochMilli(Math.max(System.currentTimeMillis(), last.atTime(23, 59, 59).toInstant(java.time.ZoneOffset.UTC).toEpochMilli() + 2 * 86400_000L));
-        Map<UUID, List<DayView>> days = att.attendanceFor(attEmps, first, last, now);
+        Map<UUID, List<DayView>> days = attendanceService.attendanceFor(attEmps, first, last, now);
         List<LocalDate> holidays = repo.indiaHolidays(first, last);
-        int D = m.lengthOfMonth();
+        int daysInMonth = month.lengthOfMonth();
         List<PayRow> rows = new ArrayList<>();
         for (Map<String, Object> employee : employees) {
             UUID id = (UUID) employee.get("id");
             LocalDate dateOfJoining = ((Date) employee.get("date_of_joining")).toLocalDate();
             LocalDate exit = employee.get("exit_date") == null ? null : ((Date) employee.get("exit_date")).toLocalDate();
-            int elig = PayrollEngine.eligibleDays(m, dateOfJoining, exit);
-            if (elig == 0) continue;
+            int eligibleDayCount = PayrollEngine.eligibleDays(month, dateOfJoining, exit);
+            if (eligibleDayCount == 0) continue;
             Map<String, Object> row = repo.structureOn(id, last);
             Structure structure = new Structure(((Number) row.get("basic")).longValue(), ((Number) row.get("hra")).longValue(), ((Number) row.get("lta")).longValue(),
                     ((Number) row.get("special")).longValue());
             LocalDate from = dateOfJoining.isAfter(first) ? dateOfJoining : first, to = exit != null && exit.isBefore(last) ? exit : last;
-            int wo = 0, hol = 0;
+            int weeklyOffDays = 0, holidayDays = 0;
             for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
-                if (policy.engine().weeklyOffs().contains(AttendanceEngine.dowOf(date))) wo++;
-                else if (holidays.contains(date)) hol++;
+                if (policy.engine().weeklyOffs().contains(AttendanceEngine.dowOf(date))) weeklyOffDays++;
+                else if (holidays.contains(date)) holidayDays++;
             }
             List<DayView> dayViews = days.get(id);
             double attendanceLop = 0;
             if (dayViews != null) {
-                LocalDate f0 = from, t0 = to;
-                attendanceLop = AttendanceEngine.summarize(dayViews.stream().filter(x -> !x.r.date.isBefore(f0) && !x.r.date.isAfter(t0)).map(x -> x.r).toList(), policy.engine()).lopDays;
+                LocalDate rangeStart = from, rangeEnd = to;
+                attendanceLop = AttendanceEngine.summarize(dayViews.stream().filter(x -> !x.dayResult.date.isBefore(rangeStart) && !x.dayResult.date.isAfter(rangeEnd)).map(x -> x.dayResult).toList(), policy.engine()).lopDays;
             }
-            Map<String, Object> adj = adjustments.get(id);
-            double lop = adj != null && adj.get("lop_days") != null ? ((BigDecimal) adj.get("lop_days")).doubleValue() : attendanceLop;
-            long bonus = adj != null ? ((Number) adj.get("bonus")).longValue() : 0, other = adj != null ? ((Number) adj.get("other_deduction")).longValue() : 0;
-            long pfCeiling = Math.round(pay.pfWageCeiling() * 100), pt = Math.round(pay.professionalTax().monthly() * 100);
-            PayResult pre = PayrollEngine.computePay(new PayInput(structure, D, elig, lop, bonus, other, 0, pay.pfRate(), pfCeiling, pt));
-            Projection projection = tax.projectTax(id, yearMonth, new MonthFigures(pre.grossEarned(), pre.components().get(0).earned(), pre.components().get(1).earned(), pre.pf()),
+            Map<String, Object> adjustment = adjustments.get(id);
+            double lop = adjustment != null && adjustment.get("lop_days") != null ? ((BigDecimal) adjustment.get("lop_days")).doubleValue() : attendanceLop;
+            long bonus = adjustment != null ? ((Number) adjustment.get("bonus")).longValue() : 0, other = adjustment != null ? ((Number) adjustment.get("other_deduction")).longValue() : 0;
+            long pfCeiling = Math.round(pay.pfWageCeiling() * 100), professionalTax = Math.round(pay.professionalTax().monthly() * 100);
+            PayResult basePay = PayrollEngine.computePay(new PayInput(structure, daysInMonth, eligibleDayCount, lop, bonus, other, 0, pay.pfRate(), pfCeiling, professionalTax));
+            Projection projection = tax.projectTax(id, yearMonth, new MonthFigures(basePay.grossEarned(), basePay.components().get(0).earned(), basePay.components().get(1).earned(), basePay.pf()),
                     structure.gross(), structure.basic(), structure.hra(), null, null);
-            PayResult result = PayrollEngine.computePay(new PayInput(structure, D, elig, lop, bonus, other, projection.monthly() * 100, pay.pfRate(), pfCeiling, pt));
-            boolean adjusted = adj != null && (adj.get("lop_days") != null || bonus > 0 || other > 0);
-            rows.add(new PayRow(id, (String) employee.get("code"), (String) employee.get("full_name"), (String) employee.get("designation"), employee.get("dept") == null ? "—" : (String) employee.get("dept"),
-                    dateOfJoining.toString(), projection.regime(), structure, result, attendanceLop, adjusted, adj == null ? null : (String) adj.get("note"), wo, hol,
-                    Math.max(0, elig - wo - hol - result.lopDays()), projection.current().total(), projection));
+            PayResult result = PayrollEngine.computePay(new PayInput(structure, daysInMonth, eligibleDayCount, lop, bonus, other, projection.monthly() * 100, pay.pfRate(), pfCeiling, professionalTax));
+            boolean adjusted = adjustment != null && (adjustment.get("lop_days") != null || bonus > 0 || other > 0);
+            rows.add(new PayRow(id, (String) employee.get("code"), (String) employee.get("full_name"), (String) employee.get("designation"), employee.get("department_name") == null ? "—" : (String) employee.get("department_name"),
+                    dateOfJoining.toString(), projection.regime(), structure, result, attendanceLop, adjusted, adjustment == null ? null : (String) adjustment.get("note"), weeklyOffDays, holidayDays,
+                    Math.max(0, eligibleDayCount - weeklyOffDays - holidayDays - result.lopDays()), projection.current().total(), projection));
         }
         return rows;
     }
@@ -164,7 +175,7 @@ public class PayrollService {
 
     public RunStatus runStatus(String yearMonth) {
         List<Map<String, Object>> runs = repo.findRun(yearMonth);
-        return new RunStatus(runs.isEmpty() ? null : runs.get(0), att.isMonthLocked(yearMonth, att.policy(), Instant.now()));
+        return new RunStatus(runs.isEmpty() ? null : runs.get(0), attendanceService.isMonthLocked(yearMonth, attendanceService.policy(), Instant.now()));
     }
 
     // ── payroll view (page + exports) ──
@@ -175,20 +186,20 @@ public class PayrollService {
     public record View(Map<String, Object> run, boolean closed, boolean attendanceLocked, List<PayView> rows) {}
 
     public View payrollView(String month) {
-        RunStatus rs = runStatus(month);
-        boolean closed = rs.run() != null && "CLOSED".equals(rs.run().get("status"));
+        RunStatus runStatus = runStatus(month);
+        boolean closed = runStatus.run() != null && "CLOSED".equals(runStatus.run().get("status"));
         List<PayView> rows = new ArrayList<>();
         if (closed) {
             for (Map.Entry<UUID, JsonNode> entry : closedRows(month)) {
-                JsonNode s = entry.getValue();
+                JsonNode snapshot = entry.getValue();
                 long gross = 0;
-                for (JsonNode c : s.get("components")) if (c.get("rate").asLong() != 0) gross += c.get("rate").asLong();
-                JsonNode node = s.get("attendance");
-                long bonus = s.get("bonus").asLong(), other = s.get("otherDeduction").asLong();
-                rows.add(new PayView(entry.getKey().toString(), s.at("/employee/code").asText(), s.at("/employee/name").asText(), s.at("/employee/department").asText(),
-                        s.get("regime").asText(), gross, node.get("lopDays").asDouble(), node.get("lopDays").asDouble(), node.get("paidDays").asDouble(), node.get("daysInMonth").asInt(),
-                        bonus, s.get("grossEarned").asLong(), s.get("pf").asLong() + s.get("pt").asLong(), s.get("tds").asLong(), other, s.get("net").asLong(),
-                        bonus > 0 || other > 0 || (s.hasNonNull("note") && !s.get("note").asText().isEmpty()), s.hasNonNull("note") ? s.get("note").asText() : null));
+                for (JsonNode component : snapshot.get("components")) if (component.get("rate").asLong() != 0) gross += component.get("rate").asLong();
+                JsonNode node = snapshot.get("attendance");
+                long bonus = snapshot.get("bonus").asLong(), other = snapshot.get("otherDeduction").asLong();
+                rows.add(new PayView(entry.getKey().toString(), snapshot.at("/employee/code").asText(), snapshot.at("/employee/name").asText(), snapshot.at("/employee/department").asText(),
+                        snapshot.get("regime").asText(), gross, node.get("lopDays").asDouble(), node.get("lopDays").asDouble(), node.get("paidDays").asDouble(), node.get("daysInMonth").asInt(),
+                        bonus, snapshot.get("grossEarned").asLong(), snapshot.get("pf").asLong() + snapshot.get("pt").asLong(), snapshot.get("tds").asLong(), other, snapshot.get("net").asLong(),
+                        bonus > 0 || other > 0 || (snapshot.hasNonNull("note") && !snapshot.get("note").asText().isEmpty()), snapshot.hasNonNull("note") ? snapshot.get("note").asText() : null));
             }
         } else {
             for (PayRow payRow : computeRun(month, null)) {
@@ -198,7 +209,7 @@ public class PayrollService {
                         payRow.adjusted() || (payRow.note() != null && !payRow.note().isEmpty()), payRow.note()));
             }
         }
-        return new View(rs.run(), closed, rs.attendanceLocked(), rows);
+        return new View(runStatus.run(), closed, runStatus.attendanceLocked(), rows);
     }
 
     static final List<String> SORTS = List.of("name", "gross", "lop", "paid", "earned", "tds", "net");
@@ -206,10 +217,10 @@ public class PayrollService {
 
     public static List<PayView> filter(List<PayView> rows, Map<String, String> queryParams) {
         ListParams listParams = ListParams.of(queryParams, SORTS, "name", 100, "asc");
-        String flt = ListParams.pick(queryParams, "filter", FILTERS, "All");
+        String filter = ListParams.pick(queryParams, "filter", FILTERS, "All");
         String search = listParams.search().toLowerCase();
-        List<PayView> out = new ArrayList<>(rows.stream().filter(r -> (search.isEmpty() || (r.name() + " " + r.code() + " " + r.department()).toLowerCase().contains(search))
-                && ("All".equals(flt) || ("LOP".equals(flt) ? r.lop() > 0 : "Edited".equals(flt) ? r.edited() : r.regime().equals(flt)))).toList());
+        List<PayView> out = new ArrayList<>(rows.stream().filter(row -> (search.isEmpty() || (row.name() + " " + row.code() + " " + row.department()).toLowerCase().contains(search))
+                && ("All".equals(filter) || ("LOP".equals(filter) ? row.lop() > 0 : "Edited".equals(filter) ? row.edited() : row.regime().equals(filter)))).toList());
         Map<String, Function<PayView, ? extends Comparable>> keys = Map.of("name", PayView::name, "gross", PayView::monthlyGross, "lop", PayView::lop,
                 "paid", PayView::paid, "earned", PayView::earned, "tds", PayView::tds, "net", PayView::net);
         out.sort(listParams.comparator(keys));
@@ -221,16 +232,16 @@ public class PayrollService {
     /** Months shown in the switcher: closed runs + the first open month after them (or last month). */
     public Months payrollMonths(LocalDate today) {
         List<Map<String, Object>> runs = repo.runMonths();
-        String cur = today.toString().substring(0, 7);
-        String previous = YearMonth.parse(cur).minusMonths(1).toString();
+        String currentMonth = today.toString().substring(0, 7);
+        String previous = YearMonth.parse(currentMonth).minusMonths(1).toString();
         String lastClosed = null;
-        for (Map<String, Object> r : runs) if ("CLOSED".equals(r.get("status"))) lastClosed = (String) r.get("month");
+        for (Map<String, Object> run : runs) if ("CLOSED".equals(run.get("status"))) lastClosed = (String) run.get("month");
         String open = lastClosed != null ? YearMonth.parse(lastClosed).plusMonths(1).toString() : previous;
         TreeSet<String> set = new TreeSet<>();
-        for (Map<String, Object> r : runs) set.add((String) r.get("month"));
-        set.add(open.compareTo(cur) <= 0 ? open : previous);
+        for (Map<String, Object> run : runs) set.add((String) run.get("month"));
+        set.add(open.compareTo(currentMonth) <= 0 ? open : previous);
         List<String> all = new ArrayList<>(set);
-        return new Months(all.subList(Math.max(0, all.size() - 6), all.size()), open.compareTo(cur) <= 0 ? open : previous);
+        return new Months(all.subList(Math.max(0, all.size() - 6), all.size()), open.compareTo(currentMonth) <= 0 ? open : previous);
     }
 
     static Map<String, Object> map(Object... kv) {

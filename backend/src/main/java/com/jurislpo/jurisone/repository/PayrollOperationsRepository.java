@@ -137,7 +137,7 @@ public class PayrollOperationsRepository {
     /** An employee's salary revisions, newest first. */
     public List<SalaryRevision> revisions(Object employeeId) {
         return jdbc.query("SELECT effective_from, basic, hra, lta, special, reason::text FROM salary_structures WHERE employee_id = ? ORDER BY effective_from DESC",
-                (rs, i) -> new SalaryRevision(rs.getDate(1).toLocalDate().toString(), rs.getLong(2), rs.getLong(3), rs.getLong(4), rs.getLong(5), rs.getString(6)), employeeId);
+                (resultSet, i) -> new SalaryRevision(resultSet.getDate(1).toLocalDate().toString(), resultSet.getLong(2), resultSet.getLong(3), resultSet.getLong(4), resultSet.getLong(5), resultSet.getString(6)), employeeId);
     }
 
     public List<Map<String, Object>> activeDepartments() {

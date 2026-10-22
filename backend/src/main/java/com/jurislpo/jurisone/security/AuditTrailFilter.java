@@ -46,8 +46,8 @@ public class AuditTrailFilter extends OncePerRequestFilter {
     public AuditTrailFilter(JdbcTemplate jdbc, ObjectMapper json, ObjectProvider<MeterRegistry> meters) {
         this.jdbc = jdbc;
         this.json = json;
-        MeterRegistry m = meters.getIfAvailable();
-        this.failureCounter = m == null ? null : Counter.builder("jurisone.audit.write.failures").description("Audit rows that could not be written").register(m);
+        MeterRegistry meterRegistry = meters.getIfAvailable();
+        this.failureCounter = meterRegistry == null ? null : Counter.builder("jurisone.audit.write.failures").description("Audit rows that could not be written").register(meterRegistry);
     }
 
     /** How many audit rows could not be written since start (should stay 0). */
@@ -62,8 +62,8 @@ public class AuditTrailFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
-        long t0 = System.nanoTime();
-        Instant at = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        long startNanos = System.nanoTime();
+        Instant instant = Instant.now().truncatedTo(ChronoUnit.MICROS);
         String requestId = UUID.randomUUID().toString();
         response.setHeader(AuditTrail.REQUEST_ID_HEADER, requestId);
         int failedStatus = 0;
@@ -74,27 +74,27 @@ public class AuditTrailFilter extends OncePerRequestFilter {
             throw e;
         } finally {
             int status = failedStatus != 0 ? failedStatus : response.getStatus();
-            record(request, at, requestId, status, (int) ((System.nanoTime() - t0) / 1_000_000));
+            record(request, instant, requestId, status, (int) ((System.nanoTime() - startNanos) / 1_000_000));
         }
     }
 
-    private void record(HttpServletRequest request, Instant at, String requestId, int status, int ms) {
+    private void record(HttpServletRequest request, Instant instant, String requestId, int status, int durationMillis) {
         try {
-            CurrentUser user = request.getAttribute(AuditTrail.USER_ATTR) instanceof CurrentUser cu ? cu : null;
+            CurrentUser user = request.getAttribute(AuditTrail.USER_ATTR) instanceof CurrentUser currentUser ? currentUser : null;
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("status", status);
-            after.put("ms", ms);
+            after.put("durationMs", durationMillis);
             if (request.getAttribute(AuditTrail.HINT_ATTR) instanceof Map<?, ?> hint) hint.forEach((k, v) -> after.put(String.valueOf(k), v));
-            String ua = request.getHeader("user-agent");
-            String fwd = request.getHeader("x-forwarded-for");
-            String ip = fwd != null && !fwd.isBlank() ? fwd.split(",")[0].trim() : request.getHeader("x-real-ip");
+            String userAgent = request.getHeader("user-agent");
+            String forwardedFor = request.getHeader("x-forwarded-for");
+            String ipAddress = forwardedFor != null && !forwardedFor.isBlank() ? forwardedFor.split(",")[0].trim() : request.getHeader("x-real-ip");
             String path = AuditTrail.storedPath(request.getRequestURI());
             jdbc.update("""
                     INSERT INTO audit_log (id, actor_id, business_id, action, entity, entity_id, "after", at, ip, method, path, status, duration_ms, user_agent, request_id)
                     VALUES (?, ?, ?, ?, 'api', ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     UUID.randomUUID(), user == null ? null : user.id(), user == null ? null : user.businessId(), "request." + request.getMethod(), path,
-                    json.writeValueAsString(after), Timestamp.from(at), ip == null || ip.isEmpty() ? null : ip, request.getMethod(), path, status, ms,
-                    ua == null ? null : ua.substring(0, Math.min(400, ua.length())), requestId);
+                    json.writeValueAsString(after), Timestamp.from(instant), ipAddress == null || ipAddress.isEmpty() ? null : ipAddress, request.getMethod(), path, status, durationMillis,
+                    userAgent == null ? null : userAgent.substring(0, Math.min(400, userAgent.length())), requestId);
         } catch (Exception e) {
             FAILURES.incrementAndGet();
             if (failureCounter != null) failureCounter.increment();

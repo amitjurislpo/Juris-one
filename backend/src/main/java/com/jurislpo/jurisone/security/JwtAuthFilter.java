@@ -42,11 +42,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(JwtAuthFilter.class);
 
     private final SessionRepository sessions;
-    private final JwtService jwt;
+    private final JwtService jwtService;
 
-    public JwtAuthFilter(SessionRepository sessions, JwtService jwt) {
+    public JwtAuthFilter(SessionRepository sessions, JwtService jwtService) {
         this.sessions = sessions;
-        this.jwt = jwt;
+        this.jwtService = jwtService;
     }
 
     @Override
@@ -56,7 +56,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             String token = cookie(request, SessionService.ACCESS_COOKIE);
             if (token != null && !token.isEmpty()) {
                 try {
-                    JwtService.AccessClaims claims = jwt.verify(token);
+                    JwtService.AccessClaims claims = jwtService.verify(token);
                     CurrentUser user = load(claims);
                     if (user != null) {
                         List<SimpleGrantedAuthority> auth = user.perms().stream().map(SimpleGrantedAuthority::new).toList();
@@ -79,7 +79,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     /** A cookie's value, or null. */
     public static String cookie(HttpServletRequest request, String name) {
         if (request.getCookies() == null) return null;
-        for (Cookie c : request.getCookies()) if (name.equals(c.getName())) return c.getValue();
+        for (Cookie cookie : request.getCookies()) if (name.equals(cookie.getName())) return cookie.getValue();
         return null;
     }
 

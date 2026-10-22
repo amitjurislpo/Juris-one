@@ -28,8 +28,8 @@ public class BusinessAdminRepository {
                    (SELECT count(*) FROM employees e WHERE e.business_id = b.id AND e.status <> 'EXITED') AS employees,
                    (SELECT count(*) FROM employees e JOIN roles r ON r.id = e.role_id WHERE e.business_id = b.id AND r.key = 'owner') AS owners
             FROM businesses b WHERE NOT b.is_platform ORDER BY b.name""",
-                (rs, i) -> new BusinessRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getLong(7), rs.getLong(8),
-                        Format.isoTimestamp(rs.getTimestamp(6).toInstant()), subscription.apply((UUID) rs.getObject(1))));
+                (resultSet, i) -> new BusinessRow(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4), resultSet.getString(5), resultSet.getLong(7), resultSet.getLong(8),
+                        Format.isoTimestamp(resultSet.getTimestamp(6).toInstant()), subscription.apply((UUID) resultSet.getObject(1))));
     }
 
     /** The profile row of a customer business (zero or one). */
@@ -45,7 +45,7 @@ public class BusinessAdminRepository {
             SELECT e.id::text, e.code, e.full_name, e.email, e.portal_access, e.status::text
             FROM employees e JOIN roles r ON r.id = e.role_id
             WHERE e.business_id = ? AND r.key = 'owner' ORDER BY e.full_name""",
-                (rs, i) -> new Owner(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getBoolean(5), rs.getString(6)), businessId);
+                (resultSet, i) -> new Owner(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4), resultSet.getBoolean(5), resultSet.getString(6)), businessId);
     }
 
     /** Ids of businesses (other than {@code editing}, when given) using the code. */
@@ -71,7 +71,7 @@ public class BusinessAdminRepository {
         return jdbc.query("""
             SELECT r.id::text, r.key, r.name, (SELECT count(*) FROM employees e WHERE e.role_id = r.id) AS employees
             FROM roles r WHERE r.business_id = ? ORDER BY r.created_at, r.name""",
-                (rs, i) -> new BusinessRole(rs.getString(1), rs.getString(2), rs.getString(3), rs.getLong(4)), businessId);
+                (resultSet, i) -> new BusinessRole(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getLong(4)), businessId);
     }
 
     public void deleteRole(UUID businessId, UUID roleId) {
@@ -112,9 +112,9 @@ public class BusinessAdminRepository {
     }
 
     /** Sets an owner's portal access; returns the number of rows changed (0 = not an owner of that business). */
-    public int updateOwnerAccess(UUID ownerId, UUID businessId, boolean on) {
+    public int updateOwnerAccess(UUID ownerId, UUID businessId, boolean enabled) {
         return jdbc.update("""
             UPDATE employees e SET portal_access = ?, updated_at = now() FROM roles r
-            WHERE r.id = e.role_id AND r.key = 'owner' AND e.id = ? AND e.business_id = ?""", on, ownerId, businessId);
+            WHERE r.id = e.role_id AND r.key = 'owner' AND e.id = ? AND e.business_id = ?""", enabled, ownerId, businessId);
     }
 }

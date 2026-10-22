@@ -47,7 +47,7 @@ public class NotificationController {
     @PatchMapping
     public ApiResult<Map<String, Integer>> markAll(@RequestBody ReadBody body) {
         if (!Boolean.TRUE.equals(body.read())) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected true");
-        int n = inbox.markAll(auth.assertPerm());
-        return ApiResult.success(n == 0 ? "Nothing new" : "All caught up", Map.of("count", n));
+        int updatedCount = inbox.markAll(auth.assertPerm());
+        return ApiResult.success(updatedCount == 0 ? "Nothing new" : "All caught up", Map.of("count", updatedCount));
     }
 }

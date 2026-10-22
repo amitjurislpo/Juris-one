@@ -15,8 +15,8 @@ public class Auth {
 
     /** The current user, or null when signed out. */
     public CurrentUser current() {
-        Authentication a = SecurityContextHolder.getContext().getAuthentication();
-        return a != null && a.getPrincipal() instanceof CurrentUser u ? u : null;
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getPrincipal() instanceof CurrentUser currentUser ? currentUser : null;
     }
 
     /** Signed in, holding any one of {@code perms} (none = just signed in). */

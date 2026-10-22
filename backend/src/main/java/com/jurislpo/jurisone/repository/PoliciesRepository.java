@@ -22,37 +22,37 @@ public class PoliciesRepository {
 
     /** Every role with its permission keys, by creation. */
     public List<RolePerms> findRolesWithPermissions() {
-        return jdbc.query("SELECT id, key, name FROM roles ORDER BY created_at ASC", (rs, i) -> {
-            String id = rs.getString(1);
-            return new RolePerms(id, rs.getString(2), rs.getString(3),
+        return jdbc.query("SELECT id, key, name FROM roles ORDER BY created_at ASC", (resultSet, i) -> {
+            String id = resultSet.getString(1);
+            return new RolePerms(id, resultSet.getString(2), resultSet.getString(3),
                     jdbc.queryForList("SELECT permission_key FROM role_permissions WHERE role_id = ?::uuid", String.class, id));
         });
     }
 
     /** Active leave types in display order. */
     public List<LeaveTypeView> findActiveLeaveTypes() {
-        return jdbc.query("SELECT * FROM leave_types WHERE active ORDER BY sort_order ASC", (rs, i) -> new LeaveTypeView(
-                rs.getString("code"), rs.getString("name"), rs.getBigDecimal("annual_quota").doubleValue(), rs.getBigDecimal("accrual_per_month").doubleValue(),
-                rs.getBigDecimal("carry_forward_cap").doubleValue(), dbl(rs.getBigDecimal("max_stretch")), rs.getBigDecimal("encash_per_year").doubleValue(),
-                rs.getInt("encash_after_months"), (Integer) rs.getObject("expiry_days")));
+        return jdbc.query("SELECT * FROM leave_types WHERE active ORDER BY sort_order ASC", (resultSet, i) -> new LeaveTypeView(
+                resultSet.getString("code"), resultSet.getString("name"), resultSet.getBigDecimal("annual_quota").doubleValue(), resultSet.getBigDecimal("accrual_per_month").doubleValue(),
+                resultSet.getBigDecimal("carry_forward_cap").doubleValue(), toDouble(resultSet.getBigDecimal("max_stretch")), resultSet.getBigDecimal("encash_per_year").doubleValue(),
+                resultSet.getInt("encash_after_months"), (Integer) resultSet.getObject("expiry_days")));
     }
 
-    private static Double dbl(BigDecimal b) {
-        return b == null ? null : b.doubleValue();
+    private static Double toDouble(BigDecimal value) {
+        return value == null ? null : value.doubleValue();
     }
 
     /** Holidays with from &lt;= date &lt; until, by date. */
     public List<HolidayView> findHolidaysBetween(Date from, Date until) {
         return jdbc.query("SELECT id, date, name, region::text AS region FROM holidays WHERE date >= ? AND date < ? ORDER BY date ASC",
-                (rs, i) -> new HolidayView(rs.getString("id"), rs.getDate("date").toLocalDate().toString(), rs.getString("name"), rs.getString("region")),
+                (resultSet, i) -> new HolidayView(resultSet.getString("id"), resultSet.getDate("date").toLocalDate().toString(), resultSet.getString("name"), resultSet.getString("region")),
                 from, until);
     }
 
     /** Shift templates by code, each shown with the given grace period. */
     public List<ShiftView> findShifts(int grace) {
         return jdbc.query("SELECT id, code, name, start_local, end_local, region::text AS region FROM shifts ORDER BY code ASC",
-                (rs, i) -> new ShiftView(rs.getString("id"), rs.getString("code"), rs.getString("name"), rs.getString("start_local"), rs.getString("end_local"),
-                        grace, rs.getString("region")));
+                (resultSet, i) -> new ShiftView(resultSet.getString("id"), resultSet.getString("code"), resultSet.getString("name"), resultSet.getString("start_local"), resultSet.getString("end_local"),
+                        grace, resultSet.getString("region")));
     }
 
     /** How many attendance-lock job runs there have been. */

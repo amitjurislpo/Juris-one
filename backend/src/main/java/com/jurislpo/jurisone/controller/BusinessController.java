@@ -38,10 +38,10 @@ public class BusinessController {
     /** All employees as Excel; {@code ?identity=full} includes identity numbers, phone, bank account and address in full (audited). */
     @GetMapping("/api/business/employees/export")
     public ResponseEntity<byte[]> export(@RequestParam(name = "identity", required = false) String identity, HttpServletRequest request) throws IOException {
-        BusinessService.Export e = business.employees(auth.assertPerm(Permissions.BUSINESS_MANAGE), "full".equals(identity), RequestMeta.of(request).ip());
+        BusinessService.Export exportFile = business.employees(auth.assertPerm(Permissions.BUSINESS_MANAGE), "full".equals(identity), RequestMeta.of(request).ipAddress());
         return ResponseEntity.ok().contentType(XLSX)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + e.filename() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + exportFile.filename() + "\"")
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
-                .body(e.body());
+                .body(exportFile.body());
     }
 }

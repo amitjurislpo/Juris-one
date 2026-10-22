@@ -24,15 +24,15 @@ public class MailService {
 
     private static final Logger log = LoggerFactory.getLogger(MailService.class);
 
-    private final TransactionTemplate tx;
+    private final TransactionTemplate transactionTemplate;
     private final MailRepository repo;
     private final String host, user, pass, from;
     private final int port;
 
-    public MailService(TransactionTemplate tx, MailRepository repo,
+    public MailService(TransactionTemplate transactionTemplate, MailRepository repo,
                        @Value("${jurisone.mail.host:}") String host, @Value("${jurisone.mail.port:587}") int port, @Value("${jurisone.mail.user:}") String user,
                        @Value("${jurisone.mail.pass:}") String pass, @Value("${jurisone.mail.from:JurisOne <no-reply@jurislpo.com>}") String from) {
-        this.tx = tx;
+        this.transactionTemplate = transactionTemplate;
         this.repo = repo;
         this.host = host;
         this.port = port;
@@ -49,7 +49,7 @@ public class MailService {
     }
 
     public void send(String to, MailTemplates.Content content, Attachment file) {
-        java.util.UUID id = tx.execute(s -> {
+        java.util.UUID id = transactionTemplate.execute(transactionStatus -> {
             EmailOutbox row = new EmailOutbox();
             row.setTo(to);
             row.setSubject(content.subject());
@@ -86,10 +86,10 @@ public class MailService {
             if (file != null) mimeMessageHelper.addAttachment(file.filename(), new org.springframework.core.io.ByteArrayResource(file.data()), file.contentType());
             sender.send(mimeMessage);
             repo.markDone(id, EmailStatus.SENT, java.sql.Timestamp.from(Instant.now().truncatedTo(ChronoUnit.MICROS)));
-        } catch (Exception err) {
-            String msg = String.valueOf(err);
-            repo.markFailed(id, EmailStatus.FAILED, msg.substring(0, Math.min(1000, msg.length())));
-            log.error("[email] send failed", err);
+        } catch (Exception failure) {
+            String message = String.valueOf(failure);
+            repo.markFailed(id, EmailStatus.FAILED, message.substring(0, Math.min(1000, message.length())));
+            log.error("[email] send failed", failure);
         }
     }
 }

@@ -39,7 +39,7 @@ public class JobsService {
     static final long LOCK_ID = 74202;
 
     private final JobsRepository repo;
-    private final AttendanceService att;
+    private final AttendanceService attendanceService;
     private final SettingsService settings;
     private final AuditService audit;
     private final SubscriptionService subscriptions;
@@ -51,7 +51,7 @@ public class JobsService {
                        com.jurislpo.jurisone.service.NotificationService notifications, com.jurislpo.jurisone.service.MailService mail,
                        com.jurislpo.jurisone.config.JurisOneProperties props) {
         this.repo = repo;
-        this.att = attendance;
+        this.attendanceService = attendance;
         this.settings = settings;
         this.audit = audit;
         this.subscriptions = subscriptions;
@@ -70,8 +70,8 @@ public class JobsService {
             // each business with its own policies; rows written are tagged with that business
             Map<String, Object> all = new LinkedHashMap<>();
             List<Map<String, Object>> businesses = TenantContext.call(null, repo::findActiveBusinesses);
-            for (Map<String, Object> b : businesses) {
-                all.put((String) b.get("code"), TenantContext.call((UUID) b.get("id"), () -> runForBusiness(now)));
+            for (Map<String, Object> business : businesses) {
+                all.put((String) business.get("code"), TenantContext.call((UUID) business.get("id"), () -> runForBusiness(now)));
             }
             return all;
         }).orElseGet(() -> Map.of("skipped", true));
@@ -123,24 +123,24 @@ public class JobsService {
      * so a working day with no check-in and no approved leave is recorded as Absent (LOP).
      */
     public Map<String, Object> jobFinalizeDays(Instant now) {
-        AttendanceService.ResolvedAttendancePolicy resolvedAttendancePolicy = att.policy();
-        List<AttendanceEmployee> employees = att.loadAttendanceEmployees("e.status <> 'EXITED' OR e.exit_date >= ?", Timestamp.from(now.minusSeconds(10L * 86400)));
+        AttendanceService.ResolvedAttendancePolicy resolvedAttendancePolicy = attendanceService.policy();
+        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.status <> 'EXITED' OR e.exit_date >= ?", Timestamp.from(now.minusSeconds(10L * 86400)));
         LocalDate today = today(now);
         LocalDate from = today.minusDays(7).isAfter(resolvedAttendancePolicy.trackingStart()) ? today.minusDays(7) : resolvedAttendancePolicy.trackingStart();
-        return Map.of("written", att.materialize(employees, from, today, false, now));
+        return Map.of("written", attendanceService.materialize(employees, from, today, false, now));
     }
 
     /** Locks each month at the configured time (default: 1st of next month, 10:00 IST). Idempotent. */
     public Map<String, Object> jobLockMonths(Instant now) {
-        AttendanceService.ResolvedAttendancePolicy resolvedAttendancePolicy = att.policy();
+        AttendanceService.ResolvedAttendancePolicy resolvedAttendancePolicy = attendanceService.policy();
         List<String> locked = new ArrayList<>();
-        for (YearMonth yearMonth = YearMonth.from(resolvedAttendancePolicy.trackingStart()); !att.lockInstant(yearMonth.toString(), resolvedAttendancePolicy).isAfter(now); yearMonth = yearMonth.plusMonths(1)) {
+        for (YearMonth yearMonth = YearMonth.from(resolvedAttendancePolicy.trackingStart()); !attendanceService.lockInstant(yearMonth.toString(), resolvedAttendancePolicy).isAfter(now); yearMonth = yearMonth.plusMonths(1)) {
             Integer done = repo.countLockRuns(yearMonth.toString());
             if (done != null && done > 0) continue;
             LocalDate from = yearMonth.atDay(1).isBefore(resolvedAttendancePolicy.trackingStart()) ? resolvedAttendancePolicy.trackingStart() : yearMonth.atDay(1);
             LocalDate to = yearMonth.atEndOfMonth();
-            List<AttendanceEmployee> employees = att.loadAttendanceEmployees("e.date_of_joining <= ? AND (e.exit_date IS NULL OR e.exit_date >= ?)", Date.valueOf(to), Date.valueOf(from));
-            int written = att.materialize(employees, from, to, true, now);
+            List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.date_of_joining <= ? AND (e.exit_date IS NULL OR e.exit_date >= ?)", Date.valueOf(to), Date.valueOf(from));
+            int written = attendanceService.materialize(employees, from, to, true, now);
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("employees", employees.size());
             detail.put("rows", written);
@@ -158,11 +158,11 @@ public class JobsService {
         List<Map<String, Object>> employees = repo.findOnboardingOrProbation();
         int changed = 0;
         for (Map<String, Object> employee : employees) {
-            EmployeeStatus cur = EmployeeStatus.valueOf((String) employee.get("status"));
-            EmployeeStatus next = PeopleRules.derivedStatus(cur, ((Date) employee.get("date_of_joining")).toLocalDate(), today, months);
-            if (next == cur) continue;
+            EmployeeStatus currentStatus = EmployeeStatus.valueOf((String) employee.get("status"));
+            EmployeeStatus next = PeopleRules.derivedStatus(currentStatus, ((Date) employee.get("date_of_joining")).toLocalDate(), today, months);
+            if (next == currentStatus) continue;
             repo.updateEmployeeStatus(employee.get("id"), next.name());
-            audit.log(null, "employee.status_auto", "employee", employee.get("id").toString(), Map.of("status", cur.name()), Map.of("status", next.name()), null);
+            audit.log(null, "employee.status_auto", "employee", employee.get("id").toString(), Map.of("status", currentStatus.name()), Map.of("status", next.name()), null);
             changed++;
         }
         return Map.of("changed", changed);
@@ -182,8 +182,8 @@ public class JobsService {
         int credited = 0;
         for (Map<String, Object> employee : employees) {
             LocalDate dateOfJoining = ((Date) employee.get("date_of_joining")).toLocalDate();
-            for (int m = 1; m <= Integer.parseInt(yearMonth.substring(5)); m++) {
-                String month = year + "-" + String.format(java.util.Locale.ROOT, "%02d", m);
+            for (int monthNumber = 1; monthNumber <= Integer.parseInt(yearMonth.substring(5)); monthNumber++) {
+                String month = year + "-" + String.format(java.util.Locale.ROOT, "%02d", monthNumber);
                 for (Map<String, Object> type : types) {
                     String refId = "accrual:" + type.get("code") + ":" + month;
                     if (done.contains(employee.get("id") + "|" + refId)) continue;
@@ -203,15 +203,15 @@ public class JobsService {
         LocalDate today = today(now);
         List<CompOffRow> credits = repo.findCompOffCredits();
         Map<UUID, List<CompOffRow>> byEmployee = new LinkedHashMap<>();
-        for (CompOffRow c : credits) byEmployee.computeIfAbsent(c.employeeId(), k -> new ArrayList<>()).add(c);
+        for (CompOffRow credit : credits) byEmployee.computeIfAbsent(credit.employeeId(), k -> new ArrayList<>()).add(credit);
         int expired = 0;
         for (Map.Entry<UUID, List<CompOffRow>> entry : byEmployee.entrySet()) {
             List<CompOffRow> rows = repo.findCompOffDebits(entry.getKey());
             double used = -rows.stream().filter(r -> !"EXPIRED".equals(r.reason())).mapToDouble(CompOffRow::delta).sum();
             List<LeaveRules.Credit> creditList = new ArrayList<>();
             for (CompOffRow compOffRow : entry.getValue()) {
-                double exp = -rows.stream().filter(r -> "EXPIRED".equals(r.reason()) && compOffRow.id().toString().equals(r.refId())).mapToDouble(CompOffRow::delta).sum();
-                creditList.add(new LeaveRules.Credit(compOffRow.id().toString(), compOffRow.delta(), compOffRow.expiresOn() != null ? compOffRow.expiresOn() : LocalDate.of(9999, 12, 31), exp));
+                double expiredDays = -rows.stream().filter(r -> "EXPIRED".equals(r.reason()) && compOffRow.id().toString().equals(r.refId())).mapToDouble(CompOffRow::delta).sum();
+                creditList.add(new LeaveRules.Credit(compOffRow.id().toString(), compOffRow.delta(), compOffRow.expiresOn() != null ? compOffRow.expiresOn() : LocalDate.of(9999, 12, 31), expiredDays));
             }
             for (LeaveRules.Expiry expiry : LeaveRules.compOffExpiries(creditList, used, today)) {
                 repo.insertCompOffExpiry(entry.getKey(), BigDecimal.valueOf(-expiry.amount()), expiry.id());
@@ -224,9 +224,9 @@ public class JobsService {
     /** On 1 January: casual leave lapses, earned leave carries forward up to its cap. Once per year. */
     public Map<String, Object> jobLeaveYearEnd(Instant now) {
         String previous = String.valueOf(today(now).getYear() - 1);
-        Integer ran = repo.countYearEndRuns(previous);
-        if (ran != null && ran > 0) return Map.of("lapsed", 0);
-        String firstYear = String.valueOf(att.policy().trackingStart().getYear());
+        Integer runCount = repo.countYearEndRuns(previous);
+        if (runCount != null && runCount > 0) return Map.of("lapsed", 0);
+        String firstYear = String.valueOf(attendanceService.policy().trackingStart().getYear());
         if (previous.compareTo(firstYear) < 0) return Map.of("lapsed", 0);
         List<Map<String, Object>> types = repo.findYearEndTypes();
         Timestamp end = Timestamp.from(LocalDate.parse(previous + "-12-31").atTime(23, 59, 59).toInstant(ZoneOffset.UTC));
@@ -234,13 +234,13 @@ public class JobsService {
         for (Map<String, Object> type : types) {
             BigDecimal cap = (BigDecimal) type.get("carry_forward_cap");
             List<Map<String, Object>> sums = repo.sumBalancesUntil(type.get("code"), end);
-            for (Map<String, Object> s : sums) {
-                BigDecimal sum = (BigDecimal) s.get("s");
+            for (Map<String, Object> sumRow : sums) {
+                BigDecimal sum = (BigDecimal) sumRow.get("total_delta");
                 double amount = LeaveRules.yearEndLapse(Num.round2(sum == null ? 0 : sum.doubleValue()), cap.doubleValue());
                 if (amount > 0) {
                     // Prisma Decimal.toString(): "0" for zero
                     String note = cap.compareTo(BigDecimal.ZERO) == 0 ? "Lapsed at year end" : "Above carry-forward cap";
-                    repo.insertYearEndLapse(s.get("employee_id"), type.get("code"), BigDecimal.valueOf(-amount), "year_end:" + previous, note);
+                    repo.insertYearEndLapse(sumRow.get("employee_id"), type.get("code"), BigDecimal.valueOf(-amount), "year_end:" + previous, note);
                     lapsed++;
                 }
             }

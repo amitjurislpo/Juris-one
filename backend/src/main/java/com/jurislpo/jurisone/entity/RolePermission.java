@@ -18,9 +18,9 @@ public class RolePermission {
         public Key() {}
         public Key(UUID roleId, String permissionKey) { this.roleId = roleId; this.permissionKey = permissionKey; }
 
-        @Override public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Key other)) return false;
+        @Override public boolean equals(Object object) {
+            if (this == object) return true;
+            if (!(object instanceof Key other)) return false;
             return Objects.equals(roleId, other.roleId) && Objects.equals(permissionKey, other.permissionKey);
         }
         @Override public int hashCode() { return Objects.hash(roleId, permissionKey); }

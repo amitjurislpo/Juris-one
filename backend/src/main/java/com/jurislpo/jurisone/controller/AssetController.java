@@ -63,7 +63,7 @@ public class AssetController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> create(@RequestBody AssetService.AssetInput body, HttpServletRequest request) {
-        String id = assets.create(manager(), body, RequestMeta.of(request).ip());
+        String id = assets.create(manager(), body, RequestMeta.of(request).ipAddress());
         return ApiResult.success("Asset added", Map.of("id", id));
     }
 
@@ -75,13 +75,13 @@ public class AssetController {
 
     @PutMapping("/{id}")
     public ApiResult<Void> update(@PathVariable String id, @RequestBody AssetService.AssetInput body, HttpServletRequest request) {
-        assets.update(manager(), id, body, RequestMeta.of(request).ip());
+        assets.update(manager(), id, body, RequestMeta.of(request).ipAddress());
         return ApiResult.message("Asset saved");
     }
 
     @DeleteMapping("/{id}")
     public ApiResult<Void> delete(@PathVariable String id, HttpServletRequest request) {
-        assets.delete(manager(), id, RequestMeta.of(request).ip());
+        assets.delete(manager(), id, RequestMeta.of(request).ipAddress());
         return ApiResult.message("Asset deleted");
     }
 
@@ -89,12 +89,12 @@ public class AssetController {
     @PostMapping("/{id}/assignments")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> assign(@PathVariable String id, @RequestBody AssetService.AssignInput body, HttpServletRequest request) {
-        return ApiResult.message(assets.assign(manager(), id, body, RequestMeta.of(request).ip()));
+        return ApiResult.message(assets.assign(manager(), id, body, RequestMeta.of(request).ipAddress()));
     }
 
     /** {@code {condition, returnedOn?, notes?}} — closes the open assignment. */
     @PatchMapping("/{id}/assignments/current")
     public ApiResult<Void> giveBack(@PathVariable String id, @RequestBody AssetService.ReturnInput body, HttpServletRequest request) {
-        return ApiResult.message(assets.giveBack(manager(), id, body, RequestMeta.of(request).ip()));
+        return ApiResult.message(assets.giveBack(manager(), id, body, RequestMeta.of(request).ipAddress()));
     }
 }

@@ -22,7 +22,7 @@ public class LettersRepository {
 
     /** The default templates of a business (SQL function from V15; existing names are left alone). */
     public void seedDefaultTemplates(UUID businessId) {
-        jdbc.query("SELECT jurisone_seed_letter_templates(?)", rs -> {}, businessId);
+        jdbc.query("SELECT jurisone_seed_letter_templates(?)", resultSet -> {}, businessId);
     }
 
     public List<Map<String, Object>> templates() {
@@ -53,14 +53,14 @@ public class LettersRepository {
 
     public List<Map<String, Object>> employee(UUID id) {
         return jdbc.queryForList("""
-            SELECT e.id, e.code, e.full_name, e.email, e.designation, e.date_of_joining, e.exit_date, d.name AS dept
+            SELECT e.id, e.code, e.full_name, e.email, e.designation, e.date_of_joining, e.exit_date, d.name AS department_name
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id WHERE e.id = ?""", id);
     }
 
     /** Monthly Basic + HRA + LTA + Special (paise) of the structure in force on the date; empty when none yet. */
-    public List<Long> monthlyGrossOn(UUID employeeId, LocalDate on) {
+    public List<Long> monthlyGrossOn(UUID employeeId, LocalDate date) {
         return jdbc.query("SELECT (basic + hra + lta + special)::bigint FROM salary_structures WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1",
-                (rs, i) -> rs.getLong(1), employeeId, Date.valueOf(on));
+                (resultSet, i) -> resultSet.getLong(1), employeeId, Date.valueOf(date));
     }
 
     // ───────────────────────── issued letters ─────────────────────────
@@ -74,12 +74,12 @@ public class LettersRepository {
     }
 
     public void insertIssued(UUID id, String reference, UUID templateId, String templateName, int templateVersion, String type, boolean needsSalary, UUID employeeId,
-                             String employeeCode, String employeeName, String subject, String body, String bodySha, byte[] pdf, String pdfSha, UUID issuedBy, String issuedByName) {
+                             String employeeCode, String employeeName, String subject, String body, String bodySha, byte[] pdfBytes, String pdfSha, UUID issuedBy, String issuedByName) {
         jdbc.update("""
             INSERT INTO issued_letters (id, reference_no, template_id, template_name, template_version, letter_type, needs_salary, employee_id, employee_code, employee_name,
                                         subject, body, body_sha256, pdf, pdf_sha256, issued_by, issued_by_name)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                id, reference, templateId, templateName, templateVersion, type, needsSalary, employeeId, employeeCode, employeeName, subject, body, bodySha, pdf, pdfSha, issuedBy,
+                id, reference, templateId, templateName, templateVersion, type, needsSalary, employeeId, employeeCode, employeeName, subject, body, bodySha, pdfBytes, pdfSha, issuedBy,
                 issuedByName);
     }
 
@@ -101,7 +101,7 @@ public class LettersRepository {
     }
 
     public byte[] issuedPdf(UUID id) {
-        List<byte[]> r = jdbc.query("SELECT pdf FROM issued_letters WHERE id = ?", (rs, i) -> rs.getBytes(1), id);
-        return r.isEmpty() ? null : r.get(0);
+        List<byte[]> pdfs = jdbc.query("SELECT pdf FROM issued_letters WHERE id = ?", (resultSet, i) -> resultSet.getBytes(1), id);
+        return pdfs.isEmpty() ? null : pdfs.get(0);
     }
 }

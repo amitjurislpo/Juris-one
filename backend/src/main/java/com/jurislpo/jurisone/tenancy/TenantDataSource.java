@@ -34,10 +34,10 @@ public class TenantDataSource extends DelegatingDataSource {
 
     private static Connection apply(Connection connection) throws SQLException {
         UUID business = TenantContext.current();
-        try (Statement s = connection.createStatement()) {
+        try (Statement statement = connection.createStatement()) {
             // the UUID's own toString() is the only value interpolated — no user text reaches this SQL
-            if (business == null) s.execute("RESET ROLE; SELECT set_config('app.business_id', '', false)");
-            else s.execute("SET ROLE " + TENANT_ROLE + "; SELECT set_config('app.business_id', '" + business + "', false)");
+            if (business == null) statement.execute("RESET ROLE; SELECT set_config('app.business_id', '', false)");
+            else statement.execute("SET ROLE " + TENANT_ROLE + "; SELECT set_config('app.business_id', '" + business + "', false)");
         } catch (SQLException e) {
             connection.close();
             throw e;
@@ -50,7 +50,7 @@ public class TenantDataSource extends DelegatingDataSource {
     static class Wrapper implements BeanPostProcessor {
         @Override
         public Object postProcessAfterInitialization(Object bean, String name) {
-            return bean instanceof DataSource ds && !(bean instanceof TenantDataSource) ? new TenantDataSource(ds) : bean;
+            return bean instanceof DataSource dataSource && !(bean instanceof TenantDataSource) ? new TenantDataSource(dataSource) : bean;
         }
     }
 }

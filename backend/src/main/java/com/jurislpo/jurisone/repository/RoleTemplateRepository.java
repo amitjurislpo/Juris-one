@@ -21,13 +21,13 @@ public class RoleTemplateRepository {
         this.jdbc = jdbc;
     }
 
-    private static List<String> strings(Array a) throws SQLException {
-        return a == null ? List.of() : Arrays.asList((String[]) a.getArray());
+    private static List<String> strings(Array array) throws SQLException {
+        return array == null ? List.of() : Arrays.asList((String[]) array.getArray());
     }
 
-    private static Template map(java.sql.ResultSet rs, int i) throws SQLException {
-        return new Template(rs.getString("key"), rs.getString("name"), rs.getBoolean("locked"), rs.getBoolean("mandatory"), strings(rs.getArray("permissions")),
-                strings(rs.getArray("assignable")), rs.getInt("sort_order"), rs.getBoolean("active"));
+    private static Template map(java.sql.ResultSet resultSet, int i) throws SQLException {
+        return new Template(resultSet.getString("key"), resultSet.getString("name"), resultSet.getBoolean("locked"), resultSet.getBoolean("mandatory"), strings(resultSet.getArray("permissions")),
+                strings(resultSet.getArray("assignable")), resultSet.getInt("sort_order"), resultSet.getBoolean("active"));
     }
 
     public List<Template> findAll() {
@@ -47,22 +47,22 @@ public class RoleTemplateRepository {
     }
 
     public void insert(String key, String name, List<String> permissions, List<String> assignable, int sortOrder) {
-        jdbc.update("INSERT INTO role_templates (key, name, permissions, assignable, sort_order) VALUES (?, ?, ?, ?, ?)", ps -> {
-            ps.setString(1, key);
-            ps.setString(2, name);
-            ps.setArray(3, ps.getConnection().createArrayOf("text", permissions.toArray()));
-            ps.setArray(4, ps.getConnection().createArrayOf("text", assignable.toArray()));
-            ps.setInt(5, sortOrder);
+        jdbc.update("INSERT INTO role_templates (key, name, permissions, assignable, sort_order) VALUES (?, ?, ?, ?, ?)", statement -> {
+            statement.setString(1, key);
+            statement.setString(2, name);
+            statement.setArray(3, statement.getConnection().createArrayOf("text", permissions.toArray()));
+            statement.setArray(4, statement.getConnection().createArrayOf("text", assignable.toArray()));
+            statement.setInt(5, sortOrder);
         });
     }
 
     public void update(String key, String name, List<String> permissions, List<String> assignable, boolean active) {
-        jdbc.update("UPDATE role_templates SET name = ?, permissions = ?, assignable = ?, active = ? WHERE key = ?", ps -> {
-            ps.setString(1, name);
-            ps.setArray(2, ps.getConnection().createArrayOf("text", permissions.toArray()));
-            ps.setArray(3, ps.getConnection().createArrayOf("text", assignable.toArray()));
-            ps.setBoolean(4, active);
-            ps.setString(5, key);
+        jdbc.update("UPDATE role_templates SET name = ?, permissions = ?, assignable = ?, active = ? WHERE key = ?", statement -> {
+            statement.setString(1, name);
+            statement.setArray(2, statement.getConnection().createArrayOf("text", permissions.toArray()));
+            statement.setArray(3, statement.getConnection().createArrayOf("text", assignable.toArray()));
+            statement.setBoolean(4, active);
+            statement.setString(5, key);
         });
     }
 

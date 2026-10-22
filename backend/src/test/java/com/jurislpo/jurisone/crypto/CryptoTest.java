@@ -24,9 +24,9 @@ class CryptoTest {
     @DisplayName("round-trips and never stores plaintext")
     void roundTrip() {
         String aadhaar = "234567891234";
-        String enc = crypto.encrypt(aadhaar);
-        assertThat(enc).doesNotContain(aadhaar).startsWith("v1.");
-        assertThat(crypto.decrypt(enc)).isEqualTo(aadhaar);
+        String encrypted = crypto.encrypt(aadhaar);
+        assertThat(encrypted).doesNotContain(aadhaar).startsWith("v1.");
+        assertThat(crypto.decrypt(encrypted)).isEqualTo(aadhaar);
     }
 
     @Test
@@ -60,7 +60,7 @@ class CryptoTest {
 
     @Test
     @DisplayName("hashes tokens deterministically")
-    void sha() {
+    void hashesWithSha256() {
         assertThat(Tokens.sha256("abc")).hasSize(64).isEqualTo(Tokens.sha256("abc"))
                 .isEqualTo("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"); // Node createHash
     }

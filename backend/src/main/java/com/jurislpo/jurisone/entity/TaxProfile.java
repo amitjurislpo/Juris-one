@@ -17,17 +17,17 @@ public class TaxProfile {
     /** Composite primary key. */
     public static class Key implements Serializable {
         private UUID employeeId;
-        private String fy;
+        private String financialYear;
 
         public Key() {}
-        public Key(UUID employeeId, String fy) { this.employeeId = employeeId; this.fy = fy; }
+        public Key(UUID employeeId, String financialYear) { this.employeeId = employeeId; this.financialYear = financialYear; }
 
-        @Override public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Key other)) return false;
-            return Objects.equals(employeeId, other.employeeId) && Objects.equals(fy, other.fy);
+        @Override public boolean equals(Object object) {
+            if (this == object) return true;
+            if (!(object instanceof Key other)) return false;
+            return Objects.equals(employeeId, other.employeeId) && Objects.equals(financialYear, other.financialYear);
         }
-        @Override public int hashCode() { return Objects.hash(employeeId, fy); }
+        @Override public int hashCode() { return Objects.hash(employeeId, financialYear); }
     }
 
     @Id
@@ -36,7 +36,7 @@ public class TaxProfile {
 
     @Id
     @Column(name = "fy", nullable = false)
-    private String fy;
+    private String financialYear;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -80,8 +80,8 @@ public class TaxProfile {
 
     public UUID getEmployeeId() { return employeeId; }
     public void setEmployeeId(UUID employeeId) { this.employeeId = employeeId; }
-    public String getFy() { return fy; }
-    public void setFy(String fy) { this.fy = fy; }
+    public String getFinancialYear() { return financialYear; }
+    public void setFinancialYear(String financialYear) { this.financialYear = financialYear; }
     public TaxRegime getRegime() { return regime; }
     public void setRegime(TaxRegime regime) { this.regime = regime; }
     public Boolean getRegimeOverridden() { return regimeOverridden; }

@@ -41,12 +41,12 @@ class PayrollTaxTest {
         @Test
         @DisplayName("joined 8 Sep with 1 LOP → 22 of 30 paid days")
         void paidDays() {
-            int elig = PayrollEngine.eligibleDays(YearMonth.of(2026, 9), LocalDate.parse("2026-09-08"), null);
-            assertThat(elig).isEqualTo(23);
-            PayResult p = PayrollEngine.computePay(new PayInput(JC074, 30, elig, 1, 0, 0, 0, 0.12, 1_500_000, 20_000));
-            assertThat(p.paidDays()).isEqualTo(22);
-            assertThat(p.grossEarned()).isEqualTo(11_000_000); // ₹1,10,000
-            assertThat(p.pf()).isEqualTo(180_000); // 12% of ₹15,000
+            int eligibleDayCount = PayrollEngine.eligibleDays(YearMonth.of(2026, 9), LocalDate.parse("2026-09-08"), null);
+            assertThat(eligibleDayCount).isEqualTo(23);
+            PayResult payResult = PayrollEngine.computePay(new PayInput(JC074, 30, eligibleDayCount, 1, 0, 0, 0, 0.12, 1_500_000, 20_000));
+            assertThat(payResult.paidDays()).isEqualTo(22);
+            assertThat(payResult.grossEarned()).isEqualTo(11_000_000); // ₹1,10,000
+            assertThat(payResult.pf()).isEqualTo(180_000); // 12% of ₹15,000
         }
 
         @Test
@@ -55,10 +55,10 @@ class PayrollTaxTest {
             int remaining = TaxEngine.financialYearOf("2026-09").remainingInclCurrent();
             assertThat(remaining).isEqualTo(7);
             double juris = 110000 + 150000 * 6; // Sep actual + Oct–Mar projected
-            TaxResult t = TaxEngine.computeTax(juris + 750000, 0, NEW);
-            assertThat(t.taxable()).isEqualTo(1685000);
-            assertThat(t.total()).isEqualTo(142480);
-            assertThat(TaxEngine.monthlyTds(t.total(), 38000, remaining)).isEqualTo(14926);
+            TaxResult taxResult = TaxEngine.computeTax(juris + 750000, 0, NEW);
+            assertThat(taxResult.taxable()).isEqualTo(1685000);
+            assertThat(taxResult.total()).isEqualTo(142480);
+            assertThat(TaxEngine.monthlyTds(taxResult.total(), 38000, remaining)).isEqualTo(14926);
         }
     }
 
@@ -84,9 +84,9 @@ class PayrollTaxTest {
         @Test
         @DisplayName("surcharge above ₹50L with marginal relief")
         void surcharge() {
-            TaxResult t = TaxEngine.computeTax(5_085_000, 0, NEW); // 50.1L taxable
+            TaxResult taxResult = TaxEngine.computeTax(5_085_000, 0, NEW); // 50.1L taxable
             TaxResult at50 = TaxEngine.computeTax(5_075_000, 0, NEW);
-            assertThat(t.base() + t.surcharge()).isLessThanOrEqualTo(at50.base() + 10000 + 1);
+            assertThat(taxResult.base() + taxResult.surcharge()).isLessThanOrEqualTo(at50.base() + 10000 + 1);
         }
 
         @Test
@@ -98,10 +98,10 @@ class PayrollTaxTest {
             declaration.ppf = 80000;
             declaration.lic = 25000;
             declaration.medSelf = 18000;
-            Deductions d = TaxEngine.oldRegimeDeductions(432000, 172800, 51840, declaration, CAPS, null);
-            assertThat(d.hraExemption()).isEqualTo(Math.round(Math.min(172800, Math.min(180000 - 43200, 216000))));
-            assertThat(d.c80C()).isEqualTo(150000);
-            assertThat(d.total()).isEqualTo(136800 + 150000 + 18000);
+            Deductions deductions = TaxEngine.oldRegimeDeductions(432000, 172800, 51840, declaration, CAPS, null);
+            assertThat(deductions.hraExemption()).isEqualTo(Math.round(Math.min(172800, Math.min(180000 - 43200, 216000))));
+            assertThat(deductions.c80C()).isEqualTo(150000);
+            assertThat(deductions.total()).isEqualTo(136800 + 150000 + 18000);
         }
 
         @Test

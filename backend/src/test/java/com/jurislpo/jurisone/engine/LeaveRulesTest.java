@@ -16,8 +16,8 @@ import org.junit.jupiter.api.Test;
 /** Port of tests/unit/leave-rules.test.ts. */
 class LeaveRulesTest {
 
-    static LocalDate d(String s) { return LocalDate.parse(s); }
-    static final Map<LocalDate, String> HOL = Map.of(d("2026-10-20"), "Dussehra");
+    static LocalDate parseDate(String text) { return LocalDate.parse(text); }
+    static final Map<LocalDate, String> HOL = Map.of(parseDate("2026-10-20"), "Dussehra");
 
     @Nested
     @DisplayName("working days")
@@ -25,16 +25,16 @@ class LeaveRulesTest {
         @Test
         @DisplayName("skips weekends and the employee's holidays")
         void skips() {
-            WorkingDays r = workingDays(d("2026-10-16"), d("2026-10-21"), Set.of(0, 6), HOL); // Fri → Wed
-            assertThat(r.dates()).containsExactly(d("2026-10-16"), d("2026-10-19"), d("2026-10-21"));
-            assertThat(r.skipped()).containsExactly(new Skipped(d("2026-10-20"), "Dussehra"));
+            WorkingDays workingDays = workingDays(parseDate("2026-10-16"), parseDate("2026-10-21"), Set.of(0, 6), HOL); // Fri → Wed
+            assertThat(workingDays.dates()).containsExactly(parseDate("2026-10-16"), parseDate("2026-10-19"), parseDate("2026-10-21"));
+            assertThat(workingDays.skipped()).containsExactly(new Skipped(parseDate("2026-10-20"), "Dussehra"));
         }
 
         @Test
         @DisplayName("half day applies only to a single date")
         void halfDay() {
-            assertThat(requestDays(List.of(d("2026-10-21")), LeavePart.FIRST_HALF)).isEqualTo(0.5);
-            assertThat(requestDays(List.of(d("2026-10-21"), d("2026-10-22")), LeavePart.FIRST_HALF)).isEqualTo(2);
+            assertThat(requestDays(List.of(parseDate("2026-10-21")), LeavePart.FIRST_HALF)).isEqualTo(0.5);
+            assertThat(requestDays(List.of(parseDate("2026-10-21"), parseDate("2026-10-22")), LeavePart.FIRST_HALF)).isEqualTo(2);
             assertThat(requestDays(List.of(), LeavePart.FULL)).isZero();
         }
     }
@@ -59,8 +59,8 @@ class LeaveRulesTest {
         @Test
         @DisplayName("shortfall lands on the last days")
         void shortfall() {
-            assertThat(paidFractions(List.of(d("2026-10-21"), d("2026-10-22"), d("2026-10-23")), LeavePart.FULL, 1.5).values()).containsExactly(1.0, 0.5, 0.0);
-            assertThat(paidFractions(List.of(d("2026-10-21")), LeavePart.FIRST_HALF, 0.5).values()).containsExactly(1.0);
+            assertThat(paidFractions(List.of(parseDate("2026-10-21"), parseDate("2026-10-22"), parseDate("2026-10-23")), LeavePart.FULL, 1.5).values()).containsExactly(1.0, 0.5, 0.0);
+            assertThat(paidFractions(List.of(parseDate("2026-10-21")), LeavePart.FIRST_HALF, 0.5).values()).containsExactly(1.0);
         }
     }
 
@@ -70,10 +70,10 @@ class LeaveRulesTest {
         @Test
         @DisplayName("full month after joining, pro-rata in the joining month, none before")
         void accrual() {
-            assertThat(accrualFor(YearMonth.of(2026, 10), d("2026-09-08"), 1)).isEqualTo(1);
-            assertThat(accrualFor(YearMonth.of(2026, 9), d("2026-09-08"), 1)).isEqualTo(0.77); // 23 of 30 days — prototype JC-074
-            assertThat(accrualFor(YearMonth.of(2026, 9), d("2026-09-08"), 1.5)).isEqualTo(1.15);
-            assertThat(accrualFor(YearMonth.of(2026, 8), d("2026-09-08"), 1)).isZero();
+            assertThat(accrualFor(YearMonth.of(2026, 10), parseDate("2026-09-08"), 1)).isEqualTo(1);
+            assertThat(accrualFor(YearMonth.of(2026, 9), parseDate("2026-09-08"), 1)).isEqualTo(0.77); // 23 of 30 days — prototype JC-074
+            assertThat(accrualFor(YearMonth.of(2026, 9), parseDate("2026-09-08"), 1.5)).isEqualTo(1.15);
+            assertThat(accrualFor(YearMonth.of(2026, 8), parseDate("2026-09-08"), 1)).isZero();
         }
     }
 
@@ -90,12 +90,12 @@ class LeaveRulesTest {
 
         @Test
         @DisplayName("expires the unused part of old credits first-in-first-out")
-        void fifo() {
-            Credit a = new Credit("a", 1, d("2026-09-01"), 0);
-            Credit b = new Credit("b", 1, d("2026-12-01"), 0);
-            assertThat(compOffExpiries(List.of(a, b), 0.5, d("2026-10-06"))).containsExactly(new Expiry("a", 0.5));
-            assertThat(compOffExpiries(List.of(a, b), 1, d("2026-10-06"))).isEmpty();
-            assertThat(compOffExpiries(List.of(new Credit("a", 1, d("2026-09-01"), 0.5), b), 0.5, d("2026-10-06"))).isEmpty();
+        void oldestCreditsFirst() {
+            Credit first = new Credit("a", 1, parseDate("2026-09-01"), 0);
+            Credit second = new Credit("b", 1, parseDate("2026-12-01"), 0);
+            assertThat(compOffExpiries(List.of(first, second), 0.5, parseDate("2026-10-06"))).containsExactly(new Expiry("a", 0.5));
+            assertThat(compOffExpiries(List.of(first, second), 1, parseDate("2026-10-06"))).isEmpty();
+            assertThat(compOffExpiries(List.of(new Credit("a", 1, parseDate("2026-09-01"), 0.5), second), 0.5, parseDate("2026-10-06"))).isEmpty();
         }
     }
 

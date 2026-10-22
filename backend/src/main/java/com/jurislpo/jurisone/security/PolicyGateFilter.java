@@ -56,7 +56,7 @@ public class PolicyGateFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         // accepting a policy is a write, so a business whose subscription has ended (read-only) is never asked
-        if (authentication != null && authentication.getPrincipal() instanceof CurrentUser u && PolicyService.mustAcknowledge(u) && !readOnly(u) && policies.hasPending(u.id())) {
+        if (authentication != null && authentication.getPrincipal() instanceof CurrentUser currentUser && PolicyService.mustAcknowledge(currentUser) && !readOnly(currentUser) && policies.hasPending(currentUser.id())) {
             response.setStatus(HttpStatus.PRECONDITION_REQUIRED.value());
             response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
             json.writeValue(response.getOutputStream(), Problems.of(HttpStatus.PRECONDITION_REQUIRED, "POLICY_ACK_REQUIRED", MESSAGE, request.getRequestURI()));

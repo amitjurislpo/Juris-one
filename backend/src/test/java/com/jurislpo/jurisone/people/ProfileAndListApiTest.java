@@ -26,71 +26,71 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /** Employees list: never yourself, never the owner; exports leave the owner out; everyone edits a few details of their own. */
 class ProfileAndListApiTest extends IntegrationTest {
 
-    @Autowired MockMvc mvc;
+    @Autowired MockMvc mockMvc;
     @Autowired JdbcTemplate jdbc;
 
-    String s;
-    Cookie hr, employee, owner;
+    String suffix;
+    Cookie hrCookie, employee, owner;
 
-    static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder b) {
-        return b.header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON);
+    static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder request) {
+        return request.header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON);
     }
 
     Cookie signIn(String email) throws Exception {
-        String set = SignIn.session(mvc, email)
+        String set = SignIn.session(mockMvc, email)
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
-        Matcher m = Pattern.compile("jo_at=([^;]+)").matcher(set);
-        assertThat(m.find()).isTrue();
-        return new Cookie("jo_at", m.group(1));
+        Matcher matcher = Pattern.compile("jo_at=([^;]+)").matcher(set);
+        assertThat(matcher.find()).isTrue();
+        return new Cookie("jo_at", matcher.group(1));
     }
 
     @BeforeEach
     void business() throws Exception {
-        s = TestData.letters(8);
-        TestData t = new TestData(jdbc).inBusiness("list-" + s);
-        UUID hrRole = t.role("hrm", "self", "dir", "people.view", "people.add");
-        UUID empRole = t.role("employee", "self", "dir");
-        UUID ownerRole = t.role("owner", "dir", "roles.manage", "people.view", "people.add", "business.manage");
-        t.employee("LH-" + s, "hr." + s + "@example.com", hrRole);
-        t.employee("LX-" + s, "hr2." + s + "@example.com", hrRole);
-        t.employee("LE-" + s, "emp." + s + "@example.com", empRole);
-        t.employee("LO-" + s, "owner." + s + "@example.com", ownerRole);
-        hr = signIn("hr." + s + "@example.com");
-        employee = signIn("emp." + s + "@example.com");
-        owner = signIn("owner." + s + "@example.com");
+        suffix = TestData.letters(8);
+        TestData testData = new TestData(jdbc).inBusiness("list-" + suffix);
+        UUID hrRole = testData.role("hrm", "self", "dir", "people.view", "people.add");
+        UUID empRole = testData.role("employee", "self", "dir");
+        UUID ownerRole = testData.role("owner", "dir", "roles.manage", "people.view", "people.add", "business.manage");
+        testData.employee("LH-" + suffix, "hr." + suffix + "@example.com", hrRole);
+        testData.employee("LX-" + suffix, "hr2." + suffix + "@example.com", hrRole);
+        testData.employee("LE-" + suffix, "emp." + suffix + "@example.com", empRole);
+        testData.employee("LO-" + suffix, "owner." + suffix + "@example.com", ownerRole);
+        hrCookie = signIn("hr." + suffix + "@example.com");
+        employee = signIn("emp." + suffix + "@example.com");
+        owner = signIn("owner." + suffix + "@example.com");
     }
 
     @Test
     void theListLeavesOutYourselfAndTheOwner() throws Exception {
-        String hrList = mvc.perform(get("/api/people").cookie(hr)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        assertThat(hrList).contains("LX-" + s, "LE-" + s).doesNotContain("LH-" + s, "LO-" + s);
-        mvc.perform(get("/api/people").cookie(hr)).andExpect(jsonPath("$.data.total").value(2)).andExpect(jsonPath("$.data.counts.current").value(2));
-        String ownerList = mvc.perform(get("/api/people").cookie(owner)).andReturn().getResponse().getContentAsString();
-        assertThat(ownerList).contains("LH-" + s, "LX-" + s, "LE-" + s).doesNotContain("LO-" + s);
+        String hrList = mockMvc.perform(get("/api/people").cookie(hrCookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(hrList).contains("LX-" + suffix, "LE-" + suffix).doesNotContain("LH-" + suffix, "LO-" + suffix);
+        mockMvc.perform(get("/api/people").cookie(hrCookie)).andExpect(jsonPath("$.data.total").value(2)).andExpect(jsonPath("$.data.counts.current").value(2));
+        String ownerList = mockMvc.perform(get("/api/people").cookie(owner)).andReturn().getResponse().getContentAsString();
+        assertThat(ownerList).contains("LH-" + suffix, "LX-" + suffix, "LE-" + suffix).doesNotContain("LO-" + suffix);
         // the export has everyone but the owner (including the person exporting)
-        String csv = mvc.perform(get("/api/people/export").cookie(hr)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        assertThat(csv).contains("LH-" + s, "LX-" + s, "LE-" + s).doesNotContain("LO-" + s);
+        String csv = mockMvc.perform(get("/api/people/export").cookie(hrCookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(csv).contains("LH-" + suffix, "LX-" + suffix, "LE-" + suffix).doesNotContain("LO-" + suffix);
         // employees have no list at all
-        mvc.perform(get("/api/people").cookie(employee)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/people").cookie(employee)).andExpect(status().isForbidden());
     }
 
     @Test
     void everyoneEditsTheirOwnPersonalDetailsButNotEmailOrPhone() throws Exception {
-        mvc.perform(get("/api/profile").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.code").value("LE-" + s))
-                .andExpect(jsonPath("$.data.email").value("emp." + s + "@example.com"));
-        mvc.perform(write(put("/api/profile")).cookie(employee).content("""
+        mockMvc.perform(get("/api/profile").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.code").value("LE-" + suffix))
+                .andExpect(jsonPath("$.data.email").value("emp." + suffix + "@example.com"));
+        mockMvc.perform(write(put("/api/profile")).cookie(employee).content("""
             {"fatherName":"Ravi Kumar","dateOfBirth":"1995-05-20","currentAddress":"5 MG Road, Pune","permanentAddress":"","emergencyName":"Asha",
              "emergencyRelation":"Mother","emergencyPhoneCountry":"+91","emergencyPhone":"98765"}""")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("Emergency contact: India numbers have 10 digits."));
-        mvc.perform(write(put("/api/profile")).cookie(employee).content("""
+        mockMvc.perform(write(put("/api/profile")).cookie(employee).content("""
             {"fatherName":"Ravi Kumar","dateOfBirth":"1995-05-20","currentAddress":"5 MG Road, Pune","permanentAddress":"","emergencyName":"Asha",
              "emergencyRelation":"Mother","emergencyPhoneCountry":"+91","emergencyPhone":"98765 43210","email":"hacker@example.com","phone":"9999999999"}"""))
                 .andExpect(status().isOk());
-        mvc.perform(get("/api/profile").cookie(employee)).andExpect(jsonPath("$.data.fatherName").value("Ravi Kumar"))
+        mockMvc.perform(get("/api/profile").cookie(employee)).andExpect(jsonPath("$.data.fatherName").value("Ravi Kumar"))
                 .andExpect(jsonPath("$.data.currentAddress").value("5 MG Road, Pune")).andExpect(jsonPath("$.data.emergencyPhone").value("9876543210"))
-                .andExpect(jsonPath("$.data.email").value("emp." + s + "@example.com"));
-        assertThat(jdbc.queryForObject("SELECT address_enc FROM employees WHERE code = ?", String.class, "LE-" + s)).doesNotContain("MG Road"); // encrypted
+                .andExpect(jsonPath("$.data.email").value("emp." + suffix + "@example.com"));
+        assertThat(jdbc.queryForObject("SELECT address_enc FROM employees WHERE code = ?", String.class, "LE-" + suffix)).doesNotContain("MG Road"); // encrypted
         // the owner has a profile page too
-        mvc.perform(get("/api/profile").cookie(owner)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/profile").cookie(owner)).andExpect(status().isOk());
     }
 }

@@ -50,19 +50,19 @@ public class ProfileController {
     /** {@code {fatherName, dateOfBirth, currentAddress, permanentAddress, emergencyName, emergencyRelation, emergencyPhoneCountry, emergencyPhone}} */
     @PutMapping("/api/profile")
     public ApiResult<Void> update(@RequestBody ProfileService.ProfileInput body, HttpServletRequest request) {
-        return ApiResult.message(profiles.update(auth.requirePage("profile"), body, RequestMeta.of(request).ip()));
+        return ApiResult.message(profiles.update(auth.requirePage("profile"), body, RequestMeta.of(request).ipAddress()));
     }
 
     /** My own photo: the raw image bytes (JPEG, PNG or WebP, at most 400 KB) as the request body. Answers {@code {photo: <version>}}. */
     @PutMapping("/api/profile/photo")
     public ApiResult<Map<String, Long>> setPhoto(@RequestBody(required = false) byte[] body, @RequestHeader(value = HttpHeaders.CONTENT_TYPE, required = false) String type, HttpServletRequest request) {
-        long v = photos.setOwn(auth.requirePage("profile"), type, body, RequestMeta.of(request).ip());
-        return ApiResult.success("Photo saved", Map.of("photo", v));
+        long photoVersion = photos.setOwn(auth.requirePage("profile"), type, body, RequestMeta.of(request).ipAddress());
+        return ApiResult.success("Photo saved", Map.of("photo", photoVersion));
     }
 
     @DeleteMapping("/api/profile/photo")
     public ApiResult<Void> removePhoto(HttpServletRequest request) {
-        photos.removeOwn(auth.requirePage("profile"), RequestMeta.of(request).ip());
+        photos.removeOwn(auth.requirePage("profile"), RequestMeta.of(request).ipAddress());
         return ApiResult.message("Photo removed");
     }
 

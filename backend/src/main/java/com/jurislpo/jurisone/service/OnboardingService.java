@@ -53,17 +53,17 @@ public class OnboardingService {
     public static final Map<String, String> KINDS;
 
     static {
-        Map<String, String> m = new LinkedHashMap<>();
-        m.put("ID_PROOF", "ID proof (passport, voter ID or driving licence)");
-        m.put("ADDRESS_PROOF", "Address proof");
-        m.put("PAN", "PAN card");
-        m.put("AADHAAR", "Aadhaar card");
-        m.put("SALARY_SLIP", "Salary slips (last 3 months)");
-        m.put("EDUCATION", "Education certificates");
-        m.put("RELIEVING_LETTER", "Relieving letter from the previous employer");
-        m.put("PHOTO", "Passport-size photo");
-        m.put("OTHER", "Other");
-        KINDS = java.util.Collections.unmodifiableMap(m);
+        Map<String, String> labels = new LinkedHashMap<>();
+        labels.put("ID_PROOF", "ID proof (passport, voter ID or driving licence)");
+        labels.put("ADDRESS_PROOF", "Address proof");
+        labels.put("PAN", "PAN card");
+        labels.put("AADHAAR", "Aadhaar card");
+        labels.put("SALARY_SLIP", "Salary slips (last 3 months)");
+        labels.put("EDUCATION", "Education certificates");
+        labels.put("RELIEVING_LETTER", "Relieving letter from the previous employer");
+        labels.put("PHOTO", "Passport-size photo");
+        labels.put("OTHER", "Other");
+        KINDS = java.util.Collections.unmodifiableMap(labels);
     }
 
     public static final List<String> DEFAULT_REQUIRED = List.of("ID_PROOF", "ADDRESS_PROOF", "PAN", "AADHAAR", "SALARY_SLIP");
@@ -76,7 +76,7 @@ public class OnboardingService {
     static final List<String> OPEN = List.of("INVITED", "IN_PROGRESS", "CHANGES_REQUESTED");
     static final Pattern IFSC = Pattern.compile("^[A-Z]{4}0[A-Z0-9]{6}$");
 
-    record FileKind(String ext, String mime, byte[] magic) {}
+    record FileKind(String extension, String mime, byte[] magic) {}
 
     static final List<FileKind> FILES = List.of(new FileKind("pdf", "application/pdf", new byte[] {0x25, 0x50, 0x44, 0x46}),
             new FileKind("png", "image/png", new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47}), new FileKind("jpg", "image/jpeg", new byte[] {(byte) 0xff, (byte) 0xd8, (byte) 0xff}));
@@ -100,7 +100,7 @@ public class OnboardingService {
     }
 
     private final OnboardingRepository repo;
-    private final PiiCrypto pii;
+    private final PiiCrypto piiCrypto;
     private final ObjectMapper json;
     private final MailService mail;
     private final NotificationService notifications;
@@ -111,10 +111,10 @@ public class OnboardingService {
     private final Path storageDir;
     private final String appUrl;
 
-    public OnboardingService(OnboardingRepository repo, PiiCrypto pii, ObjectMapper json, MailService mail, NotificationService notifications, AuditService audit,
+    public OnboardingService(OnboardingRepository repo, PiiCrypto piiCrypto, ObjectMapper json, MailService mail, NotificationService notifications, AuditService audit,
                              PeopleService people, SubscriptionService subscriptions, SettingsService settings, JurisOneProperties props, @Value("${jurisone.app-url:http://localhost:3005}") String appUrl) {
         this.repo = repo;
-        this.pii = pii;
+        this.piiCrypto = piiCrypto;
         this.json = json;
         this.mail = mail;
         this.notifications = notifications;
@@ -130,14 +130,14 @@ public class OnboardingService {
 
     static List<String> validDocs(List<String> docs) {
         if (docs == null) throw new UserException(HttpStatus.BAD_REQUEST, "Choose the documents.");
-        for (String k : docs) if (k == null || !KINDS.containsKey(k) || "OTHER".equals(k)) throw new UserException(HttpStatus.BAD_REQUEST, "Unknown document: " + k);
+        for (String document : docs) if (document == null || !KINDS.containsKey(document) || "OTHER".equals(document)) throw new UserException(HttpStatus.BAD_REQUEST, "Unknown document: " + document);
         return docs.stream().distinct().toList();
     }
 
     /** What a new onboarding asks for unless HR changes the list for that candidate (per business; ID, address, PAN, Aadhaar, 3 salary slips by default). */
     public List<String> defaultDocs() {
-        List<String> d = settings.onboarding().requiredDocs();
-        return d == null ? DEFAULT_REQUIRED : d.stream().filter(k -> KINDS.containsKey(k) && !"OTHER".equals(k)).distinct().toList();
+        List<String> requiredDocuments = settings.onboarding().requiredDocs();
+        return requiredDocuments == null ? DEFAULT_REQUIRED : requiredDocuments.stream().filter(k -> KINDS.containsKey(k) && !"OTHER".equals(k)).distinct().toList();
     }
 
     public Map<String, Object> defaults() {
@@ -150,35 +150,35 @@ public class OnboardingService {
     }
 
     @Transactional
-    public String saveDefaults(CurrentUser user, List<String> docs, String ip) {
+    public String saveDefaults(CurrentUser user, List<String> docs, String ipAddress) {
         List<String> before = defaultDocs();
         List<String> valid = validDocs(docs);
         settings.save("onboarding.policy", json.valueToTree(Map.of("requiredDocs", valid)));
-        audit.log(user.id(), "onboarding.default_documents", "setting", "onboarding.policy", Map.of("requiredDocs", before), Map.of("requiredDocs", valid), ip);
+        audit.log(user.id(), "onboarding.default_documents", "setting", "onboarding.policy", Map.of("requiredDocs", before), Map.of("requiredDocs", valid), ipAddress);
         return valid.isEmpty() ? "New onboardings ask for no documents by default" : "Default documents saved (" + valid.size() + ")";
     }
 
     // ───────────────────────── helpers ─────────────────────────
 
-    public static String iso(Object timestamp) {
+    public static String formatIsoTimestamp(Object timestamp) {
         return timestamp == null ? null : Format.isoTimestamp(((Timestamp) timestamp).toInstant());
     }
 
-    static String str(Object value) {
+    static String textOrEmpty(Object value) {
         return value == null ? null : value.toString();
     }
 
     static String trim(String value, int max, String field) {
-        String t = value == null ? "" : value.trim();
-        if (t.length() > max) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the " + field + " under " + max + " characters.");
-        return t;
+        String text = value == null ? "" : value.trim();
+        if (text.length() > max) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the " + field + " under " + max + " characters.");
+        return text;
     }
 
     Form readForm(Map<String, Object> row) {
-        String enc = (String) row.get("form_enc");
-        if (enc == null) return Form.empty((String) row.get("candidate_name"));
+        String encryptedForm = (String) row.get("form_enc");
+        if (encryptedForm == null) return Form.empty((String) row.get("candidate_name"));
         try {
-            return json.readValue(pii.decrypt(enc), Form.class);
+            return json.readValue(piiCrypto.decrypt(encryptedForm), Form.class);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException(e);
         }
@@ -186,7 +186,7 @@ public class OnboardingService {
 
     String writeForm(Form form) {
         try {
-            return pii.encrypt(json.writeValueAsString(form));
+            return piiCrypto.encrypt(json.writeValueAsString(form));
         } catch (JsonProcessingException e) {
             throw new IllegalStateException(e);
         }
@@ -207,22 +207,22 @@ public class OnboardingService {
         List<Map<String, Object>> out = new ArrayList<>();
         for (String key : required) {
             long has = docs.stream().filter(d -> key.equals(d.get("kind")) && !"REJECTED".equals(d.get("status"))).count();
-            long ok = docs.stream().filter(d -> key.equals(d.get("kind")) && "VERIFIED".equals(d.get("status"))).count();
+            long verifiedCount = docs.stream().filter(d -> key.equals(d.get("kind")) && "VERIFIED".equals(d.get("status"))).count();
             Map<String, Object> view = new LinkedHashMap<>();
             view.put("kind", key);
             view.put("label", KINDS.get(key));
             view.put("needed", needed(key));
             view.put("uploaded", has);
-            view.put("verified", ok);
+            view.put("verified", verifiedCount);
             out.add(view);
         }
         return out;
     }
 
     static List<String> requiredOf(Map<String, Object> row) {
-        Object a = row.get("required_docs");
+        Object requiredDocuments = row.get("required_docs");
         try {
-            return a instanceof java.sql.Array arr ? Arrays.asList((String[]) arr.getArray()) : List.of();
+            return requiredDocuments instanceof java.sql.Array sqlArray ? Arrays.asList((String[]) sqlArray.getArray()) : List.of();
         } catch (java.sql.SQLException e) {
             throw new IllegalStateException(e);
         }
@@ -273,9 +273,9 @@ public class OnboardingService {
         }
         LocalDate joining = plan.joiningDate() == null || plan.joiningDate().isBlank() ? null : LocalDate.parse(Check.isoDate(plan.joiningDate(), "Pick the joining date."));
         String location = plan.location() == null || plan.location().isBlank() ? "IN_IST" : Check.oneOf(plan.location(), PeopleRules.LOCATIONS.stream().map(PeopleRules.Location::value).toList());
-        List<String> req = plan.requiredDocs() == null ? defaultDocs() : validDocs(plan.requiredDocs());
+        List<String> requiredDocuments = plan.requiredDocs() == null ? defaultDocs() : validDocs(plan.requiredDocs());
         return new ValidatedPlan(name, email, designation.isEmpty() ? null : designation, department, role, manager, joining, location,
-                req.stream().distinct().toArray(String[]::new));
+                requiredDocuments.stream().distinct().toArray(String[]::new));
     }
 
     static UUID blankUuid(String value) {
@@ -284,19 +284,19 @@ public class OnboardingService {
 
     /** Starts an onboarding and emails the candidate their link. */
     @Transactional
-    public String start(CurrentUser user, Plan plan, String ip) {
+    public String start(CurrentUser user, Plan plan, String ipAddress) {
         ValidatedPlan validated = validate(plan, null);
         UUID id = UUID.randomUUID();
         repo.insert(id, validated.name(), validated.email(), validated.designation(), validated.departmentId(), validated.roleId(), validated.managerId(), validated.joining() == null ? null : Date.valueOf(validated.joining()),
                 validated.location(), validated.required(), user.id());
         String token = newLink(id);
         emailLink(row(id), token, null);
-        audit.log(user.id(), "onboarding.start", "onboarding", id.toString(), null, Map.of("candidate", validated.name(), "email", validated.email()), ip);
+        audit.log(user.id(), "onboarding.start", "onboarding", id.toString(), null, Map.of("candidate", validated.name(), "email", validated.email()), ipAddress);
         return id.toString();
     }
 
     @Transactional
-    public void update(CurrentUser user, String idRaw, Plan plan, String ip) {
+    public void update(CurrentUser user, String idRaw, Plan plan, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> onboarding = row(id);
         if (List.of("ADDED", "CANCELLED").contains(onboarding.get("status"))) throw new UserException("This onboarding is closed.");
@@ -304,17 +304,17 @@ public class OnboardingService {
         if (!validated.email().equals(onboarding.get("personal_email")) && !OPEN.contains(onboarding.get("status"))) throw new UserException("The email can't change after the candidate has submitted.");
         repo.updatePlan(id, validated.name(), validated.email(), validated.designation(), validated.departmentId(), validated.roleId(), validated.managerId(), validated.joining() == null ? null : Date.valueOf(validated.joining()),
                 validated.location(), validated.required());
-        audit.log(user.id(), "onboarding.update", "onboarding", id.toString(), null, Map.of("candidate", validated.name()), ip);
+        audit.log(user.id(), "onboarding.update", "onboarding", id.toString(), null, Map.of("candidate", validated.name()), ipAddress);
     }
 
     /** A fresh link (the old one stops working), emailed again. */
     @Transactional
-    public String resend(CurrentUser user, String idRaw, String ip) {
+    public String resend(CurrentUser user, String idRaw, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> onboarding = row(id);
         if (!OPEN.contains(onboarding.get("status"))) throw new UserException("The candidate has already submitted — there's nothing to fill in.");
         emailLink(onboarding, newLink(id), null);
-        audit.log(user.id(), "onboarding.resend", "onboarding", id.toString(), ip);
+        audit.log(user.id(), "onboarding.resend", "onboarding", id.toString(), ipAddress);
         return "A new link was sent to " + onboarding.get("personal_email");
     }
 
@@ -322,48 +322,48 @@ public class OnboardingService {
     public Map<String, Object> detail(String idRaw) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> onboarding = row(id);
-        Form f = readForm(onboarding);
+        Form savedForm = readForm(onboarding);
         List<Map<String, Object>> docs = documents(id);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", id.toString());
         out.put("candidateName", onboarding.get("candidate_name"));
         out.put("personalEmail", onboarding.get("personal_email"));
         out.put("designation", onboarding.get("designation"));
-        out.put("departmentId", str(onboarding.get("department_id")));
-        out.put("roleId", str(onboarding.get("role_id")));
-        out.put("managerId", str(onboarding.get("manager_id")));
+        out.put("departmentId", textOrEmpty(onboarding.get("department_id")));
+        out.put("roleId", textOrEmpty(onboarding.get("role_id")));
+        out.put("managerId", textOrEmpty(onboarding.get("manager_id")));
         out.put("joiningDate", onboarding.get("joining_date") == null ? null : onboarding.get("joining_date").toString());
         out.put("location", onboarding.get("location"));
         out.put("requiredDocs", requiredOf(onboarding));
         out.put("status", onboarding.get("status"));
         out.put("hrComment", onboarding.get("hr_comment"));
-        out.put("linkExpiresAt", iso(onboarding.get("token_expires_at")));
-        out.put("submittedAt", iso(onboarding.get("submitted_at")));
-        out.put("verifiedAt", iso(onboarding.get("verified_at")));
-        out.put("employeeId", str(onboarding.get("employee_id")));
+        out.put("linkExpiresAt", formatIsoTimestamp(onboarding.get("token_expires_at")));
+        out.put("submittedAt", formatIsoTimestamp(onboarding.get("submitted_at")));
+        out.put("verifiedAt", formatIsoTimestamp(onboarding.get("verified_at")));
+        out.put("employeeId", textOrEmpty(onboarding.get("employee_id")));
         out.put("employeeCode", onboarding.get("employee_id") == null ? null : repo.findEmployeeCode((UUID) onboarding.get("employee_id")));
         Map<String, Object> form = new LinkedHashMap<>();
-        form.put("fullName", f.fullName());
-        form.put("firstName", f.firstName());
-        form.put("middleName", f.middleName());
-        form.put("lastName", f.lastName());
-        form.put("fatherName", f.fatherName());
-        form.put("dateOfBirth", f.dateOfBirth());
-        form.put("gender", f.gender());
-        form.put("phone", f.phone().isEmpty() ? "" : f.phoneCountry() + " " + f.phone());
-        form.put("currentAddress", f.currentAddress());
-        form.put("permanentAddress", f.permanentAddress());
-        form.put("pan", f.pan().isEmpty() ? null : Masks.pan(PiiCrypto.last4(f.pan())));
-        form.put("aadhaar", f.aadhaar().isEmpty() ? null : Masks.aadhaar(PiiCrypto.last4(f.aadhaar())));
-        form.put("uan", f.uan().isEmpty() ? null : Masks.uan(PiiCrypto.last4(f.uan())));
-        form.put("bankName", f.bankName());
-        form.put("bankAccount", f.bankAccount().isEmpty() ? null : Masks.bank(PiiCrypto.last4(f.bankAccount())));
-        form.put("ifsc", f.ifsc());
-        form.put("previousEmployer", f.previousEmployer());
-        form.put("previousDesignation", f.previousDesignation());
-        form.put("emergencyName", f.emergencyName());
-        form.put("emergencyRelation", f.emergencyRelation());
-        form.put("emergencyPhone", f.emergencyPhone().isEmpty() ? "" : f.emergencyPhoneCountry() + " " + f.emergencyPhone());
+        form.put("fullName", savedForm.fullName());
+        form.put("firstName", savedForm.firstName());
+        form.put("middleName", savedForm.middleName());
+        form.put("lastName", savedForm.lastName());
+        form.put("fatherName", savedForm.fatherName());
+        form.put("dateOfBirth", savedForm.dateOfBirth());
+        form.put("gender", savedForm.gender());
+        form.put("phone", savedForm.phone().isEmpty() ? "" : savedForm.phoneCountry() + " " + savedForm.phone());
+        form.put("currentAddress", savedForm.currentAddress());
+        form.put("permanentAddress", savedForm.permanentAddress());
+        form.put("pan", savedForm.pan().isEmpty() ? null : Masks.pan(PiiCrypto.last4(savedForm.pan())));
+        form.put("aadhaar", savedForm.aadhaar().isEmpty() ? null : Masks.aadhaar(PiiCrypto.last4(savedForm.aadhaar())));
+        form.put("uan", savedForm.uan().isEmpty() ? null : Masks.uan(PiiCrypto.last4(savedForm.uan())));
+        form.put("bankName", savedForm.bankName());
+        form.put("bankAccount", savedForm.bankAccount().isEmpty() ? null : Masks.bank(PiiCrypto.last4(savedForm.bankAccount())));
+        form.put("ifsc", savedForm.ifsc());
+        form.put("previousEmployer", savedForm.previousEmployer());
+        form.put("previousDesignation", savedForm.previousDesignation());
+        form.put("emergencyName", savedForm.emergencyName());
+        form.put("emergencyRelation", savedForm.emergencyRelation());
+        form.put("emergencyPhone", savedForm.emergencyPhone().isEmpty() ? "" : savedForm.emergencyPhoneCountry() + " " + savedForm.emergencyPhone());
         out.put("form", form);
         out.put("documents", docs);
         out.put("checklist", checklist(requiredOf(onboarding), docs));
@@ -374,19 +374,19 @@ public class OnboardingService {
 
     /** Verify or reject one document (a rejection needs a comment the candidate will see). */
     @Transactional
-    public String decideDocument(CurrentUser user, String idRaw, String docIdRaw, DocDecision docDecision, String ip) {
+    public String decideDocument(CurrentUser user, String idRaw, String docIdRaw, DocDecision docDecision, String ipAddress) {
         UUID id = Check.uuid(idRaw);
-        UUID doc = Check.uuid(docIdRaw);
+        UUID documentId = Check.uuid(docIdRaw);
         Map<String, Object> onboarding = row(id);
         if (!List.of("SUBMITTED", "IN_PROGRESS", "CHANGES_REQUESTED", "INVITED").contains(onboarding.get("status"))) throw new UserException("This onboarding can no longer change.");
         String status = Check.oneOf(docDecision == null ? null : docDecision.status(), List.of("VERIFIED", "REJECTED"));
         String comment = docDecision.comment() == null ? "" : docDecision.comment().trim();
         if ("REJECTED".equals(status) && comment.length() < 3) throw new UserException(HttpStatus.BAD_REQUEST, "Tell the candidate what's wrong with the document.");
         if (comment.length() > 300) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the comment under 300 characters.");
-        int count = repo.decideDocument(doc, id, status, comment.isEmpty() ? null : comment, user.id());
+        int count = repo.decideDocument(documentId, id, status, comment.isEmpty() ? null : comment, user.id());
         if (count == 0) throw new UserException(HttpStatus.NOT_FOUND, "Document not found.");
         repo.touch(id);
-        audit.log(user.id(), "onboarding.document_" + status.toLowerCase(Locale.ROOT), "onboarding_document", doc.toString(), null, Map.of("onboarding", id.toString()), ip);
+        audit.log(user.id(), "onboarding.document_" + status.toLowerCase(Locale.ROOT), "onboarding_document", documentId.toString(), null, Map.of("onboarding", id.toString()), ipAddress);
         return "VERIFIED".equals(status) ? "Document verified" : "Document rejected — the candidate will be asked for a new one";
     }
 
@@ -394,7 +394,7 @@ public class OnboardingService {
 
     /** CHANGES_REQUESTED (with a comment; a new link is emailed), VERIFIED (everything required is verified) or CANCELLED. */
     @Transactional
-    public String setStatus(CurrentUser user, String idRaw, StatusInput input, String ip) {
+    public String setStatus(CurrentUser user, String idRaw, StatusInput input, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> onboarding = row(id);
         String from = (String) onboarding.get("status");
@@ -424,7 +424,7 @@ public class OnboardingService {
                 repo.cancel(id);
             }
         }
-        audit.log(user.id(), "onboarding.status", "onboarding", id.toString(), Map.of("status", from), Map.of("status", to), ip);
+        audit.log(user.id(), "onboarding.status", "onboarding", id.toString(), Map.of("status", from), Map.of("status", to), ipAddress);
         return switch (to) {
             case "CHANGES_REQUESTED" -> "Sent back to the candidate with a new link";
             case "VERIFIED" -> "Onboarding verified — you can add the employee now";
@@ -441,7 +441,7 @@ public class OnboardingService {
      * candidate; portal access stays off and no invite is sent until HR turns access on.
      */
     @Transactional
-    public PeopleService.Saved addEmployee(CurrentUser user, String idRaw, AddInput input, String ip) {
+    public PeopleService.Saved addEmployee(CurrentUser user, String idRaw, AddInput input, String ipAddress) {
         UUID id = Check.uuid(idRaw);
         Map<String, Object> onboarding = row(id);
         if (!"VERIFIED".equals(onboarding.get("status"))) throw new UserException("Verify the onboarding before adding the employee.");
@@ -450,25 +450,25 @@ public class OnboardingService {
         String location = input.location() == null || input.location().isBlank() ? (String) onboarding.get("location") : input.location();
         if (location == null || location.isBlank()) location = "IN_IST";
         boolean india = "IN_IST".equals(location);
-        EmployeeInput e = new EmployeeInput(form.firstName(), form.middleName(), form.lastName(), form.fatherName(), input.workEmail() == null ? "" : input.workEmail(),
+        EmployeeInput employeeInput = new EmployeeInput(form.firstName(), form.middleName(), form.lastName(), form.fatherName(), input.workEmail() == null ? "" : input.workEmail(),
                 form.phoneCountry(), form.phone(), location, input.joiningOffice() == null ? "" : input.joiningOffice(),
                 india ? form.pan() : "", india ? form.aadhaar() : "", india ? form.uan() : "", form.currentAddress(), input.designation() == null ? "" : input.designation(),
                 input.departmentId() == null ? "" : input.departmentId(), input.managerId() == null ? "" : input.managerId(), input.joiningDate() == null ? "" : input.joiningDate(),
                 input.shift() == null || input.shift().isBlank() ? (india ? "IN_NIGHT" : "US_DAY") : input.shift(), input.roleId() == null ? "" : input.roleId());
-        PeopleService.Saved saved = people.addWithoutAccess(user, e, ip);
+        PeopleService.Saved saved = people.addWithoutAccess(user, employeeInput, ipAddress);
         UUID employee = UUID.fromString(saved.id());
         if (!form.bankAccount().isEmpty()) {
-            repo.updateEmployeeBank(employee, pii.encrypt(form.bankAccount()), PiiCrypto.last4(form.bankAccount()), form.ifsc().isEmpty() ? null : form.ifsc(),
+            repo.updateEmployeeBank(employee, piiCrypto.encrypt(form.bankAccount()), PiiCrypto.last4(form.bankAccount()), form.ifsc().isEmpty() ? null : form.ifsc(),
                     form.bankName().isEmpty() ? null : form.bankName());
         }
         // personal details the employee record keeps from the candidate's form
         repo.updateEmployeePersonal(employee,
-                form.dateOfBirth().isEmpty() ? null : Date.valueOf(form.dateOfBirth()), form.permanentAddress().isEmpty() ? null : pii.encrypt(form.permanentAddress()),
+                form.dateOfBirth().isEmpty() ? null : Date.valueOf(form.dateOfBirth()), form.permanentAddress().isEmpty() ? null : piiCrypto.encrypt(form.permanentAddress()),
                 form.emergencyName().isEmpty() ? null : form.emergencyName(), form.emergencyRelation().isEmpty() ? null : form.emergencyRelation(),
                 form.emergencyPhone().isEmpty() ? null : form.emergencyPhoneCountry() + " " + form.emergencyPhone());
         repo.attachVerifiedDocuments(id, employee);
         repo.markAdded(id, employee);
-        audit.log(user.id(), "onboarding.employee_added", "onboarding", id.toString(), null, Map.of("employee", saved.id(), "code", saved.code()), ip);
+        audit.log(user.id(), "onboarding.employee_added", "onboarding", id.toString(), null, Map.of("employee", saved.id(), "code", saved.code()), ipAddress);
         return saved;
     }
 
@@ -509,42 +509,42 @@ public class OnboardingService {
         if (token == null || token.length() < 20 || token.length() > 100) throw new UserException(HttpStatus.NOT_FOUND, "This link isn't valid. Ask HR for a new one.");
         List<Map<String, Object>> rows = TenantContext.call(null, () -> repo.findByTokenHash(Tokens.sha256(token)));
         if (rows.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "This link isn't valid any more. Ask HR for a new one.");
-        Map<String, Object> r = rows.get(0);
-        if (((Timestamp) r.get("token_expires_at")).toInstant().isBefore(Instant.now())) throw new UserException(HttpStatus.NOT_FOUND, "This link has expired. Ask HR for a new one.");
-        UUID business = (UUID) r.get("business_id");
+        Map<String, Object> onboardingRow = rows.get(0);
+        if (((Timestamp) onboardingRow.get("token_expires_at")).toInstant().isBefore(Instant.now())) throw new UserException(HttpStatus.NOT_FOUND, "This link has expired. Ask HR for a new one.");
+        UUID business = (UUID) onboardingRow.get("business_id");
         Map<String, Object> row = TenantContext.call(null, () -> repo.findBusinessStatus(business));
         if (!"ACTIVE".equals(row.get("status")) || !TenantContext.call(null, () -> subscriptions.isActive(business))) {
             throw new UserException(HttpStatus.SERVICE_UNAVAILABLE, "Onboarding is not available right now. Please contact HR.");
         }
-        return new Link((UUID) r.get("id"), business, r);
+        return new Link((UUID) onboardingRow.get("id"), business, onboardingRow);
     }
 
     Link editable(String token) {
-        Link l = link(token);
-        if (!OPEN.contains(l.row().get("status"))) throw new UserException("You've already submitted your details. HR will contact you if anything is needed.");
-        return l;
+        Link link = link(token);
+        if (!OPEN.contains(link.row().get("status"))) throw new UserException("You've already submitted your details. HR will contact you if anything is needed.");
+        return link;
     }
 
     /** What the candidate sees: their answers in full, the documents and what is still missing. */
     public Map<String, Object> candidateView(String token) {
-        Link l = link(token);
-        return TenantContext.call(l.business(), () -> {
-            Map<String, Object> onboarding = row(l.id());
-            List<Map<String, Object>> docs = documents(l.id());
+        Link link = link(token);
+        return TenantContext.call(link.business(), () -> {
+            Map<String, Object> onboarding = row(link.id());
+            List<Map<String, Object>> docs = documents(link.id());
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("candidateName", onboarding.get("candidate_name"));
             out.put("personalEmail", onboarding.get("personal_email"));
-            out.put("businessName", repo.findBusinessName(l.business()));
+            out.put("businessName", repo.findBusinessName(link.business()));
             out.put("designation", onboarding.get("designation"));
             out.put("joiningDate", onboarding.get("joining_date") == null ? null : onboarding.get("joining_date").toString());
             out.put("india", "IN_IST".equals(onboarding.get("location")));
             out.put("status", onboarding.get("status"));
             out.put("editable", OPEN.contains(onboarding.get("status")));
             out.put("hrComment", "CHANGES_REQUESTED".equals(onboarding.get("status")) ? onboarding.get("hr_comment") : null);
-            out.put("linkExpiresAt", iso(onboarding.get("token_expires_at")));
+            out.put("linkExpiresAt", formatIsoTimestamp(onboarding.get("token_expires_at")));
             out.put("form", readForm(onboarding));
-            out.put("documents", docs.stream().map(d -> {
-                Map<String, Object> view = new LinkedHashMap<>(d);
+            out.put("documents", docs.stream().map(document -> {
+                Map<String, Object> view = new LinkedHashMap<>(document);
                 view.remove("verifiedBy");
                 return view;
             }).toList());
@@ -555,9 +555,9 @@ public class OnboardingService {
     }
 
     /** Saves the candidate's answers (partial is fine until they submit). */
-    public String candidateSave(String token, Form in) {
+    public String candidateSave(String token, Form submittedForm) {
         Link link = editable(token);
-        Form form = clean(in, (String) link.row().get("candidate_name"));
+        Form form = clean(submittedForm, (String) link.row().get("candidate_name"));
         TenantContext.run(link.business(), () -> repo.saveForm(link.id(), writeForm(form)));
         return "Saved";
     }
@@ -586,8 +586,8 @@ public class OnboardingService {
         if (form.fatherName().length() < 2) return "Enter your father's name.";
         if (!form.dateOfBirth().matches("^\\d{4}-\\d{2}-\\d{2}$")) return "Enter your date of birth.";
         try {
-            LocalDate dob = LocalDate.parse(form.dateOfBirth());
-            if (dob.isAfter(LocalDate.now().minusYears(14)) || dob.isBefore(LocalDate.now().minusYears(100))) return "Date of birth isn't valid: you must be at least 14 years old.";
+            LocalDate dateOfBirth = LocalDate.parse(form.dateOfBirth());
+            if (dateOfBirth.isAfter(LocalDate.now().minusYears(14)) || dateOfBirth.isBefore(LocalDate.now().minusYears(100))) return "Date of birth isn't valid: you must be at least 14 years old.";
         } catch (java.time.DateTimeException e) {
             return "Check your date of birth.";
         }
@@ -619,7 +619,7 @@ public class OnboardingService {
             int count = repo.countDocuments(link.id());
             if (count >= MAX_DOCS) throw new UserException("You can upload up to " + MAX_DOCS + " documents. Remove one first.");
             Path directory = storageDir.resolve("onboarding").resolve(link.business().toString()).resolve(link.id().toString());
-            Path absolutePath = directory.resolve(UUID.randomUUID() + "." + fileKind.ext());
+            Path absolutePath = directory.resolve(UUID.randomUUID() + "." + fileKind.extension());
             try {
                 Files.createDirectories(directory);
                 Files.write(absolutePath, bytes);
@@ -628,50 +628,50 @@ public class OnboardingService {
             }
             String name = (fileName == null ? "" : fileName).replaceAll("[^\\w.\\- ()]", "_");
             name = name.substring(0, Math.min(120, name.length()));
-            if (name.isBlank()) name = "document." + fileKind.ext();
-            UUID doc = UUID.randomUUID();
-            repo.insertDocument(doc, link.id(), kind, storageDir.relativize(absolutePath).toString().replace('\\', '/'), name, fileKind.mime(), bytes.length,
+            if (name.isBlank()) name = "document." + fileKind.extension();
+            UUID documentId = UUID.randomUUID();
+            repo.insertDocument(documentId, link.id(), kind, storageDir.relativize(absolutePath).toString().replace('\\', '/'), name, fileKind.mime(), bytes.length,
                     com.jurislpo.jurisone.service.PolicyService.sha256(bytes));
             repo.markInProgress(link.id());
-            return Map.of("id", doc.toString(), "name", name);
+            return Map.of("id", documentId.toString(), "name", name);
         });
     }
 
     public void candidateDelete(String token, String docIdRaw) {
         Link link = editable(token);
-        UUID doc = Check.uuid(docIdRaw);
+        UUID documentId = Check.uuid(docIdRaw);
         TenantContext.run(link.business(), () -> {
-            List<String> st = repo.findDocumentStatus(doc, link.id());
-            if (st.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Document not found.");
-            if ("VERIFIED".equals(st.get(0))) throw new UserException("HR has already verified this document.");
-            repo.deleteDocument(doc);
+            List<String> statuses = repo.findDocumentStatus(documentId, link.id());
+            if (statuses.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Document not found.");
+            if ("VERIFIED".equals(statuses.get(0))) throw new UserException("HR has already verified this document.");
+            repo.deleteDocument(documentId);
         });
     }
 
     public FileOut candidateFile(String token, String docIdRaw) {
-        Link l = link(token);
-        return TenantContext.call(l.business(), () -> {
-            List<Map<String, Object>> rows = repo.findDocumentFile(Check.uuid(docIdRaw), l.id());
+        Link link = link(token);
+        return TenantContext.call(link.business(), () -> {
+            List<Map<String, Object>> rows = repo.findDocumentFile(Check.uuid(docIdRaw), link.id());
             return rows.isEmpty() ? null : read(rows.get(0));
         });
     }
 
     /** Submits for HR review: the form must be complete and every required document uploaded. */
-    public String candidateSubmit(String token, String ip) {
+    public String candidateSubmit(String token, String ipAddress) {
         Link link = editable(token);
         return TenantContext.call(link.business(), () -> {
             Map<String, Object> onboarding = row(link.id());
-            String p = problem(readForm(onboarding), "IN_IST".equals(onboarding.get("location")));
-            if (p != null) throw new UserException(p);
+            String problem = problem(readForm(onboarding), "IN_IST".equals(onboarding.get("location")));
+            if (problem != null) throw new UserException(problem);
             for (Map<String, Object> row : checklist(requiredOf(onboarding), documents(link.id()))) {
                 if (((Number) row.get("uploaded")).intValue() < (int) row.get("needed")) {
                     throw new UserException("Upload " + row.get("label") + ((int) row.get("needed") > 1 ? " (" + row.get("needed") + " files)" : "") + ".");
                 }
             }
             repo.markSubmitted(link.id());
-            audit.log(null, "onboarding.submit", "onboarding", link.id().toString(), null, Map.of("candidate", onboarding.get("candidate_name")), ip);
-            UUID hr = (UUID) onboarding.get("created_by");
-            if (hr != null) notifications.notify(hr, onboarding.get("candidate_name") + " submitted their onboarding details — ready for review", "/onboarding/" + link.id());
+            audit.log(null, "onboarding.submit", "onboarding", link.id().toString(), null, Map.of("candidate", onboarding.get("candidate_name")), ipAddress);
+            UUID hrId = (UUID) onboarding.get("created_by");
+            if (hrId != null) notifications.notify(hrId, onboarding.get("candidate_name") + " submitted their onboarding details — ready for review", "/onboarding/" + link.id());
             return "Thank you — your details were sent to HR";
         });
     }

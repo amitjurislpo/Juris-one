@@ -71,20 +71,20 @@ public class PoliciesService {
     }
 
     public int lockedRuns() {
-        Integer n = repo.countLockRuns();
-        return n == null ? 0 : n;
+        Integer lockRuns = repo.countLockRuns();
+        return lockRuns == null ? 0 : lockRuns;
     }
 
     // ── attendance policy ──
 
     private static void range(Number number, double min, double max) {
         if (number == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected number, received undefined");
-        if (number.doubleValue() < min) throw new UserException(HttpStatus.BAD_REQUEST, "Too small: expected number to be >=" + fmt(min));
-        if (number.doubleValue() > max) throw new UserException(HttpStatus.BAD_REQUEST, "Too big: expected number to be <=" + fmt(max));
+        if (number.doubleValue() < min) throw new UserException(HttpStatus.BAD_REQUEST, "Too small: expected number to be >=" + formatNumber(min));
+        if (number.doubleValue() > max) throw new UserException(HttpStatus.BAD_REQUEST, "Too big: expected number to be <=" + formatNumber(max));
     }
 
-    private static String fmt(double d) {
-        return d == Math.rint(d) ? Long.toString((long) d) : Double.toString(d);
+    private static String formatNumber(double value) {
+        return value == Math.rint(value) ? Long.toString((long) value) : Double.toString(value);
     }
 
     static void validate(AttendancePolicyInput input) {
@@ -93,7 +93,7 @@ public class PoliciesService {
         range(input.graceMinutes(), 0, 120);
         range(input.lateMarksPerHalfDayLop(), 1, 31);
         if (input.weeklyOffs() == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected array, received undefined");
-        for (Integer d : input.weeklyOffs()) range(d, 0, 6);
+        for (Integer weeklyOff : input.weeklyOffs()) range(weeklyOff, 0, 6);
         if (input.weeklyOffs().size() > 6) throw new UserException(HttpStatus.BAD_REQUEST, "Too big: expected array to have <=6 items");
         range(input.absenceJobBufferMinutes(), 0, 720);
         range(input.lockDayOfNextMonth(), 1, 28);
@@ -105,7 +105,7 @@ public class PoliciesService {
     }
 
     @Transactional
-    public void updateAttendancePolicy(CurrentUser user, AttendancePolicyInput input, String ip) {
+    public void updateAttendancePolicy(CurrentUser user, AttendancePolicyInput input, String ipAddress) {
         validate(input);
         ObjectNode before = settings.get("attendance.policy");
         if (!input.trackingStartDate().equals(before.path("trackingStartDate").asText()) && lockedRuns() > 0) {
@@ -115,7 +115,7 @@ public class PoliciesService {
         value.setAll((ObjectNode) json.valueToTree(input));
         repo.upsertAttendancePolicy(value.toString());
         // grace minutes live in the business's policy (shifts are shared templates and are not changed)
-        audit.log(user.id(), "policy.attendance_change", "setting", "attendance.policy", before, value, ip);
+        audit.log(user.id(), "policy.attendance_change", "setting", "attendance.policy", before, value, ipAddress);
     }
 
     public Map<String, Object> attendance() {

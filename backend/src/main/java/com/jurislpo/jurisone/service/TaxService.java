@@ -54,7 +54,7 @@ public class TaxService {
         this.json = json;
     }
 
-    static double r(long paise) {
+    static double rupeesOf(long paise) {
         return paise / 100.0;
     }
 
@@ -62,16 +62,16 @@ public class TaxService {
         List<Map<String, Object>> years = repo.taxYears(financialYear);
         List<Map<String, Object>> sections = repo.taxSections(financialYear);
         if (years.size() < 2) throw new IllegalStateException("Tax tables for FY " + financialYear + " are missing — add them under tax_years.");
-        Map<String, TaxYearConfig> cfg = new HashMap<>();
+        Map<String, TaxYearConfig> configs = new HashMap<>();
         for (Map<String, Object> year : years) {
             try {
                 List<Slab> slabs = new ArrayList<>();
-                for (JsonNode s : json.readTree((String) year.get("slabs"))) slabs.add(new Slab(s.get("upto").isNull() ? null : s.get("upto").asDouble(), s.get("rate").asDouble()));
-                List<Surcharge> sur = new ArrayList<>();
-                for (JsonNode s : json.readTree((String) year.get("surcharge"))) sur.add(new Surcharge(s.get("above").asDouble(), s.get("rate").asDouble()));
+                for (JsonNode slab : json.readTree((String) year.get("slabs"))) slabs.add(new Slab(slab.get("upto").isNull() ? null : slab.get("upto").asDouble(), slab.get("rate").asDouble()));
+                List<Surcharge> surcharges = new ArrayList<>();
+                for (JsonNode surchargeBand : json.readTree((String) year.get("surcharge"))) surcharges.add(new Surcharge(surchargeBand.get("above").asDouble(), surchargeBand.get("rate").asDouble()));
                 Regime regime = Regime.valueOf((String) year.get("regime"));
-                cfg.put(regime.name(), new TaxYearConfig(regime, ((Number) year.get("std_deduction")).doubleValue(), ((Number) year.get("rebate_limit")).doubleValue(),
-                        Boolean.TRUE.equals(year.get("marginal_relief")), ((java.math.BigDecimal) year.get("cess_rate")).doubleValue(), slabs, sur));
+                configs.put(regime.name(), new TaxYearConfig(regime, ((Number) year.get("std_deduction")).doubleValue(), ((Number) year.get("rebate_limit")).doubleValue(),
+                        Boolean.TRUE.equals(year.get("marginal_relief")), ((java.math.BigDecimal) year.get("cess_rate")).doubleValue(), slabs, surcharges));
             } catch (java.io.IOException e) {
                 throw new IllegalStateException(e);
             }
@@ -84,7 +84,7 @@ public class TaxService {
         }
         DeductionCaps deductionCaps = new DeductionCaps(caps.getOrDefault("80C", 150000), caps.getOrDefault("80CCD1B", 50000), caps.getOrDefault("80D_SELF", 25000),
                 caps.getOrDefault("80D_PARENTS", 25000), caps.getOrDefault("80D_PARENTS_SENIOR", 50000), caps.getOrDefault("24B", 200000), caps.getOrDefault("80TTA", 10000));
-        return new Config(cfg.get("NEW"), cfg.get("OLD"), deductionCaps, labels);
+        return new Config(configs.get("NEW"), configs.get("OLD"), deductionCaps, labels);
     }
 
     public record DeclarationSummary(Declared declared, int pendingCount) {}
@@ -95,8 +95,8 @@ public class TaxService {
     public ProfileFigures profile(UUID employeeId, String financialYear) {
         List<Map<String, Object>> prof = repo.profileRegime(employeeId, financialYear);
         if (prof.isEmpty()) return null;
-        Map<String, Object> p = prof.get(0);
-        return new ProfileFigures((String) p.get("regime"), ((Number) p.get("prev_employer_income")).longValue(), ((Number) p.get("prev_employer_tds")).longValue());
+        Map<String, Object> profile = prof.get(0);
+        return new ProfileFigures((String) profile.get("regime"), ((Number) profile.get("prev_employer_income")).longValue(), ((Number) profile.get("prev_employer_tds")).longValue());
     }
 
     /** Declared amounts (₹). TDS uses "approved" only; "submitted" adds pending (Finance preview); "all" adds drafts (employee comparison). */
@@ -108,12 +108,12 @@ public class TaxService {
         declared.parentsSenior = !profile.isEmpty() && Boolean.TRUE.equals(profile.get(0).get("parents_senior"));
         int pending = 0;
         for (Map<String, Object> item : items) {
-            String st = (String) item.get("status");
-            if ("PENDING".equals(st)) pending++;
-            boolean ok = "APPROVED".equals(st) || (mode != DeclarationMode.approved && "PENDING".equals(st)) || (mode == DeclarationMode.all && "DRAFT".equals(st));
-            if (!ok) continue;
+            String status = (String) item.get("status");
+            if ("PENDING".equals(status)) pending++;
+            boolean isCounted = "APPROVED".equals(status) || (mode != DeclarationMode.approved && "PENDING".equals(status)) || (mode == DeclarationMode.all && "DRAFT".equals(status));
+            if (!isCounted) continue;
             String key = (String) item.get("item_key");
-            if (Declared.isItem(key)) declared.set(key, r(((Number) item.get("amount")).longValue()));
+            if (Declared.isItem(key)) declared.set(key, rupeesOf(((Number) item.get("amount")).longValue()));
         }
         return new DeclarationSummary(declared, pending);
     }
@@ -121,14 +121,14 @@ public class TaxService {
     record EarnedFigures(long grossEarned, long tds, long pf, long basic, long hra) {}
 
     public Projection projectTax(UUID employeeId, String yearMonth, MonthFigures month, long structureGross, long structureBasic, long structureHra, DeclarationMode declaration, String regimeOverride) {
-        TaxEngine.FinancialYear f = TaxEngine.financialYearOf(yearMonth);
-        String financialYear = f.financialYear();
+        TaxEngine.FinancialYear fiscalYear = TaxEngine.financialYearOf(yearMonth);
+        String financialYear = fiscalYear.financialYear();
         String financialYearStartMonth = financialYear.substring(0, 4) + "-04";
-        Config cfg = taxConfig(financialYear);
+        Config config = taxConfig(financialYear);
         List<Map<String, Object>> prof = repo.profileRegime(employeeId, financialYear);
         Map<String, Object> profile = prof.isEmpty() ? null : prof.get(0);
         List<Map<String, Object>> prior = repo.closedPayslipSnapshots(employeeId, financialYearStartMonth, yearMonth);
-        DeclarationSummary dec = declarations(employeeId, financialYear, declaration == null ? DeclarationMode.approved : declaration);
+        DeclarationSummary declarationSummary = declarations(employeeId, financialYear, declaration == null ? DeclarationMode.approved : declaration);
         Map<String, Object> employee = repo.employmentDates(employeeId);
         List<Map<String, Object>> structures = repo.salaryStructures(employeeId);
 
@@ -137,13 +137,13 @@ public class TaxService {
         for (Map<String, Object> row : prior) {
             closedMonths.add((String) row.get("month"));
             try {
-                JsonNode s = json.readTree((String) row.get("snapshot"));
+                JsonNode snapshot = json.readTree((String) row.get("snapshot"));
                 long basic = 0, hra = 0;
-                for (JsonNode node : s.get("components")) {
+                for (JsonNode node : snapshot.get("components")) {
                     if ("Basic".equals(node.get("label").asText()) && basic == 0) basic = node.get("earned").asLong();
                     if ("House rent allowance".equals(node.get("label").asText()) && hra == 0) hra = node.get("earned").asLong();
                 }
-                snaps.add(new EarnedFigures(s.get("grossEarned").asLong(), s.get("tds").asLong(), s.get("pf").asLong(), basic, hra));
+                snaps.add(new EarnedFigures(snapshot.get("grossEarned").asLong(), snapshot.get("tds").asLong(), snapshot.get("pf").asLong(), basic, hra));
             } catch (java.io.IOException e) {
                 throw new IllegalStateException(e);
             }
@@ -153,13 +153,13 @@ public class TaxService {
         // structure then in force, pro-rata to the days employed.
         LocalDate dateOfJoining = ((Date) employee.get("date_of_joining")).toLocalDate();
         LocalDate exit = employee.get("exit_date") == null ? null : ((Date) employee.get("exit_date")).toLocalDate();
-        long eGross = 0, eBasic = 0, eHra = 0, ePf = 0;
+        long forecastGross = 0, forecastBasic = 0, forecastHra = 0, forecastPf = 0;
         YearMonth start = YearMonth.parse(financialYearStartMonth);
-        for (int k = 0; k < f.index(); k++) {
+        for (int k = 0; k < fiscalYear.index(); k++) {
             YearMonth forecastMonth = start.plusMonths(k);
             if (closedMonths.contains(forecastMonth.toString())) continue;
-            int D = forecastMonth.lengthOfMonth();
-            int elig = PayrollEngine.eligibleDays(forecastMonth, dateOfJoining, exit);
+            int daysInMonth = forecastMonth.lengthOfMonth();
+            int eligibleDayCount = PayrollEngine.eligibleDays(forecastMonth, dateOfJoining, exit);
             Map<String, Object> row = null;
             for (int i = structures.size() - 1; i >= 0; i--) {
                 if (!((Date) structures.get(i).get("effective_from")).toLocalDate().isAfter(forecastMonth.atEndOfMonth())) {
@@ -167,35 +167,35 @@ public class TaxService {
                     break;
                 }
             }
-            if (elig == 0 || row == null) continue;
-            double fr = (double) elig / D;
-            long sb = ((Number) row.get("basic")).longValue(), sh = ((Number) row.get("hra")).longValue(), sl = ((Number) row.get("lta")).longValue(), ss = ((Number) row.get("special")).longValue();
-            long basic = Math.round(sb * fr);
-            eGross += Math.round((sb + sh + sl + ss) * fr);
-            eBasic += basic;
-            eHra += Math.round(sh * fr);
-            ePf += Math.round(0.12 * Math.min(basic, 1_500_000));
+            if (eligibleDayCount == 0 || row == null) continue;
+            double fraction = (double) eligibleDayCount / daysInMonth;
+            long rowBasic = ((Number) row.get("basic")).longValue(), rowHra = ((Number) row.get("hra")).longValue(), rowLta = ((Number) row.get("lta")).longValue(), rowSpecial = ((Number) row.get("special")).longValue();
+            long basic = Math.round(rowBasic * fraction);
+            forecastGross += Math.round((rowBasic + rowHra + rowLta + rowSpecial) * fraction);
+            forecastBasic += basic;
+            forecastHra += Math.round(rowHra * fraction);
+            forecastPf += Math.round(0.12 * Math.min(basic, 1_500_000));
         }
 
-        int after = f.remainingInclCurrent() - 1;
-        long grossAnnual = snaps.stream().mapToLong(EarnedFigures::grossEarned).sum() + eGross + month.gross() + structureGross * after;
-        long basicAnnual = snaps.stream().mapToLong(EarnedFigures::basic).sum() + eBasic + month.basic() + structureBasic * after;
-        long hraAnnual = snaps.stream().mapToLong(EarnedFigures::hra).sum() + eHra + month.hra() + structureHra * after;
-        long pfAnnual = snaps.stream().mapToLong(EarnedFigures::pf).sum() + ePf + month.pf() + Math.round(0.12 * Math.min(structureBasic, 1_500_000)) * after;
+        int after = fiscalYear.remainingInclCurrent() - 1;
+        long grossAnnual = snaps.stream().mapToLong(EarnedFigures::grossEarned).sum() + forecastGross + month.gross() + structureGross * after;
+        long basicAnnual = snaps.stream().mapToLong(EarnedFigures::basic).sum() + forecastBasic + month.basic() + structureBasic * after;
+        long hraAnnual = snaps.stream().mapToLong(EarnedFigures::hra).sum() + forecastHra + month.hra() + structureHra * after;
+        long pfAnnual = snaps.stream().mapToLong(EarnedFigures::pf).sum() + forecastPf + month.pf() + Math.round(0.12 * Math.min(structureBasic, 1_500_000)) * after;
         long jurisTdsSoFar = snaps.stream().mapToLong(EarnedFigures::tds).sum();
 
-        double prevIncome = profile == null ? 0 : r(((Number) profile.get("prev_employer_income")).longValue());
-        double prevTds = profile == null ? 0 : r(((Number) profile.get("prev_employer_tds")).longValue());
-        double income = r(grossAnnual) + prevIncome;
-        Deductions deductions = TaxEngine.oldRegimeDeductions(r(basicAnnual), r(hraAnnual), r(pfAnnual), dec.declared(), cfg.caps(), cfg.labels());
-        TaxResult newRegime = TaxEngine.computeTax(income, 0, cfg.NEW());
-        TaxResult oldRegime = TaxEngine.computeTax(income, deductions.total(), cfg.OLD());
+        double prevIncome = profile == null ? 0 : rupeesOf(((Number) profile.get("prev_employer_income")).longValue());
+        double prevTds = profile == null ? 0 : rupeesOf(((Number) profile.get("prev_employer_tds")).longValue());
+        double income = rupeesOf(grossAnnual) + prevIncome;
+        Deductions deductions = TaxEngine.oldRegimeDeductions(rupeesOf(basicAnnual), rupeesOf(hraAnnual), rupeesOf(pfAnnual), declarationSummary.declared(), config.caps(), config.labels());
+        TaxResult newRegime = TaxEngine.computeTax(income, 0, config.NEW());
+        TaxResult oldRegime = TaxEngine.computeTax(income, deductions.total(), config.OLD());
         String regime = regimeOverride != null ? regimeOverride : profile != null ? (String) profile.get("regime") : "NEW";
         TaxResult current = "OLD".equals(regime) ? oldRegime : newRegime;
-        long monthly = TaxEngine.monthlyTds(current.total(), prevTds + r(jurisTdsSoFar), f.remainingInclCurrent());
-        String label = (snaps.isEmpty() ? "" : "closed payslips + ") + (eGross != 0 ? "estimated earlier months + " : "") + "this month + " + after + " month"
+        long monthly = TaxEngine.monthlyTds(current.total(), prevTds + rupeesOf(jurisTdsSoFar), fiscalYear.remainingInclCurrent());
+        String label = (snaps.isEmpty() ? "" : "closed payslips + ") + (forecastGross != 0 ? "estimated earlier months + " : "") + "this month + " + after + " month"
                 + (after == 1 ? "" : "s") + " projected";
-        return new Projection(financialYear, regime, f.remainingInclCurrent(), r(grossAnnual), label, prevIncome, prevTds, r(jurisTdsSoFar), income, deductions, current,
-                newRegime, oldRegime, monthly, Math.round(r(pfAnnual)), profile != null && Boolean.TRUE.equals(profile.get("regime_overridden")));
+        return new Projection(financialYear, regime, fiscalYear.remainingInclCurrent(), rupeesOf(grossAnnual), label, prevIncome, prevTds, rupeesOf(jurisTdsSoFar), income, deductions, current,
+                newRegime, oldRegime, monthly, Math.round(rupeesOf(pfAnnual)), profile != null && Boolean.TRUE.equals(profile.get("regime_overridden")));
     }
 }
