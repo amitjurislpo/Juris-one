@@ -78,6 +78,23 @@ class NavTest {
     }
 
     @Test
+    @DisplayName("shows the Tasks group to everyone (no module); Team tasks needs reports, Task settings needs tasks.manage")
+    void tasks() {
+        for (String id : List.of("my-tasks", "team-tasks", "projects", "task-settings")) assertThat(Nav.find(id).orElseThrow().module()).isNull();
+        assertThat(visible(EMPLOYEE, false)).contains("my-tasks", "projects").doesNotContain("team-tasks", "task-settings");
+        assertThat(visible(EMPLOYEE, true)).contains("team-tasks");
+        assertThat(visible(ADMIN, false)).contains("my-tasks", "projects", "task-settings");
+        assertThat(visible(set("dir"), false)).contains("my-tasks", "projects");
+        assertThat(visible(set("platform.manage"), false)).doesNotContain("my-tasks", "team-tasks", "projects", "task-settings");
+        assertThat(Nav.find("my-tasks").orElseThrow().group()).isEqualTo("Tasks");
+        assertThat(Permissions.SALARY).doesNotContain(Permissions.TASKS_MANAGE, Permissions.PROJECTS_CREATE);
+        // the group sits after My workspace and before Team
+        List<String> ids = Nav.NAV.stream().map(Nav.Item::id).toList();
+        assertThat(ids.indexOf("my-tasks")).isEqualTo(ids.indexOf("juris-track") + 1);
+        assertThat(ids.indexOf("team")).isGreaterThan(ids.indexOf("task-settings"));
+    }
+
+    @Test
     @DisplayName("shows My letters to everyone with self; HR letters only to those who manage them")
     void letters() {
         assertThat(visible(EMPLOYEE, false)).contains("my-letters").doesNotContain("letters");

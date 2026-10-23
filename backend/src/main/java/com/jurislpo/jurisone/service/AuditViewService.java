@@ -34,6 +34,7 @@ public class AuditViewService {
         GROUPS.put("payroll", List.of("salary.", "payroll."));
         GROUPS.put("tax", List.of("tax.", "declaration.", "proof."));
         GROUPS.put("letters", List.of("letter.", "letter_template."));
+        GROUPS.put("tasks", List.of("project.", "task.", "workflow_status.", "task_label."));
         GROUPS.put("requests", List.of("request."));
         GROUPS.put("pages", List.of("page."));
     }

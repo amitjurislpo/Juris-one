@@ -15,6 +15,11 @@ public final class Permissions {
             TAX_VIEW = "tax.view", PROOFS_VERIFY = "proofs.verify", POLICIES_MANAGE = "policies.manage", ASSETS_MANAGE = "assets.manage",
             ANNOUNCEMENTS_MANAGE = "announcements.manage", LETTERS_MANAGE = "letters.manage", ROLES_MANAGE = "roles.manage";
 
+    /** Task settings, and the "sees every project and task" exception (the Owner only; private access is audited). */
+    public static final String TASKS_MANAGE = "tasks.manage";
+    /** Create task projects (Owner and HR Manager by default). Using tasks needs no permission. */
+    public static final String PROJECTS_CREATE = "projects.create";
+
     /**
      * The platform super admin's permission (businesses, plans, subscriptions). It is not part of the business catalogue
      * below, so no business role can ever be given it.
@@ -49,6 +54,8 @@ public final class Permissions {
         descriptions.put(ASSETS_MANAGE, "Manage the asset register & assign assets");
         descriptions.put(ANNOUNCEMENTS_MANAGE, "Post announcements");
         descriptions.put(ROLES_MANAGE, "Roles, permissions & policies");
+        descriptions.put(TASKS_MANAGE, "Task settings & every project and task");
+        descriptions.put(PROJECTS_CREATE, "Create task projects");
         LABELS = java.util.Collections.unmodifiableMap(descriptions);
     }
 
@@ -60,7 +67,8 @@ public final class Permissions {
             new Group("Self-service", List.of(SELF, DIR)),
             new Group("People operations", List.of(ATT_ALL, APPR_LEAVE, APPR_REG, PEOPLE_VIEW, PEOPLE_ADD, ACCESS_TOGGLE, DEPT_MANAGE, HOLIDAYS_MANAGE, LETTERS_MANAGE)),
             new Group("Finance", List.of(PAY_VIEW, PAY_CLOSE, STRUCT_MANAGE, TAX_VIEW, PROOFS_VERIFY)),
-            new Group("Administration", List.of(POLICIES_MANAGE, ASSETS_MANAGE, ANNOUNCEMENTS_MANAGE, ROLES_MANAGE)));
+            new Group("Administration", List.of(POLICIES_MANAGE, ASSETS_MANAGE, ANNOUNCEMENTS_MANAGE, ROLES_MANAGE)),
+            new Group("Tasks", List.of(TASKS_MANAGE, PROJECTS_CREATE)));
 
     /** Permissions that expose salary / tax figures. HR roles must never hold these. */
     public static final Set<String> SALARY = Set.of(PAY_VIEW, PAY_CLOSE, STRUCT_MANAGE, TAX_VIEW, PROOFS_VERIFY);

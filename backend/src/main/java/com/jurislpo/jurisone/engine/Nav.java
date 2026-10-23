@@ -42,6 +42,11 @@ public final class Nav {
             item("my-assets", "My assets", "layers", List.of(SELF, DIR, ROLES_MANAGE), null),
             item("announcements", "Announcements", "bell", List.of(SELF, DIR, ROLES_MANAGE), null),
             new Item("juris-track", "Juris Track", "sparkle", List.of(SELF, ROLES_MANAGE, DIR), false, null, JURIS_TRACK),
+            // Tasks: free for every business (no module); using tasks needs no permission, only the settings do
+            item("my-tasks", "My tasks", "tasks", List.of(SELF, DIR, ROLES_MANAGE), "Tasks"),
+            new Item("team-tasks", "Team tasks", "team", List.of(SELF, DIR, ROLES_MANAGE), true, "Tasks", null),
+            item("projects", "Projects", "folder", List.of(SELF, DIR, ROLES_MANAGE), "Tasks"),
+            item("task-settings", "Task settings", "sliders", List.of(TASKS_MANAGE), "Tasks"),
             new Item("team", "My team", "team", List.of(SELF), true, "Team", null),
             item("register", "Attendance register", "grid", List.of(ATT_ALL), "People ops"),
             item("approvals", "Approvals", "check", List.of(APPR_LEAVE, APPR_REG), "People ops"),

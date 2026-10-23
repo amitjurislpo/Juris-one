@@ -50,10 +50,12 @@ public class SeedService {
     private final Path storageDir;
 
     private final com.jurislpo.jurisone.service.PlatformCompanyService platformCompany;
+    private final TaskSeedService taskSeed;
 
     public SeedService(SeedRepository repo, PiiCrypto piiCrypto, PayrollOperationsService payrollOperations, JobsService jobs, BusinessSetupService setup,
-                       com.jurislpo.jurisone.service.PlatformCompanyService platformCompany, Environment environment, JurisOneProperties props) {
+                       com.jurislpo.jurisone.service.PlatformCompanyService platformCompany, TaskSeedService taskSeed, Environment environment, JurisOneProperties props) {
         this.platformCompany = platformCompany;
+        this.taskSeed = taskSeed;
         this.repo = repo;
         this.piiCrypto = piiCrypto;
         this.payrollOperations = payrollOperations;
@@ -489,20 +491,21 @@ public class SeedService {
             seedRequests(codeToId);
             seedPayroll(codeToId);
             seedProofFiles();
+            taskSeed.seed(codeToId); // demo projects and tasks (skipped when already there)
         // leave balances: credit every month so far (idempotent)
         jobs.jobLeaveAccrual(Instant.now());
     }
 
-    /** Deletes stored payslip PDFs and proof files (after a database reset they belong to nothing). */
+    /** Deletes stored payslip PDFs, proof files and task attachments (after a database reset they belong to nothing). */
     public void clearStoredFiles() throws IOException {
-        for (String subfolder : List.of("payslips", "proofs")) {
+        for (String subfolder : List.of("payslips", "proofs", "tasks")) {
             Path directory = storageDir.resolve(subfolder);
             if (!Files.exists(directory)) continue;
             try (java.util.stream.Stream<Path> walk = Files.walk(directory)) {
                 for (Path path : walk.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(path);
             }
         }
-        log.info("Stored payslips and proofs cleared");
+        log.info("Stored payslips, proofs and task attachments cleared");
     }
 
     long count(String table) {
