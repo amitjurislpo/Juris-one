@@ -45,11 +45,12 @@ public class JobsService {
     private final SubscriptionService subscriptions;
     private final com.jurislpo.jurisone.service.NotificationService notifications;
     private final com.jurislpo.jurisone.service.MailService mail;
+    private final TaskJobs taskJobs;
     private final String appUrl;
 
     public JobsService(JobsRepository repo, AttendanceService attendance, SettingsService settings, AuditService audit, SubscriptionService subscriptions,
                        com.jurislpo.jurisone.service.NotificationService notifications, com.jurislpo.jurisone.service.MailService mail,
-                       com.jurislpo.jurisone.config.JurisOneProperties props) {
+                       TaskJobs taskJobs, com.jurislpo.jurisone.config.JurisOneProperties props) {
         this.repo = repo;
         this.attendanceService = attendance;
         this.settings = settings;
@@ -57,6 +58,7 @@ public class JobsService {
         this.subscriptions = subscriptions;
         this.notifications = notifications;
         this.mail = mail;
+        this.taskJobs = taskJobs;
         this.appUrl = props.frontendOrigin();
     }
 
@@ -87,6 +89,7 @@ public class JobsService {
         view.put("accrual", jobLeaveAccrual(now));
         view.put("compOff", jobCompOffExpiry(now));
         view.put("subscription", jobSubscriptionWarnings());
+        view.put("tasks", taskJobs.run(now)); // due tomorrow / due today / overdue reminders (bell)
         return view;
     }
 

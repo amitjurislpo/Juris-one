@@ -73,6 +73,8 @@ Access is **permission-based**, not hard-coded by role name. Every API endpoint 
 | `tax.view` | Tax and TDS for all employees, override regime |
 | `proofs.verify` | Verify investment proofs |
 | `roles.manage` | Roles, permissions, policies |
+| `tasks.manage` | Task settings (default steps, company labels) and **every project and task** of the business, private ones included (the Owner only; opening something private is audited) |
+| `projects.create` | Create task projects (Owner and HR Manager by default). Using tasks needs no permission |
 
 ### 3.2 Default roles (role templates, set by the super admin)
 
@@ -81,11 +83,13 @@ The super admin keeps a catalogue of **role templates** (Platform → role templ
 | Role | Permissions | Can add employees with role |
 |---|---|---|
 | **Admin** | Everything **except `self`**: no attendance, leave or payslip of their own | All roles |
-| **HR Manager** | self, dir, att.all, appr.leave, appr.reg, people.view, people.add, access.toggle, dept.manage, holidays.manage | HR Executive, Employee |
+| **HR Manager** | self, dir, att.all, appr.leave, appr.reg, people.view, people.add, access.toggle, dept.manage, holidays.manage, projects.create | HR Executive, Employee |
 | **HR Executive** | self, dir, att.all, appr.leave, appr.reg, people.view | none |
 | **Finance Manager** | self, dir, appr.reg, people.view, people.add, access.toggle, dept.manage, pay.view, pay.close, struct.manage, tax.view, proofs.verify | Finance Executive (into **Finance dept only**) |
 | **Finance Executive** | self, dir, appr.reg, pay.view, tax.view, proofs.verify (**cannot close payroll**) | none |
 | **Employee** | self, dir | none |
+
+`tasks.manage` is on the Owner (Admin) template only; `projects.create` on the Owner and HR Manager templates (Finance Manager and the other roles do not create projects, but anyone can be made a project owner).
 
 ### 3.3 Rules
 
@@ -431,12 +435,14 @@ Cards that appear by permission:
 - payslip ready
 - next holiday
 
-**Email** for: sign-in code, leave decision, regularization decision, payslip published.
+- tasks (§5.17.6): assigned to me, made accountable, mentioned, a comment or status change on a task I follow, due tomorrow, due today (timed tasks), an extra reminder before the due moment, overdue, added to a project
+
+**Email** for: sign-in code, leave decision, regularization decision, payslip published. Tasks send **no email** yet (bell only).
 
 **Shell:**
 
-- sidebar grouped as My workspace / Team / People ops / Finance / Administration
-- badges for pending items
+- sidebar grouped as My workspace / Tasks / Team / People ops / Finance / Administration (the **Tasks** group: My tasks, Team tasks, Projects, Task settings)
+- badges for pending items; **My tasks** shows the number of my open tasks (direct or indirect assignee) that are overdue or due today, each in its task time zone
 - profile menu with My profile, My payslips, theme toggle, command menu, Sign out
 - **⌘K command palette** (actions + navigation)
 - light/dark theme (light default)
@@ -459,6 +465,7 @@ Record **who, what, when, before → after** for these events:
 - payroll edit/close
 - regime change
 - proof decision
+- tasks: project create/update/archive/restore/delete, members, workflow steps, labels, task create/update/move/delete, followers, checklist, comments (length only, never the text), attachments; and the Owner opening a private project or task they are not part of (`project.private_access`, `task.private_access`). Filter group "tasks".
 
 Admin can view the audit log with filters.
 
@@ -466,6 +473,49 @@ Admin can view the audit log with filters.
 
 The business admin sees their own business's log (`/audit`); the **super admin** sees every business and the platform itself (`/platform/audit`, filter by business). Both can be exported as CSV.
 
+### 5.17 Tasks (every business, no plan module)
+
+#### 5.17.1 Projects, members and visibility
+
+- A **project** (key `HR`, `PAY`: 2–6 capital letters/digits starting with a letter, unique in the business; name unique) is the only container. It is **private** (members only) or **company-wide** (everyone reads it and may comment). The creator is its owner. Members are `OWNER` (everything incl. members, steps, labels, archive), `MEMBER` (create and edit tasks, delete tasks they reported) or `VIEWER` (read, comment, follow). A project keeps at least one owner. A key cannot change once the project has tasks.
+- Creating a project needs `projects.create` (or `tasks.manage`). A project with tasks is **archived** (read-only, 422 for writes) instead of deleted; an empty project is soft-deleted.
+- **Who sees what:** project members as above; a non-member sees a company-wide project like a viewer and nothing of a private one (**404**, so its existence does not leak). The direct assignee can work on the task (status, checklist, files); the reporter, followers and the **manager of the direct assignee** (direct reports, and one more level) read and comment, also inside private projects (that task only).
+- **The Owner (`tasks.manage`) sees every project and task**, private ones and personal tasks included, and acts as project owner everywhere; opening a private project or task they are not part of writes `project.private_access` / `task.private_access` to the audit log (no notification). This is the only exception to the 404 rule. HR and Finance have no special view of tasks.
+
+#### 5.17.2 Workflow
+
+- Each project has its own **steps** (statuses), copied from the business default set when it is created: **To do, In progress, In review, Done, Cancelled**. Each step is in one category: to do, in progress, done. At least one to-do and one done step, at most 12, exactly one starting step (a to-do one), unique names. Deleting a step with tasks needs a step to move them to. Task settings (`tasks.manage`) edits the default set, which affects personal tasks and new projects only.
+
+#### 5.17.3 Tasks
+
+- Fields: title (≤200), description (plain text with `@mentions`, ≤20,000), type (task, issue, request, milestone), step, priority (urgent, high, medium, low, none), labels (≤20, company or project labels), start date, **due date + optional due time**, an optional **extra reminder before it is due** (15 minutes, 1 hour, 4 hours or 1 day), estimate in minutes, parent task, followers, checklist (≤100 items).
+- A task in a project gets the next number (`HR-12`); its key is found case-insensitively, and a task that moved project keeps answering to its old key. A **personal task** has no project and no number.
+- **One direct assignee** (does the work) and **one optional indirect assignee** ("accountable": oversight; must be someone else). Both see the task in My tasks, both are notified, both follow it. Setting a direct assignee who is not a project member adds them as a member; the indirect assignee is not added. The indirect assignee may comment, change the step and priority and **reassign the direct assignee**, may step down, but edits no other field and cannot delete the task (unless a project owner). The create form suggests the assignee's reporting manager as accountable (never set automatically).
+- **Due time and time zone:** the task time zone is the direct assignee's (else the indirect assignee's, else the reporter's). A date-only task is due at the **end of that day** and overdue from the next day; a timed task is overdue from its due time. Clearing the due date clears the time and the extra reminder.
+- Sub-tasks are one level deep, in the same project (≤100 per task). Changes need the version the client read (409 when someone else changed the task); each field needs its own right (403).
+- **Soft delete always:** tasks (with their sub-tasks), comments, attachments and projects are never hard-deleted by the app. Every change is written to the task's **history** and the audit log.
+
+#### 5.17.4 Comments, mentions, followers, attachments
+
+- Comments (≤5,000) with `@mentions`; the author edits, the author, a project owner or the Owner deletes ("Comment deleted" stays). Commenters and mentioned people follow the task; people who cannot see the task are neither notified nor given access. Anyone who sees a task may follow it.
+- Files on tasks: PDF, PNG, JPG, Word/Excel/PowerPoint (`.docx/.xlsx/.pptx`), text and CSV, checked by their first bytes; ≤10 MB each, ≤20 per task; stored under `<storage-dir>/tasks/`; downloads are in the audit trail; removed files stay stored.
+
+#### 5.17.5 Views
+
+- **My tasks:** my open tasks as direct or indirect assignee (or reported / followed), grouped by due (overdue, today, this week, later, no date), list or board.
+- **Team tasks** (anyone with reports): tasks whose direct assignee reports to me, direct reports by default and one more level with a switch, with a per-person summary (open, overdue, done in the last 7 days).
+- **Projects:** list, and each project's List and Board (cards in server-calculated order; open cards and the ones done in the last 14 days).
+- Every task list has the same filters (project, step, category, assignee, accountable, reporter, priority, type, label, due, dates, search incl. task keys) and sorting.
+
+#### 5.17.6 Bell notifications and reminders (no email yet)
+
+- Assigned, made accountable, mentioned, comment and step change on a followed task, added to a project. One request sends at most one notification per person; the person who acted is never notified.
+- Reminders at **09:00 in the task time zone**: due tomorrow, due today (timed tasks), overdue (date-only tasks from 09:00 of the next day, timed tasks right after their time), to both assignees, once per due date (a new date re-arms them). People who have left or have no portal access are not notified. Email alerts are a later phase.
+- **Extra reminder (optional, per task, needs a due date):** `reminderBeforeMinutes` = 15, 60, 240 or 1440 (any other value is refused with 400), or none. A bell "{key} is due in 1 hour (due 10 Mar 2031 17:00): {title}" goes to both assignees once per due moment, when that moment minus the offset is reached (checked every 10 minutes), in the task time zone. The due moment is the due time, or the end of the due day (00:00 of the next day) for a date-only task. It is not sent for done or deleted tasks, never after the due moment, and is sent again when the due date, time or offset changes. It comes in addition to the daily 09:00 reminders, which are unchanged.
+
+#### 5.17.7 Availability
+
+- Tasks are part of **every plan** (not a module) and free for every business. After the subscription ends they are read-only like everything else (402 for writes).
 ---
 
 ## 6. Data model (PostgreSQL), minimum tables
@@ -502,7 +552,20 @@ declaration_items(id, employee_id, fy, section, item_key, amount, proof_path, st
 notifications(id, employee_id, text, link, read_at, created_at)
 audit_log(id, actor_id, action, entity, entity_id, before jsonb, after jsonb, at, ip)
 settings(key, value jsonb)   -- policies: grace, half-day hours, lock day, PT slab, weekly offs
+projects(id, key, name, description, visibility PRIVATE/BUSINESS, status ACTIVE/ARCHIVED, color, department_id,
+          next_task_number, version, created_by, archived_at, deleted_at)
+project_members(project_id, employee_id, role OWNER/MEMBER/VIEWER)
+task_statuses(id, project_id (null = default set), name, category TODO/IN_PROGRESS/DONE, position, color, is_initial)
+tasks(id, project_id, number, previous_keys[], parent_task_id, title, description, type, status_id, priority,
+          assignee_id, indirect_assignee_id, reporter_id, start_date, due_date, due_time, estimate_minutes, reminder_before_minutes, position,
+          completed_at, due_soon/due_today/overdue/reminder_notified_for, version, deleted_at, search_vector)
+task_labels(id, project_id (null = company label), name, color)    task_label_links(task_id, label_id)
+task_watchers(task_id, employee_id)    task_checklist_items(id, task_id, text, is_done, position)
+task_comments(id, task_id, author_id, body, mentioned_employee_ids[], edited_at, deleted_at)
+task_attachments(id, task_id, file_path, file_name, content_type, size_bytes, sha256, uploaded_by, deleted_at)
+task_activity(id, task_id, project_id, actor_id, kind, before jsonb, after jsonb, occurred_at)
 ```
+Every task table has `business_id` and row-level security like the other business tables.
 
 ---
 
@@ -537,6 +600,8 @@ settings(key, value jsonb)   -- policies: grace, half-day hours, lock day, PT sl
 
 Seed the 2026 holidays (India + US + Christmas for everyone), the departments and the salary structures as in the prototype.
 
+Tasks (dated relative to the seed day): **People operations** (`PEO`, company-wide, owner Riya, member Pooja: 8 tasks, two overdue, one with a checklist and a comment thread with a mention, one with Arjun as accountable), **Website relaunch** (`WEB`, private, owner Nazneen with her reports: 10 tasks across all steps, 2 sub-tasks, labels frontend/content, one due today 17:00 and one overdue since yesterday 11:00), **Payroll October** (`PAY`, private, owner Arjun, member Rohan: 4 tasks; HR does not see them, the Owner does) and 2 personal tasks of Siddharth.
+
 ---
 
 ## 9. Open questions (decide before the related phase)
@@ -544,6 +609,7 @@ Seed the 2026 holidays (India + US + Christmas for everyone), the departments an
 1. The Professional Tax state (Uttar Pradesh has no PT; Maharashtra/Karnataka do). Do we need ESI, employer PF in CTC, gratuity, or LWF?
 2. Leave encashment and LOP rules at full & final settlement.
 3. Is a biometric device or IP/geo restriction needed for check-in?
+4. Tasks: an extra reminder before the due time is decided: yes, optional per task (see 5.17.6).
 4. Email provider and hosting (VPS / AWS / Azure). Is SSO (Google/Microsoft) needed?
 5. Will US payroll ever be in scope?
 6. Buying the Balkind font licence.

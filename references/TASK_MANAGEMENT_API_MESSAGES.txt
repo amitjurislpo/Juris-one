@@ -1,0 +1,134 @@
+A label with that name already exists.
+A project can have at most 500 members.
+A project needs at least one owner.
+A project with that name already exists.
+A step with that name already exists.
+A sub-task can't have its own sub-tasks.
+A sub-task must be in the same project as its parent.
+A task can have at most 100 checklist items.
+A task can have at most 100 sub-tasks.
+A task can have at most 20 attachments. Remove one first.
+A task can have at most 20 labels.
+A task can have at most 50 followers.
+A task can't be its own sub-task.
+A task with sub-tasks can't become a sub-task.
+A workflow can have at most 12 steps.
+A workflow needs at least one done step.
+A workflow needs at least one to-do step.
+Checklist item added
+Checklist item details are missing.
+Checklist item not found.
+Checklist item removed
+Checklist item saved
+Choose 15 minutes, 1 hour, 4 hours or 1 day before the due time.
+Choose a due date first.
+Choose a file.
+Choose a step of this task's workflow.
+Choose an active employee as the accountable person.
+Choose an active employee as the assignee.
+Choose another step of the same workflow for its tasks.
+Choose labels of this project or of the business.
+Choose the department.
+Choose the employee.
+Choose the followers.
+Choose the parent task.
+Choose the project.
+Choose the step.
+Comment added
+Comment deleted
+Comment not found.
+Comment saved
+Each step needs its own name.
+Employee not found.
+Enter a label name.
+Enter a name for the step.
+Enter a position from 1.
+Enter a project name.
+Enter a title.
+Enter an estimate between 0 and 100,000 minutes.
+Enter the checklist item.
+Enter the due date as YYYY-MM-DD.
+Enter the due time as HH:mm (24-hour).
+Enter the start date as YYYY-MM-DD.
+Exactly one step must be the one new tasks start in.
+File attached
+File not found.
+File removed
+Files up to 10 MB.
+Follower added
+Follower removed
+Keep checklist items under 300 characters.
+Keep the comment under 5,000 characters.
+Keep the description under 2,000 characters.
+Keep the description under 20,000 characters.
+Keep the label name under 40 characters.
+Keep the project name under 80 characters.
+Keep the step name under 30 characters.
+Keep the title under 200 characters.
+Label added
+Label deleted
+Label details are missing.
+Label not found.
+Label saved
+List every step of the workflow once.
+Make another step the starting step first.
+Member added
+Member details are missing.
+Member removed
+New tasks must start in a to-do step.
+Only a task without a parent task or sub-tasks can move to another project.
+Only members of that project can add tasks to it.
+Only members of this project can add tasks to it.
+Only the author can edit a comment.
+Only the project's owners can do that.
+Project archived
+Project created
+Project deleted
+Project details are missing.
+Project not found.
+Project restored
+Project saved
+Role changed
+Send either statusId or statusCategory, not both.
+Send the changes as a JSON object.
+Send the version of the project you changed.
+Send the version of the task you changed.
+Someone else changed this project. Reload to see their changes.
+Someone else changed this task. Reload to see their changes.
+Step added
+Step deleted
+Step details are missing.
+Step not found.
+Step saved
+Steps reordered
+Task created
+Task deleted
+Task details are missing.
+Task not found.
+Task saved
+That person can't see this task.
+That person is already a member of this project.
+That person is not a member of this project.
+The accountable person must be someone other than the assignee.
+The cards next to the drop place are not in that column.
+The due date can't be before the start date.
+The key can't change once the project has tasks.
+The key {key} is already used by another project.
+There can be at most 50 labels here.
+This project has tasks. Archive it instead.
+This project is archived. Restore it to make changes.
+This step has tasks. Choose the step to move them to.
+This workflow has no {category} step.
+Upload a PDF, image, Word, Excel, PowerPoint, text or CSV file.
+Use 2 to 6 letters or digits for the key, starting with a letter (for example HR or PAY).
+Write a comment.
+You can't add followers to this task.
+You can't attach files to this task.
+You can't change the checklist of this task.
+You can't change this field of the task.
+You can't comment on this task.
+You can't delete this comment.
+You can't delete this task.
+You can't move this task.
+You can't remove followers from this task.
+You can't remove this file.

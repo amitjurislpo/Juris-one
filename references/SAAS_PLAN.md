@@ -42,6 +42,7 @@ Builds on the Next.js UI + Spring Boot API (`backend/`). Everything below is new
 - **Warnings:** 7 days and 1 day before the end date and on expiry, owners get an email and a dashboard notification.
 - **Employee export:** the owner can download all employee details as Excel (`.xlsx`) at any time (identity numbers masked unless the owner explicitly includes them, which is audited).
 - **Max employees:** adding / enabling an employee beyond the plan limit is refused with a clear message.
+- **Tasks** (projects, tasks, My tasks / Team tasks, bell reminders) are part of every plan: not a module, no grant needed (owner's decision 2026-10-23); read-only after expiry like everything else.
 
 ### 1.3 Juris Track
 

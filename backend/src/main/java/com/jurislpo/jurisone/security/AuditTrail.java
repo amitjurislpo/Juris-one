@@ -33,6 +33,7 @@ public final class AuditTrail {
             Pattern.compile("^/api/profile$"),
             Pattern.compile("^/api/proofs/.*/(file|document)$"),
             Pattern.compile("^/api/tax/.*/(file|document)$"),
+            Pattern.compile("^/api/tasks/[^/]+/attachments/[^/]+/file$"),
             Pattern.compile("^/api/platform/audit(/.*)?$"),
             Pattern.compile("^/api/audit(/.*)?$"),
     };

@@ -118,6 +118,37 @@ class TenantIsolationTest extends IntegrationTest {
     }
 
     @Test
+    void projectsAndTasksStayInsideTheirBusinessEvenForTheOwner() throws Exception {
+        UUID alphaOwnerRole = alphaData.role("task-owner", "dir", "roles.manage", "tasks.manage", "projects.create");
+        UUID betaOwnerRole = betaData.role("task-owner", "dir", "roles.manage", "tasks.manage", "projects.create");
+        Person alphaOwner = person(alphaData, alphaOwnerRole, "TA-" + (int) (Math.random() * 100_000));
+        Person betaOwner = person(betaData, betaOwnerRole, "TB-" + (int) (Math.random() * 100_000));
+        String key = "T" + TestData.letters(4).toUpperCase();
+        String projectId = json.readTree(mockMvc.perform(write(post("/api/projects")).cookie(alphaOwner.cookie())
+                .content("{\"key\":\"" + key + "\",\"name\":\"Alpha " + key + "\",\"visibility\":\"BUSINESS\"}")).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString()).at("/data/id").asText();
+        String taskId = json.readTree(mockMvc.perform(write(post("/api/tasks")).cookie(alphaOwner.cookie())
+                .content("{\"projectId\":\"" + projectId + "\",\"title\":\"Alpha only\"}")).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString()).at("/data/id").asText();
+
+        // beta's Owner (who sees every project of their own business) finds nothing of alpha's, by id or key
+        mockMvc.perform(get("/api/projects/" + projectId).cookie(betaOwner.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/tasks/" + taskId).cookie(betaOwner.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/tasks/" + key + "-1").cookie(betaOwner.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/tasks/" + taskId + "/comments").cookie(betaOwner.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(write(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/tasks/" + taskId)).cookie(betaOwner.cookie())
+                .content("{\"version\":0,\"title\":\"Taken over\"}")).andExpect(status().isNotFound());
+        mockMvc.perform(write(post("/api/tasks")).cookie(betaOwner.cookie()).content("{\"projectId\":\"" + projectId + "\",\"title\":\"Sneaky\"}"))
+                .andExpect(status().isNotFound());
+        JsonNode betaTasks = json.readTree(mockMvc.perform(get("/api/tasks").cookie(betaOwner.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(betaTasks.at("/data/rows").findValuesAsText("id")).doesNotContain(taskId);
+        // and the database hides the rows even without a filter
+        long seenFromBeta = TenantContext.call(betaData.business(), () -> jdbc.queryForObject("SELECT count(*) FROM tasks WHERE id = ?::uuid", Long.class, taskId));
+        assertThat(seenFromBeta).isZero();
+        assertThat(jdbc.queryForObject("SELECT title FROM tasks WHERE id = ?::uuid", String.class, taskId)).isEqualTo("Alpha only");
+    }
+
+    @Test
     void theDatabaseItselfHidesOtherBusinessesRows() {
         // even a query without any business filter returns only the current business's rows
         long total = jdbc.queryForObject("SELECT count(*) FROM employees WHERE business_id IN (?, ?)", Long.class, alphaData.business(), betaData.business());
