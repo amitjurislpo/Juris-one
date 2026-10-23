@@ -87,6 +87,8 @@ public class ShellService {
         Map<String, Integer> badges = new LinkedHashMap<>();
         badges.put("approvals", pending);
         badges.put("proofs", proofs);
+        // My tasks: my open tasks (direct or indirect assignee) that are overdue or due today, in each task's time zone
+        badges.put("myTasks", user.businessId() != null && user.navAllowed("my-tasks") ? repo.countMyTasksDueByToday(user.id()) : 0);
         String businessName = user.businessId() == null ? null : repo.businessName(user.businessId());
         var subscription = user.businessId() == null ? null : subscriptions.current(user.businessId());
         return new Shell(shellUser, new ArrayList<>(groups.values()), badges, notes, unread, user.landingPath(), user.perms().contains("self"), businessName, subscription);

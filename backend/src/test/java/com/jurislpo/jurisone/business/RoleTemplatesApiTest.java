@@ -94,7 +94,7 @@ class RoleTemplatesApiTest extends IntegrationTest {
             boolean mandatory = List.of("owner", "hrm", "fm", "employee").contains(template.get("key").asText());
             if (List.of("owner", "hrm", "hre", "fm", "fe", "employee").contains(template.get("key").asText())) assertThat(template.get("mandatory").asBoolean()).isEqualTo(mandatory);
         }
-        assertThat(data.get("groups").size()).isEqualTo(4);
+        assertThat(data.get("groups").size()).isEqualTo(5);
         assertThat(data.get("groups").toString()).contains("people.add").contains("Add & edit employees").doesNotContain("business.manage");
 
         // a business user can't reach it
