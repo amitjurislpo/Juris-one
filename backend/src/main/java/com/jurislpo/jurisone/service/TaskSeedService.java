@@ -130,7 +130,7 @@ public class TaskSeedService {
         UUID assigneeId = seed.assignee() == null ? null : id(seed.assignee()), indirectAssigneeId = seed.indirectAssignee() == null ? null : id(seed.indirectAssignee());
         tasks.insert(new NewTask(taskId, projectId, number, parentTaskId, seed.title(), null, "TASK", status.id(), seed.priority(), assigneeId, indirectAssigneeId,
                 id(reporterCode), null, seed.dueInDays() == null ? null : today.plusDays(seed.dueInDays()), seed.dueTime() == null ? null : LocalTime.parse(seed.dueTime()),
-                null, TaskPositions.append(tasks.findMaxPosition(projectId, status.id())), WorkflowRules.DONE.equals(status.category())));
+                null, null, TaskPositions.append(tasks.findMaxPosition(projectId, status.id())), WorkflowRules.DONE.equals(status.category())));
         Set<UUID> followers = new LinkedHashSet<>();
         followers.add(id(reporterCode));
         if (assigneeId != null) followers.add(assigneeId);

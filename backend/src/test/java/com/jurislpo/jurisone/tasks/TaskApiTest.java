@@ -300,4 +300,32 @@ class TaskApiTest extends TaskApiTestBase {
         assertThat(getData(hr.cookie(), "/api/tasks?search=OLD-1").get("total").asInt()).isEqualTo(1);
         assertThat(getData(hr.cookie(), "/api/tasks?search=mov").get("total").asInt()).isEqualTo(1); // prefix search
     }
+
+    @Test
+    void theExtraReminderIsOneOfTheAllowedOffsetsNeedsADueDateAndIsClearedWithIt() throws Exception {
+        Person hr = person(hrRole, "hr");
+        // created with a reminder: stored and shown on the task
+        String id = task(hr.cookie(), "\"title\":\"Remind me\",\"dueDate\":\"2031-03-01\",\"dueTime\":\"17:30\",\"reminderBeforeMinutes\":60").get("id").asText();
+        assertThat(getData(hr.cookie(), "/api/tasks/" + id).get("reminderBeforeMinutes").asInt()).isEqualTo(60);
+        String plain = task(hr.cookie(), "\"title\":\"None\",\"dueDate\":\"2031-03-01\"").get("id").asText();
+        assertThat(getData(hr.cookie(), "/api/tasks/" + plain).get("reminderBeforeMinutes").isNull()).isTrue();
+        // only 15, 60, 240 and 1440 minutes, and only with a due date (problem details)
+        mockMvc.perform(write(post("/api/tasks")).cookie(hr.cookie()).content("{\"title\":\"Odd\",\"dueDate\":\"2031-03-01\",\"reminderBeforeMinutes\":30}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Choose 15 minutes, 1 hour, 4 hours or 1 day before the due time."));
+        mockMvc.perform(write(post("/api/tasks")).cookie(hr.cookie()).content("{\"title\":\"No date\",\"reminderBeforeMinutes\":15}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Choose a due date first."));
+        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":0,\"reminderBeforeMinutes\":90}")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Choose 15 minutes, 1 hour, 4 hours or 1 day before the due time."));
+        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":0,\"reminderBeforeMinutes\":\"60\"}")).andExpect(status().isBadRequest());
+        // change it, audited
+        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":0,\"reminderBeforeMinutes\":1440}")).andExpect(status().isOk());
+        assertThat(getData(hr.cookie(), "/api/tasks/" + id).get("reminderBeforeMinutes").asInt()).isEqualTo(1440);
+        assertThat(auditRows("task.update", id)).isEqualTo(1);
+        // null removes it; clearing the due date removes it too
+        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":1,\"reminderBeforeMinutes\":null}")).andExpect(status().isOk());
+        assertThat(getData(hr.cookie(), "/api/tasks/" + id).get("reminderBeforeMinutes").isNull()).isTrue();
+        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":2,\"reminderBeforeMinutes\":15}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":3,\"dueDate\":null}")).andExpect(status().isOk());
+        assertThat(getData(hr.cookie(), "/api/tasks/" + id).get("reminderBeforeMinutes").isNull()).isTrue();
+    }
 }

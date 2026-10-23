@@ -33,3 +33,10 @@ One line each: endpoint, what changed, why. New user-visible messages are in `TA
 - `GET /api/tasks/{taskId}/comments` (C1): rows also carry `authorId`; a deleted comment has `body: null`, `mentionedPeople: {}` and `isDeleted: true`.
 - `POST /api/tasks/{taskId}/attachments` (C6): message "File attached", `data: {id, name}` (`name` = the cleaned file name).
 - `GET /api/tasks/{taskId}/activity` (C5) is part of T1a (the history is written from T1a on).
+
+## Extra reminder before the due moment (Q15 = yes)
+
+- `POST /api/tasks` (T6) and `PATCH /api/tasks/{taskId}` (T7): new optional field `reminderBeforeMinutes` (15, 60, 240, 1440 or `null`). Another number or a non-integer: 400 "Choose 15 minutes, 1 hour, 4 hours or 1 day before the due time."; a reminder without a due date: 400 "Choose a due date first.". Clearing `dueDate` also clears the reminder. Changing it needs the same right as the dates (`canEdit`), writes a `DATES_CHANGED` history row and the `task.update` audit row (before/after include `reminderBeforeMinutes`).
+- TaskRow (list, board, detail): new field `reminderBeforeMinutes`.
+- Job `tasks.reminder` (in `TaskJobs`): the summary of the task jobs has a new key `reminders`. The bell text is "{key} is due in {15 minutes|1 hour|4 hours|1 day} (due {date}[ {time}]): {title}".
+- Migration: the columns `tasks.reminder_before_minutes` and `tasks.reminder_notified_for` and a check constraint were added to `V20__task_management.sql` itself (V20 is not pushed yet); the rollback `U20` drops the whole table, so it needed no change.

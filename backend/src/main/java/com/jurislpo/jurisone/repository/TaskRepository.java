@@ -4,6 +4,8 @@ import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Time;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -23,7 +25,7 @@ public class TaskRepository {
      */
     public record TaskFacts(UUID id, UUID projectId, Integer number, String title, String description, String type, UUID statusId, String statusName,
                             String statusCategory, String priority, UUID assigneeId, UUID indirectAssigneeId, UUID reporterId, UUID parentTaskId,
-                            LocalDate startDate, LocalDate dueDate, LocalTime dueTime, Integer estimateMinutes, int version, String projectKey, String projectName,
+                            LocalDate startDate, LocalDate dueDate, LocalTime dueTime, Integer estimateMinutes, Integer reminderBeforeMinutes, int version, String projectKey, String projectName,
                             String visibility, String projectStatus, String projectRole, boolean isWatcher, boolean isManagerOfAssignee, boolean isTaskAdmin) {
 
         public String key() {
@@ -44,7 +46,7 @@ public class TaskRepository {
 
     private static final String FACTS = """
         SELECT t.id, t.project_id, t.number, t.title, t.description, t.type, t.status_id, s.name AS status_name, s.category AS status_category, t.priority,
-               t.assignee_id, t.indirect_assignee_id, t.reporter_id, t.parent_task_id, t.start_date, t.due_date, t.due_time, t.estimate_minutes, t.version,
+               t.assignee_id, t.indirect_assignee_id, t.reporter_id, t.parent_task_id, t.start_date, t.due_date, t.due_time, t.estimate_minutes, t.reminder_before_minutes, t.version,
                p.key AS project_key, p.name AS project_name, p.visibility, p.status AS project_status,
                (SELECT m.role FROM project_members m WHERE m.project_id = t.project_id AND m.employee_id = ?) AS project_role,
                EXISTS (SELECT 1 FROM task_watchers w WHERE w.task_id = t.id AND w.employee_id = ?) AS is_watcher,
@@ -73,7 +75,7 @@ public class TaskRepository {
                 resultSet.getString("status_category"), resultSet.getString("priority"), uuid(resultSet, "assignee_id"), uuid(resultSet, "indirect_assignee_id"),
                 uuid(resultSet, "reporter_id"), uuid(resultSet, "parent_task_id"), startDate == null ? null : startDate.toLocalDate(),
                 dueDate == null ? null : dueDate.toLocalDate(), dueTime == null ? null : dueTime.toLocalTime(), (Integer) resultSet.getObject("estimate_minutes"),
-                resultSet.getInt("version"), resultSet.getString("project_key"), resultSet.getString("project_name"), resultSet.getString("visibility"),
+                (Integer) resultSet.getObject("reminder_before_minutes"), resultSet.getInt("version"), resultSet.getString("project_key"), resultSet.getString("project_name"), resultSet.getString("visibility"),
                 resultSet.getString("project_status"), resultSet.getString("project_role"), resultSet.getBoolean("is_watcher"), resultSet.getBoolean("is_manager"),
                 resultSet.getBoolean("is_task_admin"));
     }
@@ -104,16 +106,16 @@ public class TaskRepository {
 
     public record NewTask(UUID id, UUID projectId, Integer number, UUID parentTaskId, String title, String description, String type, UUID statusId, String priority,
                           UUID assigneeId, UUID indirectAssigneeId, UUID reporterId, LocalDate startDate, LocalDate dueDate, LocalTime dueTime, Integer estimateMinutes,
-                          long position, boolean isCompleted) {}
+                          Integer reminderBeforeMinutes, long position, boolean isCompleted) {}
 
     public void insert(NewTask task) {
         jdbc.update("""
             INSERT INTO tasks (id, project_id, number, parent_task_id, title, description, type, status_id, priority, assignee_id, indirect_assignee_id, reporter_id,
-                               start_date, due_date, due_time, estimate_minutes, position, completed_at, completed_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? THEN now() END, CASE WHEN ? THEN ?::uuid END)""",
+                               start_date, due_date, due_time, estimate_minutes, reminder_before_minutes, position, completed_at, completed_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? THEN now() END, CASE WHEN ? THEN ?::uuid END)""",
                 task.id(), task.projectId(), task.number(), task.parentTaskId(), task.title(), task.description(), task.type(), task.statusId(), task.priority(),
                 task.assigneeId(), task.indirectAssigneeId(), task.reporterId(), date(task.startDate()), date(task.dueDate()), time(task.dueTime()),
-                task.estimateMinutes(), task.position(), task.isCompleted(), task.isCompleted(), task.reporterId());
+                task.estimateMinutes(), task.reminderBeforeMinutes(), task.position(), task.isCompleted(), task.isCompleted(), task.reporterId());
     }
 
     static Date date(LocalDate value) {
@@ -276,7 +278,8 @@ public class TaskRepository {
 
     /** An open task with a due date that has not had its overdue reminder for that date yet. */
     public record ReminderCandidate(UUID id, String key, String title, LocalDate dueDate, LocalTime dueTime, String timeZone, UUID assigneeId, UUID indirectAssigneeId,
-                                    LocalDate dueSoonNotifiedFor, LocalDate dueTodayNotifiedFor, LocalDate overdueNotifiedFor) {}
+                                    LocalDate dueSoonNotifiedFor, LocalDate dueTodayNotifiedFor, LocalDate overdueNotifiedFor,
+                                    Integer reminderBeforeMinutes, Instant reminderNotifiedFor) {}
 
     static LocalDate localDate(ResultSet resultSet, String column) throws SQLException {
         Date value = resultSet.getDate(column);
@@ -288,7 +291,7 @@ public class TaskRepository {
         return jdbc.query("""
             SELECT t.id, CASE WHEN p.id IS NULL THEN NULL ELSE p.key || '-' || t.number END AS task_key, t.title, t.due_date, t.due_time,
                    coalesce(ae.time_zone, ie.time_zone, re.time_zone, 'Asia/Kolkata') AS zone, t.assignee_id, t.indirect_assignee_id,
-                   t.due_soon_notified_for, t.due_today_notified_for, t.overdue_notified_for
+                   t.due_soon_notified_for, t.due_today_notified_for, t.overdue_notified_for, t.reminder_before_minutes, t.reminder_notified_for
             FROM tasks t
             LEFT JOIN projects p ON p.id = t.project_id
             LEFT JOIN employees ae ON ae.id = t.assignee_id
@@ -301,7 +304,9 @@ public class TaskRepository {
                 Time dueTime = resultSet.getTime("due_time");
                 return new ReminderCandidate(uuid(resultSet, "id"), resultSet.getString("task_key"), resultSet.getString("title"), localDate(resultSet, "due_date"),
                         dueTime == null ? null : dueTime.toLocalTime(), resultSet.getString("zone"), uuid(resultSet, "assignee_id"), uuid(resultSet, "indirect_assignee_id"),
-                        localDate(resultSet, "due_soon_notified_for"), localDate(resultSet, "due_today_notified_for"), localDate(resultSet, "overdue_notified_for"));
+                        localDate(resultSet, "due_soon_notified_for"), localDate(resultSet, "due_today_notified_for"), localDate(resultSet, "overdue_notified_for"),
+                        (Integer) resultSet.getObject("reminder_before_minutes"),
+                        resultSet.getTimestamp("reminder_notified_for") == null ? null : resultSet.getTimestamp("reminder_notified_for").toInstant());
             }, Date.valueOf(dueUpTo));
     }
 
@@ -318,6 +323,11 @@ public class TaskRepository {
     /** Records that a reminder was sent for this due date (sending it again for the same date is skipped). */
     public void markReminder(UUID taskId, Reminder reminder, LocalDate dueDate) {
         jdbc.update("UPDATE tasks SET " + reminder.column + " = ? WHERE id = ?", Date.valueOf(dueDate), taskId);
+    }
+
+    /** Records that the extra reminder was sent for this due moment (sending it again for the same moment is skipped). */
+    public void markReminderBeforeDue(UUID taskId, Instant dueMoment) {
+        jdbc.update("UPDATE tasks SET reminder_notified_for = ? WHERE id = ?", Timestamp.from(dueMoment), taskId);
     }
 
     // ── people ──

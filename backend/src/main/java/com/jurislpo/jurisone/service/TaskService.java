@@ -5,6 +5,7 @@ import com.jurislpo.jurisone.common.Check;
 import com.jurislpo.jurisone.engine.Mentions;
 import com.jurislpo.jurisone.engine.TaskAccess;
 import com.jurislpo.jurisone.engine.TaskAccess.TaskPermissions;
+import com.jurislpo.jurisone.engine.TaskDueDates;
 import com.jurislpo.jurisone.engine.TaskKeys;
 import com.jurislpo.jurisone.engine.TaskPositions;
 import com.jurislpo.jurisone.engine.WorkflowRules;
@@ -51,7 +52,7 @@ public class TaskService {
     static final String CONFLICT = "Someone else changed this task. Reload to see their changes.";
 
     public record TaskInput(String projectId, String title, String description, String type, String statusId, String priority, String assigneeId,
-                            String indirectAssigneeId, String startDate, String dueDate, String dueTime, Integer estimateMinutes, List<String> labelIds,
+                            String indirectAssigneeId, String startDate, String dueDate, String dueTime, Integer estimateMinutes, Integer reminderBeforeMinutes, List<String> labelIds,
                             String parentTaskId, List<String> watcherIds, List<String> checklist) {}
 
     public record TaskPositionInput(String statusId, String previousTaskId, String nextTaskId) {}
@@ -140,6 +141,14 @@ public class TaskService {
 
     static Integer estimate(Integer value) {
         if (value != null && (value < 0 || value > 100_000)) throw new UserException(HttpStatus.BAD_REQUEST, "Enter an estimate between 0 and 100,000 minutes.");
+        return value;
+    }
+
+    /** The extra reminder before the due moment: null (none) or one of 15, 60, 240, 1440 minutes; it needs a due date. */
+    static Integer reminderBeforeMinutes(Integer value, LocalDate dueDate) {
+        if (value == null) return null;
+        if (!TaskDueDates.REMINDER_BEFORE_MINUTES.contains(value)) throw new UserException(HttpStatus.BAD_REQUEST, "Choose 15 minutes, 1 hour, 4 hours or 1 day before the due time.");
+        if (dueDate == null) throw new UserException(HttpStatus.BAD_REQUEST, "Choose a due date first.");
         return value;
     }
 
@@ -237,6 +246,7 @@ public class TaskService {
         LocalDate dueDate = TaskInputs.optionalDate(input.dueDate(), "Enter the due date as YYYY-MM-DD.");
         LocalTime dueTime = TaskInputs.optionalTime(input.dueTime());
         checkDates(startDate, dueDate, dueTime);
+        Integer reminderBeforeMinutes = reminderBeforeMinutes(input.reminderBeforeMinutes(), dueDate);
         Integer estimateMinutes = estimate(input.estimateMinutes());
         List<UUID> labelIds = labelIds(input.labelIds(), projectId);
         UUID parentTaskId = parent(user, input.parentTaskId(), projectId, null);
@@ -251,7 +261,7 @@ public class TaskService {
         Integer number = projectId == null ? null : repo.takeNextNumber(projectId);
         long position = TaskPositions.append(repo.findMaxPosition(projectId, status.id()));
         repo.insert(new NewTask(id, projectId, number, parentTaskId, title, description, type, status.id(), priority, assigneeId, indirectAssigneeId, user.id(),
-                startDate, dueDate, dueTime, estimateMinutes, position, WorkflowRules.DONE.equals(status.category())));
+                startDate, dueDate, dueTime, estimateMinutes, reminderBeforeMinutes, position, WorkflowRules.DONE.equals(status.category())));
         if (!labelIds.isEmpty()) repo.setLabels(id, labelIds);
         for (String text : checklist) repo.insertChecklistItem(UUID.randomUUID(), id, text);
         if (assigneeId != null && projectId != null) projects.ensureMember(user.id(), projectId, assigneeId, ipAddress);
@@ -275,6 +285,7 @@ public class TaskService {
         after.put("assigneeId", assigneeId == null ? null : assigneeId.toString());
         after.put("indirectAssigneeId", indirectAssigneeId == null ? null : indirectAssigneeId.toString());
         after.put("dueDate", dueDate == null ? null : dueDate.toString());
+        if (reminderBeforeMinutes != null) after.put("reminderBeforeMinutes", reminderBeforeMinutes);
         activity.record(user.id(), id, projectId, "CREATED", null, after);
         Map<String, Object> audited = new LinkedHashMap<>(after);
         audited.put("projectId", projectId == null ? null : projectId.toString());
@@ -478,7 +489,16 @@ public class TaskService {
         LocalTime dueTime = has(body, "dueTime") ? TaskInputs.optionalTime(text(body, "dueTime")) : task.dueTime();
         if (has(body, "dueDate") && dueDate == null) dueTime = null; // clearing the due date clears the time
         checkDates(startDate, dueDate, dueTime);
-        if (!Objects.equals(startDate, task.startDate()) || !Objects.equals(dueDate, task.dueDate()) || !Objects.equals(dueTime, task.dueTime())) {
+        Integer reminderBeforeMinutes = task.reminderBeforeMinutes();
+        if (has(body, "reminderBeforeMinutes")) {
+            JsonNode node = body.get("reminderBeforeMinutes");
+            if (!node.isNull() && !node.isInt()) throw new UserException(HttpStatus.BAD_REQUEST, "Choose 15 minutes, 1 hour, 4 hours or 1 day before the due time.");
+            reminderBeforeMinutes = node.isNull() ? null : node.asInt();
+        }
+        if (dueDate == null) reminderBeforeMinutes = null; // clearing the due date clears the reminder
+        reminderBeforeMinutes = reminderBeforeMinutes(reminderBeforeMinutes, dueDate);
+        if (!Objects.equals(startDate, task.startDate()) || !Objects.equals(dueDate, task.dueDate()) || !Objects.equals(dueTime, task.dueTime())
+                || !Objects.equals(reminderBeforeMinutes, task.reminderBeforeMinutes())) {
             require(rights.canEdit(), forbidden);
             clauses.add("start_date = ?");
             values.add(startDate == null ? null : Date.valueOf(startDate));
@@ -487,14 +507,18 @@ public class TaskService {
             clauses.add("due_time = ?");
             values.add(dueTime == null ? null : Time.valueOf(dueTime));
             // a new due date or time re-arms the reminders
-            clauses.add("due_soon_notified_for = NULL, due_today_notified_for = NULL, overdue_notified_for = NULL");
+            clauses.add("reminder_before_minutes = ?");
+            values.add(reminderBeforeMinutes);
+            clauses.add("due_soon_notified_for = NULL, due_today_notified_for = NULL, overdue_notified_for = NULL, reminder_notified_for = NULL");
             Map<String, Object> before = new LinkedHashMap<>(), after = new LinkedHashMap<>();
             before.put("startDate", task.startDate() == null ? null : task.startDate().toString());
             before.put("dueDate", task.dueDate() == null ? null : task.dueDate().toString());
             before.put("dueTime", task.dueTime() == null ? null : task.dueTime().toString());
+            before.put("reminderBeforeMinutes", task.reminderBeforeMinutes());
             after.put("startDate", startDate == null ? null : startDate.toString());
             after.put("dueDate", dueDate == null ? null : dueDate.toString());
             after.put("dueTime", dueTime == null ? null : dueTime.toString());
+            after.put("reminderBeforeMinutes", reminderBeforeMinutes);
             changes.add(new Object[] {"DATES_CHANGED", before, after});
             auditBefore.putAll(before);
             auditAfter.putAll(after);

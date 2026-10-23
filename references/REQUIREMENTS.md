@@ -435,7 +435,7 @@ Cards that appear by permission:
 - payslip ready
 - next holiday
 
-- tasks (§5.17.6): assigned to me, made accountable, mentioned, a comment or status change on a task I follow, due tomorrow, due today (timed tasks), overdue, added to a project
+- tasks (§5.17.6): assigned to me, made accountable, mentioned, a comment or status change on a task I follow, due tomorrow, due today (timed tasks), an extra reminder before the due moment, overdue, added to a project
 
 **Email** for: sign-in code, leave decision, regularization decision, payslip published. Tasks send **no email** yet (bell only).
 
@@ -488,10 +488,10 @@ The business admin sees their own business's log (`/audit`); the **super admin**
 
 #### 5.17.3 Tasks
 
-- Fields: title (≤200), description (plain text with `@mentions`, ≤20,000), type (task, issue, request, milestone), step, priority (urgent, high, medium, low, none), labels (≤20, company or project labels), start date, **due date + optional due time**, estimate in minutes, parent task, followers, checklist (≤100 items).
+- Fields: title (≤200), description (plain text with `@mentions`, ≤20,000), type (task, issue, request, milestone), step, priority (urgent, high, medium, low, none), labels (≤20, company or project labels), start date, **due date + optional due time**, an optional **extra reminder before it is due** (15 minutes, 1 hour, 4 hours or 1 day), estimate in minutes, parent task, followers, checklist (≤100 items).
 - A task in a project gets the next number (`HR-12`); its key is found case-insensitively, and a task that moved project keeps answering to its old key. A **personal task** has no project and no number.
 - **One direct assignee** (does the work) and **one optional indirect assignee** ("accountable": oversight; must be someone else). Both see the task in My tasks, both are notified, both follow it. Setting a direct assignee who is not a project member adds them as a member; the indirect assignee is not added. The indirect assignee may comment, change the step and priority and **reassign the direct assignee**, may step down, but edits no other field and cannot delete the task (unless a project owner). The create form suggests the assignee's reporting manager as accountable (never set automatically).
-- **Due time and time zone:** the task time zone is the direct assignee's (else the indirect assignee's, else the reporter's). A date-only task is due at the **end of that day** and overdue from the next day; a timed task is overdue from its due time. Clearing the due date clears the time.
+- **Due time and time zone:** the task time zone is the direct assignee's (else the indirect assignee's, else the reporter's). A date-only task is due at the **end of that day** and overdue from the next day; a timed task is overdue from its due time. Clearing the due date clears the time and the extra reminder.
 - Sub-tasks are one level deep, in the same project (≤100 per task). Changes need the version the client read (409 when someone else changed the task); each field needs its own right (403).
 - **Soft delete always:** tasks (with their sub-tasks), comments, attachments and projects are never hard-deleted by the app. Every change is written to the task's **history** and the audit log.
 
@@ -511,6 +511,7 @@ The business admin sees their own business's log (`/audit`); the **super admin**
 
 - Assigned, made accountable, mentioned, comment and step change on a followed task, added to a project. One request sends at most one notification per person; the person who acted is never notified.
 - Reminders at **09:00 in the task time zone**: due tomorrow, due today (timed tasks), overdue (date-only tasks from 09:00 of the next day, timed tasks right after their time), to both assignees, once per due date (a new date re-arms them). People who have left or have no portal access are not notified. Email alerts are a later phase.
+- **Extra reminder (optional, per task, needs a due date):** `reminderBeforeMinutes` = 15, 60, 240 or 1440 (any other value is refused with 400), or none. A bell "{key} is due in 1 hour (due 10 Mar 2031 17:00): {title}" goes to both assignees once per due moment, when that moment minus the offset is reached (checked every 10 minutes), in the task time zone. The due moment is the due time, or the end of the due day (00:00 of the next day) for a date-only task. It is not sent for done or deleted tasks, never after the due moment, and is sent again when the due date, time or offset changes. It comes in addition to the daily 09:00 reminders, which are unchanged.
 
 #### 5.17.7 Availability
 
@@ -556,8 +557,8 @@ projects(id, key, name, description, visibility PRIVATE/BUSINESS, status ACTIVE/
 project_members(project_id, employee_id, role OWNER/MEMBER/VIEWER)
 task_statuses(id, project_id (null = default set), name, category TODO/IN_PROGRESS/DONE, position, color, is_initial)
 tasks(id, project_id, number, previous_keys[], parent_task_id, title, description, type, status_id, priority,
-          assignee_id, indirect_assignee_id, reporter_id, start_date, due_date, due_time, estimate_minutes, position,
-          completed_at, due_soon/due_today/overdue_notified_for, version, deleted_at, search_vector)
+          assignee_id, indirect_assignee_id, reporter_id, start_date, due_date, due_time, estimate_minutes, reminder_before_minutes, position,
+          completed_at, due_soon/due_today/overdue/reminder_notified_for, version, deleted_at, search_vector)
 task_labels(id, project_id (null = company label), name, color)    task_label_links(task_id, label_id)
 task_watchers(task_id, employee_id)    task_checklist_items(id, task_id, text, is_done, position)
 task_comments(id, task_id, author_id, body, mentioned_employee_ids[], edited_at, deleted_at)
@@ -608,7 +609,7 @@ Tasks (dated relative to the seed day): **People operations** (`PEO`, company-wi
 1. The Professional Tax state (Uttar Pradesh has no PT; Maharashtra/Karnataka do). Do we need ESI, employer PF in CTC, gratuity, or LWF?
 2. Leave encashment and LOP rules at full & final settlement.
 3. Is a biometric device or IP/geo restriction needed for check-in?
-4. Tasks: should timed tasks also get a reminder shortly before their due time (for example 1 hour before)? Default until decided: no, only the 09:00 reminders.
+4. Tasks: an extra reminder before the due time is decided: yes, optional per task (see 5.17.6).
 4. Email provider and hosting (VPS / AWS / Azure). Is SSO (Google/Microsoft) needed?
 5. Will US payroll ever be in scope?
 6. Buying the Balkind font licence.

@@ -86,4 +86,45 @@ class TaskJobsTest extends TaskApiTestBase {
         run("2031-03-10T04:00:00Z");
         assertThat(bell(leaver.id(), "Personal task is %: Old work")).isZero();
     }
+
+    @Test
+    void theExtraReminderIsSentOnceBeforeTheDueMomentNotForDoneTasksAndAgainAfterTheDueDateMoves() throws Exception {
+        Person hr = person(hrRole, "hr"), doer = person(employeeRole, "doer"), accountable = person(employeeRole, "accountable");
+        String id = task(hr.cookie(), "\"title\":\"Send the offer\",\"assigneeId\":\"" + doer.id() + "\",\"indirectAssigneeId\":\"" + accountable.id()
+                + "\",\"dueDate\":\"2031-03-10\",\"dueTime\":\"17:00\",\"reminderBeforeMinutes\":60").get("id").asText();
+        task(hr.cookie(), "\"title\":\"No reminder\",\"assigneeId\":\"" + doer.id() + "\",\"dueDate\":\"2031-03-10\",\"dueTime\":\"17:00\"");
+        assertThat(run("2031-03-10T10:00:00Z").get("reminders")).isEqualTo(0); // 15:30 India: 30 minutes too early
+        assertThat(run("2031-03-10T10:30:00Z").get("reminders")).isEqualTo(1); // 17:00 - 60 minutes = 16:00 India
+        assertThat(run("2031-03-10T10:40:00Z").get("reminders")).isEqualTo(0); // once per due moment
+        assertThat(bell(doer.id(), "Personal task is due in 1 hour (due 10 Mar 2031 17:00): Send the offer")).isEqualTo(1);
+        assertThat(bell(accountable.id(), "Personal task is due in 1 hour (due 10 Mar 2031 17:00): Send the offer")).isEqualTo(1);
+        assertThat(bell(doer.id(), "%due in%: No reminder")).isZero();
+        // the due time moves: sent again for the new moment
+        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":0,\"dueTime\":\"20:00\"}")).andExpect(status().isOk());
+        assertThat(run("2031-03-10T13:00:00Z").get("reminders")).isEqualTo(0); // 18:30 India: before 19:00
+        assertThat(run("2031-03-10T13:31:00Z").get("reminders")).isEqualTo(1); // 19:01 India
+        assertThat(bell(doer.id(), "%due in 1 hour (due 10 Mar 2031 20:00): Send the offer")).isEqualTo(1);
+        // a new offset sends again too
+        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":1,\"reminderBeforeMinutes\":1440}")).andExpect(status().isOk());
+        assertThat(run("2031-03-10T13:40:00Z").get("reminders")).isEqualTo(1);
+        assertThat(bell(doer.id(), "%due in 1 day (due 10 Mar 2031 20:00): Send the offer")).isEqualTo(1);
+        // never after the due moment
+        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":2,\"reminderBeforeMinutes\":15}")).andExpect(status().isOk());
+        assertThat(run("2031-03-10T14:45:00Z").get("reminders")).isEqualTo(0); // 20:15 India: already due
+        // done tasks get nothing
+        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":3,\"dueDate\":\"2031-03-20\",\"reminderBeforeMinutes\":240}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":4,\"statusCategory\":\"DONE\"}")).andExpect(status().isOk());
+        assertThat(run("2031-03-20T15:00:00Z").get("reminders")).isEqualTo(0);
+    }
+
+    @Test
+    void aDateOnlyTaskIsRemindedBeforeTheEndOfItsDayInTheTaskTimeZone() throws Exception {
+        Person hr = person(hrRole, "hr"), newYorker = person(employeeRole, "newyork");
+        jdbc.update("UPDATE employees SET time_zone = 'America/New_York' WHERE id = ?", newYorker.id());
+        task(hr.cookie(), "\"title\":\"Sign off\",\"assigneeId\":\"" + newYorker.id() + "\",\"dueDate\":\"2031-03-10\",\"reminderBeforeMinutes\":240");
+        // due at the end of 10 March New York (00:00 on 11 March = 04:00 UTC); 4 hours before = 00:00 UTC
+        assertThat(run("2031-03-10T23:00:00Z").get("reminders")).isEqualTo(0); // 19:00 New York
+        assertThat(run("2031-03-11T00:05:00Z").get("reminders")).isEqualTo(1);
+        assertThat(bell(newYorker.id(), "Personal task is due in 4 hours (due 10 Mar 2031): Sign off")).isEqualTo(1);
+    }
 }

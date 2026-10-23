@@ -88,7 +88,7 @@ public final class TaskQuery {
                CASE WHEN t.assignee_id = ? THEN 'DIRECT' WHEN t.indirect_assignee_id = ? THEN 'INDIRECT' END AS "myAssignment",
                t.reporter_id::text AS "reporterId", re.full_name AS "reporterName",
                t.start_date::text AS "startDate", t.due_date::text AS "dueDate", to_char(t.due_time, 'HH24:MI') AS "dueTime", tz.zone AS "dueTimeZone",
-               t.estimate_minutes AS "estimateMinutes", %s AS "isOverdue",
+               t.estimate_minutes AS "estimateMinutes", t.reminder_before_minutes AS "reminderBeforeMinutes", %s AS "isOverdue",
                subtasks.total AS "subtaskCount", subtasks.done AS "subtaskDoneCount", checklist.total AS "checklistCount", checklist.done AS "checklistDoneCount",
                comments.total AS "commentCount", attachments.total AS "attachmentCount", t.position AS "position", t.version AS "version",
                %s AS "completedAt", %s AS "createdAt", %s AS "updatedAt\""""

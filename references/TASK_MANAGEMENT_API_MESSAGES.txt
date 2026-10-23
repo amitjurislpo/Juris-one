@@ -20,6 +20,7 @@ Checklist item details are missing.
 Checklist item not found.
 Checklist item removed
 Checklist item saved
+Choose 15 minutes, 1 hour, 4 hours or 1 day before the due time.
 Choose a due date first.
 Choose a file.
 Choose a step of this task's workflow.

@@ -18,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Task reminders in the bell (plan §14), run for the current business by {@link JobsService#runForBusiness}: due tomorrow and due today
  * (timed tasks) from 09:00 in the task time zone, and overdue (a date-only task from 09:00 of the day after its due date, a timed task
  * right after its due time). Each reminder is sent once per due date to the direct and the indirect assignee; a new due date re-arms it.
+ * A task may also carry one extra reminder 15 minutes, 1 hour, 4 hours or 1 day before its due moment (the due time, or the end of the due day),
+ * sent once per due moment; a new due date, time or offset re-arms it.
  */
 @Service
 @Transactional
@@ -31,9 +33,9 @@ public class TaskJobs {
         this.notifications = notifications;
     }
 
-    /** {@code {dueSoon, dueToday, overdue}}: how many tasks got each reminder in this run. */
+    /** {@code {dueSoon, dueToday, overdue, reminders}}: how many tasks got each reminder in this run. */
     public Map<String, Object> run(Instant now) {
-        int dueSoon = 0, dueToday = 0, overdue = 0;
+        int dueSoon = 0, dueToday = 0, overdue = 0, reminders = 0;
         // the furthest "tomorrow" anywhere is two days after today in UTC
         LocalDate dueUpTo = now.atZone(ZoneOffset.UTC).toLocalDate().plusDays(2);
         for (ReminderCandidate task : repo.findReminderCandidates(dueUpTo)) {
@@ -41,6 +43,15 @@ public class TaskJobs {
             boolean isReminderTime = TaskDueDates.isReminderTime(zone, now);
             String label = TaskNotificationService.label(task.key());
             String at = task.dueTime() == null ? "" : String.format(java.util.Locale.ROOT, "%02d:%02d", task.dueTime().getHour(), task.dueTime().getMinute());
+            if (task.reminderBeforeMinutes() != null && TaskDueDates.isReminderBeforeDue(task.dueDate(), task.dueTime(), zone, task.reminderBeforeMinutes(), now)) {
+                Instant dueMoment = TaskDueDates.dueMoment(task.dueDate(), task.dueTime(), zone);
+                if (!dueMoment.equals(task.reminderNotifiedFor())) {
+                    String due = Format.formatDayMonthYear(task.dueDate()) + (task.dueTime() == null ? "" : " " + at);
+                    send(task, label + " is due in " + TaskDueDates.describeOffset(task.reminderBeforeMinutes()) + " (due " + due + "): " + task.title());
+                    repo.markReminderBeforeDue(task.id(), dueMoment);
+                    reminders++;
+                }
+            }
             if (TaskDueDates.isOverdue(task.dueDate(), task.dueTime(), zone, now)) {
                 // a timed task is reminded right after its time; a date-only task at 09:00 of the next day
                 if (task.dueTime() != null || isReminderTime) {
@@ -64,6 +75,7 @@ public class TaskJobs {
         out.put("dueSoon", dueSoon);
         out.put("dueToday", dueToday);
         out.put("overdue", overdue);
+        out.put("reminders", reminders);
         return out;
     }
 

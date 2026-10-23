@@ -378,6 +378,8 @@ Built-in default set (constant in `WorkflowRules.DEFAULT_STATUSES`): **To do** (
 | completed_at | TIMESTAMPTZ NULL | set when the status category becomes `DONE`, cleared when it leaves |
 | completed_by | UUID NULL | |
 | due_soon_notified_for, due_today_notified_for, overdue_notified_for | DATE NULL | reminder idempotency (§14) |
+| reminder_before_minutes | INTEGER NULL | optional extra reminder, 15/60/240/1440 minutes before the due moment; needs `due_date` |
+| reminder_notified_for | TIMESTAMPTZ NULL | the due moment the extra reminder was sent for (§14) |
 | created_at, updated_at | TIMESTAMPTZ | |
 | deleted_at, deleted_by | TIMESTAMPTZ / UUID NULL | soft delete |
 | version | INTEGER NOT NULL DEFAULT 0 | optimistic lock (§8.3) |
@@ -585,7 +587,7 @@ Errors: problem+json with default codes from `Problems.defaultCode` (400 `VALIDA
 | T4 | `GET /api/tasks/assignees` | page | `projectId?`, `search` (≥ 1 char, ILIKE on name/code), max 20 | 200 `[{id, code, name, photo, designation, isMember, reportingManagerId}]` | — |
 | T5 | `POST /api/tasks` | project `OWNER`/`MEMBER` (or no project = anyone) | `TaskInput` (below) | 201 `{id, key}` | 400, 403, 404 project, 422 archived/parent rules |
 | T6 | `GET /api/tasks/{taskRef}` | can view (`taskRef` = uuid or key; Owner private access is audited) | — | 200 `TaskDetail` | 404 |
-| T7 | `PATCH /api/tasks/{taskId}` | field-level rights (§4.3, §4.4) | `{version, title?, description?, type?, statusId? \| statusCategory?, priority?, assigneeId?, indirectAssigneeId?, startDate?, dueDate?, dueTime?, estimateMinutes?, labelIds?, parentTaskId?, projectId?}`; `null` clears; `statusCategory` (`TODO`/`IN_PROGRESS`/`DONE`) is an alternative to `statusId` (never both) and maps to the project's first status of that category (§8.2) — used by the My tasks checkbox and board | 200 `{version}` | 400, 403 (field not allowed), 404, 409 stale, 422 rules |
+| T7 | `PATCH /api/tasks/{taskId}` | field-level rights (§4.3, §4.4) | `{version, title?, description?, type?, statusId? \| statusCategory?, priority?, assigneeId?, indirectAssigneeId?, startDate?, dueDate?, dueTime?, estimateMinutes?, reminderBeforeMinutes?, labelIds?, parentTaskId?, projectId?}`; `null` clears; `statusCategory` (`TODO`/`IN_PROGRESS`/`DONE`) is an alternative to `statusId` (never both) and maps to the project's first status of that category (§8.2) — used by the My tasks checkbox and board | 200 `{version}` | 400, 403 (field not allowed), 404, 409 stale, 422 rules |
 | T8 | `PUT /api/tasks/{taskId}/position` | `canChangeStatus` | `{statusId, previousTaskId?, nextTaskId?}` (neighbours after the drop; both absent = bottom) | 200 `{statusId, position}` | 400 neighbour not in that column, 403, 404 |
 | T9 | `DELETE /api/tasks/{taskId}` | project owner, reporter-member, personal reporter, the Owner (not the indirect assignee unless project owner) | — | 200 | 403, 404 |
 | T10 | `PUT /api/tasks/{taskId}/watchers/{employeeId}` | self: anyone who can view; others: `canEdit` | — | 200 (idempotent) | 422 that person can't see the task |
@@ -594,7 +596,7 @@ Errors: problem+json with default codes from `Problems.defaultCode` (400 `VALIDA
 | T13 | `PATCH /api/tasks/{taskId}/checklist-items/{itemId}` | same | `{text?, isDone?, position?}` | 200 | 404 |
 | T14 | `DELETE /api/tasks/{taskId}/checklist-items/{itemId}` | same | — | 200 | 404 |
 
-`TaskInput` = `{projectId?, title, description?, type?, statusId?, priority?, assigneeId?, indirectAssigneeId?, startDate?, dueDate?, dueTime?, estimateMinutes?, labelIds?, parentTaskId?, watcherIds?, checklist?: [text]}`; v2 adds `templateId?`.
+`TaskInput` = `{projectId?, title, description?, type?, statusId?, priority?, assigneeId?, indirectAssigneeId?, startDate?, dueDate?, dueTime?, estimateMinutes?, reminderBeforeMinutes?, labelIds?, parentTaskId?, watcherIds?, checklist?: [text]}`; v2 adds `templateId?`.
 
 **Collaboration** (page `my-tasks`)
 
@@ -649,7 +651,7 @@ Calendar (v2) needs **no new endpoint**: it calls `GET /api/tasks/mine`, `/api/t
 
 `ProjectDetail`: `ProjectRow` fields + `version, statuses:[{id, name, category, color, position, isInitial, taskCount}], labels:[{id, name, color, projectId}], canManage, canCreateTasks`.
 
-`TaskRow`: `id, key, number, projectId, projectKey, projectName, parentTaskId, parentKey, title, type, statusId, statusName, statusCategory, statusColor, priority, assigneeId, assigneeName, assigneeCode, assigneePhoto, isAssigneeActive, indirectAssigneeId, indirectAssigneeName, indirectAssigneeCode, indirectAssigneePhoto, isIndirectAssigneeActive, myAssignment (DIRECT|INDIRECT|null), reporterId, reporterName, startDate, dueDate, dueTime, dueTimeZone, estimateMinutes, isOverdue, labels:[{id, name, color}], subtaskCount, subtaskDoneCount, checklistCount, checklistDoneCount, commentCount, attachmentCount, position, completedAt, createdAt, updatedAt`.
+`TaskRow`: `id, key, number, projectId, projectKey, projectName, parentTaskId, parentKey, title, type, statusId, statusName, statusCategory, statusColor, priority, assigneeId, assigneeName, assigneeCode, assigneePhoto, isAssigneeActive, indirectAssigneeId, indirectAssigneeName, indirectAssigneeCode, indirectAssigneePhoto, isIndirectAssigneeActive, myAssignment (DIRECT|INDIRECT|null), reporterId, reporterName, startDate, dueDate, dueTime, dueTimeZone, estimateMinutes, reminderBeforeMinutes (15|60|240|1440|null), isOverdue, labels:[{id, name, color}], subtaskCount, subtaskDoneCount, checklistCount, checklistDoneCount, commentCount, attachmentCount, position, completedAt, createdAt, updatedAt`.
 (`assigneePhoto` / `indirectAssigneePhoto` = epoch millis of `employees.photo_updated_at`, the same marker the app's `Avatar` uses; `dueTime` is `HH:mm` or null; `dueTimeZone` is the task time zone (IANA) and `isOverdue` is computed with it, §8.6.)
 
 `TaskDetail`: `TaskRow` fields + `description, version, reporterPhoto, completedByName, previousKeys, watchers:[{employeeId, name, photo}], isWatching, subtasks:[TaskRow], checklist:[{id, text, isDone, position, doneByName, doneAt}], attachments:[{id, fileName, contentType, sizeBytes, uploadedByName, uploadedAt, canDelete}], mentionedPeople:{id: name}, statuses:[…the project's set…], permissions:{canEdit, canComment, canChangeStatus, canChangePriority, canChangeDirectAssignee, canChangeIndirectAssignee, canDelete, canManageProject}`.
@@ -710,9 +712,10 @@ Reuse the runner: `JobsService.runForBusiness(now)` (advisory lock 74202, every 
 | `tasks.dueSoon` | MVP | For open tasks with `due_date = tomorrow` in the task time zone, once the local time there is ≥ 09:00: bell "due tomorrow" (with the time if set) to the direct and the indirect assignee. | `tasks.due_soon_notified_for = due_date` (set in the same transaction); changing the due date re-arms it. Columns, not `job_runs` rows, to avoid one row per task per day. |
 | `tasks.dueToday` | MVP | **Timed tasks only**: `due_date = today` in the task time zone, at/after 09:00 local and before the due time: bell "due today at {time}". | `tasks.due_today_notified_for = due_date`. |
 | `tasks.overdue` | MVP | Date-only tasks: overdue from the start of the day after `due_date` (task time zone); the bell is sent at the first run at/after 09:00 local that day (09:00 is only the reminder time, not the due moment). Timed tasks: at the first run after the due time has passed (within 10 minutes; not waiting for 09:00). Bell "overdue" to the direct and the indirect assignee, once per due date. | `tasks.overdue_notified_for = due_date`; changing the date or time re-arms it (the service clears the three columns when `dueDate`/`dueTime` change). |
+| `tasks.reminder` | MVP | **Optional extra reminder (Q15 = yes).** Open tasks with `reminder_before_minutes` (15, 60, 240 or 1440): when `now >= dueMoment - offset` and `now < dueMoment` in the task time zone, bell "{key} is due in {1 hour} (due {date} {time}): {title}" to the direct and the indirect assignee. The due moment is the due time, or the end of the due day (00:00 of the next day) for a date-only task (§8.6); the 09:00 rule does not apply. Not for done or deleted tasks. | `tasks.reminder_notified_for = dueMoment` (timestamp); the service clears it when `dueDate`/`dueTime`/`reminderBeforeMinutes` change. Summary key `reminders`. |
 | `tasks.recurrence` | v2 | For active `task_recurrences` with `next_due_on - create_days_before <= today` (business time zone, `businesses.time_zone`): copy the source task (title, description, type, priority, labels, both assignees, checklist, estimate; new number; status = initial; due = `next_due_on`), then advance `next_due_on` by `TaskRecurrenceRules.next(...)`; stop after `ends_on`. Activity `CREATED_FROM_RECURRENCE`, audit actor NULL. | `UNIQUE (recurrence_id, occurrence_due_on)` + `ON CONFLICT DO NOTHING`. |
 
-Time zone rule (decided by the owner): **the task time zone (direct assignee's; §8.6) decides "today", "tomorrow", "overdue", the due time and the 09:00 send time for both recipients** (one send, one idempotency column per reminder). The reminder hour is fixed at 09:00. No extra reminder shortly before a due time (open question Q15).
+Time zone rule (decided by the owner): **the task time zone (direct assignee's; §8.6) decides "today", "tomorrow", "overdue", the due time and the 09:00 send time for both recipients** (one send, one idempotency column per reminder). The reminder hour is fixed at 09:00. The optional extra reminder before the due moment (Q15, decided yes) is separate from the 09:00 reminders, which are unchanged.
 
 Jobs never notify exited or access-disabled employees. The e2e environment runs the jobs once after the seed (frontend `scripts/e2e-env.mjs`), so demo overdue tasks produce bell notifications.
 
@@ -854,7 +857,7 @@ Each phase = one feature branch PR to `dev` per repo (backend first, then fronte
 
 | # | Question | Recommended default |
 |---|---|---|
-| Q15 | Should **timed** tasks also get a reminder shortly before the due time (e.g. 1 hour before)? | No; only the 09:00 daily reminders (due tomorrow, due today, overdue). |
+| Q15 | Should tasks also get a reminder shortly before the due time (e.g. 1 hour before)? | **Yes (owner's decision):** optional per task, `reminderBeforeMinutes` 15/60/240/1440, in addition to the 09:00 daily reminders (§14 `tasks.reminder`). |
 
 ---
 

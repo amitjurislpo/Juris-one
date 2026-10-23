@@ -85,12 +85,14 @@ CREATE TABLE IF NOT EXISTS "tasks" (
     "due_date" DATE,
     "due_time" TIME,
     "estimate_minutes" INTEGER,
+    "reminder_before_minutes" INTEGER,
     "position" BIGINT NOT NULL,
     "completed_at" TIMESTAMPTZ(6),
     "completed_by" UUID,
     "due_soon_notified_for" DATE,
     "due_today_notified_for" DATE,
     "overdue_notified_for" DATE,
+    "reminder_notified_for" TIMESTAMPTZ(6),
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deleted_at" TIMESTAMPTZ(6),
@@ -104,6 +106,7 @@ CREATE TABLE IF NOT EXISTS "tasks" (
     CONSTRAINT "tasks_indirect_assignee_check" CHECK ("indirect_assignee_id" IS NULL OR "indirect_assignee_id" <> "assignee_id"),
     CONSTRAINT "tasks_dates_check" CHECK ("due_date" IS NULL OR "start_date" IS NULL OR "due_date" >= "start_date"),
     CONSTRAINT "tasks_due_time_check" CHECK ("due_time" IS NULL OR "due_date" IS NOT NULL),
+    CONSTRAINT "tasks_reminder_check" CHECK ("reminder_before_minutes" IS NULL OR ("due_date" IS NOT NULL AND "reminder_before_minutes" IN (15, 60, 240, 1440))),
     CONSTRAINT "tasks_estimate_check" CHECK ("estimate_minutes" IS NULL OR "estimate_minutes" BETWEEN 0 AND 100000),
     CONSTRAINT "tasks_number_check" CHECK (("project_id" IS NULL) = ("number" IS NULL))
 );

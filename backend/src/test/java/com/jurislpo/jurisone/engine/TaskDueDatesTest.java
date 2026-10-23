@@ -67,4 +67,31 @@ class TaskDueDatesTest {
         assertThat(TaskDueDates.bucket(FRIDAY.plusDays(3), null, INDIA, now)).isEqualTo(TaskDueDates.LATER);
         assertThat(TaskDueDates.bucket(null, null, INDIA, now)).isEqualTo(TaskDueDates.NO_DATE);
     }
+
+    @Test
+    @DisplayName("the extra reminder is the offset before the due moment: the due time, or the end of the due day")
+    void reminderBeforeDue() {
+        LocalTime five = LocalTime.of(17, 0);
+        assertThat(TaskDueDates.REMINDER_BEFORE_MINUTES).containsExactly(15, 60, 240, 1440);
+        assertThat(TaskDueDates.dueMoment(FRIDAY, five, INDIA)).isEqualTo(Instant.parse("2026-10-23T11:30:00Z"));
+        assertThat(TaskDueDates.dueMoment(FRIDAY, null, INDIA)).isEqualTo(Instant.parse("2026-10-23T18:30:00Z")); // 00:00 Saturday
+        assertThat(TaskDueDates.reminderMoment(FRIDAY, five, INDIA, 60)).isEqualTo(Instant.parse("2026-10-23T10:30:00Z"));
+        assertThat(TaskDueDates.reminderMoment(FRIDAY, null, INDIA, 1440)).isEqualTo(Instant.parse("2026-10-22T18:30:00Z"));
+        assertThat(TaskDueDates.reminderMoment(FRIDAY, five, NEW_YORK, 15)).isEqualTo(Instant.parse("2026-10-23T20:45:00Z"));
+        // sent from its moment until the due moment, not before and not after
+        assertThat(TaskDueDates.isReminderBeforeDue(FRIDAY, five, INDIA, 60, Instant.parse("2026-10-23T10:29:59Z"))).isFalse();
+        assertThat(TaskDueDates.isReminderBeforeDue(FRIDAY, five, INDIA, 60, Instant.parse("2026-10-23T10:30:00Z"))).isTrue();
+        assertThat(TaskDueDates.isReminderBeforeDue(FRIDAY, five, INDIA, 60, Instant.parse("2026-10-23T11:29:59Z"))).isTrue();
+        assertThat(TaskDueDates.isReminderBeforeDue(FRIDAY, five, INDIA, 60, Instant.parse("2026-10-23T11:30:00Z"))).isFalse();
+        assertThat(TaskDueDates.isReminderBeforeDue(null, null, INDIA, 60, Instant.parse("2026-10-23T11:00:00Z"))).isFalse();
+    }
+
+    @Test
+    @DisplayName("the offset is written in words for the bell text")
+    void describeOffset() {
+        assertThat(TaskDueDates.describeOffset(15)).isEqualTo("15 minutes");
+        assertThat(TaskDueDates.describeOffset(60)).isEqualTo("1 hour");
+        assertThat(TaskDueDates.describeOffset(240)).isEqualTo("4 hours");
+        assertThat(TaskDueDates.describeOffset(1440)).isEqualTo("1 day");
+    }
 }
