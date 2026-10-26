@@ -42,6 +42,8 @@ public final class Nav {
             item("my-assets", "My assets", "layers", List.of(SELF, DIR, ROLES_MANAGE), null),
             item("announcements", "Announcements", "bell", List.of(SELF, DIR, ROLES_MANAGE), null),
             new Item("juris-track", "Juris Track", "sparkle", List.of(SELF, ROLES_MANAGE, DIR), false, null, JURIS_TRACK),
+            // LIE (Lead Intelligence Engine): coming soon; shown to every signed-in user, the super admin included, until it is built
+            item("lead-intelligence", "Lead Intelligence Engine", "search", List.of(SELF, ROLES_MANAGE, DIR, PLATFORM_MANAGE), null),
             // Tasks: free for every business (no module); using tasks needs no permission, only the settings do
             item("my-tasks", "My tasks", "tasks", List.of(SELF, DIR, ROLES_MANAGE), "Tasks"),
             new Item("team-tasks", "Team tasks", "team", List.of(SELF, DIR, ROLES_MANAGE), true, "Tasks", null),
@@ -67,11 +69,16 @@ public final class Nav {
             item("audit", "Audit log", "doc", List.of(ROLES_MANAGE), "Administration"),
             item("subscription", "Subscription", "receipt", List.of(BUSINESS_MANAGE), "Administration"));
 
+    private static final Set<String> PLATFORM_HIDDEN = Set.of("audit", "juris-track");
+
     public static Optional<Item> find(String id) {
         return NAV.stream().filter(n -> n.id().equals(id)).findFirst();
     }
 
     public static boolean allowed(Item item, Set<String> perms, boolean hasReports) {
+        // The super admin reads every business in Platform > Audit log (the business one would repeat it), and Juris Track is a business module:
+        // JurisTrack refuses the token of an email that is its own super admin.
+        if (perms.contains(PLATFORM_MANAGE) && PLATFORM_HIDDEN.contains(item.id())) return false;
         return item.perm().stream().anyMatch(perms::contains) && (!item.needsReports() || hasReports);
     }
 

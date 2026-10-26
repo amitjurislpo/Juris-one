@@ -57,6 +57,21 @@ class EnvironmentGuardTest {
     }
 
     @Test
+    void anEnabledJurisTrackGatewayNeedsItsUrlAndSigningKeyInSharedEnvironments() {
+        for (String environmentName : List.of("sqe", "uat", "prd")) {
+            Map<String, String> environment = good(environmentName);
+            environment.put("jurisone.juristrack.enabled", "true");
+            assertThat(problems(environment)).as(environmentName).hasSize(2).anyMatch(p -> p.contains("base-url")).anyMatch(p -> p.contains("private-key"));
+            environment.put("jurisone.juristrack.base-url", "http://juristrack.internal:8081");
+            environment.put("jurisone.juristrack.private-key", "MIIE...");
+            assertThat(problems(environment)).as(environmentName).isEmpty();
+            environment.put("jurisone.juristrack.enabled", "false");
+            environment.remove("jurisone.juristrack.private-key");
+            assertThat(problems(environment)).as(environmentName + " disabled").isEmpty();
+        }
+    }
+
+    @Test
     void anUnsetEnvironmentIsDev() {
         assertThat(problems(new HashMap<>())).isEmpty();
     }

@@ -41,9 +41,11 @@ public class PeopleService {
     private final PiiCrypto piiCrypto;
     private final SessionService sessions;
     private final com.jurislpo.jurisone.service.SubscriptionService subscriptions;
+    private final JurisTrackRosterTrigger rosterTrigger;
 
     public PeopleService(PeopleRepository repo, TransactionTemplate transactionTemplate, ActorService actors, AuditService audit, PiiCrypto piiCrypto, SessionService sessions,
-                         com.jurislpo.jurisone.service.SubscriptionService subscriptions) {
+                         com.jurislpo.jurisone.service.SubscriptionService subscriptions, JurisTrackRosterTrigger rosterTrigger) {
+        this.rosterTrigger = rosterTrigger;
         this.subscriptions = subscriptions;
         this.repo = repo;
         this.transactionTemplate = transactionTemplate;
@@ -186,6 +188,7 @@ public class PeopleService {
         transactionTemplate.executeWithoutResult(transactionStatus -> {
             repo.markConfirmed(id);
             audit.log(user.id(), "employee.confirm", "employee", id.toString(), Map.of("status", target.status().name()), Map.of("status", "ACTIVE"), ipAddress);
+            rosterTrigger.rosterChanged(com.jurislpo.jurisone.tenancy.TenantContext.current());
         });
         return name + " is now a permanent employee";
     }
@@ -225,6 +228,7 @@ public class PeopleService {
             after.put("exitDate", exitDate);
             after.put("portalAccess", false);
             audit.log(actorId, "employee.exit", "employee", id.toString(), before, after, ipAddress);
+            rosterTrigger.rosterChanged(com.jurislpo.jurisone.tenancy.TenantContext.current());
         });
         return row.get("full_name") + " marked as a past employee · access removed";
     }
@@ -506,6 +510,7 @@ public class PeopleService {
                         location.timeZone(), location.region(), shiftId, newStatus);
                 repo.updatePii(id, piiCols);
                 audit.log(user.id(), "employee.edit", "employee", id.toString(), before, after, ipAddress);
+            rosterTrigger.rosterChanged(com.jurislpo.jurisone.tenancy.TenantContext.current());
             });
             return new Saved(id.toString(), (String) currentRow.get("code"), "Saved changes for " + fullName);
         }
@@ -540,6 +545,7 @@ public class PeopleService {
             piiCols.forEach((k, v) -> { if (k.endsWith("Last4")) after.put(k, v); });
             after.put("piiProvided", changedPII);
             audit.log(user.id(), "employee.create", "employee", id.toString(), null, after, ipAddress);
+            rosterTrigger.rosterChanged(com.jurislpo.jurisone.tenancy.TenantContext.current());
             if (india) {
                 // Finance is told a salary structure is needed (REQUIREMENTS §5.2).
                 List<UUID> finance = repo.findFinanceRecipients();
