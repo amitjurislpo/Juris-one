@@ -2,6 +2,8 @@ package com.jurislpo.jurisone.controller;
 
 import com.jurislpo.jurisone.service.BusinessAdminService;
 import com.jurislpo.jurisone.service.ModuleGrantService;
+import com.jurislpo.jurisone.service.JurisTrackRosterService;
+import com.jurislpo.jurisone.service.JurisTrackRosterTrigger;
 import com.jurislpo.jurisone.service.RoleTemplateService;
 import com.jurislpo.jurisone.service.SubscriptionService;
 import com.jurislpo.jurisone.common.ApiResult;
@@ -41,9 +43,13 @@ public class PlatformController {
     private final ModuleGrantService grants;
     private final AuditService audit;
     private final RoleTemplateService roleTemplates;
+    private final JurisTrackRosterService roster;
+    private final JurisTrackRosterTrigger rosterTrigger;
 
     public PlatformController(Auth auth, BusinessAdminService businesses, SubscriptionService subscriptions, ModuleGrantService grants, AuditService audit,
-                              RoleTemplateService roleTemplates) {
+                              RoleTemplateService roleTemplates, JurisTrackRosterService roster, JurisTrackRosterTrigger rosterTrigger) {
+        this.roster = roster;
+        this.rosterTrigger = rosterTrigger;
         this.roleTemplates = roleTemplates;
         this.auth = auth;
         this.businesses = businesses;
@@ -79,6 +85,7 @@ public class PlatformController {
     public ApiResult<Map<String, String>> create(@RequestBody BusinessAdminService.CreateInput body, HttpServletRequest request) {
         return asPlatform(() -> {
             Map<String, String> ids = businesses.create(admin(), body, RequestMeta.of(request).ipAddress());
+            rosterTrigger.rosterChanged(com.jurislpo.jurisone.common.Check.uuid(ids.get("id")));
             return ApiResult.success("Business created", ids);
         });
     }
@@ -170,6 +177,7 @@ public class PlatformController {
     public ApiResult<Map<String, String>> addOwner(@PathVariable String id, @RequestBody BusinessAdminService.OwnerInput body, HttpServletRequest request) {
         return asPlatform(() -> {
             Map<String, String> owner = businesses.addOwner(admin(), id, body, RequestMeta.of(request).ipAddress());
+            rosterTrigger.rosterChanged(com.jurislpo.jurisone.common.Check.uuid(id));
             return ApiResult.success("Sub admin added as " + owner.get("code"), owner);
         });
     }
@@ -177,7 +185,24 @@ public class PlatformController {
     @PutMapping("/businesses/{id}/owners/{ownerId}/access")
     public ApiResult<Void> ownerAccess(@PathVariable String id, @PathVariable String ownerId, @RequestBody AccessBody body, HttpServletRequest request) {
         return asPlatform(() -> {
-            return ApiResult.message(businesses.setOwnerAccess(admin(), id, ownerId, body.enabled(), RequestMeta.of(request).ipAddress()));
+            String message = businesses.setOwnerAccess(admin(), id, ownerId, body.enabled(), RequestMeta.of(request).ipAddress());
+            rosterTrigger.rosterChanged(com.jurislpo.jurisone.common.Check.uuid(id));
+            return ApiResult.message(message);
+        });
+    }
+
+    /**
+     * Sends the business's roster (shifts and employees) to Juris Track now: 201 with Juris Track's summary, 502 when Juris Track is unreachable or refuses it,
+     * 409 when the business has no Juris Track, 404 for an unknown business. Audited with the counts.
+     */
+    @PostMapping("/businesses/{id}/juris-track-syncs")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Map<String, Object>> syncJurisTrack(@PathVariable String id, HttpServletRequest request) {
+        return asPlatform(() -> {
+            CurrentUser user = admin();
+            Map<String, Object> summary = roster.syncBusiness(com.jurislpo.jurisone.common.Check.uuid(id));
+            audit.log(user.id(), "juristrack.roster_synced", "business", id, null, summary, RequestMeta.of(request).ipAddress());
+            return ApiResult.success("Roster sent to Juris Track", summary);
         });
     }
 
@@ -189,6 +214,7 @@ public class PlatformController {
             CurrentUser user = admin();
             java.util.UUID business = com.jurislpo.jurisone.common.Check.uuid(id);
             String subscriptionId = subscriptions.addSubscription(business, body, user.id());
+            rosterTrigger.rosterChanged(business); // a plan with Juris Track: its roster goes now
             audit.log(user.id(), "subscription.add", "business_subscription", subscriptionId, null, Map.of("business", id, "plan", String.valueOf(body.planId())), RequestMeta.of(request).ipAddress());
             return ApiResult.success("Subscription added", Map.of("id", subscriptionId));
         });
@@ -221,6 +247,7 @@ public class PlatformController {
         return asPlatform(() -> {
             CurrentUser user = admin();
             String grantId = grants.grant(com.jurislpo.jurisone.common.Check.uuid(id), body, user.id());
+            rosterTrigger.rosterChanged(com.jurislpo.jurisone.common.Check.uuid(id));
             audit.log(user.id(), "module.grant", "business_module", grantId, null, Map.of("business", id, "source", String.valueOf(body.source())), RequestMeta.of(request).ipAddress());
             return ApiResult.success("Juris Track granted", Map.of("id", grantId));
         });
@@ -230,7 +257,7 @@ public class PlatformController {
     public ApiResult<Void> updateModule(@PathVariable String id, @RequestBody ModuleGrantService.GrantInput body, HttpServletRequest request) {
         return asPlatform(() -> {
             CurrentUser user = admin();
-            grants.update(id, body);
+            rosterTrigger.rosterChanged(grants.update(id, body));
             audit.log(user.id(), "module.update", "business_module", id, null, Map.of("source", String.valueOf(body.source())), RequestMeta.of(request).ipAddress());
             return ApiResult.message("Grant saved");
         });

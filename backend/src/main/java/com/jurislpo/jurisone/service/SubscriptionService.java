@@ -67,7 +67,12 @@ public class SubscriptionService {
         List<Current> later = repo.findUpcoming(resolvedBusinessId, today, employees);
         if (!later.isEmpty()) return later.get(0);
         List<Current> past = repo.findLastExpired(resolvedBusinessId, today, employees);
-        return past.isEmpty() ? new Current("NONE", false, null, null, null, null, null, List.of(), employees) : past.get(0);
+        if (past.isEmpty()) return new Current("NONE", false, null, null, null, null, null, List.of(), employees);
+        // an ended subscription keeps its plan's modules view-only, and so does a module granted on its own that still covers today
+        Current ended = past.get(0);
+        java.util.TreeSet<String> all = new java.util.TreeSet<>(ended.modules());
+        all.addAll(grantedModules(resolvedBusinessId, today));
+        return new Current(ended.state(), ended.active(), ended.planName(), ended.startsOn(), ended.endsOn(), ended.daysLeft(), ended.maxEmployees(), List.copyOf(all), ended.employees());
     }
 
     /** Modules granted to the business on their own that cover {@code day} (not revoked). */

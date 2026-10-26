@@ -5,6 +5,8 @@ import com.jurislpo.jurisone.service.RegisterService;
 import com.jurislpo.jurisone.common.ApiResult;
 import com.jurislpo.jurisone.common.RequestMeta;
 import com.jurislpo.jurisone.security.Auth;
+import com.jurislpo.jurisone.security.CurrentUser;
+import com.jurislpo.jurisone.service.JurisTrackGatewayService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -27,11 +29,13 @@ public class AttendanceController {
     private final Auth auth;
     private final MyAttendanceService mine;
     private final RegisterService register;
+    private final JurisTrackGatewayService jurisTrack;
 
-    public AttendanceController(Auth auth, MyAttendanceService mine, RegisterService register) {
+    public AttendanceController(Auth auth, MyAttendanceService mine, RegisterService register, JurisTrackGatewayService jurisTrack) {
         this.auth = auth;
         this.mine = mine;
         this.register = register;
+        this.jurisTrack = jurisTrack;
     }
 
     /** ?month=YYYY-MM&date=YYYY-MM-DD; {@code tracked:false} when attendance isn't tracked for the user. */
@@ -55,7 +59,10 @@ public class AttendanceController {
     @PostMapping("/api/attendance/punches")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> punch(@RequestBody PunchRequest body, HttpServletRequest request) {
-        MyAttendanceService.PunchResult punchResult = mine.punch(auth.assertPerm("self"), body.expect(), RequestMeta.of(request).ipAddress());
+        CurrentUser user = auth.assertPerm("self");
+        String ipAddress = RequestMeta.of(request).ipAddress();
+        MyAttendanceService.PunchResult punchResult = mine.punch(user, body.expect(), ipAddress);
+        jurisTrack.mirrorPunchAsTimeEvent(user, punchResult.kind(), ipAddress); // best effort: never fails the punch
         return ApiResult.success(punchResult.message(), Map.of("kind", punchResult.kind()));
     }
 

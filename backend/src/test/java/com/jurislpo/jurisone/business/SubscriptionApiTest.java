@@ -310,7 +310,7 @@ class SubscriptionApiTest extends IntegrationTest {
         String grant = json.readTree(mockMvc.perform(write(post(base)).cookie(superAdmin).content("{\"source\":\"COMPLIMENTARY\",\"notes\":\"Launch partner\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).at("/data/id").asText();
         assertThat(menuHasJurisTrack(owner)).isTrue();
-        mockMvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("COMING_SOON"));
+        mockMvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("ACTIVE"));
         mockMvc.perform(get("/api/me").cookie(owner)).andExpect(jsonPath("$.data.modules[0]").value("JURIS_TRACK"));
         mockMvc.perform(get("/api/business/subscription").cookie(owner)).andExpect(jsonPath("$.data.subscription.modules[0]").value("JURIS_TRACK"));
         // an overlapping second grant is refused
