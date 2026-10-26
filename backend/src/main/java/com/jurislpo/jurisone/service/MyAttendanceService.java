@@ -222,4 +222,21 @@ public class MyAttendanceService {
                 .stream().filter(p -> AttendanceEngine.workDateOf(p.punchedAt(), employee.shift().shiftDefinition(), employee.timeZone()).equals(workDate)).toList();
         return new PunchResult("Checked out — " + Format.formatHours(AttendanceEngine.workedMinutes(punches).minutes() / 60.0) + " recorded today", "OUT");
     }
+
+    /**
+     * The attendance side of a JurisTrack time event (START = {@code "IN"}, END = {@code "OUT"}). Idempotent and silent: nothing happens
+     * when the employee has no attendance record, is already in that state, or the last punch was just recorded. Never calls JurisTrack.
+     */
+    public void recordPunchFromJurisTrack(CurrentUser user, String kind, String ipAddress) {
+        AttendanceEmployee employee = me(user);
+        if (employee == null) return;
+        Instant now = Instant.now();
+        if (Format.isoInZone(now, employee.timeZone()).isBefore(employee.dateOfJoining())) return;
+        List<Map<String, Object>> last = repo.lastPunch(user.id());
+        String current = !last.isEmpty() && "IN".equals(last.get(0).get("kind")) ? "IN" : "OUT";
+        if (kind.equals(current)) return;
+        if (!last.isEmpty() && now.toEpochMilli() - ((Timestamp) last.get(0).get("at")).toInstant().toEpochMilli() < MIN_GAP_MS) return;
+        repo.insertPunch(user.id(), now, kind, "JURISTRACK", ipAddress);
+        audit.log(user.id(), "attendance.punch", "punch", user.id().toString(), null, Map.of("kind", kind, "punchedAt", now.toString(), "source", "JURISTRACK"), ipAddress);
+    }
 }

@@ -66,8 +66,13 @@ public class MyAttendanceRepository {
     }
 
     public void insertWebPunch(UUID employeeId, Instant instant, String kind, String ipAddress) {
-        jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, ip, created_at) VALUES (?, ?, ?, ?::\"PunchKind\", 'WEB', ?, now())",
-                UUID.randomUUID(), employeeId, Timestamp.from(instant), kind, ipAddress);
+        insertPunch(employeeId, instant, kind, "WEB", ipAddress);
+    }
+
+    /** {@code source}: a value of the "PunchSource" type (WEB, JURISTRACK, ...). */
+    public void insertPunch(UUID employeeId, Instant instant, String kind, String source, String ipAddress) {
+        jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, ip, created_at) VALUES (?, ?, ?, ?::\"PunchKind\", ?::\"PunchSource\", ?, now())",
+                UUID.randomUUID(), employeeId, Timestamp.from(instant), kind, source, ipAddress);
     }
 
     /** The employee's punches since {@code since}, oldest first. */

@@ -245,7 +245,7 @@ public class DashboardService {
         String shiftText = ("IN_NIGHT".equals(employee.shift().code()) ? "Night" : "Day") + " shift · " + AttendanceService.formatTime(AttendanceEngine.atLocal(workDate, start, timeZone), timeZone)
                 + " – " + AttendanceService.formatTime(AttendanceEngine.atLocal(workDate, end, timeZone), timeZone) + " " + abbr;
         List<PunchLogLine> log = sorted.stream().map(punch -> new PunchLogLine(AttendanceService.formatTime(punch.punchedAt(), timeZone), punch.kind() == PunchKind.IN ? "Checked in" : "Checked out",
-                "WEB".equals(punch.source()) ? "Web" : "MOBILE".equals(punch.source()) ? "Mobile" : "Regularization")).toList();
+                "WEB".equals(punch.source()) ? "Web" : "MOBILE".equals(punch.source()) ? "Mobile" : "JURISTRACK".equals(punch.source()) ? "Juris Track" : "Regularization")).toList();
 
         Double leaveAvail = repo.leaveAvailable(user.id());
 

@@ -90,7 +90,7 @@ class NavTest {
         assertThat(Permissions.SALARY).doesNotContain(Permissions.TASKS_MANAGE, Permissions.PROJECTS_CREATE);
         // the group sits after My workspace and before Team
         List<String> ids = Nav.NAV.stream().map(Nav.Item::id).toList();
-        assertThat(ids.indexOf("my-tasks")).isEqualTo(ids.indexOf("juris-track") + 1);
+        assertThat(ids.indexOf("my-tasks")).isEqualTo(ids.indexOf("lead-intelligence") + 1);
         assertThat(ids.indexOf("team")).isGreaterThan(ids.indexOf("task-settings"));
     }
 
