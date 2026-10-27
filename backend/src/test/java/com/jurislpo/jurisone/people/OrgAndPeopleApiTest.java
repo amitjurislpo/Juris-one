@@ -156,6 +156,8 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         assertThat(jdbc.queryForObject("SELECT status FROM employee_onboardings WHERE employee_id = ?::uuid", String.class, id)).isEqualTo("NOT_REQUIRED");
         mockMvc.perform(get("/api/people?search=Meera").cookie(hrCookie)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rows[?(@.id=='" + id + "')].onboardingStatus").value(org.hamcrest.Matchers.contains("NOT_REQUIRED")));
+        // the blank add form does not ask for onboarding either
+        mockMvc.perform(get("/api/people/form-options").cookie(hrCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.defaults.isOnboardingRequired").value(false));
         // HR can ask for onboarding when adding
         String requiredEmail = "required." + UUID.randomUUID().toString().substring(0, 6) + "@example.com";
         String requiredId = json.readTree(mockMvc.perform(write(post("/api/people")).cookie(hrCookie)
