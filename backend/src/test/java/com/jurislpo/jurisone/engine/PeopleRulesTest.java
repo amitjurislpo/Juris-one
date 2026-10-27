@@ -157,7 +157,7 @@ class PeopleRulesTest {
     class Form {
         static EmployeeInput base() {
             return new EmployeeInput("Meera", "", "Joshi", "Prakash Joshi", "meera.joshi@jurislpo.com", "+91", "98765 43210", "IN_IST", "", "ABCDE1234F",
-                    "2345 6789 0123", "", "", "Associate", "x", "y", "2026-10-12", "IN_NIGHT", "r");
+                    "2345 6789 0123", "", "", "Associate", "x", "y", "2026-10-12", "IN_NIGHT", "r", true);
         }
 
         static EmployeeInput with(String field, String value) {
@@ -171,7 +171,7 @@ class PeopleRulesTest {
             Stream.of(field.split(",")).forEach(f -> fields.put(f, value));
             return new EmployeeInput(fields.get("firstName"), fields.get("middleName"), fields.get("lastName"), fields.get("fatherName"), fields.get("email"), fields.get("phoneCountry"),
                     fields.get("phone"), fields.get("location"), fields.get("joiningOffice"), fields.get("pan"), fields.get("aadhaar"), fields.get("uan"), fields.get("address"), fields.get("designation"),
-                    fields.get("departmentId"), fields.get("managerId"), fields.get("doj"), fields.get("shift"), fields.get("roleId"));
+                    fields.get("departmentId"), fields.get("managerId"), fields.get("doj"), fields.get("shift"), fields.get("roleId"), true);
         }
 
         @Test
@@ -203,7 +203,7 @@ class PeopleRulesTest {
         void usAndEdit() {
             EmployeeInput employeeInput = with("location", "US_ET");
             employeeInput = new EmployeeInput(employeeInput.firstName(), employeeInput.middleName(), employeeInput.lastName(), employeeInput.fatherName(), employeeInput.email(), employeeInput.phoneCountry(), employeeInput.phone(), "US_ET",
-                    employeeInput.joiningOffice(), "bad", "bad", employeeInput.uan(), employeeInput.address(), employeeInput.designation(), employeeInput.departmentId(), employeeInput.managerId(), employeeInput.dateOfJoining(), employeeInput.shift(), employeeInput.roleId());
+                    employeeInput.joiningOffice(), "bad", "bad", employeeInput.uan(), employeeInput.address(), employeeInput.designation(), employeeInput.departmentId(), employeeInput.managerId(), employeeInput.dateOfJoining(), employeeInput.shift(), employeeInput.roleId(), true);
             assertThat(stepErrors(2, employeeInput, false)).isEmpty();
             assertThat(stepErrors(1, with("phone", ""), true)).isEmpty();
             assertThat(with("location", "").locationOrDefault()).isEqualTo("IN_IST");

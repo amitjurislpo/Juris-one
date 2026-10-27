@@ -28,8 +28,7 @@ public class PolicyGateFilter extends OncePerRequestFilter {
 
     public static final String MESSAGE = "Please read and accept the company policies first.";
 
-    static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell", "/api/notifications", "/api/policies/pending", "/api/policies/mine", "/api/audit/page-views",
-            "/api/public/onboardings/"); // a candidate's link (checked by the service)
+    static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell", "/api/notifications", "/api/policies/pending", "/api/policies/mine", "/api/audit/page-views");
     static final Pattern OPEN_POLICY = Pattern.compile("^/api/policies/[^/]+/(acknowledgements|versions/\\d+/file)$");
 
     private final PolicyService policies;

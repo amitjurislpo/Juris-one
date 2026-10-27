@@ -55,8 +55,19 @@ class FreshDatabaseSchemaTest {
 
     @Test
     void flywayAppliedTheBaseline() {
-        assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class)).startsWith("1", "2", "3", "4", "5", "6", "7", "8", "9").contains("12", "15"); // HR letters
+        assertThat(jdbc.queryForList("SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class)).startsWith("1", "2", "3", "4", "5", "6", "7", "8", "9").contains("12", "15", "22", "23"); // HR letters, employee onboarding
         assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_type WHERE typname = 'EmployeeStatus'", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void employeeOnboardingTablesReplaceTheCandidateFlow() {
+        for (String table : new String[] {"employee_onboardings", "onboarding_personal", "onboarding_addresses", "onboarding_emergency_contacts", "onboarding_education", "onboarding_courses",
+                "onboarding_employments", "onboarding_bank", "onboarding_statutory", "onboarding_family_members", "onboarding_nominations", "onboarding_attachments", "onboarding_review_flags"}) {
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_name = ?", Integer.class, table)).as(table).isEqualTo(1);
+        }
+        for (String table : new String[] {"onboardings", "onboarding_documents"}) {
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_name = ?", Integer.class, table)).as(table).isZero();
+        }
     }
 
     @Test

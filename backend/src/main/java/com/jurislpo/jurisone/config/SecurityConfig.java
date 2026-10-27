@@ -1,6 +1,7 @@
 package com.jurislpo.jurisone.config;
 
 import com.jurislpo.jurisone.security.JsonAuthEntryPoint;
+import com.jurislpo.jurisone.security.OnboardingGateFilter;
 import com.jurislpo.jurisone.security.OriginCheckFilter;
 import com.jurislpo.jurisone.security.PolicyGateFilter;
 import com.jurislpo.jurisone.security.SubscriptionGateFilter;
@@ -34,12 +35,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     /** Reachable without a session. */
-    static final String[] PUBLIC = {"/api/auth/session", "/api/auth/session-refreshes", "/api/auth/otp-requests",
-            "/api/public/onboardings/**"}; // the candidate's one-time link is the credential
+    static final String[] PUBLIC = {"/api/auth/session", "/api/auth/session-refreshes", "/api/auth/otp-requests"};
 
     @Bean
     SecurityFilterChain apiFilterChain(HttpSecurity http, JwtAuthFilter sessions, OriginCheckFilter origin, SubscriptionGateFilter subscription,
-                               PolicyGateFilter policyGate, JsonAuthEntryPoint entryPoint)
+                               OnboardingGateFilter onboardingGate, PolicyGateFilter policyGate, JsonAuthEntryPoint entryPoint)
             throws Exception {
         http
             .csrf(c -> c.disable())
@@ -52,7 +52,8 @@ public class SecurityConfig {
             .addFilterAfter(origin, SecurityContextHolderFilter.class)
             .addFilterBefore(sessions, AnonymousAuthenticationFilter.class)
             .addFilterAfter(subscription, JwtAuthFilter.class) // needs the business the JWT filter set
-            .addFilterAfter(policyGate, SubscriptionGateFilter.class) // 402 before 428: a paused business can't accept anything
+            .addFilterAfter(onboardingGate, SubscriptionGateFilter.class) // 402 before 403: a paused business can't finish anything
+            .addFilterAfter(policyGate, OnboardingGateFilter.class) // an unfinished onboarding comes before the policies
             .exceptionHandling(e -> e.authenticationEntryPoint(entryPoint))
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(HttpMethod.GET, "/actuator/health/**", "/actuator/health").permitAll()
@@ -73,6 +74,13 @@ public class SecurityConfig {
     @Bean
     FilterRegistrationBean<SubscriptionGateFilter> subscriptionFilterRegistration(SubscriptionGateFilter subscriptionGateFilter) {
         FilterRegistrationBean<SubscriptionGateFilter> registration = new FilterRegistrationBean<>(subscriptionGateFilter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
+    FilterRegistrationBean<OnboardingGateFilter> onboardingGateFilterRegistration(OnboardingGateFilter onboardingGateFilter) {
+        FilterRegistrationBean<OnboardingGateFilter> registration = new FilterRegistrationBean<>(onboardingGateFilter);
         registration.setEnabled(false);
         return registration;
     }

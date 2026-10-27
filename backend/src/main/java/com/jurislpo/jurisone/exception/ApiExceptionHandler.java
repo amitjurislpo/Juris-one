@@ -41,7 +41,9 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     ResponseEntity<ProblemDetail> api(ApiException e, HttpServletRequest request) {
-        return respond(Problems.of(e.status(), e.code(), e.getMessage(), request.getRequestURI()));
+        ProblemDetail problem = Problems.of(e.status(), e.code(), e.getMessage(), request.getRequestURI());
+        if (e instanceof FieldErrorsException fieldErrors) problem.setProperty("errors", fieldErrors.errors());
+        return respond(problem);
     }
 
     /** {@code @PreAuthorize} denial: 401 when signed out, 403 otherwise. */

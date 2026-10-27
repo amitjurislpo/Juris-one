@@ -34,22 +34,6 @@ public final class MailTemplates {
                 + label + "</a></p><p style=\"color:#5D5F6D;font-size:12px;word-break:break-all\">Or paste this link: " + href + "</p>";
     }
 
-    /** The candidate's onboarding link (to their personal email); {@code note}: what HR asked to change, if sent back. */
-    public static Content onboarding(String name, String business, String designation, String link, String expires, String note) {
-        boolean back = note != null && !note.isEmpty();
-        String role = designation == null || designation.isEmpty() ? "" : " as " + designation;
-        String subject = back ? business + " needs a few changes to your onboarding details" : "Welcome to " + business + " — complete your onboarding";
-        String intro = back ? "HR at " + business + " reviewed your details and asked for a few changes."
-                : business + " is looking forward to you joining" + role + ". Please fill in your details and upload your documents.";
-        return new Content(subject,
-                "Hi " + name + ",\n\n" + intro + (back ? "\n\nWhat to change: " + note : "") + "\n\nOpen your personal link (valid until " + expires + "):\n" + link
-                        + "\n\nKeep this link to yourself — anyone with it can see what you entered.",
-                shell(escapeHtml(subject), "<p>Hi " + escapeHtml(name) + ", " + escapeHtml(intro) + "</p>"
-                        + (back ? "<p style=\"color:#5D5F6D\">What to change: " + escapeHtml(note) + "</p>" : "")
-                        + button(link, back ? "Update my details" : "Start onboarding")
-                        + "<p style=\"color:#5D5F6D;font-size:12px\">The link works until " + escapeHtml(expires) + ". Keep it to yourself — anyone with it can see what you entered.</p>"));
-    }
-
     public static Content decision(String name, String what, boolean approved, String by, String note) {
         String verb = approved ? "approved" : "declined";
         boolean hasNote = note != null && !note.isEmpty();
@@ -84,6 +68,19 @@ public final class MailTemplates {
                         + "<p style=\"color:#5D5F6D\">" + escapeHtml(after) + " Contact JurisOne to renew.</p>" + button(link, "View subscription")));
     }
 
+    /** HR started this person's onboarding: the portal link and how to sign in (there is no password, a code is emailed each time). */
+    public static Content onboardingInvitation(String name, String email, String link) {
+        String subject = "Welcome aboard! Complete your onboarding on JurisOne";
+        return new Content(subject,
+                "Hi " + name + ",\n\nGlad to have you onboard! We have created a new self-service account for you. You can now start by providing us your personal, academic and professional information."
+                        + "\n\nLet's Get Started: " + link + "\n\nSign in with your work email " + email + ". A one-time code is emailed to you each time you sign in."
+                        + "\n\nRegards,\nHR Team",
+                shell("Welcome aboard!", "<p>Hi " + escapeHtml(name) + ",</p><p><b>Glad to have you onboard!</b> We have created a new self-service account for you. "
+                        + "You can now start by providing us your personal, academic and professional information.</p>" + button(link, "Let's Get Started")
+                        + "<p>Sign in with your work email <b>" + escapeHtml(email) + "</b>. A one-time code is emailed to you each time you sign in.</p>"
+                        + "<p style=\"color:#5D5F6D\">Regards,<br>HR Team</p>"));
+    }
+
     public static Content otp(String name, String code, int minutes) {
         return new Content(
                 "Your JurisOne sign-in code: " + code,
@@ -102,5 +99,32 @@ public final class MailTemplates {
                         + "\n\nIf this wasn't you, you can ignore this email.",
                 shell("No sign-in code sent", "<p>Hi " + escapeHtml(name) + ", a sign-in code was requested for this email, but none was sent.</p><p>" + escapeHtml(reason) + "</p>"
                         + "<p style=\"color:#5D5F6D;font-size:13px\">If this wasn't you, ignore this email.</p>"));
+    }
+
+    /** HR approved the employee's onboarding: the portal is open. */
+    public static Content onboardingApproved(String name, String by) {
+        return new Content(
+                "Onboarding approved",
+                "Hi " + name + ",\n\nYour onboarding was approved by " + by + ". You can now use JurisOne.\n\nSign in to get started.",
+                shell("Onboarding approved", "<p>Hi " + escapeHtml(name) + ", your onboarding was <b>approved</b> by " + escapeHtml(by) + ".</p>"
+                        + "<p style=\"color:#5D5F6D\">You can now use JurisOne. Sign in to get started.</p>"));
+    }
+
+    /** HR sent the onboarding back: the overall comment and, per flagged section, {@code {section title, comment}}. */
+    public static Content onboardingChangesRequested(String name, String by, String comment, java.util.List<String[]> sections) {
+        StringBuilder text = new StringBuilder("Hi " + name + ",\n\n" + by + " reviewed your onboarding and needs a few changes.\n\n" + comment + "\n\nPlease correct these sections:\n");
+        StringBuilder list = new StringBuilder("<ul style=\"padding-left:18px\">");
+        for (String[] section : sections) {
+            text.append("- ").append(section[0]).append(": ").append(section[1]).append('\n');
+            list.append("<li><b>").append(escapeHtml(section[0])).append("</b>: ").append(escapeHtml(section[1])).append("</li>");
+        }
+        list.append("</ul>");
+        text.append("\nSign in to JurisOne, fix them and submit again.");
+        return new Content(
+                "Changes needed in your onboarding",
+                text.toString(),
+                shell("Changes needed in your onboarding", "<p>Hi " + escapeHtml(name) + ", " + escapeHtml(by) + " reviewed your onboarding and needs a few changes.</p>"
+                        + "<p style=\"color:#5D5F6D\">" + escapeHtml(comment) + "</p><p>Please correct these sections:</p>" + list
+                        + "<p style=\"color:#5D5F6D\">Sign in to JurisOne, fix them and submit again.</p>"));
     }
 }
