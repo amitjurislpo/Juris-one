@@ -160,7 +160,8 @@ public final class PeopleRules {
      */
     public record EmployeeInput(String firstName, String middleName, String lastName, String fatherName, String email, String phoneCountry, String phone,
                                 String location, String joiningOffice, String pan, String aadhaar, String uan, String address, String designation,
-                                String departmentId, String managerId, String dateOfJoining, String shift, String roleId) {
+                                String departmentId, String managerId, String dateOfJoining, String shift, String roleId,
+                                Boolean isOnboardingRequired) {
 
         /** "First Middle Last". */
         public String fullName() {

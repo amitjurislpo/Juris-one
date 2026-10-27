@@ -3,6 +3,8 @@
 | Version | Date | What changed | Requested by |
 |---|---|---|---|
 | 1.0 | 2026-10-23 | Initial version | Owner |
+| 2.0 | 2026-10-27 | Section 4 redrawn for the employee onboarding wizard (no candidate link any more) | Owner |
+| 3.0 | 2026-10-27 | Section 4: HR approval (approve or send back with flags), hard lock until approved | Owner |
 
 The document version is not the app version. Update the affected diagram in the same pull request as any change of a flow, and raise the version.
 The diagrams are Mermaid and render on GitHub and in the IDE. Each one says who (role or system) does what, in order, with decisions and error paths. Requirement ids (FR-...) refer to `FRD-JurisOne.md`. The JurisTrack link has its own diagram in `FLOW-JurisTrack-JurisOne-Connection.md`.
@@ -20,7 +22,6 @@ flowchart LR
     subgraph Users["People"]
         EMP["Employee, HR, Finance, Owner"]
         SUP["Super admin"]
-        CAN["Candidate with onboarding link"]
     end
     subgraph Web["Web app"]
         SPA["React SPA - pages, English and Hindi"]
@@ -169,60 +170,56 @@ flowchart TD
 
 ## 4. Onboarding of an employee
 
-What it shows: the swimlane flow from HR inviting a candidate to the new employee's first sign-in, with the send-back and error paths (FR-ONB-1 to FR-ONB-5, FR-PEO-7).
+What it shows: from HR adding the employee to the employee's submitted onboarding, with the validation, HR approval and lock paths (FR-ONB-1 to FR-ONB-8, FR-PEO-7).
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor HR as HR with people.add
     participant API as API
-    participant M as Email service
-    actor C as Candidate
     actor FIN as Finance
     actor E as New employee
 
-    HR->>API: POST /api/onboardings name, personal email, role, department, manager, joining date
-    alt Email already has an open onboarding
-        API-->>HR: Refused - an onboarding is already open
-    else New
-        API->>M: Email one-time link valid 7 days, only hash stored
-        API-->>HR: 201 onboarding INVITED, audited
-    end
-    C->>API: GET /api/public/onboardings/token
-    alt Link unknown or expired
-        API-->>C: 404 ask HR for a new link
-    else Link already used
-        API-->>C: Already submitted, nothing to fill in
-    else Valid
-        API-->>C: Form and document list
-    end
-    loop Until complete
-        C->>API: PUT form parts and POST documents - PDF JPG PNG, size limits
-        API-->>C: Saved, status IN_PROGRESS, answers encrypted
-    end
-    C->>API: POST submission
-    alt Form incomplete or a required document is missing
-        API-->>C: 422 says what is missing
-    else Complete
-        API-->>HR: Bell - candidate submitted, status SUBMITTED
-    end
-    HR->>API: Verify or reject each document
-    Note over HR,API: A rejection needs a comment the candidate will see
-    alt Something is wrong
-        HR->>API: PUT status CHANGES_REQUESTED with comment
-        API->>M: New link to candidate, old link stops
-        C->>API: Fix and submit again
-    else All fine
-        HR->>API: PUT status VERIFIED
-        API-->>HR: Refused if any document is pending or a required kind lacks verified files
-    end
-    HR->>API: POST /api/onboardings/id/employee role, department, shift, manager
+    HR->>API: POST /api/people with isOnboardingRequired (default false)
     API->>API: Check employee limit of the plan, email unused, assignable role
-    API-->>HR: Employee created with ID, status ADDED, portal access OFF
+    API-->>HR: 201 employee created, onboarding NOT_REQUIRED (NOT_STARTED when isOnboardingRequired is true)
     API-->>FIN: Bell - salary structure pending, India only
-    HR->>API: PUT /api/people/id/access enabled
-    E->>API: Sign in with code sent to official email, section 2
-    E->>API: Accept pending company policies, section 11
+    E->>API: Sign in with the emailed code, section 2
+    E->>API: GET /api/shell - onboarding status and isRequired
+    alt isRequired is false
+        API-->>E: Normal landing page
+    else NOT_STARTED, IN_PROGRESS or CHANGES_REQUESTED
+        API-->>E: Wizard, resumes at the saved step, every other API answers 403 onboarding-pending
+    else SUBMITTED
+        API-->>E: Read-only waiting page, every other API answers 403 onboarding-pending
+    end
+    loop Steps 1 to 5
+        E->>API: PUT /api/onboarding/mine/steps/n
+        alt A field is missing or invalid
+            API-->>E: 422 errors by field path, nothing saved
+        else Valid
+            API-->>E: Saved, step COMPLETE, status IN_PROGRESS, next step
+        end
+    end
+    E->>API: POST attachments per slot - pdf doc docx jpg png, max 10 MB
+    API-->>E: 400/413 when the type, content or size is wrong
+    E->>API: POST /api/onboarding/mine/submission
+    alt A step or a mandatory file is missing
+        API-->>E: 422 lists everything missing
+    else Complete
+        API-->>E: 201 SUBMITTED, read-only - every write answers 409
+        API-->>HR: Bell - onboarding submitted for review
+    end
+    HR->>API: GET /api/people/id/onboarding - masked data and files
+    alt HR approves
+        HR->>API: POST /api/people/id/onboarding/approvals
+        API-->>E: APPROVED, bell and email, the portal opens
+    else HR sends it back
+        HR->>API: POST /api/people/id/onboarding/rejections - comment and flags per section
+        API-->>E: CHANGES_REQUESTED, bell and email with the flagged sections
+        E->>API: Fix the flagged sections, POST /api/onboarding/mine/submission again
+        API-->>HR: SUBMITTED again, flags cleared, bell
+    end
 ```
 
 ---
@@ -926,7 +923,7 @@ flowchart TD
     subgraph SRV["API"]
         N1["Event happens: decision, assignment, reminder, policy, payslip, announcement, asset, letter, subscription"]
         N2["Text built in English with the data filled in, stored with a link"]
-        N3{"Also an email event? code, leave or regularization decision, payslip, onboarding link, letter, subscription warning"}
+        N3{"Also an email event? code, leave or regularization decision, payslip, letter, subscription warning"}
         N4["Send email in English"]
     end
     subgraph WEB["Web app"]

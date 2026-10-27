@@ -3,7 +3,7 @@ package com.jurislpo.jurisone.controller;
 import com.jurislpo.jurisone.service.ProfileService;
 import com.jurislpo.jurisone.common.ApiResult;
 import com.jurislpo.jurisone.common.RequestMeta;
-import com.jurislpo.jurisone.service.OnboardingService;
+import com.jurislpo.jurisone.service.EmployeeOnboardingService;
 import com.jurislpo.jurisone.service.PhotoService;
 import com.jurislpo.jurisone.security.Auth;
 import com.jurislpo.jurisone.security.CurrentUser;
@@ -29,10 +29,10 @@ public class ProfileController {
 
     private final Auth auth;
     private final ProfileService profiles;
-    private final OnboardingService onboarding;
+    private final EmployeeOnboardingService onboarding;
     private final PhotoService photos;
 
-    public ProfileController(Auth auth, ProfileService profiles, OnboardingService onboarding, PhotoService photos) {
+    public ProfileController(Auth auth, ProfileService profiles, EmployeeOnboardingService onboarding, PhotoService photos) {
         this.photos = photos;
         this.auth = auth;
         this.profiles = profiles;
@@ -43,7 +43,7 @@ public class ProfileController {
     public ApiResult<Map<String, Object>> mine() {
         CurrentUser user = auth.requirePage("profile");
         Map<String, Object> row = new java.util.LinkedHashMap<>(profiles.mine(user));
-        row.put("documents", onboarding.employeeDocuments(user.id().toString()));
+        row.put("documents", onboarding.documents(user.id().toString()));
         return ApiResult.success(row);
     }
 
@@ -69,7 +69,7 @@ public class ProfileController {
     @GetMapping("/api/profile/documents/{docId}/file")
     public ResponseEntity<byte[]> document(@PathVariable String docId) {
         CurrentUser user = auth.requirePage("profile");
-        OnboardingService.FileOut file = onboarding.employeeDocument(user.id().toString(), docId);
+        EmployeeOnboardingService.FileOut file = onboarding.document(user.id().toString(), docId);
         if (file == null) throw new com.jurislpo.jurisone.exception.UserException(HttpStatus.NOT_FOUND, "File not found.");
         return ResponseEntity.ok().contentType(MediaType.parseMediaType(file.mime()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().filename(file.name(), StandardCharsets.UTF_8).build().toString())

@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * App settings (application.properties and application-&lt;env&gt;.properties; secrets of sqe/uat/prd come from environment variables).
  *
- * @param storageDir   where payslip PDFs, investment proofs, policy PDFs and onboarding documents are stored, outside the
+ * @param storageDir   where payslip PDFs, investment proofs, policy PDFs and onboarding files are stored, outside the
  *                     project (dev: Documents/JurisOne). The paths kept in the database are relative to it.
  * @param frontendOrigin the only origin allowed by CORS (the web app)
  * @param jobsEnabled  run the scheduled jobs in this process

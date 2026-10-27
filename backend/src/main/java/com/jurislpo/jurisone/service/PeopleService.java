@@ -58,7 +58,7 @@ public class PeopleService {
     // ───────────────────────── list ─────────────────────────
 
     public record PersonRow(String id, String code, String name, String title, String department, String manager, String location, boolean india, String role,
-                            String status, boolean access, String dateOfJoining, boolean canToggle, Long photo) {}
+                            String status, boolean access, String dateOfJoining, boolean canToggle, Long photo, String onboardingStatus) {}
 
     public record DepartmentSummary(String id, String name) {}
 
@@ -300,14 +300,14 @@ public class PeopleService {
                     PeopleRules.locationOfTimeZone((String) current.get("time_zone")).value(), current.get("joining_office") == null ? "" : (String) current.get("joining_office"),
                     "", "", "", "", (String) current.get("designation"), current.get("department_id") == null ? "" : current.get("department_id").toString(),
                     current.get("reporting_manager_id") == null ? "" : current.get("reporting_manager_id").toString(),
-                    ((Date) current.get("date_of_joining")).toLocalDate().toString(), shift, currentRole);
+                    ((Date) current.get("date_of_joining")).toLocalDate().toString(), shift, currentRole, null);
         } else {
             DepartmentOption department = locked != null ? (departments.isEmpty() ? null : departments.get(0))
                     : departments.stream().filter(d -> !List.of("Human Resources", "Finance").contains(d.name())).findFirst().orElse(departments.isEmpty() ? null : departments.get(0));
             RoleRow role = allowed.stream().filter(r -> employeeRole != null && r.id().equals(employeeRole.id())).findFirst().orElse(allowed.isEmpty() ? null : allowed.get(0));
             String manager = locked != null ? user.id().toString() : department == null ? null : department.headId();
             defaults = new EmployeeInput("", "", "", "", "", "+91", "", "", "", "", "", "", "", "", department == null ? "" : department.id(), manager == null ? "" : manager,
-                    Format.todayIn(IST).toString(), "IN_NIGHT", role == null ? "" : role.id());
+                    Format.todayIn(IST).toString(), "IN_NIGHT", role == null ? "" : role.id(), true);
         }
         Editing editing = current == null ? null : new Editing((String) current.get("code"), (String) current.get("full_name"),
                 new Last4((String) current.get("phone_last4"), (String) current.get("pan_last4"), (String) current.get("aadhaar_last4"), (String) current.get("uan_last4")),
@@ -329,6 +329,11 @@ public class PeopleService {
 
     /** employeeInput (zod): trims, lower-cases email, upper-cases PAN; first failing field wins, in schema order. */
     static EmployeeInput parse(EmployeeInput input) {
+        return parse(input, true);
+    }
+
+    /** {@code isFatherNameRequired} is false for an HR-created onboarding: the employee gives it in the wizard. */
+    private static EmployeeInput parse(EmployeeInput input, boolean isFatherNameRequired) {
         java.util.function.BiFunction<String, String, String> trimOrEmpty = (v, f) -> v == null ? "" : v.trim();
         String first = trimOrEmpty.apply(input.firstName(), "firstName");
         if (first.isEmpty()) throw bad("First name is required");
@@ -337,7 +342,7 @@ public class PeopleService {
         if (last.isEmpty()) throw bad("Last name is required");
         for (String name : List.of(first, middle, last)) if (name.length() > 60) throw bad("Keep each name under 60 characters");
         String father = trimOrEmpty.apply(input.fatherName(), "fatherName");
-        if (father.length() < 2) throw bad("Father’s name is required");
+        if (father.length() < 2 && (isFatherNameRequired || !father.isEmpty())) throw bad("Father’s name is required");
         if (father.length() > 120) throw bad("Too big: expected string to have <=120 characters");
         String email = trimOrEmpty.apply(input.email(), "email").toLowerCase();
         if (email.length() > 200) throw bad("Too big: expected string to have <=200 characters");
@@ -370,7 +375,7 @@ public class PeopleService {
         String shift = input.shift() == null || input.shift().isBlank() ? ("IN_IST".equals(location) ? "IN_NIGHT" : "US_DAY") : Check.oneOf(input.shift(), List.of("IN_NIGHT", "IN_DAY", "US_DAY"));
         String roleId = Check.uuid(input.roleId(), "Pick a role").toString();
         return new EmployeeInput(first, middle, last, father, email, phoneCountry, phone, location, office, pan, aadhaar, uan, address, designation, departmentId,
-                managerId, dateOfJoining, shift, roleId);
+                managerId, dateOfJoining, shift, roleId, Boolean.TRUE.equals(input.isOnboardingRequired()));
     }
 
     private static UserException bad(String message) {
@@ -380,16 +385,16 @@ public class PeopleService {
     public record Saved(String id, String code, String message) {}
 
     public Saved save(CurrentUser user, EmployeeInput input, String editIdRaw, String ipAddress) {
-        return save(user, input, editIdRaw, ipAddress, true);
+        return save(user, input, editIdRaw, ipAddress, true, true);
     }
 
-    /** Adds an employee from a verified onboarding: portal access off and no invite yet (HR turns access on later). */
-    public Saved addWithoutAccess(CurrentUser user, EmployeeInput input, String ipAddress) {
-        return save(user, input, null, ipAddress, false);
+    /** Creates the employee of an HR-started onboarding: the add-employee rules, except that the father's name is left to the employee. */
+    public Saved createForOnboarding(CurrentUser user, EmployeeInput input, String ipAddress) {
+        return save(user, input, null, ipAddress, true, false);
     }
 
-    private Saved save(CurrentUser user, EmployeeInput input, String editIdRaw, String ipAddress, boolean access) {
-        EmployeeInput employeeInput = parse(input);
+    private Saved save(CurrentUser user, EmployeeInput input, String editIdRaw, String ipAddress, boolean access, boolean isFatherNameRequired) {
+        EmployeeInput employeeInput = parse(input, isFatherNameRequired);
         Actor actor = actors.actor(user);
         boolean editing = editIdRaw != null && !editIdRaw.isEmpty();
         Map<String, Object> current = null;
@@ -403,6 +408,7 @@ public class PeopleService {
         boolean hadManager = current != null && current.get("reporting_manager_id") != null;
         for (int step = 1; step <= 3; step++) {
             Map<String, String> errs = PeopleRules.stepErrors(step, employeeInput, editing, hadManager);
+            if (!isFatherNameRequired) errs.remove("fatherName");
             if (!errs.isEmpty()) throw new UserException(errs.values().iterator().next());
         }
 
@@ -524,10 +530,11 @@ public class PeopleService {
             String code = nextCode();
             codeOut[0] = code;
             repo.insertEmployee(id, code, fullName, employeeInput.firstName(), employeeInput.middleName().isEmpty() ? null : employeeInput.middleName(), employeeInput.lastName(), employeeInput.joiningOffice().isEmpty() ? null : employeeInput.joiningOffice(),
-                    employeeInput.fatherName(), email, employeeInput.designation(), employeeInput.departmentId(), managerId, employeeInput.roleId(), Date.valueOf(employeeInput.dateOfJoining()),
+                    employeeInput.fatherName().isEmpty() ? null : employeeInput.fatherName(), email, employeeInput.designation(), employeeInput.departmentId(), managerId, employeeInput.roleId(), Date.valueOf(employeeInput.dateOfJoining()),
                     location.timeZone(), location.region(), shiftId, PeopleRules.initialStatus(LocalDate.parse(employeeInput.dateOfJoining()), today).name(), access, user.id());
             repo.updatePii(id, piiCols);
             repo.insertUser(id);
+            repo.insertOnboarding(UUID.randomUUID(), id, Boolean.TRUE.equals(employeeInput.isOnboardingRequired()));
             // the TS audit: { code, ...data without *Enc, piiProvided }
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("code", code);

@@ -152,11 +152,22 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         String id = saved.at("/data/id").asText();
 
         assertThat(jdbc.queryForObject("SELECT status::text FROM employees WHERE id = ?::uuid", String.class, id)).isEqualTo("ONBOARDING");
+        // onboarding is not required by default (immediate access); the list row says where it stands
+        assertThat(jdbc.queryForObject("SELECT status FROM employee_onboardings WHERE employee_id = ?::uuid", String.class, id)).isEqualTo("NOT_REQUIRED");
+        mockMvc.perform(get("/api/people?search=Meera").cookie(hrCookie)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rows[?(@.id=='" + id + "')].onboardingStatus").value(org.hamcrest.Matchers.contains("NOT_REQUIRED")));
+        // HR can ask for onboarding when adding
+        String requiredEmail = "required." + UUID.randomUUID().toString().substring(0, 6) + "@example.com";
+        String requiredId = json.readTree(mockMvc.perform(write(post("/api/people")).cookie(hrCookie)
+                .content(body.replace(email.toUpperCase(), requiredEmail).replace("\"roleId\"", "\"isOnboardingRequired\":true,\"roleId\""))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString())
+                .at("/data/id").asText();
+        assertThat(jdbc.queryForObject("SELECT status FROM employee_onboardings WHERE employee_id = ?::uuid", String.class, requiredId)).isEqualTo("NOT_STARTED");
         assertThat(jdbc.queryForObject("SELECT email FROM employees WHERE id = ?::uuid", String.class, id)).isEqualTo(email);
         assertThat(jdbc.queryForObject("SELECT pan_last4 FROM employees WHERE id = ?::uuid", String.class, id)).isEqualTo("234F");
         assertThat(jdbc.queryForObject("SELECT pan_enc FROM employees WHERE id = ?::uuid", String.class, id)).startsWith("v1.").doesNotContain("ABCDE");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ? AND subject LIKE 'Welcome to JurisOne%'", Integer.class, email)).isZero();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE employee_id = ? AND link = '/structures'", Integer.class, finance)).isEqualTo(1);
+        // one per added employee: the first and the one added with onboarding switched off
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE employee_id = ? AND link = '/structures'", Integer.class, finance)).isEqualTo(2);
         JsonNode audit = json.readTree(jdbc.queryForObject("SELECT after::text FROM audit_log WHERE action = 'employee.create' AND entity_id = ?", String.class, id));
         assertThat(audit.get("dateOfJoining").asText()).isEqualTo("2031-10-12T00:00:00.000Z");
         assertThat(audit.has("panEnc")).isFalse();
