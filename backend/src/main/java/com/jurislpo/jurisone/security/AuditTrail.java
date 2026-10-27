@@ -25,6 +25,8 @@ public final class AuditTrail {
             Pattern.compile("^/api/.*/pdf$"),
             Pattern.compile("^/api/.*/download(/.*)?$"),
             Pattern.compile("^/api/people/[^/]+/contact$"),
+            Pattern.compile("^/api/people/[^/]+/onboarding(/.*)?$"),   // an employee's onboarding data and files, read by HR
+            Pattern.compile("^/api/people/[^/]+/documents/[^/]+/file$"),
             Pattern.compile("^/api/people/[^/]+$"),            // an employee's profile (masked identity numbers, salary for finance)
             Pattern.compile("^/api/letters/[^/]+$"),           // one issued letter's text
             Pattern.compile("^/api/letters/mine$"),
@@ -41,9 +43,6 @@ public final class AuditTrail {
     /** Written through its own endpoint (the page-view row replaces the request row). */
     private static final String[] SKIP = {"/api/audit/page-views"};
 
-    /** A candidate's one-time link: that path segment is a credential and is stored as {token}. */
-    private static final Pattern TOKEN_PATH = Pattern.compile("^(/api/public/onboardings/)[^/]+(.*)$");
-
     public static boolean isRecorded(String method, String path) {
         if (!path.startsWith("/api/")) return false;
         for (String skipPath : SKIP) if (path.equals(skipPath)) return false;
@@ -53,10 +52,9 @@ public final class AuditTrail {
         return false;
     }
 
-    /** The path as stored: secrets in it replaced, length capped. */
+    /** The path as stored, length capped. */
     public static String storedPath(String path) {
-        String maskedPath = TOKEN_PATH.matcher(path).replaceFirst("$1{token}$2");
-        return maskedPath.length() > 300 ? maskedPath.substring(0, 300) : maskedPath;
+        return path.length() > 300 ? path.substring(0, 300) : path;
     }
 
     /** a***@example.com: enough to spot who tried, not enough to harvest addresses. */

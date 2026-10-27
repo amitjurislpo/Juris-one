@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.controller;
 
+import com.jurislpo.jurisone.service.EmployeeOnboardingService;
 import com.jurislpo.jurisone.service.ShellService;
 import com.jurislpo.jurisone.service.SubscriptionService;
 import com.jurislpo.jurisone.common.ApiResult;
@@ -18,12 +19,15 @@ public class CurrentUserController {
     private final ShellService shell;
     private final SubscriptionService subscriptions;
     private final com.jurislpo.jurisone.service.PolicyService policies;
+    private final EmployeeOnboardingService onboarding;
 
-    public CurrentUserController(Auth auth, ShellService shell, SubscriptionService subscriptions, com.jurislpo.jurisone.service.PolicyService policies) {
+    public CurrentUserController(Auth auth, ShellService shell, SubscriptionService subscriptions, com.jurislpo.jurisone.service.PolicyService policies,
+                                 EmployeeOnboardingService onboarding) {
         this.auth = auth;
         this.shell = shell;
         this.subscriptions = subscriptions;
         this.policies = policies;
+        this.onboarding = onboarding;
     }
 
     /**
@@ -38,14 +42,16 @@ public class CurrentUserController {
         // "can use the app at all": a running or an ended (read-only) subscription; false before it starts or without one
         Boolean usable = user.businessId() == null ? null : readOnly || subscriptions.isActive(user.businessId());
         return ApiResult.success(new MeResponse(user, user.landingPath(), usable, readOnly, java.util.List.copyOf(new java.util.TreeSet<>(subscriptions.activeModules(user.businessId()))),
-                readOnly ? 0 : policies.pendingCount(user)));
+                readOnly ? 0 : policies.pendingCount(user), onboarding.summary(user.id())));
     }
 
     /**
      * {@code modules}: modules the business can use today (empty for the super admin or without an active subscription).
      * {@code pendingPolicies}: published policies the user still has to accept before using JurisOne.
+     * {@code onboarding}: {@code {status, isRequired}} of the employee onboarding wizard ({@code isRequired}: show the wizard before anything else).
      */
-    public record MeResponse(CurrentUser user, String landing, Boolean subscriptionActive, boolean readOnly, java.util.List<String> modules, int pendingPolicies) {}
+    public record MeResponse(CurrentUser user, String landing, Boolean subscriptionActive, boolean readOnly, java.util.List<String> modules, int pendingPolicies,
+                             EmployeeOnboardingService.Summary onboarding) {}
 
     @GetMapping("/shell")
     public ApiResult<ShellService.Shell> shell() {

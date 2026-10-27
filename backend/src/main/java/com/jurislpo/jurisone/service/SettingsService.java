@@ -30,12 +30,9 @@ public class SettingsService {
             "tax.policy", """
                 {"financialYear":"2026-27","regimeChangeUntil":"2027-01-31","proofWindowFrom":"2026-04-01","proofWindowUntil":"2027-01-31","maxProofMb":5}""",
             "company", """
-                {"name":"Juris Consultants","address":"[Registered office address]"}""",
-            "onboarding.policy", """
-                {"requiredDocs":["ID_PROOF","ADDRESS_PROOF","PAN","AADHAAR","SALARY_SLIP"]}""");
+                {"name":"Juris Consultants","address":"[Registered office address]"}""");
 
-    public static final List<String> KEYS = List.of("attendance.policy", "employee.policy", "auth.policy", "payroll.policy", "tax.policy", "company",
-            "onboarding.policy");
+    public static final List<String> KEYS = List.of("attendance.policy", "employee.policy", "auth.policy", "payroll.policy", "tax.policy", "company");
 
     public record AuthPolicy(int maxFailedAttempts, int lockMinutes, int ipWindowMinutes, int ipMaxAttempts) {}
 
@@ -52,9 +49,6 @@ public class SettingsService {
 
     /** {@code tan} / {@code pan}: the deductor's tax numbers for Form 16 (optional; absent until Finance sets them). */
     public record Company(String name, String address, String tan, String pan) {}
-
-    /** Documents a new onboarding asks for unless HR changes the list for that candidate. */
-    public record OnboardingPolicy(List<String> requiredDocs) {}
 
     private final SettingsRepository repo;
     private final ObjectMapper json;
@@ -92,7 +86,6 @@ public class SettingsService {
     public PayrollPolicy payroll() { return get("payroll.policy", PayrollPolicy.class); }
     public TaxPolicy tax() { return get("tax.policy", TaxPolicy.class); }
     public Company company() { return get("company", Company.class); }
-    public OnboardingPolicy onboarding() { return get("onboarding.policy", OnboardingPolicy.class); }
 
     /** Saves the current business's value for a key (replaces it). */
     public void save(String key, JsonNode value) {

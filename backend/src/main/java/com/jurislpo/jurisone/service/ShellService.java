@@ -38,13 +38,16 @@ public class ShellService {
      * is not active the app shows the "subscription ended" screen instead of the pages.
      */
     public record Shell(ShellUser currentUser, List<NavGroup> groups, Map<String, Integer> badges, List<ShellNote> notes, int unread, String landing, boolean canSelf,
-                        String businessName, com.jurislpo.jurisone.service.SubscriptionService.Current subscription) {}
+                        String businessName, com.jurislpo.jurisone.service.SubscriptionService.Current subscription,
+                        EmployeeOnboardingService.Summary onboarding) {}
 
     private final ShellRepository repo;
     private final com.jurislpo.jurisone.service.SubscriptionService subscriptions;
     private final InboxService inbox;
+    private final EmployeeOnboardingService onboarding;
 
-    public ShellService(ShellRepository repo, com.jurislpo.jurisone.service.SubscriptionService subscriptions, InboxService inbox) {
+    public ShellService(ShellRepository repo, com.jurislpo.jurisone.service.SubscriptionService subscriptions, InboxService inbox, EmployeeOnboardingService onboarding) {
+        this.onboarding = onboarding;
         this.repo = repo;
         this.inbox = inbox;
         this.subscriptions = subscriptions;
@@ -91,7 +94,8 @@ public class ShellService {
         badges.put("myTasks", user.businessId() != null && user.navAllowed("my-tasks") ? repo.countMyTasksDueByToday(user.id()) : 0);
         String businessName = user.businessId() == null ? null : repo.businessName(user.businessId());
         var subscription = user.businessId() == null ? null : subscriptions.current(user.businessId());
-        return new Shell(shellUser, new ArrayList<>(groups.values()), badges, notes, unread, user.landingPath(), user.perms().contains("self"), businessName, subscription);
+        return new Shell(shellUser, new ArrayList<>(groups.values()), badges, notes, unread, user.landingPath(), user.perms().contains("self"), businessName, subscription,
+                onboarding.summary(user.id()));
     }
 
     private static int count(Integer count) {

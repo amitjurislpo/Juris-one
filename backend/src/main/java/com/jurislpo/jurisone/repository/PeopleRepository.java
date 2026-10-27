@@ -42,7 +42,8 @@ public class PeopleRepository {
         return jdbc.query("""
             SELECT e.id::text AS id, e.code, e.full_name, e.designation, e.status::text AS status, e.portal_access, e.time_zone, e.region::text AS region,
                    e.role_id::text AS role_id, e.date_of_joining, d.name AS department_name, m.full_name AS manager, r.name AS role_name, r.key AS role_key,
-                   (SELECT u.is_super_admin FROM users u WHERE u.employee_id = e.id) AS super_admin, e.photo_updated_at
+                   (SELECT u.is_super_admin FROM users u WHERE u.employee_id = e.id) AS super_admin, e.photo_updated_at,
+                   (SELECT o.status FROM employee_onboardings o WHERE o.employee_id = e.id) AS onboarding_status
             """ + PeopleQuery.FROM + peopleQuery.where + peopleQuery.orderBy + " LIMIT ? OFFSET ?",
                 (resultSet, i) -> {
                     Target target = new Target(resultSet.getString("id"), resultSet.getString("role_id"), resultSet.getString("role_key"), EmployeeStatus.valueOf(resultSet.getString("status")),
@@ -51,8 +52,14 @@ public class PeopleRepository {
                             resultSet.getString("department_name") == null ? "—" : resultSet.getString("department_name"), resultSet.getString("manager") == null ? "—" : resultSet.getString("manager"),
                             PeopleRules.locationOfTimeZone(resultSet.getString("time_zone")).label(), "IN".equals(resultSet.getString("region")), resultSet.getString("role_name"),
                             resultSet.getString("status"), resultSet.getBoolean("portal_access"), resultSet.getDate("date_of_joining").toLocalDate().toString(),
-                            canToggle.test(target), PhotoService.version(resultSet.getTimestamp("photo_updated_at")));
+                            canToggle.test(target), PhotoService.version(resultSet.getTimestamp("photo_updated_at")),
+                            resultSet.getString("onboarding_status") == null ? "NOT_REQUIRED" : resultSet.getString("onboarding_status"));
                 }, args.toArray());
+    }
+
+    /** The wizard row of a new employee: NOT_STARTED when onboarding is required, else NOT_REQUIRED. */
+    public void insertOnboarding(UUID id, UUID employeeId, boolean isRequired) {
+        jdbc.update("INSERT INTO employee_onboardings (id, employee_id, status) VALUES (?, ?, ?)", id, employeeId, isRequired ? "NOT_STARTED" : "NOT_REQUIRED");
     }
 
     /** How many rows the query matches in all. */

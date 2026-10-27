@@ -3,6 +3,8 @@
 | Version | Date | What changed | Requested by |
 |---|---|---|---|
 | 1.0 | 2026-10-23 | Initial version | Owner |
+| 2.0 | 2026-10-27 | Section 12 rewritten: the employee onboarding wizard replaces onboarding by link (FR-ONB-1 to FR-ONB-6) | Owner |
+| 3.0 | 2026-10-27 | Onboarding needs HR approval: statuses CHANGES_REQUESTED and APPROVED replace REOPENED, hard lock of the portal until approved, add-employee no longer asks for onboarding by default (FR-ONB-1, FR-ONB-6, FR-ONB-7, FR-ONB-8) | Owner |
 
 The document version is not the app version. Update this file in the same pull request as any change in behaviour, and raise the version (small change 1.1, new area 2.0).
 Companion documents: `FLOW-JurisOne.md` (diagrams), `FLOW-JurisTrack-JurisOne-Connection.md` (JurisTrack link, master copy in the `juris-track-backend` repo).
@@ -26,7 +28,7 @@ JurisOne is a multi-business HR portal (HRMS) for Indian companies with some US 
 - Web app: React + Vite single page app. The browser talks only to its own origin; `/api/*` is proxied to the API.
 - API: Spring Boot, PostgreSQL 16 with row-level security per business, Flyway migrations V1 to V20 (each with a rollback script).
 - Jobs run inside the API every 10 minutes (and once 15 seconds after start), one instance at a time (database advisory lock), business by business.
-- Email (sign-in code, decisions, payslips, onboarding link, letters, subscription warnings). Files (proofs, policy PDFs, onboarding documents, task attachments, payslip and letter PDFs) are kept in the storage folder.
+- Email (sign-in code, decisions, payslips, letters, subscription warnings). Files (proofs, policy PDFs, onboarding attachments, task attachments, payslip and letter PDFs) are kept in the storage folder.
 - The API enforces all permissions. Hiding things in the web app is cosmetic.
 - Success answers are `{ok, message?, data?}`. Errors are RFC 7807 problem details (`status`, `code`, `detail`, `errors[]`, `traceId`).
 
@@ -38,7 +40,6 @@ JurisOne is a multi-business HR portal (HRMS) for Indian companies with some US 
 | Business | **Owner** (a.k.a. sub admin, Admin; role key `owner`) | Runs the business. Has every permission except `self` (no attendance, leave or payslips of their own). Can view roles but not change them. |
 | Business | HR Manager, HR Executive, Finance Manager, Finance Executive, Employee, plus any template the super admin adds | As in the matrix below. |
 | Anyone | **Manager** (a relationship, not a role) | Anyone with active direct reports gets My team and Team tasks. Managers do not approve anything; HR does. |
-| Outside | **Candidate** (public link) | Fills the onboarding form and uploads documents through `/onboard/{token}`. No account. |
 
 ### 3.1 Permission keys
 
@@ -146,7 +147,7 @@ Y = has it. Using tasks needs no permission; only `projects.create` and `tasks.m
 ### 4.5 Notifications (module NOT)
 
 - **FR-NOT-1** The bell and the `/notifications` page list unread first; mark one or all as read. Notifications about policies stay until the policy is accepted and cannot be marked read or unread by hand. The notification card also appears on Home.
-- **FR-NOT-2** Bell texts are stored in English with the data filled in. Email is sent only for: sign-in code, leave decision, regularization decision, payslip published, onboarding link, letter issued, subscription warnings, and a note to a person who is blocked from receiving a code. Tasks send **no** email.
+- **FR-NOT-2** Bell texts are stored in English with the data filled in. Email is sent only for: sign-in code, leave decision, regularization decision, payslip published, letter issued, subscription warnings, and a note to a person who is blocked from receiving a code. Tasks send **no** email.
 - **FR-NOT-3** (see 4.6) The web app shows bell texts in the reader's language.
 - **FR-NOT-4** Marking notifications read is still allowed in read-only mode.
 
@@ -181,7 +182,7 @@ Y = has it. Using tasks needs no permission; only `projects.create` and `tasks.m
 - **FR-PEO-10** Profile photo: JPEG, PNG or WebP up to 400 KB, type checked from the file's bytes. The employee sets or removes their own (`/api/profile/photo`); HR and the Owner do it for anyone they may edit, never for a past employee. Anyone signed in to the business can read it (cached one hour). Audited without image bytes.
 - **FR-DEP-1** Departments (`dept.manage`): unique name, optional head (current employee), description (300 characters). Deleting is allowed only with no current employees. List with search, sort, headcount, created-by.
 - **FR-DIR-1** Directory (`dir`): search any employee, past or present; shows only name, official email, designation and Active or Past employee; filters department and Active/Past.
-- **FR-PRO-1** My profile: the employee edits their own allowed fields (`profile.self_update`) and photo, and sees their onboarding documents.
+- **FR-PRO-1** My profile: the employee edits their own allowed fields (`profile.self_update`) and photo, and sees their onboarding files.
 - **FR-TEAM-1** My team (anyone with active direct reports): table with today's status, KPIs (size, checked in, on leave, not in yet), "who's away" week view. Managers approve nothing.
 
 **Data kept:** employees (encrypted PII plus last-4 digits), users (last login), sessions, login history, departments, role links.
@@ -276,15 +277,19 @@ Y = has it. Using tasks needs no permission; only `projects.create` and `tasks.m
 
 **Audit:** announcement.*, asset.create / update / delete / assign / return, letter.issue, letter_template.create / update.
 
-## 12. Onboarding by link
+## 12. Employee onboarding wizard
 
-**Screens:** Onboarding list and review (`people.add`); public `/onboard/{token}`.
+**Screens:** the six-step wizard and Information Summary (the new employee); onboarding status in the Employees list and a read-only view of the submitted data and files (HR).
 
-- **FR-ONB-1** HR starts an onboarding: candidate name, personal email, planned role, department, manager, joining date. One open onboarding per email. The candidate gets an email with a one-time link valid 7 days; HR can resend (a new link; the old stops working; only its hash is stored).
-- **FR-ONB-2** The candidate saves a guided form in parts (personal, identity PAN/Aadhaar/UAN, address, bank, previous employer, emergency contact) and uploads documents (PDF, JPG or PNG; up to the size and count limits). Required documents default to ID proof, address proof, PAN, Aadhaar, last 3 salary slips; the list is per business and can be changed per candidate. Answers are stored encrypted. Submission needs a complete form and every required document.
-- **FR-ONB-3** Statuses: INVITED, IN_PROGRESS, SUBMITTED, CHANGES_REQUESTED, VERIFIED, ADDED, or CANCELLED. HR verifies or rejects each document (a rejection needs a comment the candidate sees); sends the onboarding back with a comment (a new link is emailed); marks it VERIFIED only when no document is pending and every required kind has enough verified files.
-- **FR-ONB-4** HR (`people.add`) then adds the employee from the verified data (work email, role, department, shift, manager, joining date). Portal access starts **off**; HR turns it on, after which the person signs in with the emailed code and accepts policies. Verified documents move to the employee record.
-- **FR-ONB-5** Link errors: unknown 404 "This link isn't valid"; expired 404; closed 410 / "You've already submitted". Every step is audited; the candidate's submit is audited with no actor. HR is notified when a candidate submits.
+- **FR-ONB-1** When HR adds an employee with the add-employee form, onboarding is off by default (status NOT_REQUIRED, immediate access); `isOnboardingRequired: true` sets NOT_STARTED. Employees that existed before the wizard are NOT_REQUIRED. Statuses: NOT_REQUIRED, NOT_STARTED, IN_PROGRESS, SUBMITTED (waiting for HR), CHANGES_REQUESTED (HR sent it back), APPROVED. `isRequired` is true in NOT_STARTED, IN_PROGRESS, SUBMITTED and CHANGES_REQUESTED. The shell and `/api/me` carry `onboarding: {status, isRequired}`; while `isRequired` is true the app sends the employee to the wizard (or, when SUBMITTED, to a read-only waiting page) after the emailed-code sign-in.
+- **FR-ONB-2** Six steps: personal (with addresses, emergency contact, education, courses), previous employment, accounts & statutory (bank, PF, PAN, Aadhaar, passport), family (guardian for minors), nominations (EPF, EPS, ESI, gratuity), attachments. Each step is validated by the server (field errors keyed by JSON path, 422, nothing saved when invalid) and saved on its own; the employee resumes at the saved step.
+- **FR-ONB-3** Nominations: a single nominee is 100 %, several add up to 100 %, a member appears once per block, EPS and ESI have one nominee. Removing a family member removes the nominations that point at him.
+- **FR-ONB-4** Bank account number, PAN, Aadhaar and UAN are stored encrypted and returned masked; the employee reads the full values only through the secrets endpoint (audited). HR sees them masked, with no way to reveal them.
+- **FR-ONB-5** Upload slots follow the entered data (permanent and present address, one per qualification, one per previous employment, bank, PAN, Aadhaar, passport when a passport number was entered). Allowed pdf, doc, docx, jpg, png, up to 10 MB, checked by extension and content; stored under `onboarding-forms/<YYYY-MM>/<employeeCode>/<slot>/`. Removing an education or employment removes its files from disk too.
+- **FR-ONB-6** Submission checks every step and every mandatory slot (422 lists all that is missing), sets SUBMITTED and makes the data read-only: every write answers 409 until HR decides. A submission from CHANGES_REQUESTED is a resubmission and clears HR's comment and flags. Everyone with `people.add` gets a bell notification. HR (`people.view`) reads the data and downloads the files. Step saves, submission, HR decisions and secret reads are audited. The earlier pre-hire onboarding by link (candidate token, HR document review) no longer exists.
+
+- **FR-ONB-7** HR approval: only HR with `people.add` decides, and only on a SUBMITTED onboarding (409 otherwise, 404 when the employee has no onboarding or belongs to another business). `POST /api/people/{id}/onboarding/approvals` sets APPROVED and opens the portal. `POST /api/people/{id}/onboarding/rejections` takes an overall comment and at least one flag `{section, comment}` (sections PERSONAL, ADDRESS, QUALIFICATIONS, EMPLOYMENT, ACCOUNTS, FAMILY, NOMINATIONS, ATTACHMENTS, each once) and sets CHANGES_REQUESTED; the employee edits and submits again. The employee gets a bell notification and an email for both decisions (the email lists the flagged sections with HR's comments). Both are audited (`onboarding.approved`, `onboarding.changes_requested`). The earlier "reopen" action no longer exists.
+- **FR-ONB-8** Hard lock: while the onboarding is NOT_STARTED, IN_PROGRESS, SUBMITTED or CHANGES_REQUESTED the server answers 403 (problem type and title `onboarding-pending`) on every `/api/**` call of that employee except sign-in, sign-out and refresh, `/api/me`, `/api/shell`, `/api/onboarding/**`, reading `/api/notifications`, the own profile photo and the page-view log. The super admin and employees with no onboarding row (or NOT_REQUIRED, APPROVED) are never locked.
 
 ## 13. Tasks and projects
 

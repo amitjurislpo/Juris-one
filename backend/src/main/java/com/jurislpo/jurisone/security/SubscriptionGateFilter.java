@@ -34,8 +34,7 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
             + "Please contact your administrator to renew.";
 
     /** Reachable with no usable subscription at all (not started / none). */
-    static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell",
-            "/api/public/onboardings/"); // a candidate link: the service checks that business itself
+    static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell");
     /** Still writable once the subscription has ended. */
     static final List<String> WRITABLE_WHEN_ENDED = List.of("/api/auth/", "/api/notifications", "/api/audit/page-views"); // page views are only recorded
 
