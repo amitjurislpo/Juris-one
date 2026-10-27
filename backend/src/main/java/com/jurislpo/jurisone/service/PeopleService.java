@@ -307,7 +307,7 @@ public class PeopleService {
             RoleRow role = allowed.stream().filter(r -> employeeRole != null && r.id().equals(employeeRole.id())).findFirst().orElse(allowed.isEmpty() ? null : allowed.get(0));
             String manager = locked != null ? user.id().toString() : department == null ? null : department.headId();
             defaults = new EmployeeInput("", "", "", "", "", "+91", "", "", "", "", "", "", "", "", department == null ? "" : department.id(), manager == null ? "" : manager,
-                    Format.todayIn(IST).toString(), "IN_NIGHT", role == null ? "" : role.id(), true);
+                    Format.todayIn(IST).toString(), "IN_NIGHT", role == null ? "" : role.id(), false);
         }
         Editing editing = current == null ? null : new Editing((String) current.get("code"), (String) current.get("full_name"),
                 new Last4((String) current.get("phone_last4"), (String) current.get("pan_last4"), (String) current.get("aadhaar_last4"), (String) current.get("uan_last4")),
