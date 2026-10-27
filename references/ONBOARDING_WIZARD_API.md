@@ -26,7 +26,7 @@ Steps are numbered 1..6: 1 personal, 2 employment, 3 statutory, 4 family, 5 nomi
 | `GET /api/people/{id}/onboarding/attachments/{fileId}/file?download=true|false` | HR streams/downloads one of the employee's onboarding files (same permission as `GET /api/people/{id}/onboarding`; 404 if the file is not that employee's) |
 | `GET /api/people/{id}/documents` (+ `/{docId}/file`) | unchanged URLs; now list the employee's onboarding files as `{id, kind: slotKey, label: slot title, fileName, uploadedAt}` |
 | `GET /api/people` | every row gets `onboardingStatus` (`NOT_REQUIRED` when the employee has no wizard row) |
-| `POST /api/people` | body accepts `isOnboardingRequired` (boolean, default true): false creates the employee as `NOT_REQUIRED` |
+| `POST /api/people` | body accepts `isOnboardingRequired` (boolean, default false): false creates the employee as `NOT_REQUIRED` |
 | `GET /api/shell` and `GET /api/me` | `data.onboarding = { status, isRequired }`; `isRequired` is true for NOT_STARTED / IN_PROGRESS / REOPENED: redirect to the wizard |
 
 Responses use the repo's wrapper: `{ ok, message?, data }`; everything in this file is the `data` part. `POST .../submission` answers 201 with the payload (status SUBMITTED).
