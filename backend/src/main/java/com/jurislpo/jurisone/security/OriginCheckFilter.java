@@ -1,6 +1,7 @@
 package com.jurislpo.jurisone.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jurislpo.jurisone.config.JurisOneProperties;
 import com.jurislpo.jurisone.exception.Problems;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -16,7 +17,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * CSRF guard (assertSameOrigin): a mutating /api request must carry an Origin whose host equals
- * X-Forwarded-Host, or Host. Together with SameSite=Lax session cookies this is the app's CSRF defence.
+ * the configured web origin ({@code jurisone.frontend-origin}); client-supplied Host headers are not trusted. Together with SameSite=Lax session cookies this is the app's CSRF defence.
  */
 @Component
 public class OriginCheckFilter extends OncePerRequestFilter {
@@ -25,9 +26,11 @@ public class OriginCheckFilter extends OncePerRequestFilter {
     private static final Set<String> SAFE = Set.of("GET", "HEAD", "OPTIONS");
 
     private final ObjectMapper json;
+    private final String allowedHost;
 
-    public OriginCheckFilter(ObjectMapper json) {
+    public OriginCheckFilter(ObjectMapper json, JurisOneProperties props) {
         this.json = json;
+        this.allowedHost = hostOf(props.frontendOrigin());
     }
 
     @Override
@@ -38,8 +41,7 @@ public class OriginCheckFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         String origin = request.getHeader("origin");
-        String host = request.getHeader("x-forwarded-host") != null ? request.getHeader("x-forwarded-host") : request.getHeader("host");
-        if (origin == null || host == null || !host.equalsIgnoreCase(hostOf(origin))) {
+        if (origin == null || !allowedHost.equalsIgnoreCase(hostOf(origin))) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
             json.writeValue(response.getOutputStream(), Problems.of(HttpStatus.FORBIDDEN, "CROSS_SITE_BLOCKED", MESSAGE, request.getRequestURI()));

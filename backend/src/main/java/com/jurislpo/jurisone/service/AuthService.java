@@ -211,9 +211,34 @@ public class AuthService {
         if (employee == null || !otps.verify(email, code.trim())) {
             limiter.hit(ipKey, policy.ipWindowMinutes() * 60_000L);
             history(employee, email, false, "bad_otp", meta);
+            if (employee != null) lockAfterTooManyFailures(employee, policy, meta);
             throw fail(BAD_OTP);
         }
         return completeSignIn(employee, email, remember, next, meta);
+    }
+
+    /**
+     * Counts a wrong code against the account; after {@code maxFailedAttempts} in a row the account is locked for
+     * {@code lockMinutes} (the count restarts and a success clears it). The answer to the caller stays the same.
+     */
+    private void lockAfterTooManyFailures(Employee employee, AuthPolicy policy, RequestMeta meta) {
+        Instant lockedUntil = transactionTemplate.execute(transactionStatus -> {
+            User user = repo.findUser(employee.getId());
+            if (user == null) {
+                user = new User();
+                user.setEmployeeId(employee.getId());
+                repo.persistUser(user);
+            }
+            user.setFailedAttempts(user.getFailedAttempts() + 1);
+            if (user.getFailedAttempts() < policy.maxFailedAttempts()) return null;
+            user.setFailedAttempts(0);
+            user.setLockedUntil(Instant.now().plus(policy.lockMinutes(), ChronoUnit.MINUTES).truncatedTo(ChronoUnit.MILLIS));
+            return user.getLockedUntil();
+        });
+        if (lockedUntil != null) {
+            audit.log(employee.getId(), "auth.account_locked", "session", employee.getId().toString(), null,
+                    Map.of("lockedUntil", lockedUntil.toString(), "identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(employee.getEmail())), meta.ipAddress());
+        }
     }
 
     /** Ends this device's session: the one in the access token, else the refresh cookie's. */
