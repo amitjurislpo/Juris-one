@@ -63,6 +63,15 @@ Add new lines at the bottom of the right section. Hindi, Hinglish or English are
 
 ## Requirements (add yours here)
 
+- **Security: the application must be theft-proof.** No outsider or third-party application may get into the system, read its data or change it. Every new endpoint and every change to an old one is checked against this list (both repos):
+  - **SQL injection:** never build SQL by joining text with user input. Use bound parameters only (`?` / named parameters); where a column, sort field or table name must vary, pick it from a fixed allow-list in code. Same for any other interpreter (shell commands, file paths, LDAP, templates).
+  - **Input:** every request body, query parameter, path variable, header and uploaded file is validated on the server (type, length, format, allowed values); the browser's checks are only for comfort. Uploads: check type and size, store outside the web root under a generated name, never run or serve them as code.
+  - **Output (XSS):** no `dangerouslySetInnerHTML` or raw HTML from data; React's escaping stays on. Responses carry the security headers (CSP, `X-Content-Type-Options`, `X-Frame-Options`/frame-ancestors, HSTS in upper environments).
+  - **Who may do what:** the API checks permission and business (tenant) on every call, using the signed-in user, never an id the client sends. A user must not be able to read or change another business's or another person's data by changing an id in the URL (IDOR). Hidden buttons are not security.
+  - **Third-party applications:** no API, database, storage or admin port is open to anyone but the app itself. Only our own web origin may call the API (CORS allow-list, no `*`). A third-party or service-to-service caller (for example JurisTrack) gets its own signed credential with the smallest permissions it needs, can be revoked, and every call it makes is audited. No shared or hard-coded secrets in code.
+  - **Sessions and sign-in:** cookies are `HttpOnly`, `Secure` (upper environments) and `SameSite`; state-changing calls are protected against CSRF; sign-in codes are one-use, short-lived and rate-limited per account as well as per IP; failed attempts are logged and lock the account for a while.
+  - **Secrets and personal data:** secrets come from the server environment only, never from git, logs or error messages. Sensitive fields (PAN, Aadhaar, bank account) stay encrypted at rest and are masked in lists, logs and audit entries. Errors shown to the user never reveal SQL, stack traces or internals.
+  - **Dependencies and checks:** keep libraries updated; run the dependency audit (`npm audit`, Maven dependency check) before a release. A new endpoint that takes user input gets a test that sends hostile input (SQL, script, oversized, wrong tenant) and expects a refusal. Any security finding is fixed before other work, and every refusal or suspicious call lands in the audit log.
 - 
 
 ## Decisions already taken

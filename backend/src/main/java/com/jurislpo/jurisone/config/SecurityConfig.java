@@ -7,6 +7,7 @@ import com.jurislpo.jurisone.security.PolicyGateFilter;
 import com.jurislpo.jurisone.security.SubscriptionGateFilter;
 import com.jurislpo.jurisone.security.JwtAuthFilter;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -18,6 +19,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.util.matcher.AnyRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -39,9 +42,21 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain apiFilterChain(HttpSecurity http, JwtAuthFilter sessions, OriginCheckFilter origin, SubscriptionGateFilter subscription,
-                               OnboardingGateFilter onboardingGate, PolicyGateFilter policyGate, JsonAuthEntryPoint entryPoint)
+                               OnboardingGateFilter onboardingGate, PolicyGateFilter policyGate, JsonAuthEntryPoint entryPoint,
+                               @Value("${jurisone.env:dev}") String environment)
             throws Exception {
+        boolean isUpperEnvironment = !"dev".equalsIgnoreCase(environment);
         http
+            // The API returns data and files, never pages: nothing may load from or frame its responses. X-Content-Type-Options and
+            // X-Frame-Options are Spring's defaults; HSTS (browsers only honour it over https) is sent in every upper environment.
+            .headers(h -> {
+                h.contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"));
+                h.referrerPolicy(r -> r.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER));
+                h.httpStrictTransportSecurity(hsts -> {
+                    hsts.maxAgeInSeconds(31_536_000).includeSubDomains(true);
+                    if (isUpperEnvironment) hsts.requestMatcher(AnyRequestMatcher.INSTANCE);
+                });
+            })
             .csrf(c -> c.disable())
             .cors(c -> {})
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

@@ -70,8 +70,9 @@ class OtpLoginTest extends IntegrationTest {
                     .andExpect(jsonPath("$.detail").value(AuthService.BAD_OTP));
         }
         limiter.clear();
-        // even the right code no longer works: request a new one
+        // even the right code no longer works: the code is burnt, and five failures also locked the account for a while
         mockMvc.perform(api("/api/auth/session", json(email, "000000"))).andExpect(status().isUnauthorized());
+        jdbc.update("UPDATE users SET locked_until = NULL WHERE employee_id = (SELECT id FROM employees WHERE email = ?)", email);
         mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
         mockMvc.perform(api("/api/auth/session", json(email, "000000"))).andExpect(status().isCreated());
     }

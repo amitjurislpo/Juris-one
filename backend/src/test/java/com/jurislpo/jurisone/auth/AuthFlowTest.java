@@ -108,6 +108,35 @@ class AuthFlowTest extends IntegrationTest {
     }
 
     @Test
+    void accountIsLockedAfterRepeatedWrongCodesEvenForTheRightCodeAndIsAudited() throws Exception {
+        String code = code();
+        UUID id = data.employee(code, mail(code), employeeRole);
+        requestCode(mail(code));
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"11111" + i + "\"}")).andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.detail").value(AuthService.BAD_OTP));
+        }
+        assertThat(jdbc.queryForObject("SELECT locked_until > now() FROM users WHERE employee_id = ?", Boolean.class, id)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'auth.account_locked'", Integer.class, id)).isEqualTo(1);
+        requestCode(mail(code));
+        mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.startsWith("This account is locked")));
+        // the lock ends: the right code works again and clears the count
+        jdbc.update("UPDATE users SET locked_until = now() - interval '1 minute' WHERE employee_id = ?", id);
+        mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(status().isCreated());
+        assertThat(jdbc.queryForObject("SELECT failed_attempts FROM users WHERE employee_id = ?", Integer.class, id)).isZero();
+    }
+
+    @Test
+    void responsesCarryTheSecurityHeaders() throws Exception {
+        mockMvc.perform(get("/api/me")).andExpect(status().isUnauthorized())
+                .andExpect(header().string("Content-Security-Policy", org.hamcrest.Matchers.containsString("frame-ancestors 'none'")))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(header().string("X-Frame-Options", "DENY"))
+                .andExpect(header().string("Referrer-Policy", "no-referrer"));
+    }
+
+    @Test
     void wrongCodeIsRejectedWithoutRevealingWhetherTheAccountExists() throws Exception {
         String code = code();
         data.employee(code, mail(code), employeeRole);
