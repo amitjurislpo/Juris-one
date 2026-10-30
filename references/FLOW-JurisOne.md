@@ -5,6 +5,7 @@
 | 1.0 | 2026-10-23 | Initial version | Owner |
 | 2.0 | 2026-10-27 | Section 4 redrawn for the employee onboarding wizard (no candidate link any more) | Owner |
 | 3.0 | 2026-10-27 | Section 4: HR approval (approve or send back with flags), hard lock until approved | Owner |
+| 3.1 | 2026-10-30 | API versioned: every API path now sits below `/api/v1` (for example `/api/v1/people`, `/api/v1/juris-track/**`); only `/actuator/health` stays unversioned. No change of any rule or flow | Owner |
 
 The document version is not the app version. Update the affected diagram in the same pull request as any change of a flow, and raise the version.
 The diagrams are Mermaid and render on GitHub and in the IDE. Each one says who (role or system) does what, in order, with decisions and error paths. Requirement ids (FR-...) refer to `FRD-JurisOne.md`. The JurisTrack link has its own diagram in `FLOW-JurisTrack-JurisOne-Connection.md`.

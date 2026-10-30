@@ -5,6 +5,7 @@
 | 1.0 | 2026-10-23 | Initial version | Owner |
 | 2.0 | 2026-10-27 | Section 12 rewritten: the employee onboarding wizard replaces onboarding by link (FR-ONB-1 to FR-ONB-6) | Owner |
 | 3.0 | 2026-10-27 | Onboarding needs HR approval: statuses CHANGES_REQUESTED and APPROVED replace REOPENED, hard lock of the portal until approved, add-employee no longer asks for onboarding by default (FR-ONB-1, FR-ONB-6, FR-ONB-7, FR-ONB-8) | Owner |
+| 3.1 | 2026-10-30 | API versioned: every API path now sits below `/api/v1` (for example `/api/v1/people`, `/api/v1/juris-track/**`); only `/actuator/health` stays unversioned. No change of any rule or flow | Owner |
 
 The document version is not the app version. Update this file in the same pull request as any change in behaviour, and raise the version (small change 1.1, new area 2.0).
 Companion documents: `FLOW-JurisOne.md` (diagrams), `FLOW-JurisTrack-JurisOne-Connection.md` (JurisTrack link, master copy in the `juris-track-backend` repo).

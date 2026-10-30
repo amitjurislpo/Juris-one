@@ -1710,7 +1710,7 @@ Each row is ticked only when the Spring module is live, its JUnit tests pass and
 
 ## 14. REST API (after the migration)
 
-Every endpoint lives under `/api` on the Spring Boot API. The browser reaches it through the Next.js `/api/v1/*` rewrite; pages and server actions call it server-side through `src/lib/backend.ts`. Permissions are checked in every controller.
+Every endpoint lives under `/api/v1` on the Spring Boot API. The browser reaches it through the Next.js `/api/v1/*` rewrite; pages and server actions call it server-side through `src/lib/backend.ts`. Permissions are checked in every controller.
 
 ### 14.1 Conventions
 
