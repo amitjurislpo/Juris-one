@@ -16,6 +16,11 @@ public class BusinessRepository {
         this.jdbc = jdbc;
     }
 
+    /** The id of the business whose short name (code) is {@code code}, or null. */
+    public UUID findIdByCode(String code) {
+        return jdbc.queryForList("SELECT id FROM businesses WHERE code = ?", UUID.class, code).stream().findFirst().orElse(null);
+    }
+
     /** The business's profile columns; throws when it does not exist. */
     public Map<String, Object> findProfile(UUID businessId) {
         return jdbc.queryForMap("SELECT name, legal_name, code, employee_prefix, contact_email, contact_phone, address, gstin, time_zone FROM businesses WHERE id = ?", businessId);
