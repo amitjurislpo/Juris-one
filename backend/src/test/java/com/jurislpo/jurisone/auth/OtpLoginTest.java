@@ -47,86 +47,86 @@ class OtpLoginTest extends IntegrationTest {
     @Test
     void emailsACodeAndTheCodeSignsYouIn() throws Exception {
         String email = newEmployee();
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email.toUpperCase() + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"" + email.toUpperCase() + "\"}")).andExpect(status().isCreated());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM login_otps WHERE email = ? AND used_at IS NULL", Integer.class, email)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ? AND subject LIKE 'Your JurisOne sign-in code%'", Integer.class, email)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT code_hash FROM login_otps WHERE email = ?", String.class, email)).doesNotContain("000000");
 
-        mockMvc.perform(api("/api/auth/session", json(email, "000000"))).andExpect(status().isCreated())
+        mockMvc.perform(api("/api/v1/auth/session", json(email, "000000"))).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.redirect").value("/home"));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM login_history WHERE identifier = ? AND success", Integer.class, email)).isEqualTo(1);
 
         // a code works once
-        mockMvc.perform(api("/api/auth/session", json(email, "000000"))).andExpect(status().isUnauthorized())
+        mockMvc.perform(api("/api/v1/auth/session", json(email, "000000"))).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value(AuthService.BAD_OTP));
     }
 
     @Test
     void wrongCodeIsRejectedAndFiveWrongTriesBurnTheCode() throws Exception {
         String email = newEmployee();
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
         for (int i = 0; i < 5; i++) {
-            mockMvc.perform(api("/api/auth/session", json(email, "111111"))).andExpect(status().isUnauthorized())
+            mockMvc.perform(api("/api/v1/auth/session", json(email, "111111"))).andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.detail").value(AuthService.BAD_OTP));
         }
         limiter.clear();
         // even the right code no longer works: the code is burnt, and five failures also locked the account for a while
-        mockMvc.perform(api("/api/auth/session", json(email, "000000"))).andExpect(status().isUnauthorized());
+        mockMvc.perform(api("/api/v1/auth/session", json(email, "000000"))).andExpect(status().isUnauthorized());
         jdbc.update("UPDATE users SET locked_until = NULL WHERE employee_id = (SELECT id FROM employees WHERE email = ?)", email);
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
-        mockMvc.perform(api("/api/auth/session", json(email, "000000"))).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/session", json(email, "000000"))).andExpect(status().isCreated());
     }
 
     @Test
     void aNewCodeReplacesTheOldOne() throws Exception {
         String email = newEmployee();
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM login_otps WHERE email = ? AND used_at IS NULL", Integer.class, email)).isEqualTo(1);
     }
 
     @Test
     void anExpiredCodeIsRejected() throws Exception {
         String email = newEmployee();
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
         jdbc.update("UPDATE login_otps SET expires_at = now() - interval '1 minute' WHERE email = ?", email);
-        mockMvc.perform(api("/api/auth/session", json(email, "000000"))).andExpect(status().isUnauthorized())
+        mockMvc.perform(api("/api/v1/auth/session", json(email, "000000"))).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value(AuthService.BAD_OTP));
     }
 
     @Test
     void unknownEmailGetsTheSameAnswerAndNoCodeIsStored() throws Exception {
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"nobody@example.com\"}")).andExpect(status().isCreated())
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"nobody@example.com\"}")).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.startsWith("If that account exists")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM login_otps WHERE email = 'nobody@example.com'", Integer.class)).isZero();
-        mockMvc.perform(api("/api/auth/session", json("nobody@example.com", "000000"))).andExpect(status().isUnauthorized());
+        mockMvc.perform(api("/api/v1/auth/session", json("nobody@example.com", "000000"))).andExpect(status().isUnauthorized());
     }
 
     @Test
     void invalidInputIsRejected() throws Exception {
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"\"}")).andExpect(status().isBadRequest());
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"not-an-email\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"not-an-email\"}")).andExpect(status().isBadRequest());
         String email = newEmployee();
-        mockMvc.perform(api("/api/auth/session", json(email, "12ab"))).andExpect(status().isBadRequest());
+        mockMvc.perform(api("/api/v1/auth/session", json(email, "12ab"))).andExpect(status().isBadRequest());
     }
 
     @Test
     void disabledAndExitedAccountsGetNoCode() throws Exception {
         String email = newEmployee();
         jdbc.update("UPDATE employees SET portal_access = false WHERE email = ?", email);
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM login_otps WHERE email = ?", Integer.class, email)).isZero();
         // the person is told why no code comes
         assertThat(jdbc.queryForObject("SELECT text FROM email_outbox WHERE \"to\" = ? AND subject = 'Your JurisOne sign-in request'", String.class, email))
                 .contains(AuthService.MSG_DISABLED);
-        mockMvc.perform(api("/api/auth/session", json(email, "000000"))).andExpect(status().isUnauthorized());
+        mockMvc.perform(api("/api/v1/auth/session", json(email, "000000"))).andExpect(status().isUnauthorized());
     }
 
     @Test
     void anExitedAccountIsToldItCanNoLongerSignIn() throws Exception {
         String email = newEmployee();
         jdbc.update("UPDATE employees SET status = 'EXITED' WHERE email = ?", email);
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM login_otps WHERE email = ?", Integer.class, email)).isZero();
         assertThat(jdbc.queryForObject("SELECT text FROM email_outbox WHERE \"to\" = ? AND subject = 'Your JurisOne sign-in request'", String.class, email))
                 .contains(AuthService.MSG_EXITED);
@@ -135,14 +135,14 @@ class OtpLoginTest extends IntegrationTest {
     @Test
     void codeRequestsAreRateLimited() throws Exception {
         String email = newEmployee();
-        for (int i = 0; i < 5; i++) mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isTooManyRequests());
+        for (int i = 0; i < 5; i++) mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isTooManyRequests());
     }
 
     @Test
     void passwordsAreNotAcceptedAnyMore() throws Exception {
         String email = newEmployee();
-        mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + email + "\",\"password\":\"anything-at-all-1\"}")).andExpect(status().isBadRequest());
-        mockMvc.perform(api("/api/auth/password-resets", "{\"identifier\":\"" + email + "\"}")).andExpect(status().is4xxClientError());
+        mockMvc.perform(api("/api/v1/auth/session", "{\"identifier\":\"" + email + "\",\"password\":\"anything-at-all-1\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(api("/api/v1/auth/password-resets", "{\"identifier\":\"" + email + "\"}")).andExpect(status().is4xxClientError());
     }
 }

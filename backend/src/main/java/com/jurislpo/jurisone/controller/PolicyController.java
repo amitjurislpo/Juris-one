@@ -34,7 +34,7 @@ import org.springframework.web.multipart.MultipartFile;
  * ({@code policies.manage}) write, publish and archive them, follow who has accepted and export the evidence.
  */
 @RestController
-@RequestMapping("/api/policies")
+@RequestMapping("/api/v1/policies")
 public class PolicyController {
 
     public record StatusBody(String status) {}

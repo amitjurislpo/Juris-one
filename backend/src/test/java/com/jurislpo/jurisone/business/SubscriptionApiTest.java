@@ -84,7 +84,7 @@ class SubscriptionApiTest extends IntegrationTest {
             {"business":{"name":"Nimbus Legal 0%s","contactEmail":"Hello@Nimbus.test","gstin":"27aapfu0939f1zv"},
              "subscription":{"planId":"%s","startsOn":"%s","endsOn":"%s"},
              "owner":{"name":"Neha Owner","email":"%s"}}""".formatted(suffix, planId, startsOn, endsOn, ownerEmail);
-        JsonNode created = json.readTree(mockMvc.perform(write(post("/api/platform/businesses")).cookie(superAdmin).content(body))
+        JsonNode created = json.readTree(mockMvc.perform(write(post("/api/v1/platform/businesses")).cookie(superAdmin).content(body))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
         return new Created(UUID.fromString(created.at("/data/id").asText()), ownerEmail);
     }
@@ -93,7 +93,7 @@ class SubscriptionApiTest extends IntegrationTest {
         String mods = modules.length == 0 ? "[]" : "[\"" + String.join("\",\"", modules) + "\"]";
         String body = "{\"name\":\"Plan " + UUID.randomUUID().toString().substring(0, 6) + "\",\"price\":4999.5,\"periodMonths\":12,\"maxEmployees\":"
                 + (maxEmployees == null ? "null" : maxEmployees) + ",\"modules\":" + mods + "}";
-        return json.readTree(mockMvc.perform(write(post("/api/platform/plans")).cookie(superAdmin).content(body)).andExpect(status().isCreated())
+        return json.readTree(mockMvc.perform(write(post("/api/v1/platform/plans")).cookie(superAdmin).content(body)).andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString()).at("/data/id").asText();
     }
 
@@ -103,7 +103,7 @@ class SubscriptionApiTest extends IntegrationTest {
         LocalDate today = LocalDate.now();
         Created created = createBusiness(plan, today.toString(), today.plusMonths(12).minusDays(1).toString());
 
-        JsonNode detail = json.readTree(mockMvc.perform(get("/api/platform/businesses/" + created.business()).cookie(superAdmin)).andExpect(status().isOk())
+        JsonNode detail = json.readTree(mockMvc.perform(get("/api/v1/platform/businesses/" + created.business()).cookie(superAdmin)).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString()).at("/data");
         assertThat(detail.at("/business/employeePrefix").asText()).isEqualTo("NL");
         assertThat(detail.at("/business/gstin").asText()).isEqualTo("27AAPFU0939F1ZV");
@@ -112,33 +112,33 @@ class SubscriptionApiTest extends IntegrationTest {
         assertThat(detail.at("/subscriptions/0/pricePaise").asLong()).isEqualTo(499_950);
 
         Cookie owner = signIn(created.ownerEmail());
-        mockMvc.perform(get("/api/me").cookie(owner)).andExpect(jsonPath("$.data.landing").value("/overview")).andExpect(jsonPath("$.data.subscriptionActive").value(true))
+        mockMvc.perform(get("/api/v1/me").cookie(owner)).andExpect(jsonPath("$.data.landing").value("/overview")).andExpect(jsonPath("$.data.subscriptionActive").value(true))
                 .andExpect(jsonPath("$.data.user.perms[?(@ == 'business.manage')]").exists());
-        mockMvc.perform(get("/api/business/subscription").cookie(owner)).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/business/subscription").cookie(owner)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.subscription.active").value(true)).andExpect(jsonPath("$.data.history.length()").value(1));
-        mockMvc.perform(get("/api/shell").cookie(owner)).andExpect(jsonPath("$.data.businessName").value(org.hamcrest.Matchers.startsWith("Nimbus Legal")))
+        mockMvc.perform(get("/api/v1/shell").cookie(owner)).andExpect(jsonPath("$.data.businessName").value(org.hamcrest.Matchers.startsWith("Nimbus Legal")))
                 .andExpect(jsonPath("$.data.subscription.state").value("ACTIVE"));
-        mockMvc.perform(get("/api/roles").cookie(owner)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/roles").cookie(owner)).andExpect(status().isOk());
 
         // a second sub admin: no invite email, they sign in with the emailed code
-        mockMvc.perform(write(post("/api/platform/businesses/" + created.business() + "/owners")).cookie(superAdmin)
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + created.business() + "/owners")).cookie(superAdmin)
                 .content("{\"name\":\"Second Owner\",\"email\":\"second." + created.ownerEmail() + "\"}")).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.code").value("NL-002"));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ?", Integer.class, "second." + created.ownerEmail())).isZero();
         signIn("second." + created.ownerEmail());
         // the same email can't be used twice on the platform
-        mockMvc.perform(write(post("/api/platform/businesses/" + created.business() + "/owners")).cookie(superAdmin)
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + created.business() + "/owners")).cookie(superAdmin)
                 .content("{\"name\":\"Copy\",\"email\":\"" + created.ownerEmail() + "\"}")).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value("That email is already in use."));
         // businesses can't use the platform API
-        mockMvc.perform(get("/api/platform/businesses").cookie(owner)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/platform/businesses").cookie(owner)).andExpect(status().isForbidden());
     }
 
     @Test
     void theContactPhoneMustBeValidForItsCountryCode() throws Exception {
         LocalDate today = LocalDate.now();
         Created created = createBusiness(plan(null), today.toString(), today.plusMonths(1).toString());
-        String path = "/api/platform/businesses/" + created.business();
+        String path = "/api/v1/platform/businesses/" + created.business();
         java.util.function.Function<String, String> body = phone -> "{\"name\":\"Nimbus Legal\",\"employeePrefix\":\"NL\",\"contactPhone\":" + (phone == null ? "null" : "\"" + phone + "\"") + "}";
 
         mockMvc.perform(write(put(path)).cookie(superAdmin).content(body.apply("+91 98765 43210"))).andExpect(status().isOk());
@@ -162,25 +162,25 @@ class SubscriptionApiTest extends IntegrationTest {
         Cookie owner = signIn(created.ownerEmail()); // signing in still works
 
         // every read works
-        mockMvc.perform(get("/api/people").cookie(owner)).andExpect(status().isOk());
-        mockMvc.perform(get("/api/roles").cookie(owner)).andExpect(status().isOk());
-        mockMvc.perform(get("/api/me").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.subscriptionActive").value(true))
+        mockMvc.perform(get("/api/v1/people").cookie(owner)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/roles").cookie(owner)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/me").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.subscriptionActive").value(true))
                 .andExpect(jsonPath("$.data.readOnly").value(true)).andExpect(jsonPath("$.data.pendingPolicies").value(0));
-        mockMvc.perform(get("/api/shell").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.subscription.state").value("EXPIRED"))
+        mockMvc.perform(get("/api/v1/shell").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.subscription.state").value("EXPIRED"))
                 .andExpect(jsonPath("$.data.subscription.active").value(false));
-        mockMvc.perform(get("/api/business/subscription").cookie(owner)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/business/subscription").cookie(owner)).andExpect(status().isOk());
 
         // every write is refused by the API itself, whatever the UI shows
-        mockMvc.perform(write(post("/api/departments")).cookie(owner).content("{\"name\":\"Legal\"}")).andExpect(status().isPaymentRequired())
+        mockMvc.perform(write(post("/api/v1/departments")).cookie(owner).content("{\"name\":\"Legal\"}")).andExpect(status().isPaymentRequired())
                 .andExpect(jsonPath("$.code").value("SUBSCRIPTION_INACTIVE")).andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("view and export")));
-        mockMvc.perform(write(post("/api/people")).cookie(owner).content("{}")).andExpect(status().isPaymentRequired());
-        mockMvc.perform(write(put("/api/roles/anything")).cookie(owner).content("{}")).andExpect(status().isPaymentRequired());
-        mockMvc.perform(write(delete("/api/departments/" + UUID.randomUUID())).cookie(owner)).andExpect(status().isPaymentRequired());
+        mockMvc.perform(write(post("/api/v1/people")).cookie(owner).content("{}")).andExpect(status().isPaymentRequired());
+        mockMvc.perform(write(put("/api/v1/roles/anything")).cookie(owner).content("{}")).andExpect(status().isPaymentRequired());
+        mockMvc.perform(write(delete("/api/v1/departments/" + UUID.randomUUID())).cookie(owner)).andExpect(status().isPaymentRequired());
         // signing out and marking notifications read are still allowed
-        mockMvc.perform(write(post("/api/auth/session-refreshes")).cookie(owner)).andExpect(status().is(org.hamcrest.Matchers.not(402)));
+        mockMvc.perform(write(post("/api/v1/auth/session-refreshes")).cookie(owner)).andExpect(status().is(org.hamcrest.Matchers.not(402)));
 
         // the owner can still take the employee list out
-        byte[] xlsx = mockMvc.perform(get("/api/business/employees/export").cookie(owner)).andExpect(status().isOk())
+        byte[] xlsx = mockMvc.perform(get("/api/v1/business/employees/export").cookie(owner)).andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", org.hamcrest.Matchers.startsWith("application/vnd.openxmlformats")))
                 .andReturn().getResponse().getContentAsByteArray();
         try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(xlsx))) {
@@ -189,10 +189,10 @@ class SubscriptionApiTest extends IntegrationTest {
         }
 
         // renewing unblocks at once
-        mockMvc.perform(write(post("/api/platform/businesses/" + created.business() + "/subscriptions")).cookie(superAdmin)
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + created.business() + "/subscriptions")).cookie(superAdmin)
                 .content("{\"planId\":\"" + plan + "\",\"startsOn\":\"" + today + "\"}")).andExpect(status().isCreated());
-        mockMvc.perform(get("/api/me").cookie(owner)).andExpect(jsonPath("$.data.readOnly").value(false));
-        mockMvc.perform(write(post("/api/departments")).cookie(owner).content("{\"name\":\"Legal\"}")).andExpect(status().is(org.hamcrest.Matchers.not(402)));
+        mockMvc.perform(get("/api/v1/me").cookie(owner)).andExpect(jsonPath("$.data.readOnly").value(false));
+        mockMvc.perform(write(post("/api/v1/departments")).cookie(owner).content("{\"name\":\"Legal\"}")).andExpect(status().is(org.hamcrest.Matchers.not(402)));
     }
 
     @Test
@@ -203,7 +203,7 @@ class SubscriptionApiTest extends IntegrationTest {
         SignIn.session(mockMvc, created.ownerEmail()).andExpect(status().isPaymentRequired()).andExpect(jsonPath("$.code").value("SUBSCRIPTION_INACTIVE"))
                 .andExpect(jsonPath("$.detail").value("Your organisation's subscription starts on " + starts + ". You can sign in from then."));
         // asking for a code gives the same answer as for anyone: the state isn't revealed to whoever asks
-        mockMvc.perform(write(post("/api/auth/otp-requests")).content("{\"email\":\"" + created.ownerEmail() + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(write(post("/api/v1/auth/otp-requests")).content("{\"email\":\"" + created.ownerEmail() + "\"}")).andExpect(status().isCreated());
 
         // the day it starts they get in
         jdbc.update("UPDATE business_subscriptions SET starts_on = ? WHERE business_id = ?", Date.valueOf(today), created.business());
@@ -214,7 +214,7 @@ class SubscriptionApiTest extends IntegrationTest {
     void aBusinessWithoutAnySubscriptionCannotSignIn() throws Exception {
         String suffix = UUID.randomUUID().toString().substring(0, 6);
         String ownerEmail = "owner." + suffix + "@none.test";
-        mockMvc.perform(write(post("/api/platform/businesses")).cookie(superAdmin)
+        mockMvc.perform(write(post("/api/v1/platform/businesses")).cookie(superAdmin)
                 .content("{\"business\":{\"name\":\"Nimbus Legal 1%s\"},\"owner\":{\"name\":\"Neha Owner\",\"email\":\"%s\"}}".formatted(suffix, ownerEmail)))
                 .andExpect(status().isCreated());
         SignIn.session(mockMvc, ownerEmail).andExpect(status().isPaymentRequired())
@@ -227,9 +227,9 @@ class SubscriptionApiTest extends IntegrationTest {
         Created created = createBusiness(plan(null), today.toString(), today.plusMonths(1).toString());
         Cookie owner = signIn(created.ownerEmail());
         jdbc.update("UPDATE business_subscriptions SET status = 'CANCELLED' WHERE business_id = ?", created.business());
-        mockMvc.perform(get("/api/people").cookie(owner)).andExpect(status().isPaymentRequired());
-        mockMvc.perform(get("/api/business/subscription").cookie(owner)).andExpect(status().isPaymentRequired());
-        mockMvc.perform(get("/api/me").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.subscriptionActive").value(false))
+        mockMvc.perform(get("/api/v1/people").cookie(owner)).andExpect(status().isPaymentRequired());
+        mockMvc.perform(get("/api/v1/business/subscription").cookie(owner)).andExpect(status().isPaymentRequired());
+        mockMvc.perform(get("/api/v1/me").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.subscriptionActive").value(false))
                 .andExpect(jsonPath("$.data.readOnly").value(false));
     }
 
@@ -238,7 +238,7 @@ class SubscriptionApiTest extends IntegrationTest {
         String plan = plan(1); // the owner is the one
         LocalDate today = LocalDate.now();
         Created created = createBusiness(plan, today.toString(), today.plusMonths(1).toString());
-        mockMvc.perform(write(post("/api/platform/businesses/" + created.business() + "/owners")).cookie(superAdmin)
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + created.business() + "/owners")).cookie(superAdmin)
                 .content("{\"name\":\"One Too Many\",\"email\":\"extra." + created.ownerEmail() + "\"}"))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("allows up to 1 employees")));
     }
@@ -248,13 +248,13 @@ class SubscriptionApiTest extends IntegrationTest {
         LocalDate today = LocalDate.now();
         Created created = createBusiness(plan(null), today.toString(), today.plusMonths(1).toString());
         Cookie owner = signIn(created.ownerEmail());
-        mockMvc.perform(write(put("/api/platform/businesses/" + created.business() + "/status")).cookie(superAdmin).content("{\"status\":\"SUSPENDED\"}"))
+        mockMvc.perform(write(put("/api/v1/platform/businesses/" + created.business() + "/status")).cookie(superAdmin).content("{\"status\":\"SUSPENDED\"}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/api/me").cookie(owner)).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/me").cookie(owner)).andExpect(status().isUnauthorized());
         // no code is sent to a suspended business; the person is told by email instead
         SignIn.session(mockMvc, created.ownerEmail()).andExpect(status().isUnauthorized());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ? AND subject = 'Your JurisOne sign-in request'", Integer.class, created.ownerEmail())).isEqualTo(1);
-        mockMvc.perform(write(put("/api/platform/businesses/" + created.business() + "/status")).cookie(superAdmin).content("{\"status\":\"ACTIVE\"}"))
+        mockMvc.perform(write(put("/api/v1/platform/businesses/" + created.business() + "/status")).cookie(superAdmin).content("{\"status\":\"ACTIVE\"}"))
                 .andExpect(status().isOk());
         signIn(created.ownerEmail());
     }
@@ -274,19 +274,19 @@ class SubscriptionApiTest extends IntegrationTest {
 
     @Test
     void plansAreValidated() throws Exception {
-        mockMvc.perform(write(post("/api/platform/plans")).cookie(superAdmin).content("{\"name\":\"X\",\"price\":-1,\"periodMonths\":12}"))
+        mockMvc.perform(write(post("/api/v1/platform/plans")).cookie(superAdmin).content("{\"name\":\"X\",\"price\":-1,\"periodMonths\":12}"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/platform/plans")).cookie(superAdmin).content("{\"name\":\"Bad module\",\"price\":0,\"periodMonths\":12,\"modules\":[\"NOPE\"]}"))
+        mockMvc.perform(write(post("/api/v1/platform/plans")).cookie(superAdmin).content("{\"name\":\"Bad module\",\"price\":0,\"periodMonths\":12,\"modules\":[\"NOPE\"]}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Unknown module NOPE."));
         String id = plan(null, "JURIS_TRACK");
-        mockMvc.perform(get("/api/platform/plans").cookie(superAdmin)).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/platform/plans").cookie(superAdmin)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.id == '" + id + "')].modules[0]").value("JURIS_TRACK"));
     }
 
     // ───────────────────────── Juris Track ─────────────────────────
 
     boolean menuHasJurisTrack(Cookie cookie) throws Exception {
-        return mockMvc.perform(get("/api/shell").cookie(cookie)).andReturn().getResponse().getContentAsString().contains("\"juris-track\"");
+        return mockMvc.perform(get("/api/v1/shell").cookie(cookie)).andReturn().getResponse().getContentAsString().contains("\"juris-track\"");
     }
 
     @Test
@@ -297,11 +297,11 @@ class SubscriptionApiTest extends IntegrationTest {
 
         // not on the plan: no menu item, the API doesn't exist
         assertThat(menuHasJurisTrack(owner)).isFalse();
-        mockMvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/me").cookie(owner)).andExpect(jsonPath("$.data.modules.length()").value(0));
+        mockMvc.perform(get("/api/v1/juris-track").cookie(owner)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/me").cookie(owner)).andExpect(jsonPath("$.data.modules.length()").value(0));
 
         // a paid grant needs a price and an end date
-        String base = "/api/platform/businesses/" + created.business() + "/modules";
+        String base = "/api/v1/platform/businesses/" + created.business() + "/modules";
         mockMvc.perform(write(post(base)).cookie(superAdmin).content("{\"source\":\"PAID\",\"price\":999}")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("A paid grant needs an end date."));
         mockMvc.perform(write(post(base)).cookie(superAdmin).content("{\"source\":\"PAID\",\"endsOn\":\"" + today.plusMonths(6) + "\"}")).andExpect(status().isBadRequest());
@@ -310,24 +310,24 @@ class SubscriptionApiTest extends IntegrationTest {
         String grant = json.readTree(mockMvc.perform(write(post(base)).cookie(superAdmin).content("{\"source\":\"COMPLIMENTARY\",\"notes\":\"Launch partner\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).at("/data/id").asText();
         assertThat(menuHasJurisTrack(owner)).isTrue();
-        mockMvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("ACTIVE"));
-        mockMvc.perform(get("/api/me").cookie(owner)).andExpect(jsonPath("$.data.modules[0]").value("JURIS_TRACK"));
-        mockMvc.perform(get("/api/business/subscription").cookie(owner)).andExpect(jsonPath("$.data.subscription.modules[0]").value("JURIS_TRACK"));
+        mockMvc.perform(get("/api/v1/juris-track").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("ACTIVE"));
+        mockMvc.perform(get("/api/v1/me").cookie(owner)).andExpect(jsonPath("$.data.modules[0]").value("JURIS_TRACK"));
+        mockMvc.perform(get("/api/v1/business/subscription").cookie(owner)).andExpect(jsonPath("$.data.subscription.modules[0]").value("JURIS_TRACK"));
         // an overlapping second grant is refused
         mockMvc.perform(write(post(base)).cookie(superAdmin).content("{\"source\":\"PAID\",\"price\":999,\"endsOn\":\"" + today.plusMonths(6) + "\"}"))
                 .andExpect(status().isUnprocessableEntity());
         mockMvc.perform(get(base).cookie(superAdmin)).andExpect(jsonPath("$.data[0].state").value("ACTIVE")).andExpect(jsonPath("$.data[0].source").value("COMPLIMENTARY"));
 
         // revoked: gone again, the grant stays on record
-        mockMvc.perform(write(delete("/api/platform/modules/" + grant)).cookie(superAdmin)).andExpect(status().isOk());
-        mockMvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isNotFound());
+        mockMvc.perform(write(delete("/api/v1/platform/modules/" + grant)).cookie(superAdmin)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/juris-track").cookie(owner)).andExpect(status().isNotFound());
         assertThat(menuHasJurisTrack(owner)).isFalse();
-        mockMvc.perform(get("/api/platform/businesses/" + created.business()).cookie(superAdmin)).andExpect(jsonPath("$.data.modules[0].state").value("REVOKED"));
+        mockMvc.perform(get("/api/v1/platform/businesses/" + created.business()).cookie(superAdmin)).andExpect(jsonPath("$.data.modules[0].state").value("REVOKED"));
 
         // a paid grant that starts later doesn't count yet
         mockMvc.perform(write(post(base)).cookie(superAdmin).content("{\"source\":\"PAID\",\"price\":1499.5,\"startsOn\":\"" + today.plusDays(10)
                 + "\",\"endsOn\":\"" + today.plusMonths(6) + "\"}")).andExpect(status().isCreated());
-        mockMvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/juris-track").cookie(owner)).andExpect(status().isNotFound());
 
         // employees can't manage grants
         mockMvc.perform(get(base).cookie(owner)).andExpect(status().isForbidden());
@@ -340,16 +340,16 @@ class SubscriptionApiTest extends IntegrationTest {
         Created created = createBusiness(plan, today.toString(), today.plusMonths(1).toString());
         Cookie owner = signIn(created.ownerEmail());
         assertThat(menuHasJurisTrack(owner)).isTrue();
-        mockMvc.perform(get("/api/juris-track").cookie(owner)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/juris-track").cookie(owner)).andExpect(status().isOk());
 
         Created ended = createBusiness(plan, today.minusMonths(2).toString(), today.minusDays(1).toString());
         Cookie endedOwner = signIn(ended.ownerEmail());
         assertThat(menuHasJurisTrack(endedOwner)).isTrue(); // still there to look at
-        mockMvc.perform(get("/api/juris-track").cookie(endedOwner)).andExpect(status().isOk());
-        mockMvc.perform(write(post("/api/juris-track/anything")).cookie(endedOwner).content("{}")).andExpect(status().isPaymentRequired());
+        mockMvc.perform(get("/api/v1/juris-track").cookie(endedOwner)).andExpect(status().isOk());
+        mockMvc.perform(write(post("/api/v1/juris-track/anything")).cookie(endedOwner).content("{}")).andExpect(status().isPaymentRequired());
 
         jdbc.update("UPDATE business_subscriptions SET status = 'CANCELLED' WHERE business_id = ?", ended.business());
         assertThat(menuHasJurisTrack(endedOwner)).isFalse(); // no subscription at all: nothing
-        mockMvc.perform(get("/api/juris-track").cookie(endedOwner)).andExpect(status().isPaymentRequired());
+        mockMvc.perform(get("/api/v1/juris-track").cookie(endedOwner)).andExpect(status().isPaymentRequired());
     }
 }

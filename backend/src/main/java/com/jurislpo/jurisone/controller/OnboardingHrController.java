@@ -40,49 +40,49 @@ public class OnboardingHrController {
         this.hr = hr;
     }
 
-    @GetMapping("/api/onboardings")
+    @GetMapping("/api/v1/onboardings")
     public ApiResult<OnboardingHrService.Page> list(@RequestParam Map<String, String> queryParams) {
         auth.assertPerm(PERMISSION);
         return ApiResult.success(hr.list(queryParams));
     }
 
-    @PostMapping("/api/onboardings")
+    @PostMapping("/api/v1/onboardings")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> start(@RequestBody OnboardingStart body, HttpServletRequest request) {
         return ApiResult.success("Onboarding started", Map.of("employeeId", hr.start(auth.assertPerm(PERMISSION), body, RequestMeta.of(request).ipAddress()).toString()));
     }
 
-    @PutMapping("/api/people/{id}/onboarding/steps/{step}")
+    @PutMapping("/api/v1/people/{id}/onboarding/steps/{step}")
     public ApiResult<Map<String, Object>> saveStep(@PathVariable String id, @PathVariable int step, @RequestBody(required = false) JsonNode body, HttpServletRequest request) {
         return ApiResult.success(hr.saveStep(auth.assertPerm(PERMISSION), id, step, body, RequestMeta.of(request).ipAddress()));
     }
 
-    @PutMapping("/api/people/{id}/onboarding/current-step")
+    @PutMapping("/api/v1/people/{id}/onboarding/current-step")
     public ApiResult<Map<String, Object>> currentStep(@PathVariable String id, @RequestBody EmployeeOnboardingController.StepChange body) {
         auth.assertPerm(PERMISSION);
         return ApiResult.success(hr.saveCurrentStep(id, body.step()));
     }
 
-    @PostMapping("/api/people/{id}/onboarding/submission")
+    @PostMapping("/api/v1/people/{id}/onboarding/submission")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, Object>> submit(@PathVariable String id, HttpServletRequest request) {
         return ApiResult.success(hr.submit(auth.assertPerm(PERMISSION), id, RequestMeta.of(request).ipAddress()));
     }
 
-    @PostMapping("/api/people/{id}/onboarding/attachments")
+    @PostMapping("/api/v1/people/{id}/onboarding/attachments")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, Object>> upload(@PathVariable String id, @RequestParam String slotKey, @RequestParam MultipartFile file, HttpServletRequest request) throws IOException {
         return ApiResult.success(hr.upload(auth.assertPerm(PERMISSION), id, slotKey, file.getOriginalFilename(), file.getBytes(), RequestMeta.of(request).ipAddress()));
     }
 
-    @DeleteMapping("/api/people/{id}/onboarding/attachments/{fileId}")
+    @DeleteMapping("/api/v1/people/{id}/onboarding/attachments/{fileId}")
     public ApiResult<Void> deleteAttachment(@PathVariable String id, @PathVariable String fileId, HttpServletRequest request) {
         hr.deleteAttachment(auth.assertPerm(PERMISSION), id, fileId, RequestMeta.of(request).ipAddress());
         return ApiResult.message("File removed");
     }
 
     /** The full bank account number, PAN and Aadhaar, for the HR form; audited. */
-    @GetMapping("/api/people/{id}/onboarding/secrets")
+    @GetMapping("/api/v1/people/{id}/onboarding/secrets")
     public ResponseEntity<ApiResult<Map<String, String>>> secrets(@PathVariable String id, HttpServletRequest request) {
         return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .body(ApiResult.success(hr.secrets(auth.assertPerm(PERMISSION), id, RequestMeta.of(request).ipAddress())));

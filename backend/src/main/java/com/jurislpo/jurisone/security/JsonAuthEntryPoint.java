@@ -1,5 +1,7 @@
 package com.jurislpo.jurisone.security;
 
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.exception.Problems;
 import com.jurislpo.jurisone.exception.UnauthenticatedException;
@@ -23,7 +25,7 @@ public class JsonAuthEntryPoint implements AuthenticationEntryPoint {
 
     /** Paths of the original route handlers. */
     public static final List<String> LEGACY_ROUTES = List.of(
-            "/api/attendance/register", "/api/declarations/proofs", "/api/payroll/export", "/api/payslips/", "/api/people/export", "/api/tax/export");
+            PREFIX + "/attendance/register", PREFIX + "/declarations/proofs", PREFIX + "/payroll/export", PREFIX + "/payslips/", PREFIX + "/people/export", PREFIX + "/tax/export");
 
     private final ObjectMapper json;
 

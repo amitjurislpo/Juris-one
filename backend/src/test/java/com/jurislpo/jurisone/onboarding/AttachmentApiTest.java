@@ -108,7 +108,7 @@ class AttachmentApiTest extends IntegrationTest {
     }
 
     ResultActions upload(Cookie who, String slotKey, String fileName, byte[] bytes) throws Exception {
-        return mockMvc.perform(multipart("/api/onboarding/mine/attachments").file(new MockMultipartFile("file", fileName, "application/octet-stream", bytes)).param("slotKey", slotKey)
+        return mockMvc.perform(multipart("/api/v1/onboarding/mine/attachments").file(new MockMultipartFile("file", fileName, "application/octet-stream", bytes)).param("slotKey", slotKey)
                 .cookie(who).header("origin", "http://localhost:3005").header("host", "localhost:3005"));
     }
 
@@ -137,9 +137,9 @@ class AttachmentApiTest extends IntegrationTest {
         assertThat(jdbc.queryForObject("SELECT sha256 FROM onboarding_attachments WHERE id = ?::uuid", String.class, id)).hasSize(64);
         assertThat(absolutePathOf(id)).exists();
 
-        mockMvc.perform(get("/api/onboarding/mine/attachments/" + id + "/file").cookie(cookie)).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/onboarding/mine/attachments/" + id + "/file").cookie(cookie)).andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition", Matchers.startsWith("inline")));
-        mockMvc.perform(get("/api/onboarding/mine/attachments/" + id + "/file?download=true").cookie(cookie)).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/onboarding/mine/attachments/" + id + "/file?download=true").cookie(cookie)).andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition", Matchers.startsWith("attachment")));
         assertThat(attachments.uploadedSlotKeys(onboardingId)).containsExactly("qualification:" + educationId);
         assertThat(attachments.filesOf(onboardingId)).hasSize(1);
@@ -189,8 +189,8 @@ class AttachmentApiTest extends IntegrationTest {
         jdbc.update("DELETE FROM employee_onboardings WHERE employee_id = ?", other);
         ONBOARDINGS.put(other, state(onboardingFor(other, "IN_PROGRESS"), otherCode, false));
         Cookie otherCookie = signIn(otherEmail);
-        mockMvc.perform(get("/api/onboarding/mine/attachments/" + file.at("/id").asText() + "/file").cookie(otherCookie)).andExpect(status().isNotFound());
-        mockMvc.perform(delete("/api/onboarding/mine/attachments/" + file.at("/id").asText()).cookie(otherCookie).header("origin", "http://localhost:3005").header("host", "localhost:3005"))
+        mockMvc.perform(get("/api/v1/onboarding/mine/attachments/" + file.at("/id").asText() + "/file").cookie(otherCookie)).andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/v1/onboarding/mine/attachments/" + file.at("/id").asText()).cookie(otherCookie).header("origin", "http://localhost:3005").header("host", "localhost:3005"))
                 .andExpect(status().isNotFound());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM onboarding_attachments WHERE id = ?::uuid", Integer.class, file.at("/id").asText())).isEqualTo(1);
     }
@@ -199,8 +199,8 @@ class AttachmentApiTest extends IntegrationTest {
     void notRequiredIsNotFoundAndSignedOutIsRefused() throws Exception {
         ONBOARDINGS.remove(employeeId);
         upload(cookie, "bank", "x.pdf", PDF).andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/onboarding/mine/secrets").cookie(cookie)).andExpect(status().isNotFound());
-        mockMvc.perform(multipart("/api/onboarding/mine/attachments").file(new MockMultipartFile("file", "x.pdf", "application/pdf", PDF)).param("slotKey", "bank")
+        mockMvc.perform(get("/api/v1/onboarding/mine/secrets").cookie(cookie)).andExpect(status().isNotFound());
+        mockMvc.perform(multipart("/api/v1/onboarding/mine/attachments").file(new MockMultipartFile("file", "x.pdf", "application/pdf", PDF)).param("slotKey", "bank")
                 .header("origin", "http://localhost:3005").header("host", "localhost:3005")).andExpect(status().isUnauthorized());
     }
 
@@ -209,8 +209,8 @@ class AttachmentApiTest extends IntegrationTest {
         JsonNode file = uploaded("bank", "bank.pdf", PDF);
         ONBOARDINGS.put(employeeId, state(onboardingId, code, true));
         upload(cookie, "pan", "x.pdf", PDF).andExpect(status().isConflict());
-        mockMvc.perform(write(delete("/api/onboarding/mine/attachments/" + file.at("/id").asText()))).andExpect(status().isConflict());
-        mockMvc.perform(get("/api/onboarding/mine/attachments/" + file.at("/id").asText() + "/file").cookie(cookie)).andExpect(status().isOk());
+        mockMvc.perform(write(delete("/api/v1/onboarding/mine/attachments/" + file.at("/id").asText()))).andExpect(status().isConflict());
+        mockMvc.perform(get("/api/v1/onboarding/mine/attachments/" + file.at("/id").asText() + "/file").cookie(cookie)).andExpect(status().isOk());
     }
 
     @Test
@@ -218,10 +218,10 @@ class AttachmentApiTest extends IntegrationTest {
         JsonNode file = uploaded("bank", "bank.pdf", PDF);
         Path absolute = absolutePathOf(file.at("/id").asText());
         assertThat(absolute).exists();
-        mockMvc.perform(write(delete("/api/onboarding/mine/attachments/" + file.at("/id").asText()))).andExpect(status().isOk());
+        mockMvc.perform(write(delete("/api/v1/onboarding/mine/attachments/" + file.at("/id").asText()))).andExpect(status().isOk());
         assertThat(absolute).doesNotExist();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM onboarding_attachments WHERE onboarding_id = ?", Integer.class, onboardingId)).isZero();
-        mockMvc.perform(get("/api/onboarding/mine/attachments/" + file.at("/id").asText() + "/file").cookie(cookie)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/onboarding/mine/attachments/" + file.at("/id").asText() + "/file").cookie(cookie)).andExpect(status().isNotFound());
     }
 
     @Test
@@ -238,7 +238,7 @@ class AttachmentApiTest extends IntegrationTest {
 
     @Test
     void secretsAreDecryptedForTheOwnerAndAudited() throws Exception {
-        mockMvc.perform(get("/api/onboarding/mine/secrets").cookie(cookie)).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/onboarding/mine/secrets").cookie(cookie)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.bankAccountNumber").value("50100123456789")).andExpect(jsonPath("$.data.pan").value("ABCPE1234F"))
                 .andExpect(jsonPath("$.data.aadhaar").value("234567890123")).andExpect(header().string("Cache-Control", Matchers.containsString("no-store")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'onboarding.secrets_read' AND actor_id = ?", Integer.class, employeeId)).isEqualTo(1);

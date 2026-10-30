@@ -42,23 +42,23 @@ public class EmployeeOnboardingController {
         this.onboarding = onboarding;
     }
 
-    @GetMapping("/api/onboarding/mine")
+    @GetMapping("/api/v1/onboarding/mine")
     public ApiResult<Map<String, Object>> mine() {
         return ApiResult.success(onboarding.mine(auth.assertPerm()));
     }
 
     /** Body = that step's object (see references/ONBOARDING_WIZARD_API.md); answers the whole payload with the next step as the current one. */
-    @PutMapping("/api/onboarding/mine/steps/{step}")
+    @PutMapping("/api/v1/onboarding/mine/steps/{step}")
     public ApiResult<Map<String, Object>> saveStep(@PathVariable int step, @RequestBody(required = false) JsonNode body, HttpServletRequest request) {
         return ApiResult.success(onboarding.saveStep(auth.assertPerm(), step, body, RequestMeta.of(request).ipAddress()));
     }
 
-    @PutMapping("/api/onboarding/mine/current-step")
+    @PutMapping("/api/v1/onboarding/mine/current-step")
     public ApiResult<Map<String, Object>> currentStep(@RequestBody StepChange body, HttpServletRequest request) {
         return ApiResult.success(onboarding.saveCurrentStep(auth.assertPerm(), body.step(), RequestMeta.of(request).ipAddress()));
     }
 
-    @PostMapping("/api/onboarding/mine/submission")
+    @PostMapping("/api/v1/onboarding/mine/submission")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, Object>> submit(HttpServletRequest request) {
         return ApiResult.success(onboarding.submit(auth.assertPerm(), RequestMeta.of(request).ipAddress()));
@@ -66,26 +66,26 @@ public class EmployeeOnboardingController {
 
     // ───────────── HR ─────────────
 
-    @GetMapping("/api/people/{id}/onboarding")
+    @GetMapping("/api/v1/people/{id}/onboarding")
     public ApiResult<Map<String, Object>> forEmployee(@PathVariable String id) {
         auth.assertPerm("people.view", "people.add");
         return ApiResult.success(onboarding.forEmployee(id));
     }
 
     /** A file of the employee's onboarding (HR); {@code download=true} sends it as an attachment. */
-    @GetMapping("/api/people/{id}/onboarding/attachments/{fileId}/file")
+    @GetMapping("/api/v1/people/{id}/onboarding/attachments/{fileId}/file")
     public ResponseEntity<byte[]> file(@PathVariable String id, @PathVariable String fileId, @RequestParam(defaultValue = "false") boolean download) {
         auth.assertPerm("people.view", "people.add");
         return stream(onboarding.document(id, fileId), download);
     }
 
-    @GetMapping("/api/people/{id}/documents")
+    @GetMapping("/api/v1/people/{id}/documents")
     public ApiResult<List<Map<String, Object>>> documents(@PathVariable String id) {
         auth.assertPerm("people.view");
         return ApiResult.success(onboarding.documents(id));
     }
 
-    @GetMapping("/api/people/{id}/documents/{docId}/file")
+    @GetMapping("/api/v1/people/{id}/documents/{docId}/file")
     public ResponseEntity<byte[]> document(@PathVariable String id, @PathVariable String docId) {
         auth.assertPerm("people.view");
         return stream(onboarding.document(id, docId), false);

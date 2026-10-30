@@ -227,14 +227,14 @@ Further rules:
 | Column | `tasks.assignee_id` (NULL = unassigned) | `tasks.indirect_assignee_id` (optional); CHECK it differs from `assignee_id` |
 | API field (read and write) | `assigneeId` (+ `assigneeName`, `assigneeCode`, `assigneePhoto`, `isAssigneeActive` in rows) | `indirectAssigneeId` (+ `indirectAssigneeName`, `indirectAssigneeCode`, `indirectAssigneePhoto`, `isIndirectAssigneeActive`) |
 | Filter parameter | `assigneeId` (uuid or `none`) | `indirectAssigneeId` (uuid or `none`) |
-| My tasks | `GET /api/tasks/mine?relation=ASSIGNED` (default) returns tasks where I am **either**; `relation=DIRECT` / `relation=INDIRECT` narrow it; each row has `myAssignment` = `DIRECT` / `INDIRECT` / null | same |
+| My tasks | `GET /api/v1/tasks/mine?relation=ASSIGNED` (default) returns tasks where I am **either**; `relation=DIRECT` / `relation=INDIRECT` narrow it; each row has `myAssignment` = `DIRECT` / `INDIRECT` / null | same |
 | Notifications | assigned, mentioned, comments, status changes, due tomorrow, overdue | the same events ("You are accountable for {key}: {title}" when set) |
 | Who may set / change it | project `OWNER`/`MEMBER`, the Owner (`tasks.manage`), **and the indirect assignee** (may reassign the direct assignee); personal task: reporter | project `OWNER`/`MEMBER`, the Owner; personal task: reporter. The indirect assignee may remove themself. |
 
 **Indirect assignee's rights on that task** (decided by the owner 2026-10-23):
 view and follow, **comment**, **change status** (incl. board moves), **change priority**, **reassign the direct assignee**.
 They **cannot** edit the other fields (title, description, dates, labels, estimate, project, checklist, attachments) unless they are also a project `MEMBER`/`OWNER`,
-and they **cannot delete** the task unless they are a project `OWNER` (or the Owner). `PATCH /api/tasks/{taskId}` checks rights field by field and answers 403 for a field the caller may not change.
+and they **cannot delete** the task unless they are a project `OWNER` (or the Owner). `PATCH /api/v1/tasks/{taskId}` checks rights field by field and answers 403 for a field the caller may not change.
 
 Both assignees are **auto-added as followers** (watchers) so they receive comment and status notifications; followers stay a separate list that anyone who can see the task may join or leave.
 
@@ -245,7 +245,7 @@ Both assignees are **auto-added as followers** (watchers) so they receive commen
   - a manager sees their team's work in **Team tasks** with view + comment rights (§4.3), even when they are not the indirect assignee;
   - when a manager is also set as indirect assignee, the task appears in **their own My tasks** too and they get the §4.4 rights (change status/priority, reassign);
   - Team tasks shows the indirect assignee as a column and accepts the `indirectAssigneeId` filter, so a manager can see "tasks of my team where I am accountable".
-- Suggestion (decided by the owner): when a direct assignee is chosen, the create form offers that person's reporting manager as indirect assignee (one click, **never set automatically**). `GET /api/tasks/assignees` returns `reportingManagerId` for this.
+- Suggestion (decided by the owner): when a direct assignee is chosen, the create form offers that person's reporting manager as indirect assignee (one click, **never set automatically**). `GET /api/v1/tasks/assignees` returns `reportingManagerId` for this.
 - SQL (in `TaskQuery`):
   ```sql
   WITH RECURSIVE scope(employee_id, depth) AS (
@@ -273,11 +273,11 @@ Follow the assets module end to end (`controller/AssetController.java`, `service
 
 | Layer | Class (new) | Holds |
 |---|---|---|
-| `controller` | `ProjectController` | `/api/projects/**` (project, members, workflow statuses, board) |
-| | `TaskController` | `/api/tasks` collections, task CRUD, position, watchers, checklist items |
-| | `TaskCollaborationController` | comments, activity, attachments under `/api/tasks/{taskId}/…` |
-| | `TaskLabelController` | `/api/task-labels/**` |
-| | `TaskSettingsController` | `/api/task-settings/**` |
+| `controller` | `ProjectController` | `/api/v1/projects/**` (project, members, workflow statuses, board) |
+| | `TaskController` | `/api/v1/tasks` collections, task CRUD, position, watchers, checklist items |
+| | `TaskCollaborationController` | comments, activity, attachments under `/api/v1/tasks/{taskId}/…` |
+| | `TaskLabelController` | `/api/v1/task-labels/**` |
+| | `TaskSettingsController` | `/api/v1/task-settings/**` |
 | | v2: `TaskTemplateController`, `TaskFilterController`, `TaskReportController`, `TaskImportController` | see §12.2 |
 | `service` | `ProjectService` | projects, members, archive; key uniqueness; Owner private-access audit |
 | | `WorkflowStatusService` | project and default statuses, order, delete with move; `ensureDefaultStatuses()` |
@@ -298,7 +298,7 @@ Follow the assets module end to end (`controller/AssetController.java`, `service
 
 Records (nested in the service, like `AssetService.AssetInput`): `ProjectInput`, `ProjectStatusInput`, `ProjectMemberInput`,
 `WorkflowStatusInput`, `WorkflowStatusOrderInput`, `TaskInput`, `TaskPositionInput`, `ChecklistItemInput`, `CommentInput`, `LabelInput`.
-`PATCH /api/tasks/{taskId}` takes a Jackson `JsonNode` body so "field absent" (unchanged) and `null` (clear it) can be told apart; `TaskService` turns it into a `TaskChanges` record.
+`PATCH /api/v1/tasks/{taskId}` takes a Jackson `JsonNode` body so "field absent" (unchanged) and `null` (clear it) can be told apart; `TaskService` turns it into a `TaskChanges` record.
 
 Validation messages are user-facing English sentences (e.g. "Enter a title.", "Keep the title under 200 characters.") thrown as
 `UserException(HttpStatus.BAD_REQUEST, …)` for bad input and `UserException(…)` (422) for business rules, using `common/Check.java`
@@ -428,18 +428,18 @@ The later email-alerts phase adds its own table (`task_notification_preferences`
 
 ### 8.1 Numbering (`HR-12`)
 - On create in a project: `UPDATE projects SET next_task_number = next_task_number + 1 WHERE id = ? RETURNING next_task_number - 1` (row lock serialises parallel creates; no gaps except after a rolled-back transaction, which is acceptable).
-- The key is computed, not stored: `projects.key || '-' || tasks.number`. `GET /api/tasks/{taskRef}` accepts a UUID **or** a key (case-insensitive), and also finds a key in `previous_keys`.
+- The key is computed, not stored: `projects.key || '-' || tasks.number`. `GET /api/v1/tasks/{taskRef}` accepts a UUID **or** a key (case-insensitive), and also finds a key in `previous_keys`.
 - Moving a task to another project gives it a new number there and appends the old key to `previous_keys`.
 
 ### 8.2 Card order (`engine/TaskPositions`)
 - `position` is a `BIGINT` with gaps of `GAP = 65_536`. A new task goes to the bottom of its column: `max(position) + GAP`.
 - Moving between two cards: `(previous + next) / 2`. When there is no room (`next - previous < 2`), renumber that column (`UPDATE … SET position = row_number() * GAP` ordered by the current position) in the same transaction, then place the card.
 - Moving to the top: `next - GAP` (positions may be negative). Only open (non-deleted) tasks are renumbered.
-- Columns are per `(project_id, status_id)`. On **My tasks** board (cross-project) the columns are the three categories; the cards are sorted by due date and priority, and dropping a card on a category sets the task to its project's first status of that category (the `is_initial` one for `TODO`, else the lowest `position`) through `PATCH /api/tasks/{taskId}` with `statusCategory`. No manual order on My tasks.
+- Columns are per `(project_id, status_id)`. On **My tasks** board (cross-project) the columns are the three categories; the cards are sorted by due date and priority, and dropping a card on a category sets the task to its project's first status of that category (the `is_initial` one for `TODO`, else the lowest `position`) through `PATCH /api/v1/tasks/{taskId}` with `statusCategory`. No manual order on My tasks.
 - A position change alone writes no activity row (too noisy); a status change does. A move needs `canChangeStatus` (so the indirect assignee may move cards).
 
 ### 8.3 Concurrency
-- `PATCH /api/tasks/{taskId}` and `PUT /api/projects/{projectId}` require the client's `version`; the update is `… WHERE id = ? AND version = ?` and increments `version`. 0 rows → **409** `CONFLICT` "Someone else changed this task. Reload to see their changes." The response returns the new `version`.
+- `PATCH /api/v1/tasks/{taskId}` and `PUT /api/v1/projects/{projectId}` require the client's `version`; the update is `… WHERE id = ? AND version = ?` and increments `version`. 0 rows → **409** `CONFLICT` "Someone else changed this task. Reload to see their changes." The response returns the new `version`.
 - Board moves (`PUT …/position`), comments, checklist items and watchers do not need a version (they do not overwrite each other's fields); last write wins.
 
 ### 8.4 Workflow
@@ -483,7 +483,7 @@ Two records, written together by `TaskActivityService.record(user, taskRow, kind
    `before`/`after` carry only the changed fields; long text (description, comment body) is recorded as `{"length": n}`, never the full text.
 
 - `*.private_access` rows are written when the Owner opens a private project/task they are not part of (§4.3).
-- The request-level row (method, path, status, duration) is already written for every write by `security/AuditTrailFilter`; the export (`/api/tasks/export`) matches its existing `SENSITIVE_GETS` pattern `^/api/.*/export(/.*)?$`. Add `^/api/tasks/[^/]+/attachments/[^/]+/file$` to `security/AuditTrail.SENSITIVE_GETS` so attachment downloads are recorded too.
+- The request-level row (method, path, status, duration) is already written for every write by `security/AuditTrailFilter`; the export (`/api/v1/tasks/export`) matches its existing `SENSITIVE_GETS` pattern `^/api/v1/.*/export(/.*)?$`. Add `^/api/v1/tasks/[^/]+/attachments/[^/]+/file$` to `security/AuditTrail.SENSITIVE_GETS` so attachment downloads are recorded too.
 - `AuditViewService.GROUPS`: add `GROUPS.put("tasks", List.of("project.", "task.", "workflow_status.", "task_label.", "task_template."))`; the frontend adds labels in `src/lib/audit-labels.ts`.
 - Bulk changes (v2) write one activity row per task and one `task.bulk_update` audit row listing the task ids.
 
@@ -529,12 +529,12 @@ Copy `OnboardingService.candidateUpload` (size check, magic-byte sniffing, file 
 
 | Item | Value |
 |---|---|
-| Endpoint | `POST /api/tasks/{taskId}/attachments`, `multipart/form-data`, part `file` (like `OnboardingController`). |
+| Endpoint | `POST /api/v1/tasks/{taskId}/attachments`, `multipart/form-data`, part `file` (like `OnboardingController`). |
 | Who | `canEdit`, the direct assignee, or the reporter/direct assignee of a personal task (the indirect assignee only when also a project member). |
 | Folder | `${jurisone.storage-dir}/tasks/<businessId>/<taskId>/<uuid>.<ext>` |
 | Size | ≤ **10 MB** per file (`OnboardingService.MAX_FILE_MB`), ≤ 20 per task; the server limit is already 50 MB (`spring.servlet.multipart.max-file-size`). |
 | Types | By magic bytes: PDF, PNG, JPG (existing `FILES` list), plus DOCX/XLSX/PPTX (`PK\x03\x04` **and** extension `.docx/.xlsx/.pptx`), plus `.txt`/`.csv` (extension + valid UTF-8, no NUL bytes). Anything else → 400 "Upload a PDF, image, Word, Excel, PowerPoint, text or CSV file." |
-| Download | `GET /api/tasks/{taskId}/attachments/{attachmentId}/file` with `Content-Disposition: attachment` (inline for PDF/images), `X-Content-Type-Options: nosniff`; path checked with `absolutePath.startsWith(storageDir)` as in `OnboardingService`. |
+| Download | `GET /api/v1/tasks/{taskId}/attachments/{attachmentId}/file` with `Content-Disposition: attachment` (inline for PDF/images), `X-Content-Type-Options: nosniff`; path checked with `absolutePath.startsWith(storageDir)` as in `OnboardingService`. |
 | Delete | Soft (`deleted_at`); the file stays for the audit trail. Uploader, project owner, or the Owner. |
 | Reset/seed | `SeedService.clearStoredFiles()` must also clear `tasks/`. |
 
@@ -552,49 +552,49 @@ Errors: problem+json with default codes from `Problems.defaultCode` (400 `VALIDA
 
 | # | Method + path | Who | Query / body | Success | Errors |
 |---|---|---|---|---|---|
-| P1 | `GET /api/projects` | page; returns only visible projects (Owner: all) | `status=ACTIVE\|ARCHIVED\|ALL` (default ACTIVE), `search`, `sort=name\|key\|openTasks\|updatedAt`, `sortDirection`, `page` | 200 `{page, take, total, rows:[ProjectRow]}` | — |
-| P2 | `POST /api/projects` | `projects.create` or `tasks.manage` | `{key, name, description?, visibility, color?, departmentId?}` | 201 `{id, key}` | 400, 403, 409 key/name taken |
-| P3 | `GET /api/projects/{projectId}` | can view (Owner private access is audited) | — | 200 `ProjectDetail` | 404 |
-| P4 | `PUT /api/projects/{projectId}` | project owner | `{version, name, description, visibility, color, departmentId}` (key only while the project has no tasks) | 200 `{version}` | 400, 403, 404, 409 stale/taken, 422 archived |
-| P5 | `PUT /api/projects/{projectId}/status` | project owner | `{status: "ACTIVE"\|"ARCHIVED"}` | 200 | 403, 404 |
-| P6 | `DELETE /api/projects/{projectId}` | project owner | — (soft delete) | 200 | 422 has tasks |
-| P7 | `GET /api/projects/{projectId}/members` | can view | — | 200 `[{employeeId, code, name, photo, designation, role, isActive}]` | 404 |
-| P8 | `POST /api/projects/{projectId}/members` | project owner | `{employeeId, role}` | 201 | 400, 404, 409 already a member |
-| P9 | `PUT /api/projects/{projectId}/members/{employeeId}` | project owner | `{role}` | 200 | 422 last owner |
-| P10 | `DELETE /api/projects/{projectId}/members/{employeeId}` | project owner, or the member themself (leave) | — | 200 | 422 last owner |
-| P11 | `POST /api/projects/{projectId}/workflow-statuses` | project owner | `{name, category, color?}` | 201 `{id}` | 400, 409 name, 422 > 12 |
-| P12 | `PUT /api/projects/{projectId}/workflow-statuses/{statusId}` | project owner | `{name, category, color, isInitial}` | 200 | 422 would break WorkflowRules |
-| P13 | `PUT /api/projects/{projectId}/workflow-status-order` | project owner | `{statusIds:[…]}` (all ids, new order) | 200 | 400 ids differ |
-| P14 | `DELETE /api/projects/{projectId}/workflow-statuses/{statusId}` | project owner | `?moveTasksToStatusId=` | 200 | 422 tasks without target / last TODO/DONE |
-| P15 | `GET /api/projects/{projectId}/board` | can view | `assigneeId`, `indirectAssigneeId` (uuid or `none`), `labelId`, `priority`, `type`, `search`, `doneWithinDays` (default 14, max 90) | 200 `{project, columns:[{status, taskCount, tasks:[TaskRow]}], hasMoreDone}` (≤ 500 open cards; DONE columns limited by days) | 404 |
+| P1 | `GET /api/v1/projects` | page; returns only visible projects (Owner: all) | `status=ACTIVE\|ARCHIVED\|ALL` (default ACTIVE), `search`, `sort=name\|key\|openTasks\|updatedAt`, `sortDirection`, `page` | 200 `{page, take, total, rows:[ProjectRow]}` | — |
+| P2 | `POST /api/v1/projects` | `projects.create` or `tasks.manage` | `{key, name, description?, visibility, color?, departmentId?}` | 201 `{id, key}` | 400, 403, 409 key/name taken |
+| P3 | `GET /api/v1/projects/{projectId}` | can view (Owner private access is audited) | — | 200 `ProjectDetail` | 404 |
+| P4 | `PUT /api/v1/projects/{projectId}` | project owner | `{version, name, description, visibility, color, departmentId}` (key only while the project has no tasks) | 200 `{version}` | 400, 403, 404, 409 stale/taken, 422 archived |
+| P5 | `PUT /api/v1/projects/{projectId}/status` | project owner | `{status: "ACTIVE"\|"ARCHIVED"}` | 200 | 403, 404 |
+| P6 | `DELETE /api/v1/projects/{projectId}` | project owner | — (soft delete) | 200 | 422 has tasks |
+| P7 | `GET /api/v1/projects/{projectId}/members` | can view | — | 200 `[{employeeId, code, name, photo, designation, role, isActive}]` | 404 |
+| P8 | `POST /api/v1/projects/{projectId}/members` | project owner | `{employeeId, role}` | 201 | 400, 404, 409 already a member |
+| P9 | `PUT /api/v1/projects/{projectId}/members/{employeeId}` | project owner | `{role}` | 200 | 422 last owner |
+| P10 | `DELETE /api/v1/projects/{projectId}/members/{employeeId}` | project owner, or the member themself (leave) | — | 200 | 422 last owner |
+| P11 | `POST /api/v1/projects/{projectId}/workflow-statuses` | project owner | `{name, category, color?}` | 201 `{id}` | 400, 409 name, 422 > 12 |
+| P12 | `PUT /api/v1/projects/{projectId}/workflow-statuses/{statusId}` | project owner | `{name, category, color, isInitial}` | 200 | 422 would break WorkflowRules |
+| P13 | `PUT /api/v1/projects/{projectId}/workflow-status-order` | project owner | `{statusIds:[…]}` (all ids, new order) | 200 | 400 ids differ |
+| P14 | `DELETE /api/v1/projects/{projectId}/workflow-statuses/{statusId}` | project owner | `?moveTasksToStatusId=` | 200 | 422 tasks without target / last TODO/DONE |
+| P15 | `GET /api/v1/projects/{projectId}/board` | can view | `assigneeId`, `indirectAssigneeId` (uuid or `none`), `labelId`, `priority`, `type`, `search`, `doneWithinDays` (default 14, max 90) | 200 `{project, columns:[{status, taskCount, tasks:[TaskRow]}], hasMoreDone}` (≤ 500 open cards; DONE columns limited by days) | 404 |
 
 **Labels** (page `projects`)
 
 | # | Method + path | Who | Body / query | Success | Errors |
 |---|---|---|---|---|---|
-| L1 | `GET /api/task-labels` | page | `projectId?` → business labels + that project's | 200 `[{id, name, color, projectId}]` | — |
-| L2 | `POST /api/task-labels` | `tasks.manage` (business label) / project owner (`projectId` given) | `{name, color, projectId?}` | 201 `{id}` | 409 name |
-| L3 | `PUT /api/task-labels/{labelId}` | same | `{name, color}` | 200 | 404, 409 |
-| L4 | `DELETE /api/task-labels/{labelId}` | same | — | 200 (links removed) | 404 |
+| L1 | `GET /api/v1/task-labels` | page | `projectId?` → business labels + that project's | 200 `[{id, name, color, projectId}]` | — |
+| L2 | `POST /api/v1/task-labels` | `tasks.manage` (business label) / project owner (`projectId` given) | `{name, color, projectId?}` | 201 `{id}` | 409 name |
+| L3 | `PUT /api/v1/task-labels/{labelId}` | same | `{name, color}` | 200 | 404, 409 |
+| L4 | `DELETE /api/v1/task-labels/{labelId}` | same | — | 200 (links removed) | 404 |
 
 **Tasks** (page `my-tasks`; `/team` uses page `team-tasks`)
 
 | # | Method + path | Who | Query / body | Success | Errors |
 |---|---|---|---|---|---|
-| T1 | `GET /api/tasks` | page; only visible tasks (Owner: all) | task filters (§13.1) incl. `projectId` | 200 `{page, take, total, rows:[TaskRow]}` | — |
-| T2 | `GET /api/tasks/mine` | page | `relation=ASSIGNED\|DIRECT\|INDIRECT\|REPORTED\|WATCHING` (default `ASSIGNED` = direct or indirect) + task filters | 200 `{page, take, total, rows, counts:{overdue, today, thisWeek, later, noDate}}` | — |
-| T3 | `GET /api/tasks/team` | page `team-tasks` (has reports) | `depth=1\|2` (default 1), `employeeId?` + task filters (incl. `indirectAssigneeId`) | 200 `{page, take, total, rows, people:[{employeeId, name, code, photo, depth, open, overdue, doneLast7Days}]}` | 403 no reports |
-| T4 | `GET /api/tasks/assignees` | page | `projectId?`, `search` (≥ 1 char, ILIKE on name/code), max 20 | 200 `[{id, code, name, photo, designation, isMember, reportingManagerId}]` | — |
-| T5 | `POST /api/tasks` | project `OWNER`/`MEMBER` (or no project = anyone) | `TaskInput` (below) | 201 `{id, key}` | 400, 403, 404 project, 422 archived/parent rules |
-| T6 | `GET /api/tasks/{taskRef}` | can view (`taskRef` = uuid or key; Owner private access is audited) | — | 200 `TaskDetail` | 404 |
-| T7 | `PATCH /api/tasks/{taskId}` | field-level rights (§4.3, §4.4) | `{version, title?, description?, type?, statusId? \| statusCategory?, priority?, assigneeId?, indirectAssigneeId?, startDate?, dueDate?, dueTime?, estimateMinutes?, reminderBeforeMinutes?, labelIds?, parentTaskId?, projectId?}`; `null` clears; `statusCategory` (`TODO`/`IN_PROGRESS`/`DONE`) is an alternative to `statusId` (never both) and maps to the project's first status of that category (§8.2) — used by the My tasks checkbox and board | 200 `{version}` | 400, 403 (field not allowed), 404, 409 stale, 422 rules |
-| T8 | `PUT /api/tasks/{taskId}/position` | `canChangeStatus` | `{statusId, previousTaskId?, nextTaskId?}` (neighbours after the drop; both absent = bottom) | 200 `{statusId, position}` | 400 neighbour not in that column, 403, 404 |
-| T9 | `DELETE /api/tasks/{taskId}` | project owner, reporter-member, personal reporter, the Owner (not the indirect assignee unless project owner) | — | 200 | 403, 404 |
-| T10 | `PUT /api/tasks/{taskId}/watchers/{employeeId}` | self: anyone who can view; others: `canEdit` | — | 200 (idempotent) | 422 that person can't see the task |
-| T11 | `DELETE /api/tasks/{taskId}/watchers/{employeeId}` | self, or `canEdit` | — | 200 | — |
-| T12 | `POST /api/tasks/{taskId}/checklist-items` | `canEdit` or the direct assignee | `{text}` | 201 `{id}` | 400, 422 > 100 |
-| T13 | `PATCH /api/tasks/{taskId}/checklist-items/{itemId}` | same | `{text?, isDone?, position?}` | 200 | 404 |
-| T14 | `DELETE /api/tasks/{taskId}/checklist-items/{itemId}` | same | — | 200 | 404 |
+| T1 | `GET /api/v1/tasks` | page; only visible tasks (Owner: all) | task filters (§13.1) incl. `projectId` | 200 `{page, take, total, rows:[TaskRow]}` | — |
+| T2 | `GET /api/v1/tasks/mine` | page | `relation=ASSIGNED\|DIRECT\|INDIRECT\|REPORTED\|WATCHING` (default `ASSIGNED` = direct or indirect) + task filters | 200 `{page, take, total, rows, counts:{overdue, today, thisWeek, later, noDate}}` | — |
+| T3 | `GET /api/v1/tasks/team` | page `team-tasks` (has reports) | `depth=1\|2` (default 1), `employeeId?` + task filters (incl. `indirectAssigneeId`) | 200 `{page, take, total, rows, people:[{employeeId, name, code, photo, depth, open, overdue, doneLast7Days}]}` | 403 no reports |
+| T4 | `GET /api/v1/tasks/assignees` | page | `projectId?`, `search` (≥ 1 char, ILIKE on name/code), max 20 | 200 `[{id, code, name, photo, designation, isMember, reportingManagerId}]` | — |
+| T5 | `POST /api/v1/tasks` | project `OWNER`/`MEMBER` (or no project = anyone) | `TaskInput` (below) | 201 `{id, key}` | 400, 403, 404 project, 422 archived/parent rules |
+| T6 | `GET /api/v1/tasks/{taskRef}` | can view (`taskRef` = uuid or key; Owner private access is audited) | — | 200 `TaskDetail` | 404 |
+| T7 | `PATCH /api/v1/tasks/{taskId}` | field-level rights (§4.3, §4.4) | `{version, title?, description?, type?, statusId? \| statusCategory?, priority?, assigneeId?, indirectAssigneeId?, startDate?, dueDate?, dueTime?, estimateMinutes?, reminderBeforeMinutes?, labelIds?, parentTaskId?, projectId?}`; `null` clears; `statusCategory` (`TODO`/`IN_PROGRESS`/`DONE`) is an alternative to `statusId` (never both) and maps to the project's first status of that category (§8.2) — used by the My tasks checkbox and board | 200 `{version}` | 400, 403 (field not allowed), 404, 409 stale, 422 rules |
+| T8 | `PUT /api/v1/tasks/{taskId}/position` | `canChangeStatus` | `{statusId, previousTaskId?, nextTaskId?}` (neighbours after the drop; both absent = bottom) | 200 `{statusId, position}` | 400 neighbour not in that column, 403, 404 |
+| T9 | `DELETE /api/v1/tasks/{taskId}` | project owner, reporter-member, personal reporter, the Owner (not the indirect assignee unless project owner) | — | 200 | 403, 404 |
+| T10 | `PUT /api/v1/tasks/{taskId}/watchers/{employeeId}` | self: anyone who can view; others: `canEdit` | — | 200 (idempotent) | 422 that person can't see the task |
+| T11 | `DELETE /api/v1/tasks/{taskId}/watchers/{employeeId}` | self, or `canEdit` | — | 200 | — |
+| T12 | `POST /api/v1/tasks/{taskId}/checklist-items` | `canEdit` or the direct assignee | `{text}` | 201 `{id}` | 400, 422 > 100 |
+| T13 | `PATCH /api/v1/tasks/{taskId}/checklist-items/{itemId}` | same | `{text?, isDone?, position?}` | 200 | 404 |
+| T14 | `DELETE /api/v1/tasks/{taskId}/checklist-items/{itemId}` | same | — | 200 | 404 |
 
 `TaskInput` = `{projectId?, title, description?, type?, statusId?, priority?, assigneeId?, indirectAssigneeId?, startDate?, dueDate?, dueTime?, estimateMinutes?, reminderBeforeMinutes?, labelIds?, parentTaskId?, watcherIds?, checklist?: [text]}`; v2 adds `templateId?`.
 
@@ -602,48 +602,48 @@ Errors: problem+json with default codes from `Problems.defaultCode` (400 `VALIDA
 
 | # | Method + path | Who | Query / body | Success | Errors |
 |---|---|---|---|---|---|
-| C1 | `GET /api/tasks/{taskId}/comments` | can view | `page` (50 per page, oldest first) | 200 `{page, take, total, rows:[{id, authorId, authorName, authorPhoto, body, mentionedPeople, createdAt, editedAt, isDeleted, canEdit, canDelete}]}` | 404 |
-| C2 | `POST /api/tasks/{taskId}/comments` | `canComment` | `{body}` | 201 `{id}` | 400, 404 |
-| C3 | `PATCH /api/tasks/{taskId}/comments/{commentId}` | author | `{body}` | 200 | 403, 404 |
-| C4 | `DELETE /api/tasks/{taskId}/comments/{commentId}` | author, project owner, the Owner | — | 200 (body hidden, "Comment deleted" stays) | 403, 404 |
-| C5 | `GET /api/tasks/{taskId}/activity` | can view | `page` (50, newest first) | 200 `{page, take, total, rows:[{id, kind, actorName, before, after, occurredAt}]}` | 404 |
-| C6 | `POST /api/tasks/{taskId}/attachments` | §11 | multipart `file` | 201 `{id, name}` | 400 type/size, 422 > 20 |
-| C7 | `GET /api/tasks/{taskId}/attachments/{attachmentId}/file` | can view | — | 200 file bytes | 404 |
-| C8 | `DELETE /api/tasks/{taskId}/attachments/{attachmentId}` | §11 | — | 200 | 403, 404 |
+| C1 | `GET /api/v1/tasks/{taskId}/comments` | can view | `page` (50 per page, oldest first) | 200 `{page, take, total, rows:[{id, authorId, authorName, authorPhoto, body, mentionedPeople, createdAt, editedAt, isDeleted, canEdit, canDelete}]}` | 404 |
+| C2 | `POST /api/v1/tasks/{taskId}/comments` | `canComment` | `{body}` | 201 `{id}` | 400, 404 |
+| C3 | `PATCH /api/v1/tasks/{taskId}/comments/{commentId}` | author | `{body}` | 200 | 403, 404 |
+| C4 | `DELETE /api/v1/tasks/{taskId}/comments/{commentId}` | author, project owner, the Owner | — | 200 (body hidden, "Comment deleted" stays) | 403, 404 |
+| C5 | `GET /api/v1/tasks/{taskId}/activity` | can view | `page` (50, newest first) | 200 `{page, take, total, rows:[{id, kind, actorName, before, after, occurredAt}]}` | 404 |
+| C6 | `POST /api/v1/tasks/{taskId}/attachments` | §11 | multipart `file` | 201 `{id, name}` | 400 type/size, 422 > 20 |
+| C7 | `GET /api/v1/tasks/{taskId}/attachments/{attachmentId}/file` | can view | — | 200 file bytes | 404 |
+| C8 | `DELETE /api/v1/tasks/{taskId}/attachments/{attachmentId}` | §11 | — | 200 | 403, 404 |
 
 **Settings** (page `task-settings`, permission `tasks.manage`)
 
 | # | Method + path | Body | Success |
 |---|---|---|---|
-| S1 | `GET /api/task-settings` | — | 200 `{defaultStatuses:[…], labels:[…], projectCount, taskCount}` (v2 adds `templates`) |
-| S2 | `POST /api/task-settings/workflow-statuses` | `{name, category, color?}` | 201 `{id}` |
-| S3 | `PUT /api/task-settings/workflow-statuses/{statusId}` | `{name, category, color, isInitial}` | 200 |
-| S4 | `PUT /api/task-settings/workflow-status-order` | `{statusIds}` | 200 |
-| S5 | `DELETE /api/task-settings/workflow-statuses/{statusId}` | `?moveTasksToStatusId=` (personal tasks) | 200 |
+| S1 | `GET /api/v1/task-settings` | — | 200 `{defaultStatuses:[…], labels:[…], projectCount, taskCount}` (v2 adds `templates`) |
+| S2 | `POST /api/v1/task-settings/workflow-statuses` | `{name, category, color?}` | 201 `{id}` |
+| S3 | `PUT /api/v1/task-settings/workflow-statuses/{statusId}` | `{name, category, color, isInitial}` | 200 |
+| S4 | `PUT /api/v1/task-settings/workflow-status-order` | `{statusIds}` | 200 |
+| S5 | `DELETE /api/v1/task-settings/workflow-statuses/{statusId}` | `?moveTasksToStatusId=` (personal tasks) | 200 |
 
 Changing the default set affects personal tasks and **new** projects only (existing projects keep their copy).
 
-**Shell:** `GET /api/shell` (existing) gains `badges.myTasks` (§3.3). No new view-model endpoint.
+**Shell:** `GET /api/v1/shell` (existing) gains `badges.myTasks` (§3.3). No new view-model endpoint.
 
 ### 12.2 v2 endpoints
 
 | Method + path | Who | Purpose |
 |---|---|---|
-| `PATCH /api/tasks` | per task, field-level rights | Bulk: `{taskIds:[≤100], changes:{statusId?, assigneeId?, indirectAssigneeId?, priority?, dueDate?, dueTime?, addLabelIds?, removeLabelIds?, isDeleted?}}` → 200 `{updated, skipped:[{taskId, reason}]}` (precedent: `PATCH /api/notifications` marks all) |
-| `GET /api/tasks/export` | page | Same filters as `GET /api/tasks` (+ `scope=MINE\|TEAM\|PROJECT`), CSV via `engine/Csv.toCsv`, ≤ 50,000 rows (`AuditViewService.EXPORT_MAX` pattern) |
-| `POST /api/projects/{projectId}/task-imports` | project owner/member | multipart CSV (`title, description, type, status, priority, assigneeEmail, indirectAssigneeEmail, startDate, dueDate, dueTime, estimateMinutes, labels, parentKey`); `?isDryRun=true` validates only → 200 `{rows, errors:[{line, message}]}`; real run → 201 `{created, errors}`; ≤ 2,000 rows |
-| `GET /api/tasks/deleted` | the Owner / project owners | Deleted tasks of the last 30 days |
-| `POST /api/tasks/{taskId}/restoration` | same | Restore a deleted task (an action modelled as creating a resource, like `/acknowledgements`) → 201 |
-| `POST /api/tasks/{taskId}/dependencies` / `DELETE /api/tasks/{taskId}/dependencies/{dependsOnTaskId}` | `canEdit` | `{dependsOnTaskId}`; 422 on a cycle |
-| `PUT /api/tasks/{taskId}/recurrence` / `DELETE /api/tasks/{taskId}/recurrence` | `canEdit` | `{frequency, intervalCount, weekdays?, dayOfMonth?, createDaysBefore?, endsOn?}` |
-| `GET /api/task-templates?projectId=` · `POST /api/task-templates` · `GET`/`PUT`/`DELETE /api/task-templates/{templateId}` | read: page; write: project owner / `tasks.manage` | Templates; `POST /api/tasks {templateId, …}` creates from one |
-| `GET /api/task-filters/mine` · `POST /api/task-filters` · `PUT`/`DELETE /api/task-filters/{filterId}` | owner of the filter | Saved filters |
-| `GET /api/task-reports/summary` | page `task-reports` | `projectId?`, `departmentId?`, `assigneeId?`, `from`, `to` → `{kpis:{open, overdue, completed, averageDaysToComplete}, byStatus, byAssignee:[{employeeId, name, open, overdue, completed, estimateMinutes}], byIndirectAssignee:[{employeeId, name, open, overdue}], byProject, completedPerWeek:[{weekStart, count}], createdPerWeek}`; scope = projects the user can view (Owner: all) |
+| `PATCH /api/v1/tasks` | per task, field-level rights | Bulk: `{taskIds:[≤100], changes:{statusId?, assigneeId?, indirectAssigneeId?, priority?, dueDate?, dueTime?, addLabelIds?, removeLabelIds?, isDeleted?}}` → 200 `{updated, skipped:[{taskId, reason}]}` (precedent: `PATCH /api/v1/notifications` marks all) |
+| `GET /api/v1/tasks/export` | page | Same filters as `GET /api/v1/tasks` (+ `scope=MINE\|TEAM\|PROJECT`), CSV via `engine/Csv.toCsv`, ≤ 50,000 rows (`AuditViewService.EXPORT_MAX` pattern) |
+| `POST /api/v1/projects/{projectId}/task-imports` | project owner/member | multipart CSV (`title, description, type, status, priority, assigneeEmail, indirectAssigneeEmail, startDate, dueDate, dueTime, estimateMinutes, labels, parentKey`); `?isDryRun=true` validates only → 200 `{rows, errors:[{line, message}]}`; real run → 201 `{created, errors}`; ≤ 2,000 rows |
+| `GET /api/v1/tasks/deleted` | the Owner / project owners | Deleted tasks of the last 30 days |
+| `POST /api/v1/tasks/{taskId}/restoration` | same | Restore a deleted task (an action modelled as creating a resource, like `/acknowledgements`) → 201 |
+| `POST /api/v1/tasks/{taskId}/dependencies` / `DELETE /api/v1/tasks/{taskId}/dependencies/{dependsOnTaskId}` | `canEdit` | `{dependsOnTaskId}`; 422 on a cycle |
+| `PUT /api/v1/tasks/{taskId}/recurrence` / `DELETE /api/v1/tasks/{taskId}/recurrence` | `canEdit` | `{frequency, intervalCount, weekdays?, dayOfMonth?, createDaysBefore?, endsOn?}` |
+| `GET /api/v1/task-templates?projectId=` · `POST /api/v1/task-templates` · `GET`/`PUT`/`DELETE /api/v1/task-templates/{templateId}` | read: page; write: project owner / `tasks.manage` | Templates; `POST /api/v1/tasks {templateId, …}` creates from one |
+| `GET /api/v1/task-filters/mine` · `POST /api/v1/task-filters` · `PUT`/`DELETE /api/v1/task-filters/{filterId}` | owner of the filter | Saved filters |
+| `GET /api/v1/task-reports/summary` | page `task-reports` | `projectId?`, `departmentId?`, `assigneeId?`, `from`, `to` → `{kpis:{open, overdue, completed, averageDaysToComplete}, byStatus, byAssignee:[{employeeId, name, open, overdue, completed, estimateMinutes}], byIndirectAssignee:[{employeeId, name, open, overdue}], byProject, completedPerWeek:[{weekStart, count}], createdPerWeek}`; scope = projects the user can view (Owner: all) |
 
-Calendar (v2) needs **no new endpoint**: it calls `GET /api/tasks/mine`, `/api/tasks/team` or `/api/tasks?projectId=` with `dueFrom`, `dueTo` and `pageSize=500`.
+Calendar (v2) needs **no new endpoint**: it calls `GET /api/v1/tasks/mine`, `/api/v1/tasks/team` or `/api/v1/tasks?projectId=` with `dueFrom`, `dueTo` and `pageSize=500`.
 
 ### 12.3 v3 endpoints
-`GET`/`POST /api/projects/{projectId}/custom-fields`, `PUT`/`DELETE /api/projects/{projectId}/custom-fields/{fieldId}`; values through `PATCH /api/tasks/{taskId}` (`customFieldValues: {fieldId: value}`); timeline reads `GET /api/tasks?projectId=&dueFrom=&dueTo=&pageSize=500` plus dependencies in `TaskRow` (`dependsOnTaskIds`).
+`GET`/`POST /api/v1/projects/{projectId}/custom-fields`, `PUT`/`DELETE /api/v1/projects/{projectId}/custom-fields/{fieldId}`; values through `PATCH /api/v1/tasks/{taskId}` (`customFieldValues: {fieldId: value}`); timeline reads `GET /api/v1/tasks?projectId=&dueFrom=&dueTo=&pageSize=500` plus dependencies in `TaskRow` (`dependsOnTaskIds`).
 
 ### 12.4 Response shapes (JSON field names are binding for both repos)
 
@@ -682,7 +682,7 @@ Calendar (v2) needs **no new endpoint**: it calls `GET /api/tasks/mine`, `/api/t
 | `sortDirection` | `asc` / `desc` |
 | `page`, `pageSize` | page from 1; `pageSize` default 50, max 500 |
 
-`GET /api/tasks/mine` also takes `relation` (§12.1 T2); `GET /api/tasks/team` also takes `depth` and `employeeId`.
+`GET /api/v1/tasks/mine` also takes `relation` (§12.1 T2); `GET /api/v1/tasks/team` also takes `depth` and `employeeId`.
 
 - Parse with `common/ListParams` (`ListParams.of(queryParams, SORTS, "dueDate", pageSize, "asc")`, invalid values fall back silently) and `ListParams.pick` for enums, the way `AuditViewService.build` does; build SQL in `repository/TaskQuery` with `?` arguments only (never string-concatenate values).
 - Note: the codebase's list parameters are `sort` and `sortDirection` (`ListParams`, frontend `SortableHeader`). INSTRUCTIONS.md mentions `sortBy` as an example; the owner decided to keep `sort` / `sortDirection` (consistent with every existing table).
@@ -796,10 +796,10 @@ In the same PR as the code of each phase:
 
 | Integration | How it would connect | Hook kept now |
 |---|---|---|
-| **JurisTrack (log time on a task)** | JurisTrack time entries carry an optional `taskId` (JurisOne task uuid) + `taskKey` for display. Through the gateway (`/api/juris-track/**`, JurisTrack `INTEGRATION.md` §2) the JurisTrack UI asks JurisOne `GET /api/tasks/mine?statusCategory=TODO,IN_PROGRESS&search=` to pick a task. JurisOne later shows "logged 3h 20m of 4h estimate" by asking JurisTrack for totals per task. Both use the same reporting-line scope (direct, optional depth 2). | stable task ids/keys, `estimate_minutes`, `/mine` endpoint |
+| **JurisTrack (log time on a task)** | JurisTrack time entries carry an optional `taskId` (JurisOne task uuid) + `taskKey` for display. Through the gateway (`/api/v1/juris-track/**`, JurisTrack `INTEGRATION.md` §2) the JurisTrack UI asks JurisOne `GET /api/v1/tasks/mine?statusCategory=TODO,IN_PROGRESS&search=` to pick a task. JurisOne later shows "logged 3h 20m of 4h estimate" by asking JurisTrack for totals per task. Both use the same reporting-line scope (direct, optional depth 2). | stable task ids/keys, `estimate_minutes`, `/mine` endpoint |
 | **Leave calendar** | People pickers and the board show "on leave" when an assignee has approved leave covering the due date (from `leave_requests`); warning when assigning a task due on a leave day. | `assigneeId`, `indirectAssigneeId` + `dueDate` on every row |
 | **Onboarding checklists** | When an onboarding becomes `ADDED` (`OnboardingService`), create tasks from a business template "New joiner" (IT laptop → links to Assets, manager intro, policy reading) in the People operations project, with HR as indirect assignee. | v2 templates with `dueInDays` |
-| **Policies / announcements** | "Read the new policy" is already enforced by the acknowledgement gate; tasks could be created for HR follow-ups (people who have not acknowledged after N days). | templates + `POST /api/tasks` |
+| **Policies / announcements** | "Read the new policy" is already enforced by the acknowledgement gate; tasks could be created for HR follow-ups (people who have not acknowledged after N days). | templates + `POST /api/v1/tasks` |
 | **Assets** | A REQUEST task "Laptop for JC-090" linked to an asset tag (v3 custom field). | custom fields |
 
 ---
@@ -813,7 +813,7 @@ Each phase = one feature branch PR to `dev` per repo (backend first, then fronte
 | **T1 — MVP** | V20; `Nav`/`Permissions`; projects + members + workflow statuses + board; tasks CRUD with direct and indirect assignee, field-level rights, position, sub-tasks, checklist, labels, followers; comments + mentions; attachments; activity + audit (incl. Owner private access); **bell** notifications; jobs `dueSoon`, `overdue` (bell); shell badge; task settings (default workflow, business labels); seed; tests of §17 (MVP rows); REQUIREMENTS §5.17.1–7. Suggested split into two PRs: **T1a** data model + projects + tasks + board + access; **T1b** collaboration + notifications + jobs + settings. | `./mvnw test` green in a fresh copy; `./mvnw -DskipTests package`; frontend T1 gate green (typecheck, lint, unit, build, knip, e2e); owner demo with the seeded data; REQUIREMENTS updated |
 | **T2 — Planning tools** | V21; calendar support (filters already there); reports summary; recurring tasks + job; templates; saved filters; bulk PATCH; CSV export + import (dry run); restore deleted; dependencies; limited markdown (frontend only). Still bell only. | same, plus a load check: lists and board < 2 s with 50,000 seeded tasks (a dev-only seed script or SQL `generate_series`) |
 | **T3 — Advanced** | V22; custom fields; configurable task types; timeline/Gantt support; WIP limits; first integrations (JurisTrack time per task, leave warnings, onboarding template trigger). | same; JurisTrack integration only after the owner says so (it is a separate repo and decision) |
-| **Later: email alerts** (the owner will start it) | 1) **Per-person preferences**: table `task_notification_preferences` (PK `employee_id, event`; `is_in_app`, `is_email`) + `GET`/`PUT /api/task-notification-preferences/mine`. 2) **Which events** get email (owner to choose; candidates: assigned/made accountable, mentioned, overdue; comments and status changes off by default). 3) **Daily digest** email at ~08:00 local time (job `tasks.digest`, idempotent with a `job_runs` row `name='task.digest'`, `key='<employeeId>:<date>'`). 4) **Send after commit**: `MailService.send` joins an open transaction and then talks to SMTP, so an email could go out for a change that later rolls back; send task emails from `TransactionSynchronization.afterCommit()` (`TransactionSynchronizationManager.registerSynchronization`) — new in the codebase. 5) Templates in `MailTemplates` (existing HTML shell, MIGRATION_PLAN §1e). 6) Tests: rows in `email_outbox` only after commit, never for the actor, respecting preferences. | same gate |
+| **Later: email alerts** (the owner will start it) | 1) **Per-person preferences**: table `task_notification_preferences` (PK `employee_id, event`; `is_in_app`, `is_email`) + `GET`/`PUT /api/v1/task-notification-preferences/mine`. 2) **Which events** get email (owner to choose; candidates: assigned/made accountable, mentioned, overdue; comments and status changes off by default). 3) **Daily digest** email at ~08:00 local time (job `tasks.digest`, idempotent with a `job_runs` row `name='task.digest'`, `key='<employeeId>:<date>'`). 4) **Send after commit**: `MailService.send` joins an open transaction and then talks to SMTP, so an email could go out for a change that later rolls back; send task emails from `TransactionSynchronization.afterCommit()` (`TransactionSynchronizationManager.registerSynchronization`) — new in the codebase. 5) Templates in `MailTemplates` (existing HTML shell, MIGRATION_PLAN §1e). 6) Tests: rows in `email_outbox` only after commit, never for the actor, respecting preferences. | same gate |
 
 ---
 

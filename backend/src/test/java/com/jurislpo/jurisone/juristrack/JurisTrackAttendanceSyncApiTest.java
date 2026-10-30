@@ -61,11 +61,11 @@ class JurisTrackAttendanceSyncApiTest extends IntegrationTest {
     }
 
     void punch(Person person, String expect, int expectedStatus) throws Exception {
-        mockMvc.perform(write(post("/api/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"" + expect + "\"}")).andExpect(status().is(expectedStatus));
+        mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"" + expect + "\"}")).andExpect(status().is(expectedStatus));
     }
 
     void trackEvent(Person person, String type) throws Exception {
-        mockMvc.perform(write(post("/api/juris-track/me/time-events")).cookie(person.cookie()).content("{\"type\":\"" + type + "\"}")).andExpect(status().isOk());
+        mockMvc.perform(write(post("/api/v1/juris-track/me/time-events")).cookie(person.cookie()).content("{\"type\":\"" + type + "\"}")).andExpect(status().isOk());
     }
 
     List<String> sentBodies() {
@@ -92,7 +92,7 @@ class JurisTrackAttendanceSyncApiTest extends IntegrationTest {
         assertThat(jdbc.queryForObject("SELECT source::text FROM punches WHERE employee_id = ?", String.class, employee.id())).isEqualTo("WEB");
         Received received = JurisTrackStub.received().get(0);
         assertThat(received.method()).isEqualTo("POST");
-        assertThat(received.pathAndQuery()).isEqualTo("/api/me/time-events");
+        assertThat(received.pathAndQuery()).isEqualTo("/api/v1/me/time-events");
         assertThat(received.headers().get("authorization")).startsWith("Bearer ");
     }
 
@@ -197,7 +197,7 @@ class JurisTrackAttendanceSyncApiTest extends IntegrationTest {
     void aFailedJurisTrackAnswerRecordsNoPunch() throws Exception {
         Person employee = person(data, role);
         JurisTrackStub.answerWith(409, "application/problem+json", "{\"code\":\"WORKDAY_NOT_STARTED\"}");
-        mockMvc.perform(write(post("/api/juris-track/me/time-events")).cookie(employee.cookie()).content("{\"type\":\"START\"}")).andExpect(status().isConflict());
+        mockMvc.perform(write(post("/api/v1/juris-track/me/time-events")).cookie(employee.cookie()).content("{\"type\":\"START\"}")).andExpect(status().isConflict());
         assertThat(totalPunchCount(employee)).isZero();
     }
 }

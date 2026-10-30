@@ -3,7 +3,10 @@
 | Version | Date | What changed | Requested by |
 |---|---|---|---|
 | 1.0 | 2026-10-23 | Initial version | Owner |
-| 1.2 | 2026-10-24 | Login access: the owner can switch an employee's sign-in off and on (`PUT /api/employees/{employeeId}/login-access`), separate from Deactivate; a JurisOne token of a login-disabled user is refused with 403 | Owner |
+| 1.2 | 2026-10-24 | Login access: the owner can switch an employee's sign-in off and on (`PUT /api/v1/employees/{employeeId}/login-access`), separate from Deactivate; a JurisOne token of a login-disabled user is refused with 403 | Owner |
+| 2.0 | 2026-10-24 | Shift-based calculation: the roster request carries shifts, each employee's shift and per-date schedule (week offs); optional token claim `shiftCode` (all `[S]`, nothing built on the JurisOne side); open points for shift codes and the roster master | Owner |
+| 2.1 | 2026-10-27 | JurisTrack side of the roster sync built `[B]`: `PUT /api/v1/integration/employees` with JurisOne's service token (scope `employees:sync`), shifts by code, shift assignment, roster dates, deactivation/reactivation rules, skipped reasons, `integration.roster_synced`; token claim `shiftCode` built; same version in the `Juris-one` copy | Owner |
+| 2.2 | 2026-10-30 | API versioned: all paths now below `/api/v1`; `/actuator/health` unversioned. JurisTrack serves only `/api/v1` (roster sync `PUT /api/v1/integration/employees`, `PUT /api/v1/businesses/{businessId}/jurisone-link`, `PUT /api/v1/employees/{employeeId}/login-access`); JurisOne gateway path is `/api/v1/juris-track/**` and forwards to JurisTrack `<base-url>/api/v1/<path>`; same version in the `Juris-one` copy | Owner |
 
 Master copy: `juris-track-backend/references/`. The `Juris-one` backend keeps an identical copy with the same version (see "Documents" in both `INSTRUCTIONS.md`).
 Related documents: [FRD-JurisOne.md](FRD-JurisOne.md), [FLOW-JurisOne.md](FLOW-JurisOne.md), [FRD-JurisTrack.md](FRD-JurisTrack.md), [FLOW-JurisTrack.md](FLOW-JurisTrack.md). Design source: `INTEGRATION.md`, `MIGRATION_PLAN.md`, `API.md` (this folder).
@@ -48,19 +51,19 @@ flowchart TB
     subgraph JO["JurisOne  Spring Boot  API port 8080"]
         direction TB
         JOAUTH["Sign-in by emailed code, cookies jo_at and jo_rt"]:::built
-        JOGATE["Module gate: plan or grant JURIS_TRACK, placeholder GET /api/juris-track"]:::built
-        GW["Gateway  /api/juris-track/**  checks session, module, permission"]:::planned
+        JOGATE["Module gate: plan or grant JURIS_TRACK, placeholder GET /api/v1/juris-track"]:::built
+        GW["Gateway  /api/v1/juris-track/**  checks session, module, permission"]:::planned
         SIGN["Token signer  private key, one JWT per request"]:::planned
         ROSTERPUSH["Roster push job  employees and managers"]:::planned
         JODB[("JurisOne database  employees, roles, reporting manager")]:::built
     end
 
-    subgraph JT["JurisTrack  Spring Boot  API port 8082, internal network only when embedded"]
+    subgraph JT["JurisTrack  Spring Boot  API port 8081, internal network only when embedded"]
         direction TB
         VERIFY["IntegrationTokenVerifier  public key, iss, aud, exp, iat, jti"]:::built
         PROV["IntegrationProvisioningService  business and user just in time"]:::built
         LINK["Business link and unlink  super admin"]:::built
-        ROSTERAPI["PUT /api/integration/employees  roster sync"]:::specified
+        ROSTERAPI["PUT /api/v1/integration/employees  roster sync"]:::specified
         TRACKAUTH["Standalone sign-in, cookies jt_at and jt_rt"]:::built
         CORE["Time tracking, team board, corrections, reports, audit"]:::built
         JTDB[("JurisTrack database  businesses, users, workdays, audit_logs")]:::built
@@ -69,8 +72,8 @@ flowchart TB
     FUTURE["future: IAM JCG / Sita sign-in  not part of version 1.0"]:::planned
 
     UI1 -->|"cookies"| JOAUTH
-    UI2 -->|"fetch /api/juris-track/**"| GW
-    UI3 -->|"fetch /api, cookies"| TRACKAUTH
+    UI2 -->|"fetch /api/v1/juris-track/**"| GW
+    UI3 -->|"fetch /api/v1, cookies"| TRACKAUTH
     JOAUTH --> JODB
     GW --> JOGATE
     GW --> SIGN
@@ -117,7 +120,7 @@ flowchart LR
         SA["JurisTrack API"]:::built
         SD[("juristrack DB")]:::built
         SB -->|"email and 6 digit code"| SW
-        SW -->|"/api with cookies jt_at jt_rt"| SA
+        SW -->|"/api/v1 with cookies jt_at jt_rt"| SA
         SA --> SD
     end
 
@@ -129,7 +132,7 @@ flowchart LR
         EA["JurisTrack API  same code, integration.enabled=true"]:::built
         ED[("juristrack DB  one row set per business")]:::built
         EB -->|"JurisOne login"| EW
-        EW -->|"/api/juris-track/** with jo cookies"| EG
+        EW -->|"/api/v1/juris-track/** with jo cookies"| EG
         EG -->|"Bearer JWT per request"| EA
         EA --> ED
     end
@@ -144,8 +147,8 @@ flowchart LR
 | Who signs in | Employees of a company that bought only JurisTrack | Employees of a JurisOne business with the module |
 | Login screen | JurisTrack's emailed code | JurisOne's (unchanged) |
 | Session | `jt_at` (about 5 minutes, renewed silently) and `jt_rt` (rotating) | JurisOne's; JurisTrack sets no cookie |
-| API caller | The browser, through the web app's `/api` proxy | The JurisOne gateway only (`[P]`); the JurisTrack API port is internal (`[S]` network rule) |
-| Frontend | `src/standalone` supplies the `TrackContext` with `apiBasePath=/api` `[B]` | JurisOne supplies a `TrackContext` with `apiBasePath=/api/juris-track` and empty headers `[P]`; the seam itself is `[B]` |
+| API caller | The browser, through the web app's `/api/v1` proxy | The JurisOne gateway only (`[P]`); the JurisTrack API port is internal (`[S]` network rule) |
+| Frontend | `src/standalone` supplies the `TrackContext` with `apiBasePath=/api/v1` `[B]` | JurisOne supplies a `TrackContext` with `apiBasePath=/api/v1/juris-track` and empty headers `[P]`; the seam itself is `[B]` |
 | Users and business | Created by the super admin and the owner | Created just in time from the token `[B]` or pushed by the roster `[S]` |
 | Endpoints and rules | Identical | Identical (one `CurrentUser`, built from the cookie or from the token) |
 
@@ -166,7 +169,7 @@ sequenceDiagram
     participant DB as JurisTrack DB and audit
 
     Emp->>UI: Click Juris Track in the sidebar [B] nav item exists, [P] real pages
-    UI->>GW: GET /api/juris-track/me/time with jo_at cookie [P]
+    UI->>GW: GET /api/v1/juris-track/me/time with jo_at cookie [P]
     GW->>GW: Check JurisOne session, module JURIS_TRACK, permission [B] placeholder check, [P] for the gateway
     alt Session invalid or module not in plan
         GW-->>UI: 401 or 404 [B] placeholder, [P] gateway
@@ -236,7 +239,7 @@ sequenceDiagram
     participant DB as JurisTrack DB and audit
 
     SA->>TW: Open the business, enter the JurisOne business id [B] API, [S] screen
-    TW->>TA: PUT /api/businesses/id/jurisone-link with jurisoneBusinessId [B]
+    TW->>TA: PUT /api/v1/businesses/id/jurisone-link with jurisoneBusinessId [B]
     TA->>TA: Role is SUPER_ADMIN, id is a valid UUID [B]
     alt Id missing or not a UUID
         TA-->>TW: 400 field error [B]
@@ -254,7 +257,7 @@ sequenceDiagram
     end
     Note over SA,DB: Later, the first token of each person of that JurisOne business: user found by email inside the linked business, jurisone_employee_id set, audit integration.user_linked. The existing owner stays ADMIN.
     SA->>TW: Remove the link [B] API
-    TW->>TA: DELETE /api/businesses/id/jurisone-link [B]
+    TW->>TA: DELETE /api/v1/businesses/id/jurisone-link [B]
     alt Business was linked
         TA->>DB: Clear jurisone_business_id, audit integration.business_unlinked before.jurisoneBusinessId [B]
     else Not linked
@@ -267,15 +270,15 @@ sequenceDiagram
 
 ## 5. Roster sync: employees from JurisOne to JurisTrack
 
-**State: SPECIFIED on the JurisTrack side (endpoint not built, see `MIGRATION_PLAN.md` step 5b), PLANNED on the JurisOne side (no job, no event hook).** The token path in section 3 provisions only people who actually open JurisTrack. A manager must also see reports who never opened it, so JurisOne pushes the roster.
+**State: BUILT on the JurisTrack side (version 2.1, `API.md` "Roster sync"; the diagram below still shows the steps as drawn in 2.0), PLANNED on the JurisOne side until its job is merged (no job, no event hook).** The token path in section 3 provisions only people who actually open JurisTrack. A manager must also see reports who never opened it, so JurisOne pushes the roster.
 
 ```mermaid
 flowchart TD
     T1["Trigger  employee joined, left, reactivated, name or email changed, manager changed, JurisTrack manager grant changed"]:::planned
     T2["Trigger  nightly full roster and on module grant"]:::planned
-    BUILD["JurisOne builds the list for ONE business  id, code, name, email, managerId, isActive, trackRole"]:::planned
+    BUILD["JurisOne builds the list for ONE business  shifts (code, name, times, grace) and employees: id, code, name, email, managerId, isActive, trackRole, shiftCode, schedule (date, shiftCode or null = week off)"]:::planned
     SIGN["JurisOne signs a service token  aud juristrack, scope employees:sync, short lifetime, jti"]:::planned
-    CALL["PUT /api/integration/employees  whole roster or a batch of changes"]:::specified
+    CALL["PUT /api/v1/integration/employees  whole roster or a batch of changes"]:::specified
     CHK{"Token valid, scope employees:sync, business known and linked?"}:::specified
     FAIL["401 bad token, 403 wrong scope or suspended, 404 or 409 business not linked  audit integration.roster_rejected"]:::specified
     EACH["For each employee, in one transaction"]:::specified
@@ -288,6 +291,8 @@ flowchart TD
     DEACT["Deactivate user  close open workday, keep history, refuse next tokens with 403"]:::specified
     REACT["Reactivate if it was deactivated by the roster"]:::specified
     MGR["Second pass  resolve managerId to users of the business, null if unknown, never self, no loop"]:::specified
+    SHIFTS["First, upsert the shifts by code  future occurrences only"]:::specified
+    ASSIGN["Per employee  assign shiftCode from today, set schedule entries per date, skip dates that already have a workday, audit like the manual change"]:::specified
     AUD["Audit integration.roster_synced with counts and per person changes, source INTEGRATION"]:::specified
     RESP["200  created, updated, deactivated, unchanged, errors per row"]:::specified
 
@@ -295,7 +300,7 @@ flowchart TD
     T2 --> BUILD
     BUILD --> SIGN --> CALL --> CHK
     CHK -- "no" --> FAIL
-    CHK -- "yes" --> EACH --> Q1
+    CHK -- "yes" --> SHIFTS --> EACH --> Q1
     Q1 -- "yes" --> UPD
     Q1 -- "no" --> Q2
     Q2 -- "yes" --> LINKU --> UPD
@@ -303,7 +308,7 @@ flowchart TD
     UPD --> ACT
     ACT -- "yes" --> DEACT --> MGR
     ACT -- "no" --> REACT --> MGR
-    MGR --> AUD --> RESP
+    MGR --> ASSIGN --> AUD --> RESP
 
     classDef built fill:#d8f3dc,stroke:#2d6a4f,color:#1b4332
     classDef specified fill:#fff3bf,stroke:#b08900,color:#5c4500
@@ -320,9 +325,13 @@ What happens on each event (all `[S]` for JurisTrack, `[P]` for the JurisOne tri
 | Manager changes | `manager_id` updated; workdays already recorded keep their manager snapshot; the new manager sees the person from now on |
 | JurisTrack manager grant given or removed | `trackRole` changes `MANAGER` / `EMPLOYEE`; an existing `ADMIN` is not downgraded |
 | Email or name changed | Updated on the linked user, matched by `jurisone_employee_id` |
+| Employee onboarded with a shift (JurisOne form, `[P]`) | `shiftCode` assigns the shift from today; the first workday is attributed to that shift's occurrence `[S]` |
+| Shift roster / weekly off changed | `schedule` entries upserted per date (null = week off); a date with a workday is skipped and reported `[S]` |
+| Shift template changed in JurisOne | `shifts` entry updated by code; future occurrences only, old workdays keep their snapshot `[S]` |
+| First sign-in before any push | Optional token claim `shiftCode` assigns the shift once, if the person has none `[S]` |
 | Push never arrives | The token path (section 3) still provisions and refreshes whoever signs in `[B]` |
 
-Details of the roster response and the audit names `integration.roster_synced` and `integration.roster_rejected` are proposals of this document; `INTEGRATION.md` only fixes the request, the scope and the idempotence. Idempotent: the same list twice changes nothing and writes no further audit entry. The roster endpoint is the only endpoint a service token may call; the user token cannot call it.
+Built (2.1): the response, the reason codes and the audit entry `integration.roster_synced` are in `API.md` ("Roster sync"); `integration.roster_rejected` was not built (refused service tokens are `integration.token_rejected`). Earlier text: `INTEGRATION.md` only fixes the request, the scope and the idempotence. Idempotent: the same list twice changes nothing and writes no further audit entry. The roster endpoint is the only endpoint a service token may call; the user token cannot call it.
 
 ## 6. Role and permission mapping
 
@@ -384,7 +393,7 @@ Rules of the mapping (`[B]`):
 | Business suspended in JurisTrack | Token user refused; open workdays were closed at suspension | 403 `BUSINESS_SUSPENDED`, audit `integration.user_refused` once per user and window | `[B]` |
 | Business suspended or subscription ended in JurisOne | JurisOne gate answers first (402, or read-only when ended); JurisTrack is not told, so data stays and open workdays stay open | 402 from JurisOne | `[P]`, open point 6 |
 | Employee deactivated in JurisTrack | Token refused | 403, `integration.user_refused` reason `user_deactivated` | `[B]` |
-| Employee's login switched off in JurisTrack (`PUT /api/employees/{employeeId}/login-access`) | The person stays in the business and the reports, but their token is refused; open workday closed when the login was switched off | 403, `integration.user_refused` reason `login_disabled`, once per user and window | `[B]` |
+| Employee's login switched off in JurisTrack (`PUT /api/v1/employees/{employeeId}/login-access`) | The person stays in the business and the reports, but their token is refused; open workday closed when the login was switched off | 403, `integration.user_refused` reason `login_disabled`, once per user and window | `[B]` |
 | Employee deactivated or left in JurisOne | Gateway stops signing tokens at once; JurisTrack user deactivated by the next roster push (open workday closed) | 403 from the first push on | `[B]` token side, `[S]` roster |
 | Email of a user of another business, or of the `SUPER_ADMIN` | Refused, no business created | 403, `email_of_another_business` | `[B]` |
 | JurisOne business unknown and person new | Business and user created just in time | 200, `integration.business_provisioned` | `[B]` |
@@ -403,7 +412,7 @@ JurisTrack side
 - [x] Business link and unlink by the super admin with the two 409 errors and audit
 - [x] One `CurrentUser` (source `STANDALONE` or `INTEGRATION`), row level security from it
 - [x] `TrackContext` seam in `src/track` (API base path, headers, user, language, navigation, suspended hook)
-- [ ] `PUT /api/integration/employees` with a service token and scope `employees:sync`, with tests and audit (`integration.roster_synced`)
+- [ ] `PUT /api/v1/integration/employees` with a service token and scope `employees:sync`, with tests and audit (`integration.roster_synced`)
 - [ ] Super admin screen to link and unlink a business (API exists)
 - [ ] JWKS URL for key rotation; shared replay store if more than one instance
 - [ ] Document the network rule and `trusted-proxies` for the embedded deployment
@@ -411,7 +420,7 @@ JurisTrack side
 JurisOne side (nothing of this exists yet)
 - [ ] Choose and generate the key pair; private key only in JurisOne; give JurisTrack the public key and the exact `iss` value
 - [ ] "JurisTrack manager" grant in JurisOne roles and permissions; mapping function JurisOne role -> `trackRole`
-- [ ] Gateway controller `/api/juris-track/**`: session, module gate, permission, per-call token, forward, error mapping, rate limit
+- [ ] Gateway controller `/api/v1/juris-track/**`: session, module gate, permission, per-call token, forward, error mapping, rate limit
 - [ ] Token signer service (one JWT per request, 5 minutes, `jti`)
 - [ ] Roster push: change hooks plus nightly job, service token
 - [ ] JurisOne frontend embeds `src/track` (package or federation), supplies its `TrackContext`, merges the Hindi messages, replaces the "Coming soon" page
@@ -424,8 +433,10 @@ Later versions
 
 ## 10. Open points for the owner
 
+0. **Shifts (version 2.0).** (a) The mapping of JurisOne shift codes to JurisTrack shifts: the roster's `code` is the key; who creates the codes and keeps them stable? (b) Who is the master of the roster when a business is linked: JurisOne (proposal) or either side with "the next push wins for the dates it lists"? (c) Does JurisOne send the week-off pattern as explicit dates (specified) or as a rotation rule that JurisTrack expands? (d) Time zone of the shift times: the business time zone (specified); a JurisOne business in several zones would need a zone per shift.
+
 1. **Token issuer value.** `INTEGRATION.md` says `iss=jurisone`; the settings use JurisOne's public URL (`http://localhost:3005`, `https://people.example.com`). Pick one value and use it on both sides.
-2. **Gateway path.** Default `/api/juris-track/**` extending the existing placeholder `GET /api/juris-track`. Confirm.
+2. **Gateway path.** Default `/api/v1/juris-track/**` extending the existing placeholder `GET /api/v1/juris-track`. Confirm.
 3. **Does the JurisOne business owner become `ADMIN` in JurisTrack?** Today only `EMPLOYEE` and `MANAGER` are sent by design; `ADMIN` only if JurisOne wants an owner-type user.
 4. **Unlinking.** Should JurisOne stop its tokens first, and should people of an unlinked business be able to sign in standalone at once?
 5. **How the JurisTrack manager grant looks in JurisOne:** a new permission in the roles screen, or derived from "has reports"?

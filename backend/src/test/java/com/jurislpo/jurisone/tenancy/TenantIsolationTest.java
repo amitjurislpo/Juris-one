@@ -73,12 +73,12 @@ class TenantIsolationTest extends IntegrationTest {
         Person betaHr = person(betaData, betaHrId, code); // same code, other business: allowed
 
         // (nobody sees themselves in the list, so alpha's HR looks for a colleague)
-        JsonNode list = json.readTree(mockMvc.perform(get("/api/people?search=" + code).cookie(alphaHr.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        JsonNode list = json.readTree(mockMvc.perform(get("/api/v1/people?search=" + code).cookie(alphaHr.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
         assertThat(list.at("/data/rows").findValuesAsText("id")).contains(alphaColleague.id().toString()).doesNotContain(betaHr.id().toString(), alphaHr.id().toString());
 
         // a record of the other business is simply not there
-        mockMvc.perform(get("/api/people/" + betaHr.id()).cookie(alphaHr.cookie())).andExpect(status().is4xxClientError());
-        mockMvc.perform(get("/api/people/" + betaHr.id()).cookie(betaHr.cookie())).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/people/" + betaHr.id()).cookie(alphaHr.cookie())).andExpect(status().is4xxClientError());
+        mockMvc.perform(get("/api/v1/people/" + betaHr.id()).cookie(betaHr.cookie())).andExpect(status().isOk());
     }
 
     @Test
@@ -88,8 +88,8 @@ class TenantIsolationTest extends IntegrationTest {
         Person betaEmp = person(betaData, betaEmployeeId, "BE-" + (int) (Math.random() * 100_000));
 
         String department = "Research " + UUID.randomUUID().toString().substring(0, 6);
-        mockMvc.perform(write(post("/api/departments")).cookie(alphaHr.cookie()).content("{\"name\":\"" + department + "\"}")).andExpect(status().isCreated());
-        mockMvc.perform(write(post("/api/departments")).cookie(betaHr.cookie()).content("{\"name\":\"" + department + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(write(post("/api/v1/departments")).cookie(alphaHr.cookie()).content("{\"name\":\"" + department + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(write(post("/api/v1/departments")).cookie(betaHr.cookie()).content("{\"name\":\"" + department + "\"}")).andExpect(status().isCreated());
         assertThat(jdbc.queryForObject("SELECT count(DISTINCT business_id) FROM departments WHERE name = ?", Integer.class, department)).isEqualTo(2);
 
         // a pending leave request in beta can't be decided from alpha
@@ -98,7 +98,7 @@ class TenantIsolationTest extends IntegrationTest {
         UUID request = UUID.randomUUID();
         jdbc.update("INSERT INTO leave_requests (id, employee_id, leave_type, from_date, to_date, days) VALUES (?, ?, 'CL', ?, ?, 1)",
                 request, betaEmp.id(), Date.valueOf(LocalDate.now().plusDays(10)), Date.valueOf(LocalDate.now().plusDays(10)));
-        mockMvc.perform(write(put("/api/leave/requests/" + request + "/decision")).cookie(alphaHr.cookie()).content("{\"approve\":true}"))
+        mockMvc.perform(write(put("/api/v1/leave/requests/" + request + "/decision")).cookie(alphaHr.cookie()).content("{\"approve\":true}"))
                 .andExpect(status().is4xxClientError());
         assertThat(jdbc.queryForObject("SELECT status::text FROM leave_requests WHERE id = ?", String.class, request)).isEqualTo("PENDING");
     }
@@ -113,7 +113,7 @@ class TenantIsolationTest extends IntegrationTest {
             {"firstName":"Copy","lastName":"Cat","fatherName":"Someone","email":"%s","phoneCountry":"+91","phone":"98765 43210","location":"IN_IST","pan":"abcde1234f",
              "aadhaar":"2345 6789 0123","uan":"","address":"12 Lake Road, Pune","designation":"Associate","departmentId":"%s","managerId":"%s",
              "dateOfJoining":"2031-10-12","shift":"IN_DAY","roleId":"%s"}""".formatted(betaEmp.email(), deptA, alphaHr.id(), alphaEmployeeId);
-        mockMvc.perform(write(post("/api/people")).cookie(alphaHr.cookie()).content(body))
+        mockMvc.perform(write(post("/api/v1/people")).cookie(alphaHr.cookie()).content(body))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.detail").value("That email is already in use."));
     }
 
@@ -124,23 +124,23 @@ class TenantIsolationTest extends IntegrationTest {
         Person alphaOwner = person(alphaData, alphaOwnerRole, "TA-" + (int) (Math.random() * 100_000));
         Person betaOwner = person(betaData, betaOwnerRole, "TB-" + (int) (Math.random() * 100_000));
         String key = "T" + TestData.letters(4).toUpperCase();
-        String projectId = json.readTree(mockMvc.perform(write(post("/api/projects")).cookie(alphaOwner.cookie())
+        String projectId = json.readTree(mockMvc.perform(write(post("/api/v1/projects")).cookie(alphaOwner.cookie())
                 .content("{\"key\":\"" + key + "\",\"name\":\"Alpha " + key + "\",\"visibility\":\"BUSINESS\"}")).andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString()).at("/data/id").asText();
-        String taskId = json.readTree(mockMvc.perform(write(post("/api/tasks")).cookie(alphaOwner.cookie())
+        String taskId = json.readTree(mockMvc.perform(write(post("/api/v1/tasks")).cookie(alphaOwner.cookie())
                 .content("{\"projectId\":\"" + projectId + "\",\"title\":\"Alpha only\"}")).andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString()).at("/data/id").asText();
 
         // beta's Owner (who sees every project of their own business) finds nothing of alpha's, by id or key
-        mockMvc.perform(get("/api/projects/" + projectId).cookie(betaOwner.cookie())).andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/tasks/" + taskId).cookie(betaOwner.cookie())).andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/tasks/" + key + "-1").cookie(betaOwner.cookie())).andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/tasks/" + taskId + "/comments").cookie(betaOwner.cookie())).andExpect(status().isNotFound());
-        mockMvc.perform(write(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/tasks/" + taskId)).cookie(betaOwner.cookie())
+        mockMvc.perform(get("/api/v1/projects/" + projectId).cookie(betaOwner.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/tasks/" + taskId).cookie(betaOwner.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/tasks/" + key + "-1").cookie(betaOwner.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/tasks/" + taskId + "/comments").cookie(betaOwner.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(write(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1/tasks/" + taskId)).cookie(betaOwner.cookie())
                 .content("{\"version\":0,\"title\":\"Taken over\"}")).andExpect(status().isNotFound());
-        mockMvc.perform(write(post("/api/tasks")).cookie(betaOwner.cookie()).content("{\"projectId\":\"" + projectId + "\",\"title\":\"Sneaky\"}"))
+        mockMvc.perform(write(post("/api/v1/tasks")).cookie(betaOwner.cookie()).content("{\"projectId\":\"" + projectId + "\",\"title\":\"Sneaky\"}"))
                 .andExpect(status().isNotFound());
-        JsonNode betaTasks = json.readTree(mockMvc.perform(get("/api/tasks").cookie(betaOwner.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        JsonNode betaTasks = json.readTree(mockMvc.perform(get("/api/v1/tasks").cookie(betaOwner.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
         assertThat(betaTasks.at("/data/rows").findValuesAsText("id")).doesNotContain(taskId);
         // and the database hides the rows even without a filter
         long seenFromBeta = TenantContext.call(betaData.business(), () -> jdbc.queryForObject("SELECT count(*) FROM tasks WHERE id = ?::uuid", Long.class, taskId));

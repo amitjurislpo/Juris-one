@@ -1,5 +1,8 @@
 package com.jurislpo.jurisone.security;
 
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX_SLASH;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.config.JurisOneProperties;
 import com.jurislpo.jurisone.exception.Problems;
@@ -35,7 +38,7 @@ public class OriginCheckFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return SAFE.contains(request.getMethod()) || !request.getRequestURI().startsWith("/api/");
+        return SAFE.contains(request.getMethod()) || !request.getRequestURI().startsWith(PREFIX_SLASH);
     }
 
     @Override

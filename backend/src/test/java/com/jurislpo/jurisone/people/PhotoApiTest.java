@@ -80,46 +80,46 @@ class PhotoApiTest extends IntegrationTest {
     }
 
     MockHttpServletRequestBuilder putOwn(Person person, String type, byte[] body) {
-        return write(put("/api/profile/photo")).cookie(person.cookie()).contentType(type).content(body);
+        return write(put("/api/v1/profile/photo")).cookie(person.cookie()).contentType(type).content(body);
     }
 
     MockHttpServletRequestBuilder putFor(Person actor, UUID target, String type, byte[] body) {
-        return write(put("/api/people/" + target + "/photo")).cookie(actor.cookie()).contentType(type).content(body);
+        return write(put("/api/v1/people/" + target + "/photo")).cookie(actor.cookie()).contentType(type).content(body);
     }
 
     @Test
     void anEmployeeSetsReadsAndRemovesTheirOwnPhoto() throws Exception {
         Person employee = person(data, empRole), colleague = person(data, empRole);
-        mockMvc.perform(get("/api/people/" + employee.id() + "/photo").cookie(colleague.cookie())).andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/profile").cookie(employee.cookie())).andExpect(jsonPath("$.data.photo").doesNotExist());
+        mockMvc.perform(get("/api/v1/people/" + employee.id() + "/photo").cookie(colleague.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/profile").cookie(employee.cookie())).andExpect(jsonPath("$.data.photo").doesNotExist());
 
         String response = mockMvc.perform(putOwn(employee, "image/png", PNG)).andExpect(status().isOk()).andExpect(jsonPath("$.data.photo").isNumber())
                 .andReturn().getResponse().getContentAsString();
         long version = Long.parseLong(response.replaceAll(".*\"photo\":(\\d+).*", "$1"));
 
         // anyone in the business reads it: bytes, type, a one-hour private cache and an ETag
-        var read = mockMvc.perform(get("/api/people/" + employee.id() + "/photo").cookie(colleague.cookie())).andExpect(status().isOk())
+        var read = mockMvc.perform(get("/api/v1/people/" + employee.id() + "/photo").cookie(colleague.cookie())).andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.IMAGE_PNG)).andExpect(header().string(HttpHeaders.CACHE_CONTROL, "private, max-age=3600"))
                 .andExpect(header().string(HttpHeaders.ETAG, "\"" + version + "\"")).andReturn().getResponse();
         assertThat(read.getContentAsByteArray()).isEqualTo(PNG);
-        mockMvc.perform(get("/api/people/" + employee.id() + "/photo").cookie(colleague.cookie()).header(HttpHeaders.IF_NONE_MATCH, "\"" + version + "\""))
+        mockMvc.perform(get("/api/v1/people/" + employee.id() + "/photo").cookie(colleague.cookie()).header(HttpHeaders.IF_NONE_MATCH, "\"" + version + "\""))
                 .andExpect(status().isNotModified());
 
         // the payloads carry the version
-        mockMvc.perform(get("/api/profile").cookie(employee.cookie())).andExpect(jsonPath("$.data.photo").value(version));
-        mockMvc.perform(get("/api/me").cookie(employee.cookie())).andExpect(jsonPath("$.data.user.photo").value(version));
-        mockMvc.perform(get("/api/directory").cookie(colleague.cookie())).andExpect(jsonPath("$.data.rows[?(@.id == '" + employee.id() + "')].photo").value(version));
+        mockMvc.perform(get("/api/v1/profile").cookie(employee.cookie())).andExpect(jsonPath("$.data.photo").value(version));
+        mockMvc.perform(get("/api/v1/me").cookie(employee.cookie())).andExpect(jsonPath("$.data.user.photo").value(version));
+        mockMvc.perform(get("/api/v1/directory").cookie(colleague.cookie())).andExpect(jsonPath("$.data.rows[?(@.id == '" + employee.id() + "')].photo").value(version));
 
         // replacing it changes the type; the audit holds no bytes
         mockMvc.perform(putOwn(employee, "image/jpeg", JPEG)).andExpect(status().isOk());
-        mockMvc.perform(get("/api/people/" + employee.id() + "/photo").cookie(colleague.cookie())).andExpect(content().contentType(MediaType.IMAGE_JPEG));
+        mockMvc.perform(get("/api/v1/people/" + employee.id() + "/photo").cookie(colleague.cookie())).andExpect(content().contentType(MediaType.IMAGE_JPEG));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'employee.photo_set' AND entity_id = ?", Integer.class, employee.id().toString())).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT after::text FROM audit_log WHERE action = 'employee.photo_set' AND entity_id = ? ORDER BY at DESC LIMIT 1", String.class,
                 employee.id().toString())).contains("image/jpeg").contains("\"bytes\"");
 
-        mockMvc.perform(write(delete("/api/profile/photo")).cookie(employee.cookie())).andExpect(status().isOk());
-        mockMvc.perform(get("/api/people/" + employee.id() + "/photo").cookie(colleague.cookie())).andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/profile").cookie(employee.cookie())).andExpect(jsonPath("$.data.photo").doesNotExist());
+        mockMvc.perform(write(delete("/api/v1/profile/photo")).cookie(employee.cookie())).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/people/" + employee.id() + "/photo").cookie(colleague.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/profile").cookie(employee.cookie())).andExpect(jsonPath("$.data.photo").doesNotExist());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'employee.photo_remove' AND entity_id = ?", Integer.class, employee.id().toString())).isEqualTo(1);
     }
 
@@ -141,23 +141,23 @@ class PhotoApiTest extends IntegrationTest {
         Person hrPerson = person(data, hrmRole), employee = person(data, empRole), other = person(data, empRole), finance = person(data, finRole);
 
         mockMvc.perform(putFor(hrPerson, employee.id(), "image/png", PNG)).andExpect(status().isOk()).andExpect(jsonPath("$.data.photo").isNumber());
-        mockMvc.perform(get("/api/people/" + employee.id() + "/photo").cookie(other.cookie())).andExpect(status().isOk()).andExpect(content().contentType(MediaType.IMAGE_PNG));
+        mockMvc.perform(get("/api/v1/people/" + employee.id() + "/photo").cookie(other.cookie())).andExpect(status().isOk()).andExpect(content().contentType(MediaType.IMAGE_PNG));
         assertThat(jdbc.queryForObject("SELECT actor_id FROM audit_log WHERE action = 'employee.photo_set' AND entity_id = ?", UUID.class, employee.id().toString())).isEqualTo(hrPerson.id());
 
         // a plain employee can't set a colleague's photo (no people.add), nor can HR reach a role outside their list
         mockMvc.perform(putFor(other, employee.id(), "image/png", PNG)).andExpect(status().isForbidden());
-        mockMvc.perform(write(delete("/api/people/" + employee.id() + "/photo")).cookie(other.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(write(delete("/api/v1/people/" + employee.id() + "/photo")).cookie(other.cookie())).andExpect(status().isForbidden());
         mockMvc.perform(putFor(hrPerson, finance.id(), "image/png", PNG)).andExpect(status().isForbidden());
         // the same checks on the bytes apply
         mockMvc.perform(putFor(hrPerson, other.id(), "image/jpeg", PNG)).andExpect(status().isUnprocessableEntity());
-        // HR doesn't use this route for their own photo (that is /api/profile/photo)
+        // HR doesn't use this route for their own photo (that is /api/v1/profile/photo)
         mockMvc.perform(putFor(hrPerson, hrPerson.id(), "image/png", PNG)).andExpect(status().isForbidden());
         // an exited employee's photo is left alone
         jdbc.update("UPDATE employees SET status = 'EXITED', exit_date = current_date WHERE id = ?", other.id());
         mockMvc.perform(putFor(hrPerson, other.id(), "image/png", PNG)).andExpect(status().isForbidden());
 
-        mockMvc.perform(write(delete("/api/people/" + employee.id() + "/photo")).cookie(hrPerson.cookie())).andExpect(status().isOk());
-        mockMvc.perform(get("/api/people/" + employee.id() + "/photo").cookie(hrPerson.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(write(delete("/api/v1/people/" + employee.id() + "/photo")).cookie(hrPerson.cookie())).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/people/" + employee.id() + "/photo").cookie(hrPerson.cookie())).andExpect(status().isNotFound());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'employee.photo_remove' AND entity_id = ? AND actor_id = ?", Integer.class,
                 employee.id().toString(), hrPerson.id())).isEqualTo(1);
     }
@@ -172,9 +172,9 @@ class PhotoApiTest extends IntegrationTest {
         UUID emp2 = testData.role("employee", "self", "dir");
         jdbc.update("INSERT INTO role_assignable_roles (role_id, assignable_role_id) VALUES (?, ?) ON CONFLICT DO NOTHING", secondHrRole, emp2);
         Person outsider = person(testData, emp2), hrOutside = person(testData, secondHrRole);
-        mockMvc.perform(get("/api/people/" + employee.id() + "/photo").cookie(outsider.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/people/" + employee.id() + "/photo").cookie(outsider.cookie())).andExpect(status().isNotFound());
         mockMvc.perform(putFor(hrOutside, employee.id(), "image/png", PNG)).andExpect(status().isForbidden());
-        mockMvc.perform(write(delete("/api/people/" + employee.id() + "/photo")).cookie(hrOutside.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(write(delete("/api/v1/people/" + employee.id() + "/photo")).cookie(hrOutside.cookie())).andExpect(status().isForbidden());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM employee_photos WHERE employee_id = ?", Integer.class, employee.id())).isEqualTo(1);
     }
 
@@ -183,12 +183,12 @@ class PhotoApiTest extends IntegrationTest {
         Person hrPerson = person(data, hrmRole), employee = person(data, empRole);
         mockMvc.perform(putOwn(employee, "image/png", PNG)).andExpect(status().isOk());
         Long version = jdbc.queryForObject("SELECT photo_updated_at FROM employees WHERE id = ?", java.sql.Timestamp.class, employee.id()).getTime();
-        String list = mockMvc.perform(get("/api/people").cookie(hrPerson.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String list = mockMvc.perform(get("/api/v1/people").cookie(hrPerson.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(list).contains("\"photo\":" + version);
-        String profile = mockMvc.perform(get("/api/people/" + employee.id()).cookie(hrPerson.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String profile = mockMvc.perform(get("/api/v1/people/" + employee.id()).cookie(hrPerson.cookie())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(profile).contains("\"photo\":" + version);
         // My team: a manager sees their report's photo version
         jdbc.update("UPDATE employees SET reporting_manager_id = ? WHERE id = ?", hrPerson.id(), employee.id());
-        mockMvc.perform(get("/api/team").cookie(hrPerson.cookie())).andExpect(status().isOk()).andExpect(jsonPath("$.data.rows[0].photo").value(version));
+        mockMvc.perform(get("/api/v1/team").cookie(hrPerson.cookie())).andExpect(status().isOk()).andExpect(jsonPath("$.data.rows[0].photo").value(version));
     }
 }

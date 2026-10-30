@@ -97,15 +97,15 @@ class EmployeeOnboardingApiTest extends IntegrationTest {
     }
 
     JsonNode mine(Cookie cookie) throws Exception {
-        return data(mockMvc.perform(get("/api/onboarding/mine").cookie(cookie)).andExpect(status().isOk()));
+        return data(mockMvc.perform(get("/api/v1/onboarding/mine").cookie(cookie)).andExpect(status().isOk()));
     }
 
     JsonNode saveOk(Cookie cookie, int step, String body) throws Exception {
-        return data(putJson(cookie, "/api/onboarding/mine/steps/" + step, body).andExpect(status().isOk()));
+        return data(putJson(cookie, "/api/v1/onboarding/mine/steps/" + step, body).andExpect(status().isOk()));
     }
 
     JsonNode errors(Cookie cookie, int step, String body) throws Exception {
-        return json.readTree(putJson(cookie, "/api/onboarding/mine/steps/" + step, body).andExpect(status().isUnprocessableEntity()).andReturn().getResponse().getContentAsString()).get("errors");
+        return json.readTree(putJson(cookie, "/api/v1/onboarding/mine/steps/" + step, body).andExpect(status().isUnprocessableEntity()).andReturn().getResponse().getContentAsString()).get("errors");
     }
 
     String family() {
@@ -116,7 +116,7 @@ class EmployeeOnboardingApiTest extends IntegrationTest {
     }
 
     void uploadPdf(Cookie cookie, String slotKey) throws Exception {
-        mockMvc.perform(multipart("/api/onboarding/mine/attachments").file(new MockMultipartFile("file", "proof.pdf", "application/pdf", PDF)).param("slotKey", slotKey).cookie(cookie)
+        mockMvc.perform(multipart("/api/v1/onboarding/mine/attachments").file(new MockMultipartFile("file", "proof.pdf", "application/pdf", PDF)).param("slotKey", slotKey).cookie(cookie)
                 .header("origin", "http://localhost:3005").header("host", "localhost:3005")).andExpect(status().isCreated());
     }
 
@@ -134,16 +134,16 @@ class EmployeeOnboardingApiTest extends IntegrationTest {
 
     @Test
     void theOldCandidateFlowIsGone() throws Exception {
-        mockMvc.perform(get("/api/public/onboardings/some-token-value-that-is-long-enough")).andExpect(status().is4xxClientError());
-        mockMvc.perform(write(post("/api/onboardings")).cookie(hr).content("{}")).andExpect(status().is4xxClientError());
+        mockMvc.perform(get("/api/v1/public/onboardings/some-token-value-that-is-long-enough")).andExpect(status().is4xxClientError());
+        mockMvc.perform(write(post("/api/v1/onboardings")).cookie(hr).content("{}")).andExpect(status().is4xxClientError());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_name IN ('onboardings', 'onboarding_documents')", Integer.class)).isZero();
     }
 
     @Test
     void notRequiredOrSignedOutIsRefused() throws Exception {
-        mockMvc.perform(get("/api/onboarding/mine").cookie(old)).andExpect(status().isNotFound());
-        putJson(old, "/api/onboarding/mine/steps/2", "{\"employments\":[]}").andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/onboarding/mine")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/onboarding/mine").cookie(old)).andExpect(status().isNotFound());
+        putJson(old, "/api/v1/onboarding/mine/steps/2", "{\"employments\":[]}").andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/onboarding/mine")).andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -191,11 +191,11 @@ class EmployeeOnboardingApiTest extends IntegrationTest {
         assertThat(again.get("isReadOnly").asBoolean()).isFalse();
 
         // the stepper click remembers the position without saving data
-        JsonNode moved = data(putJson(employee, "/api/onboarding/mine/current-step", "{\"step\":4}").andExpect(status().isOk()));
+        JsonNode moved = data(putJson(employee, "/api/v1/onboarding/mine/current-step", "{\"step\":4}").andExpect(status().isOk()));
         assertThat(moved.get("currentStep").asInt()).isEqualTo(4);
         assertThat(mine(employee).get("currentStep").asInt()).isEqualTo(4);
-        putJson(employee, "/api/onboarding/mine/current-step", "{\"step\":9}").andExpect(status().isBadRequest());
-        putJson(employee, "/api/onboarding/mine/steps/7", "{}").andExpect(status().isBadRequest());
+        putJson(employee, "/api/v1/onboarding/mine/current-step", "{\"step\":9}").andExpect(status().isBadRequest());
+        putJson(employee, "/api/v1/onboarding/mine/steps/7", "{}").andExpect(status().isBadRequest());
 
         // the slots follow the education entries; removing an entry removes its slot
         String educationId = again.at("/education/0/id").asText();
@@ -269,20 +269,20 @@ class EmployeeOnboardingApiTest extends IntegrationTest {
         String unchanged = STEP3.replace("\"bankAccountNumber\":\"50100123456789\"", "\"bankAccountNumber\":null").replace("\"pan\":\"abcde1234f\"", "\"pan\":null")
                 .replace("\"aadhaar\":\"2345 6789 0123\"", "\"aadhaar\":null").replace("\"uan\":\"123456789012\"", "\"uan\":null");
         saveOk(employee, 3, unchanged);
-        JsonNode secrets = data(mockMvc.perform(get("/api/onboarding/mine/secrets").cookie(employee)).andExpect(status().isOk()));
+        JsonNode secrets = data(mockMvc.perform(get("/api/v1/onboarding/mine/secrets").cookie(employee)).andExpect(status().isOk()));
         assertThat(secrets.get("bankAccountNumber").asText()).isEqualTo("50100123456789");
         assertThat(secrets.get("pan").asText()).isEqualTo("ABCDE1234F");
         assertThat(secrets.get("aadhaar").asText()).isEqualTo("234567890123");
         // sending the masked value back also keeps it
         saveOk(employee, 3, STEP3.replace("\"bankAccountNumber\":\"50100123456789\"", "\"bankAccountNumber\":\"XXXXXXXX6789\""));
-        assertThat(data(mockMvc.perform(get("/api/onboarding/mine/secrets").cookie(employee))).get("bankAccountNumber").asText()).isEqualTo("50100123456789");
+        assertThat(data(mockMvc.perform(get("/api/v1/onboarding/mine/secrets").cookie(employee))).get("bankAccountNumber").asText()).isEqualTo("50100123456789");
 
         // HR sees them masked, and there is no way to reveal them
-        JsonNode forHr = data(mockMvc.perform(get("/api/people/" + employeeId + "/onboarding").cookie(hr)).andExpect(status().isOk()));
+        JsonNode forHr = data(mockMvc.perform(get("/api/v1/people/" + employeeId + "/onboarding").cookie(hr)).andExpect(status().isOk()));
         assertThat(forHr.at("/bank/bankAccountNumber").asText()).isEqualTo("XXXXXXXX6789");
         assertThat(forHr.get("isReadOnly").asBoolean()).isTrue();
         assertThat(forHr.toString()).doesNotContain("50100123456789");
-        mockMvc.perform(get("/api/people/" + employeeId + "/onboarding?reveal=true").cookie(hr)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/people/" + employeeId + "/onboarding?reveal=true").cookie(hr)).andExpect(status().isOk());
 
         // a passport number needs an expiry, and brings its own mandatory slot
         JsonNode withPassport = saveOk(employee, 3, STEP3.replace("\"namePerAadhaar\":\"Amit Jaspal\"", "\"namePerAadhaar\":\"Amit Jaspal\",\"passportNumber\":\"P1234567\",\"passportExpiry\":\"2032-01-01\""));
@@ -333,17 +333,17 @@ class EmployeeOnboardingApiTest extends IntegrationTest {
     @Test
     void submissionNeedsEverythingAndIsReadOnlyUntilHrDecides() throws Exception {
         // nothing filled: every step is reported, with the missing mandatory files
-        JsonNode errors = json.readTree(mockMvc.perform(write(post("/api/onboarding/mine/submission")).cookie(employee)).andExpect(status().isUnprocessableEntity())
+        JsonNode errors = json.readTree(mockMvc.perform(write(post("/api/v1/onboarding/mine/submission")).cookie(employee)).andExpect(status().isUnprocessableEntity())
                 .andReturn().getResponse().getContentAsString()).get("errors");
         assertThat(errors.has("personal")).isTrue();
         assertThat(errors.has("bank")).isTrue();
         assertThat(errors.has("attachments.address_permanent")).isTrue();
 
         fillSteps(employee);
-        errors = json.readTree(mockMvc.perform(write(post("/api/onboarding/mine/submission")).cookie(employee)).andExpect(status().isUnprocessableEntity())
+        errors = json.readTree(mockMvc.perform(write(post("/api/v1/onboarding/mine/submission")).cookie(employee)).andExpect(status().isUnprocessableEntity())
                 .andReturn().getResponse().getContentAsString()).get("errors");
         assertThat(errors.size()).isEqualTo(6); // address x2, qualification, bank, PAN, Aadhaar
-        putJson(employee, "/api/onboarding/mine/steps/6", "{}").andExpect(status().isUnprocessableEntity());
+        putJson(employee, "/api/v1/onboarding/mine/steps/6", "{}").andExpect(status().isUnprocessableEntity());
 
         JsonNode payload = mine(employee);
         for (JsonNode slot : payload.get("attachmentSlots")) {
@@ -351,21 +351,21 @@ class EmployeeOnboardingApiTest extends IntegrationTest {
         }
         assertThat(saveOk(employee, 6, "{}").at("/stepStatus/6").asText()).isEqualTo("COMPLETE");
 
-        mockMvc.perform(write(post("/api/onboarding/mine/submission")).cookie(employee)).andExpect(status().isCreated()).andExpect(jsonPath("$.data.status").value("SUBMITTED"))
+        mockMvc.perform(write(post("/api/v1/onboarding/mine/submission")).cookie(employee)).andExpect(status().isCreated()).andExpect(jsonPath("$.data.status").value("SUBMITTED"))
                 .andExpect(jsonPath("$.data.isReadOnly").value(true));
         assertThat(jdbc.queryForObject("SELECT submitted_at IS NOT NULL FROM employee_onboardings WHERE employee_id = ?", Boolean.class, employeeId)).isTrue();
 
         // locked: every write answers 409
-        putJson(employee, "/api/onboarding/mine/steps/1", STEP1).andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value("Onboarding is already submitted."));
-        putJson(employee, "/api/onboarding/mine/current-step", "{\"step\":1}").andExpect(status().isConflict());
-        mockMvc.perform(write(post("/api/onboarding/mine/submission")).cookie(employee)).andExpect(status().isConflict());
-        mockMvc.perform(multipart("/api/onboarding/mine/attachments").file(new MockMultipartFile("file", "x.pdf", "application/pdf", PDF)).param("slotKey", "bank").cookie(employee)
+        putJson(employee, "/api/v1/onboarding/mine/steps/1", STEP1).andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value("Onboarding is already submitted."));
+        putJson(employee, "/api/v1/onboarding/mine/current-step", "{\"step\":1}").andExpect(status().isConflict());
+        mockMvc.perform(write(post("/api/v1/onboarding/mine/submission")).cookie(employee)).andExpect(status().isConflict());
+        mockMvc.perform(multipart("/api/v1/onboarding/mine/attachments").file(new MockMultipartFile("file", "x.pdf", "application/pdf", PDF)).param("slotKey", "bank").cookie(employee)
                 .header("origin", "http://localhost:3005").header("host", "localhost:3005")).andExpect(status().isConflict());
         // reading still works
         assertThat(mine(employee).get("status").asText()).isEqualTo("SUBMITTED");
 
         // the old "reopen" endpoint is gone: HR decides with approvals / rejections (see OnboardingReviewApiTest)
-        putJson(hr, "/api/people/" + employeeId + "/onboarding/status", "{\"status\":\"CHANGES_REQUESTED\"}").andExpect(status().is4xxClientError());
+        putJson(hr, "/api/v1/people/" + employeeId + "/onboarding/status", "{\"status\":\"CHANGES_REQUESTED\"}").andExpect(status().is4xxClientError());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action IN ('onboarding.submitted', 'onboarding.step_saved')", Integer.class)).isGreaterThanOrEqualTo(7);
     }
 
@@ -374,14 +374,14 @@ class EmployeeOnboardingApiTest extends IntegrationTest {
         saveOk(employee, 1, STEP1);
         uploadPdf(employee, "address_permanent");
         String fileId = jdbc.queryForObject("SELECT id::text FROM onboarding_attachments WHERE onboarding_id = (SELECT id FROM employee_onboardings WHERE employee_id = ?)", String.class, employeeId);
-        mockMvc.perform(get("/api/people/" + employeeId + "/onboarding/attachments/" + fileId + "/file?download=true").cookie(hr)).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/people/" + employeeId + "/onboarding/attachments/" + fileId + "/file?download=true").cookie(hr)).andExpect(status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("attachment")));
-        mockMvc.perform(get("/api/people/" + employeeId + "/documents").cookie(hr)).andExpect(status().isOk()).andExpect(jsonPath("$.data[0].kind").value("address_permanent"))
+        mockMvc.perform(get("/api/v1/people/" + employeeId + "/documents").cookie(hr)).andExpect(status().isOk()).andExpect(jsonPath("$.data[0].kind").value("address_permanent"))
                 .andExpect(jsonPath("$.data[0].label").value("Address : Permanent Address")).andExpect(jsonPath("$.data[0].fileName").value("proof.pdf"));
-        mockMvc.perform(get("/api/people/" + employeeId + "/documents/" + fileId + "/file").cookie(hr)).andExpect(status().isOk());
-        mockMvc.perform(get("/api/people/" + otherEmployeeId + "/onboarding/attachments/" + fileId + "/file").cookie(hr)).andExpect(status().isNotFound()); // not that employee's file
+        mockMvc.perform(get("/api/v1/people/" + employeeId + "/documents/" + fileId + "/file").cookie(hr)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/people/" + otherEmployeeId + "/onboarding/attachments/" + fileId + "/file").cookie(hr)).andExpect(status().isNotFound()); // not that employee's file
         jdbc.update("UPDATE employee_onboardings SET status = 'APPROVED' WHERE employee_id = ?", employeeId); // approved: the portal is open again
-        mockMvc.perform(get("/api/profile").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.documents[0].fileName").value("proof.pdf"));
+        mockMvc.perform(get("/api/v1/profile").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.documents[0].fileName").value("proof.pdf"));
     }
 
     @Test
@@ -392,32 +392,32 @@ class EmployeeOnboardingApiTest extends IntegrationTest {
         // /mine is always the caller's own
         assertThat(mine(other).at("/personal/bloodGroup").isNull()).isTrue();
         assertThat(mine(other).get("status").asText()).isEqualTo("NOT_STARTED");
-        mockMvc.perform(get("/api/onboarding/mine/attachments/" + fileId + "/file").cookie(other)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/onboarding/mine/attachments/" + fileId + "/file").cookie(other)).andExpect(status().isNotFound());
         // the HR view needs the permission
-        mockMvc.perform(get("/api/people/" + employeeId + "/onboarding").cookie(other)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/people/" + employeeId + "/onboarding/attachments/" + fileId + "/file").cookie(other)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/people/" + employeeId + "/onboarding")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/people/" + employeeId + "/onboarding").cookie(other)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/people/" + employeeId + "/onboarding/attachments/" + fileId + "/file").cookie(other)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/people/" + employeeId + "/onboarding")).andExpect(status().isUnauthorized());
         // an employee of another business is invisible to HR
         TestData stranger = new TestData(jdbc).inBusiness("wizard-other-" + suffix);
         UUID strangerId = stranger.employee("ST-" + suffix, "st." + suffix + "@example.com", stranger.role("employee", "self"));
         jdbc.update("INSERT INTO employee_onboardings (id, business_id, employee_id, status) VALUES (?, ?, ?, 'NOT_STARTED')", UUID.randomUUID(), stranger.business(), strangerId);
-        mockMvc.perform(get("/api/people/" + strangerId + "/onboarding").cookie(hr)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/people/" + strangerId + "/onboarding").cookie(hr)).andExpect(status().isNotFound());
     }
 
     @Test
     void theSessionAndShellSayWhetherTheWizardMustBeShown() throws Exception {
-        mockMvc.perform(get("/api/shell").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.onboarding.status").value("NOT_STARTED"))
+        mockMvc.perform(get("/api/v1/shell").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.onboarding.status").value("NOT_STARTED"))
                 .andExpect(jsonPath("$.data.onboarding.isRequired").value(true));
-        mockMvc.perform(get("/api/me").cookie(employee)).andExpect(jsonPath("$.data.onboarding.isRequired").value(true));
-        mockMvc.perform(get("/api/shell").cookie(old)).andExpect(jsonPath("$.data.onboarding.status").value("NOT_REQUIRED")).andExpect(jsonPath("$.data.onboarding.isRequired").value(false));
-        mockMvc.perform(get("/api/shell").cookie(hr)).andExpect(jsonPath("$.data.onboarding.status").value("NOT_REQUIRED")); // no wizard row at all
+        mockMvc.perform(get("/api/v1/me").cookie(employee)).andExpect(jsonPath("$.data.onboarding.isRequired").value(true));
+        mockMvc.perform(get("/api/v1/shell").cookie(old)).andExpect(jsonPath("$.data.onboarding.status").value("NOT_REQUIRED")).andExpect(jsonPath("$.data.onboarding.isRequired").value(false));
+        mockMvc.perform(get("/api/v1/shell").cookie(hr)).andExpect(jsonPath("$.data.onboarding.status").value("NOT_REQUIRED")); // no wizard row at all
         saveOk(employee, 1, STEP1);
-        mockMvc.perform(get("/api/shell").cookie(employee)).andExpect(jsonPath("$.data.onboarding.status").value("IN_PROGRESS")).andExpect(jsonPath("$.data.onboarding.isRequired").value(true));
+        mockMvc.perform(get("/api/v1/shell").cookie(employee)).andExpect(jsonPath("$.data.onboarding.status").value("IN_PROGRESS")).andExpect(jsonPath("$.data.onboarding.isRequired").value(true));
         jdbc.update("UPDATE employee_onboardings SET status = 'SUBMITTED' WHERE employee_id = ?", employeeId);
-        mockMvc.perform(get("/api/shell").cookie(employee)).andExpect(jsonPath("$.data.onboarding.status").value("SUBMITTED")).andExpect(jsonPath("$.data.onboarding.isRequired").value(true));
+        mockMvc.perform(get("/api/v1/shell").cookie(employee)).andExpect(jsonPath("$.data.onboarding.status").value("SUBMITTED")).andExpect(jsonPath("$.data.onboarding.isRequired").value(true));
         jdbc.update("UPDATE employee_onboardings SET status = 'CHANGES_REQUESTED' WHERE employee_id = ?", employeeId);
-        mockMvc.perform(get("/api/shell").cookie(employee)).andExpect(jsonPath("$.data.onboarding.isRequired").value(true));
+        mockMvc.perform(get("/api/v1/shell").cookie(employee)).andExpect(jsonPath("$.data.onboarding.isRequired").value(true));
         jdbc.update("UPDATE employee_onboardings SET status = 'APPROVED' WHERE employee_id = ?", employeeId);
-        mockMvc.perform(get("/api/shell").cookie(employee)).andExpect(jsonPath("$.data.onboarding.status").value("APPROVED")).andExpect(jsonPath("$.data.onboarding.isRequired").value(false));
+        mockMvc.perform(get("/api/v1/shell").cookie(employee)).andExpect(jsonPath("$.data.onboarding.status").value("APPROVED")).andExpect(jsonPath("$.data.onboarding.isRequired").value(false));
     }
 }

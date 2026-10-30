@@ -65,13 +65,13 @@ class AuthFlowTest extends IntegrationTest {
     }
 
     void requestCode(String email) throws Exception {
-        mockMvc.perform(api("/api/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/otp-requests", "{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
     }
 
     /** Asks for a code and signs in with it. */
     Cookie login(String email) throws Exception {
         requestCode(email);
-        MvcResult result = mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + email + "\",\"otp\":\"" + SignIn.CODE + "\",\"remember\":true}"))
+        MvcResult result = mockMvc.perform(api("/api/v1/auth/session", "{\"identifier\":\"" + email + "\",\"otp\":\"" + SignIn.CODE + "\",\"remember\":true}"))
                 .andExpect(status().isCreated()).andReturn();
         String set = result.getResponse().getHeader("Set-Cookie");
         Matcher matcher = Pattern.compile("jo_at=([^;]+)").matcher(set);
@@ -85,17 +85,17 @@ class AuthFlowTest extends IntegrationTest {
         UUID id = data.employee(code, mail(code), employeeRole);
 
         // employee IDs repeat across businesses, so they are not a sign-in name
-        mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + code + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(status().isUnauthorized())
+        mockMvc.perform(api("/api/v1/auth/session", "{\"identifier\":\"" + code + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value(AuthService.BAD_OTP));
 
         requestCode(mail(code));
-        MvcResult result = mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code).toUpperCase() + "\",\"otp\":\"" + SignIn.CODE + "\",\"remember\":false}"))
+        MvcResult result = mockMvc.perform(api("/api/v1/auth/session", "{\"identifier\":\"" + mail(code).toUpperCase() + "\",\"otp\":\"" + SignIn.CODE + "\",\"remember\":false}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.data.redirect").value("/home")).andReturn();
         String set = result.getResponse().getHeader("Set-Cookie");
         assertThat(set).contains("HttpOnly").contains("SameSite=Lax").contains("Path=/").doesNotContain("Max-Age"); // browser-session cookie
 
         Cookie cookie = login(mail(code));
-        mockMvc.perform(get("/api/me").cookie(cookie)).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/me").cookie(cookie)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.user.code").value(code))
                 .andExpect(jsonPath("$.data.user.perms[?(@ == 'self')]").exists())
                 .andExpect(jsonPath("$.data.landing").value("/home"));
@@ -113,23 +113,23 @@ class AuthFlowTest extends IntegrationTest {
         UUID id = data.employee(code, mail(code), employeeRole);
         requestCode(mail(code));
         for (int i = 0; i < 5; i++) {
-            mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"11111" + i + "\"}")).andExpect(status().isUnauthorized())
+            mockMvc.perform(api("/api/v1/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"11111" + i + "\"}")).andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.detail").value(AuthService.BAD_OTP));
         }
         assertThat(jdbc.queryForObject("SELECT locked_until > now() FROM users WHERE employee_id = ?", Boolean.class, id)).isTrue();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'auth.account_locked'", Integer.class, id)).isEqualTo(1);
         requestCode(mail(code));
-        mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(status().isUnauthorized())
+        mockMvc.perform(api("/api/v1/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.startsWith("This account is locked")));
         // the lock ends: the right code works again and clears the count
         jdbc.update("UPDATE users SET locked_until = now() - interval '1 minute' WHERE employee_id = ?", id);
-        mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(api("/api/v1/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(status().isCreated());
         assertThat(jdbc.queryForObject("SELECT failed_attempts FROM users WHERE employee_id = ?", Integer.class, id)).isZero();
     }
 
     @Test
     void responsesCarryTheSecurityHeaders() throws Exception {
-        mockMvc.perform(get("/api/me")).andExpect(status().isUnauthorized())
+        mockMvc.perform(get("/api/v1/me")).andExpect(status().isUnauthorized())
                 .andExpect(header().string("Content-Security-Policy", org.hamcrest.Matchers.containsString("frame-ancestors 'none'")))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                 .andExpect(header().string("X-Frame-Options", "DENY"))
@@ -141,9 +141,9 @@ class AuthFlowTest extends IntegrationTest {
         String code = code();
         data.employee(code, mail(code), employeeRole);
         requestCode(mail(code));
-        mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"111111\"}")).andExpect(status().isUnauthorized())
+        mockMvc.perform(api("/api/v1/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"111111\"}")).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED")).andExpect(jsonPath("$.detail").value(AuthService.BAD_OTP));
-        mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"nobody@example.com\",\"otp\":\"111111\"}")).andExpect(status().isUnauthorized())
+        mockMvc.perform(api("/api/v1/auth/session", "{\"identifier\":\"nobody@example.com\",\"otp\":\"111111\"}")).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value(AuthService.BAD_OTP));
     }
 
@@ -153,20 +153,20 @@ class AuthFlowTest extends IntegrationTest {
         UUID id = data.employee(code, mail(code), employeeRole);
         Cookie cookie = login(mail(code));
         jdbc.update("UPDATE employees SET portal_access = false WHERE id = ?", id);
-        mockMvc.perform(get("/api/me").cookie(cookie)).andExpect(status().isUnauthorized())
+        mockMvc.perform(get("/api/v1/me").cookie(cookie)).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value("Your session has ended. Please sign in again."));
         // a code asked for while the account was still active stops working once access is removed
         jdbc.update("UPDATE employees SET portal_access = true WHERE id = ?", id);
         requestCode(mail(code));
         jdbc.update("UPDATE employees SET portal_access = false WHERE id = ?", id);
-        mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(jsonPath("$.detail").value(AuthService.MSG_DISABLED));
+        mockMvc.perform(api("/api/v1/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(jsonPath("$.detail").value(AuthService.MSG_DISABLED));
         // while access is off no code is sent at all; the person is told by email
         requestCode(mail(code));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ? AND subject = 'Your JurisOne sign-in request'", Integer.class, mail(code))).isEqualTo(1);
         jdbc.update("UPDATE employees SET portal_access = true WHERE id = ?", id);
         requestCode(mail(code));
         jdbc.update("UPDATE employees SET status = 'EXITED' WHERE id = ?", id);
-        mockMvc.perform(api("/api/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(jsonPath("$.detail").value(AuthService.MSG_EXITED));
+        mockMvc.perform(api("/api/v1/auth/session", "{\"identifier\":\"" + mail(code) + "\",\"otp\":\"" + SignIn.CODE + "\"}")).andExpect(jsonPath("$.detail").value(AuthService.MSG_EXITED));
     }
 
     @Test
@@ -174,22 +174,22 @@ class AuthFlowTest extends IntegrationTest {
         String code = code();
         data.employee(code, mail(code), employeeRole);
         Cookie cookie = login(mail(code));
-        mockMvc.perform(api(delete("/api/auth/session"), "{}").cookie(cookie)).andExpect(status().isOk()).andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
-        mockMvc.perform(get("/api/me").cookie(cookie)).andExpect(status().isUnauthorized());
+        mockMvc.perform(api(delete("/api/v1/auth/session"), "{}").cookie(cookie)).andExpect(status().isOk()).andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
+        mockMvc.perform(get("/api/v1/me").cookie(cookie)).andExpect(status().isUnauthorized());
     }
 
     @Test
     void crossSiteWritesAreBlocked() throws Exception {
-        mockMvc.perform(post("/api/auth/otp-requests").header("origin", "https://evil.example").header("host", "localhost:3005")
+        mockMvc.perform(post("/api/v1/auth/otp-requests").header("origin", "https://evil.example").header("host", "localhost:3005")
                 .contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"x@example.com\"}"))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.detail").value("Cross-site request blocked."));
-        mockMvc.perform(post("/api/auth/otp-requests").contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"x@example.com\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/auth/otp-requests").contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"x@example.com\"}")).andExpect(status().isForbidden());
     }
 
     @Test
     void signedOutGets401ButTheOriginalFileRoutesKeepTheir403() throws Exception {
-        mockMvc.perform(get("/api/me")).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.detail").value("Your session has ended. Please sign in again."));
-        mockMvc.perform(get("/api/people/export")).andExpect(status().isForbidden()).andExpect(jsonPath("$.detail").value("Your session has ended. Please sign in again."));
-        mockMvc.perform(get("/api/payslips/2026-08/JC-049")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/me")).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.detail").value("Your session has ended. Please sign in again."));
+        mockMvc.perform(get("/api/v1/people/export")).andExpect(status().isForbidden()).andExpect(jsonPath("$.detail").value("Your session has ended. Please sign in again."));
+        mockMvc.perform(get("/api/v1/payslips/2026-08/JC-049")).andExpect(status().isForbidden());
     }
 }

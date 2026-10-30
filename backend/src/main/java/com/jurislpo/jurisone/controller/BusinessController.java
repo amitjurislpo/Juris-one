@@ -29,14 +29,14 @@ public class BusinessController {
         this.business = business;
     }
 
-    @GetMapping("/api/business/subscription")
+    @GetMapping("/api/v1/business/subscription")
     public ApiResult<Map<String, Object>> subscription() {
         auth.assertPerm(Permissions.BUSINESS_MANAGE);
         return ApiResult.success(business.subscriptionPage());
     }
 
     /** All employees as Excel; {@code ?identity=full} includes identity numbers, phone, bank account and address in full (audited). */
-    @GetMapping("/api/business/employees/export")
+    @GetMapping("/api/v1/business/employees/export")
     public ResponseEntity<byte[]> export(@RequestParam(name = "identity", required = false) String identity, HttpServletRequest request) throws IOException {
         BusinessService.Export exportFile = business.employees(auth.assertPerm(Permissions.BUSINESS_MANAGE), "full".equals(identity), RequestMeta.of(request).ipAddress());
         return ResponseEntity.ok().contentType(XLSX)

@@ -34,15 +34,15 @@ class TaskSeedTest extends TaskApiTestBase {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM task_comments WHERE business_id = ?", Integer.class, data.business())).isEqualTo(5);
 
         Cookie owner = signIn("jc-002." + suffix + "@example.com"), hr = signIn("jc-012." + suffix + "@example.com");
-        assertThat(getData(owner, "/api/projects").get("total").asInt()).isEqualTo(3);
-        assertThat(getData(hr, "/api/projects").get("rows").findValuesAsText("key")).containsExactly("PEO");
-        mockMvc.perform(get("/api/tasks/PAY-1").cookie(hr)).andExpect(status().isNotFound());
-        assertThat(getData(owner, "/api/tasks/PAY-1").get("title").asText()).isEqualTo("Collect attendance for October");
+        assertThat(getData(owner, "/api/v1/projects").get("total").asInt()).isEqualTo(3);
+        assertThat(getData(hr, "/api/v1/projects").get("rows").findValuesAsText("key")).containsExactly("PEO");
+        mockMvc.perform(get("/api/v1/tasks/PAY-1").cookie(hr)).andExpect(status().isNotFound());
+        assertThat(getData(owner, "/api/v1/tasks/PAY-1").get("title").asText()).isEqualTo("Collect attendance for October");
         Cookie pooja = signIn("jc-015." + suffix + "@example.com");
-        assertThat(getData(pooja, "/api/tasks/mine").get("counts").get("overdue").asInt()).isEqualTo(2);
-        assertThat(getData(pooja, "/api/tasks/PEO-1").get("checklist").size()).isEqualTo(3);
+        assertThat(getData(pooja, "/api/v1/tasks/mine").get("counts").get("overdue").asInt()).isEqualTo(2);
+        assertThat(getData(pooja, "/api/v1/tasks/PEO-1").get("checklist").size()).isEqualTo(3);
         Cookie nazneen = signIn("jc-035." + suffix + "@example.com");
-        assertThat(getData(nazneen, "/api/projects/" + jdbc.queryForObject("SELECT id::text FROM projects WHERE key = 'WEB' AND business_id = ?", String.class, data.business())
+        assertThat(getData(nazneen, "/api/v1/projects/" + jdbc.queryForObject("SELECT id::text FROM projects WHERE key = 'WEB' AND business_id = ?", String.class, data.business())
                 + "/board").get("columns").size()).isEqualTo(5);
     }
 }

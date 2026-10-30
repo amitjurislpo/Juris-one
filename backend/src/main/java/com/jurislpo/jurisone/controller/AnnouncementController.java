@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** Announcements: everyone reads the active ones; HR / the owner ({@code announcements.manage}) post, edit and unpublish them. */
 @RestController
-@RequestMapping("/api/announcements")
+@RequestMapping("/api/v1/announcements")
 public class AnnouncementController {
 
     public record StatusBody(String status) {}

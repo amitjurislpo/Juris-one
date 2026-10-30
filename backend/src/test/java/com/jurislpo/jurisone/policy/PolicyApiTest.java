@@ -72,40 +72,40 @@ class PolicyApiTest extends IntegrationTest {
     }
 
     String create(Cookie cookie, String title, String body) throws Exception {
-        return json.readTree(mockMvc.perform(write(post("/api/policies")).cookie(cookie).content("{\"title\":\"" + title + "\",\"body\":\"" + body + "\"}"))
+        return json.readTree(mockMvc.perform(write(post("/api/v1/policies")).cookie(cookie).content("{\"title\":\"" + title + "\",\"body\":\"" + body + "\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).at("/data/id").asText();
     }
 
     void publish(Cookie cookie, String id) throws Exception {
-        mockMvc.perform(write(put("/api/policies/" + id + "/status")).cookie(cookie).content("{\"status\":\"PUBLISHED\"}")).andExpect(status().isOk());
+        mockMvc.perform(write(put("/api/v1/policies/" + id + "/status")).cookie(cookie).content("{\"status\":\"PUBLISHED\"}")).andExpect(status().isOk());
     }
 
     @Test
     void anEmployeeMustAcceptEachNewVersionBeforeDoingAnythingElse() throws Exception {
         String id = create(hrCookie, "Code of conduct", "Be kind.\\nBe on time.");
         // a draft asks nothing of anyone
-        mockMvc.perform(get("/api/me").cookie(employee)).andExpect(jsonPath("$.data.pendingPolicies").value(0));
+        mockMvc.perform(get("/api/v1/me").cookie(employee)).andExpect(jsonPath("$.data.pendingPolicies").value(0));
         publish(hrCookie, id);
 
         // published: everything but the policy endpoints answers 428 until accepted
-        mockMvc.perform(get("/api/me").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.pendingPolicies").value(1));
-        mockMvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isPreconditionRequired())
+        mockMvc.perform(get("/api/v1/me").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.pendingPolicies").value(1));
+        mockMvc.perform(get("/api/v1/attendance/mine").cookie(employee)).andExpect(status().isPreconditionRequired())
                 .andExpect(jsonPath("$.code").value("POLICY_ACK_REQUIRED"));
-        mockMvc.perform(get("/api/policies").cookie(hrCookie)).andExpect(status().isPreconditionRequired()); // HR too
-        mockMvc.perform(get("/api/policies").cookie(owner)).andExpect(status().isOk()); // never the owner
-        mockMvc.perform(get("/api/me").cookie(owner)).andExpect(jsonPath("$.data.pendingPolicies").value(0));
-        mockMvc.perform(get("/api/policies/pending").cookie(employee)).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/policies").cookie(hrCookie)).andExpect(status().isPreconditionRequired()); // HR too
+        mockMvc.perform(get("/api/v1/policies").cookie(owner)).andExpect(status().isOk()); // never the owner
+        mockMvc.perform(get("/api/v1/me").cookie(owner)).andExpect(jsonPath("$.data.pendingPolicies").value(0));
+        mockMvc.perform(get("/api/v1/policies/pending").cookie(employee)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].title").value("Code of conduct")).andExpect(jsonPath("$.data[0].version").value(1))
                 .andExpect(jsonPath("$.data[0].body").value("Be kind.\nBe on time."));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications n JOIN employees e ON e.id = n.employee_id WHERE e.code = ?", Integer.class, employeeCode))
                 .isEqualTo(1);
 
         // accepting an old version is refused; the current one is recorded once
-        mockMvc.perform(write(post("/api/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":2}")).andExpect(status().isConflict());
-        mockMvc.perform(write(post("/api/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated());
-        mockMvc.perform(write(post("/api/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated())
+        mockMvc.perform(write(post("/api/v1/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":2}")).andExpect(status().isConflict());
+        mockMvc.perform(write(post("/api/v1/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated());
+        mockMvc.perform(write(post("/api/v1/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.message").value("Already accepted"));
-        mockMvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/attendance/mine").cookie(employee)).andExpect(status().isOk());
         var acknowledgement = jdbc.queryForMap("SELECT * FROM policy_acknowledgements WHERE employee_code = ?", employeeCode);
         assertThat(acknowledgement.get("policy_title")).isEqualTo("Code of conduct");
         assertThat(acknowledgement.get("version")).isEqualTo(1);
@@ -114,29 +114,29 @@ class PolicyApiTest extends IntegrationTest {
         assertThat(acknowledgement.get("user_agent")).isEqualTo("JUnit browser");
 
         // HR accepts too, then edits and publishes version 2: everyone is asked again
-        mockMvc.perform(write(post("/api/policies/" + id + "/acknowledgements")).cookie(hrCookie).content("{\"version\":1}")).andExpect(status().isCreated());
-        mockMvc.perform(write(put("/api/policies/" + id + "/status")).cookie(hrCookie).content("{\"status\":\"PUBLISHED\"}")).andExpect(status().isUnprocessableEntity())
+        mockMvc.perform(write(post("/api/v1/policies/" + id + "/acknowledgements")).cookie(hrCookie).content("{\"version\":1}")).andExpect(status().isCreated());
+        mockMvc.perform(write(put("/api/v1/policies/" + id + "/status")).cookie(hrCookie).content("{\"status\":\"PUBLISHED\"}")).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value("Nothing has changed since version 1."));
-        mockMvc.perform(write(put("/api/policies/" + id)).cookie(hrCookie).content("{\"title\":\"Code of conduct\",\"body\":\"Be kind. Be on time. Be honest.\"}"))
+        mockMvc.perform(write(put("/api/v1/policies/" + id)).cookie(hrCookie).content("{\"title\":\"Code of conduct\",\"body\":\"Be kind. Be on time. Be honest.\"}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isOk()); // a draft change asks nothing
+        mockMvc.perform(get("/api/v1/attendance/mine").cookie(employee)).andExpect(status().isOk()); // a draft change asks nothing
         publish(hrCookie, id);
-        mockMvc.perform(get("/api/attendance/mine").cookie(employee)).andExpect(status().isPreconditionRequired());
-        mockMvc.perform(get("/api/policies/mine").cookie(employee)).andExpect(jsonPath("$.data[0].version").value(2))
+        mockMvc.perform(get("/api/v1/attendance/mine").cookie(employee)).andExpect(status().isPreconditionRequired());
+        mockMvc.perform(get("/api/v1/policies/mine").cookie(employee)).andExpect(jsonPath("$.data[0].version").value(2))
                 .andExpect(jsonPath("$.data[0].acknowledgedAt").doesNotExist());
-        mockMvc.perform(get("/api/policies/" + id).cookie(owner)).andExpect(jsonPath("$.data.versions.length()").value(2))
+        mockMvc.perform(get("/api/v1/policies/" + id).cookie(owner)).andExpect(jsonPath("$.data.versions.length()").value(2))
                 .andExpect(jsonPath("$.data.versions[1].body").doesNotExist())
                 .andExpect(jsonPath("$.data.people[0].acknowledgedAt").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.data.people[0].lastVersion").value(1));
 
         // reminders and the evidence
-        mockMvc.perform(write(post("/api/policies/" + id + "/reminders")).cookie(owner)).andExpect(status().isCreated())
+        mockMvc.perform(write(post("/api/v1/policies/" + id + "/reminders")).cookie(owner)).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.count").value(2));
-        String csv = mockMvc.perform(get("/api/policies/" + id + "/acknowledgements/export").cookie(owner)).andExpect(status().isOk())
+        String csv = mockMvc.perform(get("/api/v1/policies/" + id + "/acknowledgements/export").cookie(owner)).andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith("text/csv")).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(csv).contains("Accepted at (UTC)").contains(employeeCode).contains((String) acknowledgement.get("body_sha256")).contains("JUnit browser");
         // the same evidence as a printable PDF, with the full fingerprints
-        byte[] pdfBytes = mockMvc.perform(get("/api/policies/" + id + "/acknowledgements/export?format=pdf").cookie(owner)).andExpect(status().isOk())
+        byte[] pdfBytes = mockMvc.perform(get("/api/v1/policies/" + id + "/acknowledgements/export?format=pdf").cookie(owner)).andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_PDF)).andReturn().getResponse().getContentAsByteArray();
         try (org.apache.pdfbox.pdmodel.PDDocument document = org.apache.pdfbox.Loader.loadPDF(pdfBytes)) {
             String text = new org.apache.pdfbox.text.PDFTextStripper().getText(document);
@@ -148,38 +148,38 @@ class PolicyApiTest extends IntegrationTest {
     void theRecordCannotBeChangedOrDeleted() throws Exception {
         String id = create(owner, "Leave policy", "Apply 3 days ahead.");
         publish(owner, id);
-        mockMvc.perform(write(post("/api/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated());
+        mockMvc.perform(write(post("/api/v1/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated());
         assertThatThrownBy(() -> jdbc.update("UPDATE policy_acknowledgements SET employee_name = 'Someone else' WHERE employee_code = ?", employeeCode))
                 .rootCause().hasMessageContaining("permanent record");
         assertThatThrownBy(() -> jdbc.update("DELETE FROM policy_acknowledgements WHERE employee_code = ?", employeeCode)).rootCause().hasMessageContaining("permanent record");
         assertThatThrownBy(() -> jdbc.update("UPDATE policy_versions SET body = 'changed' WHERE policy_id = ?::uuid", id)).rootCause().hasMessageContaining("permanent record");
         // a published policy is archived, never deleted
-        mockMvc.perform(write(delete("/api/policies/" + id)).cookie(owner)).andExpect(status().isUnprocessableEntity());
-        mockMvc.perform(write(put("/api/policies/" + id + "/status")).cookie(owner).content("{\"status\":\"ARCHIVED\"}")).andExpect(status().isOk());
-        mockMvc.perform(get("/api/policies/mine").cookie(employee)).andExpect(jsonPath("$.data.length()").value(0));
+        mockMvc.perform(write(delete("/api/v1/policies/" + id)).cookie(owner)).andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(write(put("/api/v1/policies/" + id + "/status")).cookie(owner).content("{\"status\":\"ARCHIVED\"}")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/policies/mine").cookie(employee)).andExpect(jsonPath("$.data.length()").value(0));
         // drafts can be deleted
         String draft = create(owner, "Draft only", "Not yet.");
-        mockMvc.perform(write(delete("/api/policies/" + draft)).cookie(owner)).andExpect(status().isOk());
+        mockMvc.perform(write(delete("/api/v1/policies/" + draft)).cookie(owner)).andExpect(status().isOk());
     }
 
     @Test
     void aPdfCanBeAttachedAndEmployeesReadThePublishedOne() throws Exception {
         String id = create(hrCookie, "IT security", "");
-        mockMvc.perform(write(put("/api/policies/" + id + "/status")).cookie(hrCookie).content("{\"status\":\"PUBLISHED\"}")).andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(write(put("/api/v1/policies/" + id + "/status")).cookie(hrCookie).content("{\"status\":\"PUBLISHED\"}")).andExpect(status().isUnprocessableEntity());
         MockMultipartFile notPdf = new MockMultipartFile("file", "x.pdf", "application/pdf", "hello".getBytes());
-        mockMvc.perform(multipart(HttpMethod.PUT, "/api/policies/" + id + "/file").file(notPdf).cookie(hrCookie).header("origin", "http://localhost:3005").header("host", "localhost:3005"))
+        mockMvc.perform(multipart(HttpMethod.PUT, "/api/v1/policies/" + id + "/file").file(notPdf).cookie(hrCookie).header("origin", "http://localhost:3005").header("host", "localhost:3005"))
                 .andExpect(status().isBadRequest());
         byte[] pdfBytes = "%PDF-1.4\n%test\n".getBytes(StandardCharsets.US_ASCII);
-        mockMvc.perform(multipart(HttpMethod.PUT, "/api/policies/" + id + "/file").file(new MockMultipartFile("file", "IT security.pdf", "application/pdf", pdfBytes))
+        mockMvc.perform(multipart(HttpMethod.PUT, "/api/v1/policies/" + id + "/file").file(new MockMultipartFile("file", "IT security.pdf", "application/pdf", pdfBytes))
                 .cookie(hrCookie).header("origin", "http://localhost:3005").header("host", "localhost:3005")).andExpect(status().isOk()).andExpect(jsonPath("$.data.name").value("IT security.pdf"));
         // the draft's PDF is for managers only
-        mockMvc.perform(get("/api/policies/" + id + "/file").cookie(employee)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/policies/" + id + "/file").cookie(employee)).andExpect(status().isForbidden());
         publish(hrCookie, id);
-        mockMvc.perform(get("/api/policies/" + id + "/versions/1/file").cookie(employee)).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/policies/" + id + "/versions/1/file").cookie(employee)).andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_PDF)).andExpect(content().bytes(pdfBytes));
         assertThat(jdbc.queryForObject("SELECT file_sha256 FROM policy_versions WHERE policy_id = ?::uuid", String.class, id)).isEqualTo(PolicyService.sha256(pdfBytes));
         // employees can't manage policies
-        mockMvc.perform(write(post("/api/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated());
-        mockMvc.perform(get("/api/policies").cookie(employee)).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/policies/" + id + "/acknowledgements")).cookie(employee).content("{\"version\":1}")).andExpect(status().isCreated());
+        mockMvc.perform(get("/api/v1/policies").cookie(employee)).andExpect(status().isForbidden());
     }
 }

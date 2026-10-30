@@ -24,7 +24,7 @@ class TaskAttachmentApiTest extends TaskApiTestBase {
     static final byte[] PDF = "%PDF-1.4 test".getBytes(StandardCharsets.US_ASCII);
 
     ResultActions upload(Cookie cookie, String taskId, String fileName, byte[] bytes) throws Exception {
-        return mockMvc.perform(multipart("/api/tasks/" + taskId + "/attachments").file(new MockMultipartFile("file", fileName, "application/octet-stream", bytes))
+        return mockMvc.perform(multipart("/api/v1/tasks/" + taskId + "/attachments").file(new MockMultipartFile("file", fileName, "application/octet-stream", bytes))
                 .header("origin", "http://localhost:3005").header("host", "localhost:3005").cookie(cookie));
     }
 
@@ -49,17 +49,17 @@ class TaskAttachmentApiTest extends TaskApiTestBase {
         byte[] big = Arrays.copyOf(PDF, 10 * 1024 * 1024 + 1);
         upload(hr.cookie(), id, "big.pdf", big).andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Files up to 10 MB."));
 
-        mockMvc.perform(get("/api/tasks/" + id + "/attachments/" + pdf + "/file").cookie(hr.cookie())).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/tasks/" + id + "/attachments/" + pdf + "/file").cookie(hr.cookie())).andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", "application/pdf")).andExpect(header().string("X-Content-Type-Options", "nosniff"))
                 .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("inline")));
-        mockMvc.perform(get("/api/tasks/" + id + "/attachments/" + docx + "/file").cookie(hr.cookie())).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/tasks/" + id + "/attachments/" + docx + "/file").cookie(hr.cookie())).andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("attachment")));
-        JsonNode detail = getData(hr.cookie(), "/api/tasks/" + id);
+        JsonNode detail = getData(hr.cookie(), "/api/v1/tasks/" + id);
         assertThat(detail.get("attachments").size()).isEqualTo(3);
         assertThat(detail.get("attachmentCount").asInt()).isEqualTo(3);
         assertThat(detail.get("attachments").get(0).get("canDelete").asBoolean()).isTrue();
         // downloads are in the request audit trail; uploads in the history and the audit log
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE path = ?", Integer.class, "/api/tasks/" + id + "/attachments/" + pdf + "/file")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE path = ?", Integer.class, "/api/v1/tasks/" + id + "/attachments/" + pdf + "/file")).isEqualTo(1);
         assertThat(auditRows("task.attachment_add", id)).isEqualTo(3);
         String stored = jdbc.queryForObject("SELECT file_path FROM task_attachments WHERE id = ?::uuid", String.class, pdf);
         assertThat(stored).startsWith("tasks/" + data.business() + "/" + id + "/");
@@ -73,17 +73,17 @@ class TaskAttachmentApiTest extends TaskApiTestBase {
         String id = task(hr.cookie(), "\"projectId\":\"" + projectId + "\",\"title\":\"Shared files\"").get("id").asText();
         upload(viewer.cookie(), id, "mine.pdf", PDF).andExpect(status().isForbidden());
         String file = uploaded(member.cookie(), id, "member.pdf", PDF);
-        mockMvc.perform(get("/api/tasks/" + id + "/attachments/" + file + "/file").cookie(viewer.cookie())).andExpect(status().isOk());
-        mockMvc.perform(write(delete("/api/tasks/" + id + "/attachments/" + file)).cookie(viewer.cookie())).andExpect(status().isForbidden());
-        mockMvc.perform(write(delete("/api/tasks/" + id + "/attachments/" + file)).cookie(member.cookie())).andExpect(status().isOk()); // the uploader
-        mockMvc.perform(get("/api/tasks/" + id + "/attachments/" + file + "/file").cookie(hr.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/tasks/" + id + "/attachments/" + file + "/file").cookie(viewer.cookie())).andExpect(status().isOk());
+        mockMvc.perform(write(delete("/api/v1/tasks/" + id + "/attachments/" + file)).cookie(viewer.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(write(delete("/api/v1/tasks/" + id + "/attachments/" + file)).cookie(member.cookie())).andExpect(status().isOk()); // the uploader
+        mockMvc.perform(get("/api/v1/tasks/" + id + "/attachments/" + file + "/file").cookie(hr.cookie())).andExpect(status().isNotFound());
         // soft delete: the row and the stored file stay
         String stored = jdbc.queryForObject("SELECT file_path FROM task_attachments WHERE id = ?::uuid AND deleted_at IS NOT NULL", String.class, file);
         assertThat(Files.exists(Path.of("target/test-storage").toAbsolutePath().normalize().resolve(stored))).isTrue();
-        assertThat(getData(hr.cookie(), "/api/tasks/" + id + "/activity").get("rows").get(0).get("kind").asText()).isEqualTo("ATTACHMENT_REMOVED");
+        assertThat(getData(hr.cookie(), "/api/v1/tasks/" + id + "/activity").get("rows").get(0).get("kind").asText()).isEqualTo("ATTACHMENT_REMOVED");
         // the project owner may remove anyone's file
         String other = uploaded(member.cookie(), id, "second.pdf", PDF);
-        mockMvc.perform(write(delete("/api/tasks/" + id + "/attachments/" + other)).cookie(hr.cookie())).andExpect(status().isOk());
+        mockMvc.perform(write(delete("/api/v1/tasks/" + id + "/attachments/" + other)).cookie(hr.cookie())).andExpect(status().isOk());
     }
 
     @Test
@@ -97,6 +97,6 @@ class TaskAttachmentApiTest extends TaskApiTestBase {
         }
         upload(hr.cookie(), id, "file21.pdf", PDF).andExpect(status().isUnprocessableEntity());
         jdbc.update("UPDATE task_attachments SET file_path = '../../../pom.xml' WHERE id = ?::uuid", first);
-        mockMvc.perform(get("/api/tasks/" + id + "/attachments/" + first + "/file").cookie(hr.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/tasks/" + id + "/attachments/" + first + "/file").cookie(hr.cookie())).andExpect(status().isNotFound());
     }
 }
