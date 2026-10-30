@@ -3,7 +3,6 @@ package com.jurislpo.jurisone.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jurislpo.jurisone.common.Check;
 import com.jurislpo.jurisone.common.ListParams;
-import com.jurislpo.jurisone.config.JurisOneProperties;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.PeopleRules.EmployeeInput;
 import com.jurislpo.jurisone.exception.ApiException;
@@ -51,10 +50,10 @@ public class OnboardingHrService {
     private final OnboardingHrRepository hrRepo;
     private final MailService mail;
     private final AuditService audit;
-    private final String portalUrl;
+    private final BusinessUrls businessUrls;
 
     public OnboardingHrService(PeopleService people, EmployeeOnboardingService onboarding, OnboardingAttachmentService attachments, EmployeeOnboardingRepository onboardingRepo,
-                               OnboardingHrRepository hrRepo, MailService mail, AuditService audit, JurisOneProperties properties) {
+                               OnboardingHrRepository hrRepo, MailService mail, AuditService audit, BusinessUrls businessUrls) {
         this.people = people;
         this.onboarding = onboarding;
         this.attachments = attachments;
@@ -62,7 +61,7 @@ public class OnboardingHrService {
         this.hrRepo = hrRepo;
         this.mail = mail;
         this.audit = audit;
-        this.portalUrl = properties.frontendOrigin();
+        this.businessUrls = businessUrls;
     }
 
     // ───────────────────────── starting and listing ─────────────────────────
@@ -80,7 +79,7 @@ public class OnboardingHrService {
         String email = body.workEmail().trim().toLowerCase();
         audit.log(actor.id(), "onboarding.created", "employee_onboarding", onboardingId.toString(), null, Map.of("employeeId", saved.id(), "code", saved.code()), ipAddress);
         try {
-            mail.send(email, MailTemplates.onboardingInvitation(body.firstName().trim(), email, portalUrl + "/login"));
+            mail.send(email, MailTemplates.onboardingInvitation(body.firstName().trim(), email, businessUrls.forBusiness(actor.businessId(), "/login")));
         } catch (RuntimeException e) {
             log.warn("The onboarding invitation to {} could not be sent: {}", email, e.getMessage());
         }

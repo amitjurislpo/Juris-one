@@ -46,11 +46,11 @@ public class JobsService {
     private final com.jurislpo.jurisone.service.NotificationService notifications;
     private final com.jurislpo.jurisone.service.MailService mail;
     private final TaskJobs taskJobs;
-    private final String appUrl;
+    private final BusinessUrls businessUrls;
 
     public JobsService(JobsRepository repo, AttendanceService attendance, SettingsService settings, AuditService audit, SubscriptionService subscriptions,
                        com.jurislpo.jurisone.service.NotificationService notifications, com.jurislpo.jurisone.service.MailService mail,
-                       TaskJobs taskJobs, com.jurislpo.jurisone.config.JurisOneProperties props) {
+                       TaskJobs taskJobs, BusinessUrls businessUrls) {
         this.repo = repo;
         this.attendanceService = attendance;
         this.settings = settings;
@@ -59,7 +59,7 @@ public class JobsService {
         this.notifications = notifications;
         this.mail = mail;
         this.taskJobs = taskJobs;
-        this.appUrl = props.frontendOrigin();
+        this.businessUrls = businessUrls;
     }
 
     static LocalDate today(Instant now) {
@@ -115,7 +115,7 @@ public class JobsService {
         for (Map<String, Object> owner : owners) {
             notifications.notify((UUID) owner.get("id"), text, "/subscription");
             mail.send((String) owner.get("email"), com.jurislpo.jurisone.service.MailTemplates.subscription((String) owner.get("full_name"), business, current.planName(),
-                    current.endsOn(), days, appUrl + "/subscription"));
+                    current.endsOn(), days, businessUrls.forBusiness(TenantContext.current(), "/subscription")));
         }
         repo.insertSubscriptionWarningRun(key, "{\"owners\":" + owners.size() + "}");
         return Map.of("sent", owners.size(), "kind", kind);

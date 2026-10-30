@@ -45,12 +45,11 @@ public class LettersService {
     private final NotificationService notifications;
     private final AuditService audit;
     private final MailService mail;
-    private final String appUrl;
+    private final BusinessUrls businessUrls;
 
-    public LettersService(LettersRepository repo, BusinessRepository business, NotificationService notifications, AuditService audit, MailService mail,
-                          @org.springframework.beans.factory.annotation.Value("${jurisone.app-url:http://localhost:3005}") String appUrl) {
+    public LettersService(LettersRepository repo, BusinessRepository business, NotificationService notifications, AuditService audit, MailService mail, BusinessUrls businessUrls) {
         this.mail = mail;
-        this.appUrl = appUrl.replaceAll("/$", "");
+        this.businessUrls = businessUrls;
         this.repo = repo;
         this.business = business;
         this.notifications = notifications;
@@ -268,7 +267,7 @@ public class LettersService {
         // by email too (a PDF attached); without mail settings it is only logged, and a failed send never fails the issue
         String to = (String) employee.get("email");
         if (to != null && !to.isBlank()) {
-            mail.send(to, MailTemplates.letter((String) employee.get("full_name"), (String) businessProfile.get("name"), rendered.subject(), reference, appUrl + "/my-letters"),
+            mail.send(to, MailTemplates.letter((String) employee.get("full_name"), (String) businessProfile.get("name"), rendered.subject(), reference, businessUrls.forBusiness(TenantContext.current(), "/my-letters")),
                     new MailService.Attachment(reference.replace('/', '-') + ".pdf", pdfBytes, "application/pdf"));
         }
         audit.log(user.id(), "letter.issue", "issued_letter", id.toString(), null,

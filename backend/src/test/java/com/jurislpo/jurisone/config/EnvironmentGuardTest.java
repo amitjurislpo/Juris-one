@@ -107,4 +107,48 @@ class EnvironmentGuardTest {
         environment.remove("jurisone.security.pii-encryption-key");
         assertThat(problems(environment)).hasSize(2).anyMatch(p -> p.startsWith("jurisone.security.jwt-secret")).anyMatch(p -> p.startsWith("jurisone.security.pii-encryption-key"));
     }
+
+    @Test
+    void perBusinessAddressesNeedARealBaseDomainWhenSwitchedOn() {
+        for (String environmentName : List.of("sqe", "uat", "prd")) {
+            Map<String, String> environment = good(environmentName);
+            environment.put("jurisone.tenant-host.enabled", "true");
+            assertThat(problems(environment)).as(environmentName + " unset").singleElement().asString().contains("base-domain must be set");
+            environment.put("jurisone.tenant-host.base-domain", "people.example.com");
+            assertThat(problems(environment)).as(environmentName).isEmpty();
+            for (String bad : List.of("localhost", "LOCALHOST", "acme.localhost", "https://example.com", "example.com:8443", "example.com/path", "*.example.com", "example", "exa mple.com", "exam\r\nple.com")) {
+                environment.put("jurisone.tenant-host.base-domain", bad);
+                assertThat(problems(environment)).as(environmentName + " " + bad).singleElement().asString().contains("jurisone.tenant-host.base-domain");
+            }
+        }
+    }
+
+    @Test
+    void perBusinessAddressesNeedAValidAdminLabelAndHttpsInUatAndPrd() {
+        Map<String, String> environment = good("prd");
+        environment.put("jurisone.tenant-host.enabled", "true");
+        environment.put("jurisone.tenant-host.base-domain", "example.com");
+        environment.put("jurisone.tenant-host.admin-label", "admin.x");
+        assertThat(problems(environment)).singleElement().asString().contains("admin-label");
+        environment.put("jurisone.tenant-host.admin-label", "admin");
+        environment.put("jurisone.app-url", "http://people.example.com");
+        assertThat(problems(environment)).singleElement().asString().contains("jurisone.app-url must be an https");
+    }
+
+    @Test
+    void sqeMayUseHttpForPerBusinessAddressesButDevAndSwitchedOffAreUntouched() {
+        Map<String, String> environment = good("sqe");
+        environment.put("jurisone.app-url", "http://sqe.example.com:3015");
+        environment.put("jurisone.tenant-host.enabled", "true");
+        environment.put("jurisone.tenant-host.base-domain", "sqe.example.com");
+        assertThat(problems(environment)).isEmpty();
+        environment.put("jurisone.tenant-host.enabled", "false");
+        environment.put("jurisone.tenant-host.base-domain", "localhost");
+        assertThat(problems(environment)).isEmpty();
+        Map<String, String> dev = new HashMap<>();
+        dev.put("jurisone.env", "dev");
+        dev.put("jurisone.tenant-host.enabled", "true");
+        dev.put("jurisone.tenant-host.base-domain", "localhost");
+        assertThat(problems(dev)).isEmpty();
+    }
 }
