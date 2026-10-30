@@ -64,7 +64,7 @@ class AnnouncementApiTest extends IntegrationTest {
     }
 
     String announce(String body) throws Exception {
-        return json.readTree(mockMvc.perform(write(post("/api/announcements")).cookie(hrCookie).content(body)).andExpect(status().isCreated())
+        return json.readTree(mockMvc.perform(write(post("/api/v1/announcements")).cookie(hrCookie).content(body)).andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString()).at("/data/id").asText();
     }
 
@@ -76,20 +76,20 @@ class AnnouncementApiTest extends IntegrationTest {
     void publishShowsToEmployeesAndNotifiesThem() throws Exception {
         String all = announce("{\"title\":\"Office closed Friday\",\"body\":\"Enjoy the long weekend.\",\"pinned\":false}");
         announce("{\"title\":\"Welcome\",\"body\":\"Hello team\",\"pinned\":true}");
-        mockMvc.perform(get("/api/announcements").cookie(indian)).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2))
+        mockMvc.perform(get("/api/v1/announcements").cookie(indian)).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].title").value("Welcome")) // pinned first
                 .andExpect(jsonPath("$.data[0].pinned").value(true)).andExpect(jsonPath("$.data[1].id").value(all));
         assertThat(unread(indianId)).isEqualTo(2);
         assertThat(unread(americanId)).isEqualTo(2);
 
         // edit in place (no new notification), then unpublish: gone for employees, still in the manager's list
-        mockMvc.perform(write(put("/api/announcements/" + all)).cookie(hrCookie).content("{\"title\":\"Office closed Friday 24th\",\"body\":\"Enjoy.\",\"audience\":\"ALL\"}"))
+        mockMvc.perform(write(put("/api/v1/announcements/" + all)).cookie(hrCookie).content("{\"title\":\"Office closed Friday 24th\",\"body\":\"Enjoy.\",\"audience\":\"ALL\"}"))
                 .andExpect(status().isOk());
         assertThat(unread(indianId)).isEqualTo(2);
-        mockMvc.perform(write(put("/api/announcements/" + all + "/status")).cookie(hrCookie).content("{\"status\":\"UNPUBLISHED\"}")).andExpect(status().isOk());
-        mockMvc.perform(write(put("/api/announcements/" + all + "/status")).cookie(hrCookie).content("{\"status\":\"UNPUBLISHED\"}")).andExpect(status().isUnprocessableEntity());
-        mockMvc.perform(get("/api/announcements").cookie(indian)).andExpect(jsonPath("$.data.length()").value(1));
-        mockMvc.perform(get("/api/announcements?scope=all").cookie(hrCookie)).andExpect(jsonPath("$.data.length()").value(2));
+        mockMvc.perform(write(put("/api/v1/announcements/" + all + "/status")).cookie(hrCookie).content("{\"status\":\"UNPUBLISHED\"}")).andExpect(status().isOk());
+        mockMvc.perform(write(put("/api/v1/announcements/" + all + "/status")).cookie(hrCookie).content("{\"status\":\"UNPUBLISHED\"}")).andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(get("/api/v1/announcements").cookie(indian)).andExpect(jsonPath("$.data.length()").value(1));
+        mockMvc.perform(get("/api/v1/announcements?scope=all").cookie(hrCookie)).andExpect(jsonPath("$.data.length()").value(2));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE entity = 'announcement' AND action LIKE 'announcement.%'", Integer.class)).isGreaterThanOrEqualTo(4);
     }
 
@@ -98,41 +98,41 @@ class AnnouncementApiTest extends IntegrationTest {
         announce("{\"title\":\"US holiday\",\"body\":\"Thanksgiving\",\"audience\":\"US\"}");
         announce("{\"title\":\"India holiday\",\"body\":\"Diwali\",\"audience\":\"IN\"}");
         String expiringId = announce("{\"title\":\"Expiring\",\"body\":\"Soon gone\",\"expiresOn\":\"" + java.time.LocalDate.now().plusDays(3) + "\"}");
-        mockMvc.perform(get("/api/announcements").cookie(american)).andExpect(jsonPath("$.data.length()").value(2))
+        mockMvc.perform(get("/api/v1/announcements").cookie(american)).andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[?(@.title=='India holiday')]").isEmpty());
-        mockMvc.perform(get("/api/announcements").cookie(indian)).andExpect(jsonPath("$.data.length()").value(2))
+        mockMvc.perform(get("/api/v1/announcements").cookie(indian)).andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[?(@.title=='US holiday')]").isEmpty());
         assertThat(unread(indianId)).isEqualTo(2);
         assertThat(unread(americanId)).isEqualTo(2);
         // once the expiry date has passed it is no longer shown
         jdbc.update("UPDATE announcements SET expires_on = current_date - 1 WHERE id = ?::uuid", expiringId);
-        mockMvc.perform(get("/api/announcements").cookie(indian)).andExpect(jsonPath("$.data.length()").value(1));
-        mockMvc.perform(get("/api/announcements?scope=all").cookie(hrCookie)).andExpect(jsonPath("$.data[?(@.id=='" + expiringId + "')].active").value(false));
+        mockMvc.perform(get("/api/v1/announcements").cookie(indian)).andExpect(jsonPath("$.data.length()").value(1));
+        mockMvc.perform(get("/api/v1/announcements?scope=all").cookie(hrCookie)).andExpect(jsonPath("$.data[?(@.id=='" + expiringId + "')].active").value(false));
     }
 
     @Test
     void permissionsAndValidation() throws Exception {
-        mockMvc.perform(write(post("/api/announcements")).cookie(indian).content("{\"title\":\"Hi there\",\"body\":\"x\"}")).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/announcements?scope=all").cookie(indian)).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/announcements")).cookie(indian).content("{\"title\":\"Hi there\",\"body\":\"x\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/announcements?scope=all").cookie(indian)).andExpect(status().isForbidden());
         String id = announce("{\"title\":\"Valid one\",\"body\":\"ok\"}");
-        mockMvc.perform(write(put("/api/announcements/" + id)).cookie(indian).content("{\"title\":\"Hacked\",\"body\":\"x\"}")).andExpect(status().isForbidden());
-        mockMvc.perform(write(put("/api/announcements/" + id + "/status")).cookie(indian).content("{\"status\":\"UNPUBLISHED\"}")).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/announcements")).andExpect(status().isUnauthorized());
+        mockMvc.perform(write(put("/api/v1/announcements/" + id)).cookie(indian).content("{\"title\":\"Hacked\",\"body\":\"x\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(write(put("/api/v1/announcements/" + id + "/status")).cookie(indian).content("{\"status\":\"UNPUBLISHED\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/announcements")).andExpect(status().isUnauthorized());
 
-        mockMvc.perform(write(post("/api/announcements")).cookie(hrCookie).content("{\"title\":\"ab\",\"body\":\"x\"}")).andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/announcements")).cookie(hrCookie).content("{\"title\":\"Fine title\",\"body\":\"  \"}")).andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/announcements")).cookie(hrCookie).content("{\"title\":\"Fine title\",\"body\":\"x\",\"audience\":\"MARS\"}")).andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/announcements")).cookie(hrCookie).content("{\"title\":\"Fine title\",\"body\":\"x\",\"expiresOn\":\"tomorrow\"}")).andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/announcements")).cookie(hrCookie).content("{\"title\":\"Fine title\",\"body\":\"x\",\"expiresOn\":\"2020-01-01\"}")).andExpect(status().isUnprocessableEntity());
-        mockMvc.perform(write(put("/api/announcements/" + UUID.randomUUID())).cookie(hrCookie).content("{\"title\":\"Fine title\",\"body\":\"x\"}")).andExpect(status().isNotFound());
+        mockMvc.perform(write(post("/api/v1/announcements")).cookie(hrCookie).content("{\"title\":\"ab\",\"body\":\"x\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/announcements")).cookie(hrCookie).content("{\"title\":\"Fine title\",\"body\":\"  \"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/announcements")).cookie(hrCookie).content("{\"title\":\"Fine title\",\"body\":\"x\",\"audience\":\"MARS\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/announcements")).cookie(hrCookie).content("{\"title\":\"Fine title\",\"body\":\"x\",\"expiresOn\":\"tomorrow\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/announcements")).cookie(hrCookie).content("{\"title\":\"Fine title\",\"body\":\"x\",\"expiresOn\":\"2020-01-01\"}")).andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(write(put("/api/v1/announcements/" + UUID.randomUUID())).cookie(hrCookie).content("{\"title\":\"Fine title\",\"body\":\"x\"}")).andExpect(status().isNotFound());
     }
 
     @Test
     void aBusinessNeverSeesAnotherBusinesssAnnouncements() throws Exception {
         String id = announce("{\"title\":\"Private news\",\"body\":\"Only us\"}");
-        mockMvc.perform(get("/api/announcements").cookie(otherBusiness)).andExpect(jsonPath("$.data.length()").value(0));
+        mockMvc.perform(get("/api/v1/announcements").cookie(otherBusiness)).andExpect(jsonPath("$.data.length()").value(0));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications n JOIN employees e ON e.id = n.employee_id WHERE e.code = ? AND n.text LIKE 'Announcement:%'",
                 Integer.class, "MX-" + suffix)).isZero();
-        mockMvc.perform(write(put("/api/announcements/" + id + "/status")).cookie(otherBusiness).content("{\"status\":\"UNPUBLISHED\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(write(put("/api/v1/announcements/" + id + "/status")).cookie(otherBusiness).content("{\"status\":\"UNPUBLISHED\"}")).andExpect(status().isForbidden());
     }
 }

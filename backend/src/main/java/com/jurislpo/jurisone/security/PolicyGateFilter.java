@@ -1,5 +1,8 @@
 package com.jurislpo.jurisone.security;
 
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX_SLASH;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.exception.Problems;
 import com.jurislpo.jurisone.service.PolicyService;
@@ -28,8 +31,8 @@ public class PolicyGateFilter extends OncePerRequestFilter {
 
     public static final String MESSAGE = "Please read and accept the company policies first.";
 
-    static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell", "/api/notifications", "/api/policies/pending", "/api/policies/mine", "/api/audit/page-views");
-    static final Pattern OPEN_POLICY = Pattern.compile("^/api/policies/[^/]+/(acknowledgements|versions/\\d+/file)$");
+    static final List<String> OPEN = List.of(PREFIX + "/auth/", PREFIX + "/me", PREFIX + "/shell", PREFIX + "/notifications", PREFIX + "/policies/pending", PREFIX + "/policies/mine", PREFIX + "/audit/page-views");
+    static final Pattern OPEN_POLICY = Pattern.compile("^" + PREFIX + "/policies/[^/]+/(acknowledgements|versions/\\d+/file)$");
 
     private final PolicyService policies;
     private final SubscriptionService subscriptions;
@@ -48,7 +51,7 @@ public class PolicyGateFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        return !uri.startsWith("/api/") || OPEN.stream().anyMatch(uri::startsWith) || OPEN_POLICY.matcher(uri).matches();
+        return !uri.startsWith(PREFIX_SLASH) || OPEN.stream().anyMatch(uri::startsWith) || OPEN_POLICY.matcher(uri).matches();
     }
 
     @Override

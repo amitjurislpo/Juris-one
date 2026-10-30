@@ -66,7 +66,7 @@ class AssetApiTest extends IntegrationTest {
     }
 
     String add(Cookie cookie, String tag) throws Exception {
-        return json.readTree(mockMvc.perform(write(post("/api/assets")).cookie(cookie)
+        return json.readTree(mockMvc.perform(write(post("/api/v1/assets")).cookie(cookie)
                         .content("{\"tag\":\"" + tag + "\",\"type\":\"LAPTOP\",\"make\":\"Dell\",\"model\":\"Latitude\",\"serial\":\"SN1\",\"purchaseDate\":\"2025-04-01\"}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).at("/data/id").asText();
     }
@@ -74,34 +74,34 @@ class AssetApiTest extends IntegrationTest {
     @Test
     void assignThenReturnKeepsTheHistoryAndShowsItToTheEmployee() throws Exception {
         String id = add(hrCookie, "LT-" + suffix);
-        mockMvc.perform(get("/api/assets/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.status").value("AVAILABLE")).andExpect(jsonPath("$.data.purchaseDate").value("2025-04-01"));
+        mockMvc.perform(get("/api/v1/assets/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.status").value("AVAILABLE")).andExpect(jsonPath("$.data.purchaseDate").value("2025-04-01"));
 
-        mockMvc.perform(write(post("/api/assets/" + id + "/assignments")).cookie(hrCookie)
+        mockMvc.perform(write(post("/api/v1/assets/" + id + "/assignments")).cookie(hrCookie)
                         .content("{\"employeeId\":\"" + employeeId + "\",\"assignedOn\":\"2026-01-05\",\"notes\":\"With charger\"}"))
                 .andExpect(status().isCreated());
-        mockMvc.perform(get("/api/assets/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.status").value("ASSIGNED"))
+        mockMvc.perform(get("/api/v1/assets/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.status").value("ASSIGNED"))
                 .andExpect(jsonPath("$.data.holderId").value(employeeId.toString())).andExpect(jsonPath("$.data.history.length()").value(1));
         // already assigned
-        mockMvc.perform(write(post("/api/assets/" + id + "/assignments")).cookie(hrCookie).content("{\"employeeId\":\"" + otherId + "\"}")).andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(write(post("/api/v1/assets/" + id + "/assignments")).cookie(hrCookie).content("{\"employeeId\":\"" + otherId + "\"}")).andExpect(status().isUnprocessableEntity());
         // the employee is told, and sees it under "mine"; someone else doesn't
         assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE employee_id = ? AND text LIKE 'Asset assigned%'", Integer.class, employeeId)).isEqualTo(1);
-        mockMvc.perform(get("/api/assets/mine").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.current.length()").value(1))
+        mockMvc.perform(get("/api/v1/assets/mine").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.current.length()").value(1))
                 .andExpect(jsonPath("$.data.current[0].tag").value("LT-" + suffix)).andExpect(jsonPath("$.data.past.length()").value(0));
-        mockMvc.perform(get("/api/assets/mine").cookie(other)).andExpect(jsonPath("$.data.current.length()").value(0));
+        mockMvc.perform(get("/api/v1/assets/mine").cookie(other)).andExpect(jsonPath("$.data.current.length()").value(0));
         // can't be deleted once it has history, or returned before it was handed out
-        mockMvc.perform(write(patch("/api/assets/" + id + "/assignments/current")).cookie(hrCookie).content("{\"condition\":\"GOOD\",\"returnedOn\":\"2026-01-01\"}"))
+        mockMvc.perform(write(patch("/api/v1/assets/" + id + "/assignments/current")).cookie(hrCookie).content("{\"condition\":\"GOOD\",\"returnedOn\":\"2026-01-01\"}"))
                 .andExpect(status().isUnprocessableEntity());
-        mockMvc.perform(write(patch("/api/assets/" + id + "/assignments/current")).cookie(hrCookie).content("{\"returnedOn\":\"2026-02-01\"}")).andExpect(status().isBadRequest());
-        mockMvc.perform(write(patch("/api/assets/" + id + "/assignments/current")).cookie(hrCookie).content("{\"condition\":\"DAMAGED\",\"returnedOn\":\"2026-02-01\",\"notes\":\"Cracked screen\"}"))
+        mockMvc.perform(write(patch("/api/v1/assets/" + id + "/assignments/current")).cookie(hrCookie).content("{\"returnedOn\":\"2026-02-01\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(patch("/api/v1/assets/" + id + "/assignments/current")).cookie(hrCookie).content("{\"condition\":\"DAMAGED\",\"returnedOn\":\"2026-02-01\",\"notes\":\"Cracked screen\"}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/api/assets/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.status").value("IN_REPAIR"))
+        mockMvc.perform(get("/api/v1/assets/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.status").value("IN_REPAIR"))
                 .andExpect(jsonPath("$.data.history[0].returnCondition").value("DAMAGED")).andExpect(jsonPath("$.data.history[0].returnNotes").value("Cracked screen"));
-        mockMvc.perform(get("/api/assets/mine").cookie(employee)).andExpect(jsonPath("$.data.current.length()").value(0)).andExpect(jsonPath("$.data.past.length()").value(1));
-        mockMvc.perform(write(delete("/api/assets/" + id)).cookie(hrCookie)).andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(get("/api/v1/assets/mine").cookie(employee)).andExpect(jsonPath("$.data.current.length()").value(0)).andExpect(jsonPath("$.data.past.length()").value(1));
+        mockMvc.perform(write(delete("/api/v1/assets/" + id)).cookie(hrCookie)).andExpect(status().isUnprocessableEntity());
         // repaired: available again, then assignable to someone else
-        mockMvc.perform(write(put("/api/assets/" + id)).cookie(hrCookie).content("{\"tag\":\"LT-" + suffix + "\",\"type\":\"LAPTOP\",\"status\":\"AVAILABLE\"}")).andExpect(status().isOk());
-        mockMvc.perform(write(post("/api/assets/" + id + "/assignments")).cookie(hrCookie).content("{\"employeeId\":\"" + otherId + "\"}")).andExpect(status().isCreated());
-        mockMvc.perform(write(put("/api/assets/" + id)).cookie(hrCookie).content("{\"tag\":\"LT-" + suffix + "\",\"type\":\"LAPTOP\",\"status\":\"RETIRED\"}")).andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(write(put("/api/v1/assets/" + id)).cookie(hrCookie).content("{\"tag\":\"LT-" + suffix + "\",\"type\":\"LAPTOP\",\"status\":\"AVAILABLE\"}")).andExpect(status().isOk());
+        mockMvc.perform(write(post("/api/v1/assets/" + id + "/assignments")).cookie(hrCookie).content("{\"employeeId\":\"" + otherId + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(write(put("/api/v1/assets/" + id)).cookie(hrCookie).content("{\"tag\":\"LT-" + suffix + "\",\"type\":\"LAPTOP\",\"status\":\"RETIRED\"}")).andExpect(status().isUnprocessableEntity());
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE entity = 'asset' AND entity_id = ? AND action IN ('asset.assign', 'asset.return')", Integer.class, id))
                 .isEqualTo(3);
@@ -110,41 +110,41 @@ class AssetApiTest extends IntegrationTest {
     @Test
     void onlyAssetManagersCanManage() throws Exception {
         String id = add(hrCookie, "PH-" + suffix);
-        mockMvc.perform(get("/api/assets").cookie(employee)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/assets/" + id).cookie(employee)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/assets/assignees").cookie(employee)).andExpect(status().isForbidden());
-        mockMvc.perform(write(post("/api/assets")).cookie(employee).content("{\"tag\":\"X\",\"type\":\"PHONE\"}")).andExpect(status().isForbidden());
-        mockMvc.perform(write(post("/api/assets/" + id + "/assignments")).cookie(employee).content("{\"employeeId\":\"" + employeeId + "\"}")).andExpect(status().isForbidden());
-        mockMvc.perform(write(patch("/api/assets/" + id + "/assignments/current")).cookie(employee).content("{\"condition\":\"GOOD\"}")).andExpect(status().isForbidden());
-        mockMvc.perform(write(delete("/api/assets/" + id)).cookie(employee)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/assets").cookie(hrCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1));
-        mockMvc.perform(get("/api/assets/assignees").cookie(hrCookie)).andExpect(jsonPath("$.data.length()").value(3));
-        mockMvc.perform(get("/api/assets/mine")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/assets").cookie(employee)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/assets/" + id).cookie(employee)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/assets/assignees").cookie(employee)).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/assets")).cookie(employee).content("{\"tag\":\"X\",\"type\":\"PHONE\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/assets/" + id + "/assignments")).cookie(employee).content("{\"employeeId\":\"" + employeeId + "\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(write(patch("/api/v1/assets/" + id + "/assignments/current")).cookie(employee).content("{\"condition\":\"GOOD\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(write(delete("/api/v1/assets/" + id)).cookie(employee)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/assets").cookie(hrCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1));
+        mockMvc.perform(get("/api/v1/assets/assignees").cookie(hrCookie)).andExpect(jsonPath("$.data.length()").value(3));
+        mockMvc.perform(get("/api/v1/assets/mine")).andExpect(status().isUnauthorized());
     }
 
     @Test
     void validationAndDuplicateTags() throws Exception {
         add(hrCookie, "DUP-" + suffix);
-        mockMvc.perform(write(post("/api/assets")).cookie(hrCookie).content("{\"tag\":\"dup-" + suffix + "\",\"type\":\"LAPTOP\"}")).andExpect(status().isConflict());
-        mockMvc.perform(write(post("/api/assets")).cookie(hrCookie).content("{\"tag\":\"  \",\"type\":\"LAPTOP\"}")).andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/assets")).cookie(hrCookie).content("{\"tag\":\"T1\",\"type\":\"SPACESHIP\"}")).andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/assets")).cookie(hrCookie).content("{\"tag\":\"T1\",\"type\":\"PHONE\",\"purchaseDate\":\"01/04/2025\"}")).andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/assets")).cookie(hrCookie).content("{\"tag\":\"T1\",\"type\":\"PHONE\",\"status\":\"ASSIGNED\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/assets")).cookie(hrCookie).content("{\"tag\":\"dup-" + suffix + "\",\"type\":\"LAPTOP\"}")).andExpect(status().isConflict());
+        mockMvc.perform(write(post("/api/v1/assets")).cookie(hrCookie).content("{\"tag\":\"  \",\"type\":\"LAPTOP\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/assets")).cookie(hrCookie).content("{\"tag\":\"T1\",\"type\":\"SPACESHIP\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/assets")).cookie(hrCookie).content("{\"tag\":\"T1\",\"type\":\"PHONE\",\"purchaseDate\":\"01/04/2025\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/assets")).cookie(hrCookie).content("{\"tag\":\"T1\",\"type\":\"PHONE\",\"status\":\"ASSIGNED\"}")).andExpect(status().isBadRequest());
         String id = add(hrCookie, "OK-" + suffix);
-        mockMvc.perform(write(post("/api/assets/" + id + "/assignments")).cookie(hrCookie).content("{\"employeeId\":\"not-a-uuid\"}")).andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/assets/" + id + "/assignments")).cookie(hrCookie).content("{\"employeeId\":\"" + UUID.randomUUID() + "\"}")).andExpect(status().isNotFound());
-        mockMvc.perform(write(patch("/api/assets/" + id + "/assignments/current")).cookie(hrCookie).content("{\"condition\":\"GOOD\"}")).andExpect(status().isUnprocessableEntity());
-        mockMvc.perform(get("/api/assets/" + UUID.randomUUID()).cookie(hrCookie)).andExpect(status().isNotFound());
+        mockMvc.perform(write(post("/api/v1/assets/" + id + "/assignments")).cookie(hrCookie).content("{\"employeeId\":\"not-a-uuid\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/assets/" + id + "/assignments")).cookie(hrCookie).content("{\"employeeId\":\"" + UUID.randomUUID() + "\"}")).andExpect(status().isNotFound());
+        mockMvc.perform(write(patch("/api/v1/assets/" + id + "/assignments/current")).cookie(hrCookie).content("{\"condition\":\"GOOD\"}")).andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(get("/api/v1/assets/" + UUID.randomUUID()).cookie(hrCookie)).andExpect(status().isNotFound());
         // never assigned: can be deleted
-        mockMvc.perform(write(delete("/api/assets/" + id)).cookie(hrCookie)).andExpect(status().isOk());
+        mockMvc.perform(write(delete("/api/v1/assets/" + id)).cookie(hrCookie)).andExpect(status().isOk());
     }
 
     @Test
     void aBusinessNeverSeesAnotherBusinesssAssets() throws Exception {
         String id = add(hrCookie, "SAME-" + suffix);
-        mockMvc.perform(get("/api/assets").cookie(otherBusinessHr)).andExpect(jsonPath("$.data.length()").value(0));
-        mockMvc.perform(get("/api/assets/" + id).cookie(otherBusinessHr)).andExpect(status().isNotFound());
-        mockMvc.perform(write(post("/api/assets/" + id + "/assignments")).cookie(otherBusinessHr).content("{\"employeeId\":\"" + employeeId + "\"}")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/assets").cookie(otherBusinessHr)).andExpect(jsonPath("$.data.length()").value(0));
+        mockMvc.perform(get("/api/v1/assets/" + id).cookie(otherBusinessHr)).andExpect(status().isNotFound());
+        mockMvc.perform(write(post("/api/v1/assets/" + id + "/assignments")).cookie(otherBusinessHr).content("{\"employeeId\":\"" + employeeId + "\"}")).andExpect(status().isNotFound());
         // the same tag is free in the other business
         add(otherBusinessHr, "SAME-" + suffix);
     }

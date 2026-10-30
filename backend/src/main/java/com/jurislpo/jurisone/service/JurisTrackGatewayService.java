@@ -1,5 +1,7 @@
 package com.jurislpo.jurisone.service;
 
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.common.RequestMeta;
@@ -72,7 +74,7 @@ public class JurisTrackGatewayService {
         }
         String path = targetPath(request.getRequestURI());
         String query = request.getQueryString();
-        URI target = URI.create(properties.baseUrl() + "/api/" + path + (query == null || query.isEmpty() ? "" : "?" + query));
+        URI target = URI.create(properties.baseUrl() + "/api/v1/" + path + (query == null || query.isEmpty() ? "" : "?" + query));
         String requestId = response.getHeader(REQUEST_ID_HEADER);
         if (requestId == null || requestId.isBlank()) requestId = UUID.randomUUID().toString();
         response.setHeader(REQUEST_ID_HEADER, requestId);
@@ -158,7 +160,7 @@ public class JurisTrackGatewayService {
     }
 
     private HttpResponse<byte[]> sendTimeEvent(CurrentUser user, String type, String ipAddress) throws IOException, InterruptedException {
-        HttpRequest.Builder outgoing = HttpRequest.newBuilder(URI.create(properties.baseUrl() + "/api/" + TIME_EVENTS_PATH)).timeout(SYNC_TIMEOUT)
+        HttpRequest.Builder outgoing = HttpRequest.newBuilder(URI.create(properties.baseUrl() + "/api/v1/" + TIME_EVENTS_PATH)).timeout(SYNC_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString("{\"type\":\"" + type + "\"}"))
                 .header("Authorization", "Bearer " + tokenIssuer.issue(subjectOf(user)))
                 .header("Content-Type", "application/json")
@@ -172,7 +174,7 @@ public class JurisTrackGatewayService {
     /** The part after {@code /api/juris-track/}, still percent-encoded as the browser sent it; refused when it could climb out of {@code /api/}. */
     static String targetPath(String requestUri) {
         // JurisTrack's paths are plain words and ids: any percent-encoding (a way to hide "integration", ".." or "/") is refused
-        String prefix = "/api/juris-track/";
+        String prefix = PREFIX + "/juris-track/";
         String path = requestUri.startsWith(prefix) ? requestUri.substring(prefix.length()) : "";
         String lower = path.toLowerCase(Locale.ROOT);
         if (path.isEmpty() || lower.contains("..") || lower.contains("%") || lower.contains(";") || lower.contains("\\") || lower.contains("//")) {

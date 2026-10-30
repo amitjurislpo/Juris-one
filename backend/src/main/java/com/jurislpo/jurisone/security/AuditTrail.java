@@ -1,5 +1,8 @@
 package com.jurislpo.jurisone.security;
 
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX_SLASH;
+
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -21,30 +24,30 @@ public final class AuditTrail {
 
     /** Reads that are logged although they change nothing: exports, downloads and anything that reveals personal data. */
     private static final Pattern[] SENSITIVE_GETS = {
-            Pattern.compile("^/api/.*/export(/.*)?$"),
-            Pattern.compile("^/api/.*/pdf$"),
-            Pattern.compile("^/api/.*/download(/.*)?$"),
-            Pattern.compile("^/api/people/[^/]+/contact$"),
-            Pattern.compile("^/api/people/[^/]+/onboarding(/.*)?$"),   // an employee's onboarding data and files, read by HR
-            Pattern.compile("^/api/people/[^/]+/documents/[^/]+/file$"),
-            Pattern.compile("^/api/people/[^/]+$"),            // an employee's profile (masked identity numbers, salary for finance)
-            Pattern.compile("^/api/letters/[^/]+$"),           // one issued letter's text
-            Pattern.compile("^/api/letters/mine$"),
-            Pattern.compile("^/api/payslips/.*$"),
-            Pattern.compile("^/api/payroll/.*/(files|payslips)(/.*)?$"),
-            Pattern.compile("^/api/profile$"),
-            Pattern.compile("^/api/proofs/.*/(file|document)$"),
-            Pattern.compile("^/api/tax/.*/(file|document)$"),
-            Pattern.compile("^/api/tasks/[^/]+/attachments/[^/]+/file$"),
-            Pattern.compile("^/api/platform/audit(/.*)?$"),
-            Pattern.compile("^/api/audit(/.*)?$"),
+            Pattern.compile("^" + PREFIX + "/.*/export(/.*)?$"),
+            Pattern.compile("^" + PREFIX + "/.*/pdf$"),
+            Pattern.compile("^" + PREFIX + "/.*/download(/.*)?$"),
+            Pattern.compile("^" + PREFIX + "/people/[^/]+/contact$"),
+            Pattern.compile("^" + PREFIX + "/people/[^/]+/onboarding(/.*)?$"),   // an employee's onboarding data and files, read by HR
+            Pattern.compile("^" + PREFIX + "/people/[^/]+/documents/[^/]+/file$"),
+            Pattern.compile("^" + PREFIX + "/people/[^/]+$"),            // an employee's profile (masked identity numbers, salary for finance)
+            Pattern.compile("^" + PREFIX + "/letters/[^/]+$"),           // one issued letter's text
+            Pattern.compile("^" + PREFIX + "/letters/mine$"),
+            Pattern.compile("^" + PREFIX + "/payslips/.*$"),
+            Pattern.compile("^" + PREFIX + "/payroll/.*/(files|payslips)(/.*)?$"),
+            Pattern.compile("^" + PREFIX + "/profile$"),
+            Pattern.compile("^" + PREFIX + "/proofs/.*/(file|document)$"),
+            Pattern.compile("^" + PREFIX + "/tax/.*/(file|document)$"),
+            Pattern.compile("^" + PREFIX + "/tasks/[^/]+/attachments/[^/]+/file$"),
+            Pattern.compile("^" + PREFIX + "/platform/audit(/.*)?$"),
+            Pattern.compile("^" + PREFIX + "/audit(/.*)?$"),
     };
 
     /** Written through its own endpoint (the page-view row replaces the request row). */
-    private static final String[] SKIP = {"/api/audit/page-views"};
+    private static final String[] SKIP = {PREFIX + "/audit/page-views"};
 
     public static boolean isRecorded(String method, String path) {
-        if (!path.startsWith("/api/")) return false;
+        if (!path.startsWith(PREFIX_SLASH)) return false;
         for (String skipPath : SKIP) if (path.equals(skipPath)) return false;
         if ("HEAD".equals(method) || "OPTIONS".equals(method)) return false;
         if (!"GET".equals(method)) return true;

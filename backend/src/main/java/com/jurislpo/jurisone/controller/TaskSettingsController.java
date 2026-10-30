@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * projects; existing projects keep their copy). Business labels are managed through {@code /api/task-labels}.
  */
 @RestController
-@RequestMapping("/api/task-settings")
+@RequestMapping("/api/v1/task-settings")
 public class TaskSettingsController {
 
     private final Auth auth;

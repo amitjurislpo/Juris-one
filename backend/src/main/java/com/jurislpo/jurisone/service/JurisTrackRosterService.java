@@ -141,7 +141,7 @@ public class JurisTrackRosterService {
         String requestId = UUID.randomUUID().toString();
         HttpResponse<byte[]> answer;
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(properties.baseUrl() + "/api/integration/employees")).timeout(TIMEOUT)
+            HttpRequest request = HttpRequest.newBuilder(URI.create(properties.baseUrl() + "/api/v1/integration/employees")).timeout(TIMEOUT)
                     .PUT(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(payload)))
                     .header("Authorization", "Bearer " + tokenIssuer.issueService(business.id(), business.name()))
                     .header("Content-Type", "application/json").header("Accept", "application/json").header(AuditTrail.REQUEST_ID_HEADER, requestId).build();

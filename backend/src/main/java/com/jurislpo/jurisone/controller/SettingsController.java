@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** /api/settings — the Policies page (roles.manage). */
 @RestController
-@RequestMapping("/api/settings")
+@RequestMapping("/api/v1/settings")
 public class SettingsController {
 
     private final Auth auth;

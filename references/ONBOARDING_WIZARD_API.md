@@ -14,20 +14,20 @@ Steps are numbered 1..6: 1 personal, 2 employment, 3 statutory, 4 family, 5 nomi
 ## Endpoints
 | Method + path | Purpose |
 |---|---|
-| `GET /api/onboarding/mine` | everything: header, status, currentStep, stepStatus, all step data, attachment slots with files |
-| `PUT /api/onboarding/mine/steps/{step}` | save one step (1..6 except 6 which has no body, see below). Body = that step's object. Server validates; saves even when incomplete? NO: invalid = 422 with `errors`, nothing saved. Success returns the full `GET` payload with `currentStep` = next step. |
-| `PUT /api/onboarding/mine/current-step` | `{ "step": n }` remember where the employee is (stepper click) without saving data |
-| `POST /api/onboarding/mine/attachments` | multipart: `slotKey`, `file`; 201 with the attachment; pdf/doc/docx/jpg/png, max 10 MB, else 400/413 |
-| `DELETE /api/onboarding/mine/attachments/{id}` | remove a file |
-| `GET /api/onboarding/mine/attachments/{id}/file?download=true|false` | stream a file (own only) |
-| `POST /api/onboarding/mine/submission` | validates ALL steps + mandatory attachment slots; 422 with `errors` if anything is missing; success sets SUBMITTED + submittedAt |
-| `PUT /api/people/{id}/onboarding/status` | HR (`people.add` or the permission used for employees): `{ "status": "REOPENED" }` |
-| `GET /api/people/{id}/onboarding` | HR read-only view: same payload as `/mine` (numbers masked, `?reveal` NOT supported) plus attachments |
-| `GET /api/people/{id}/onboarding/attachments/{fileId}/file?download=true|false` | HR streams/downloads one of the employee's onboarding files (same permission as `GET /api/people/{id}/onboarding`; 404 if the file is not that employee's) |
-| `GET /api/people/{id}/documents` (+ `/{docId}/file`) | unchanged URLs; now list the employee's onboarding files as `{id, kind: slotKey, label: slot title, fileName, uploadedAt}` |
-| `GET /api/people` | every row gets `onboardingStatus` (`NOT_REQUIRED` when the employee has no wizard row) |
-| `POST /api/people` | body accepts `isOnboardingRequired` (boolean, default false): false creates the employee as `NOT_REQUIRED` |
-| `GET /api/shell` and `GET /api/me` | `data.onboarding = { status, isRequired }`; `isRequired` is true for NOT_STARTED / IN_PROGRESS / REOPENED: redirect to the wizard |
+| `GET /api/v1/onboarding/mine` | everything: header, status, currentStep, stepStatus, all step data, attachment slots with files |
+| `PUT /api/v1/onboarding/mine/steps/{step}` | save one step (1..6 except 6 which has no body, see below). Body = that step's object. Server validates; saves even when incomplete? NO: invalid = 422 with `errors`, nothing saved. Success returns the full `GET` payload with `currentStep` = next step. |
+| `PUT /api/v1/onboarding/mine/current-step` | `{ "step": n }` remember where the employee is (stepper click) without saving data |
+| `POST /api/v1/onboarding/mine/attachments` | multipart: `slotKey`, `file`; 201 with the attachment; pdf/doc/docx/jpg/png, max 10 MB, else 400/413 |
+| `DELETE /api/v1/onboarding/mine/attachments/{id}` | remove a file |
+| `GET /api/v1/onboarding/mine/attachments/{id}/file?download=true|false` | stream a file (own only) |
+| `POST /api/v1/onboarding/mine/submission` | validates ALL steps + mandatory attachment slots; 422 with `errors` if anything is missing; success sets SUBMITTED + submittedAt |
+| `PUT /api/v1/people/{id}/onboarding/status` | HR (`people.add` or the permission used for employees): `{ "status": "REOPENED" }` |
+| `GET /api/v1/people/{id}/onboarding` | HR read-only view: same payload as `/mine` (numbers masked, `?reveal` NOT supported) plus attachments |
+| `GET /api/v1/people/{id}/onboarding/attachments/{fileId}/file?download=true|false` | HR streams/downloads one of the employee's onboarding files (same permission as `GET /api/v1/people/{id}/onboarding`; 404 if the file is not that employee's) |
+| `GET /api/v1/people/{id}/documents` (+ `/{docId}/file`) | unchanged URLs; now list the employee's onboarding files as `{id, kind: slotKey, label: slot title, fileName, uploadedAt}` |
+| `GET /api/v1/people` | every row gets `onboardingStatus` (`NOT_REQUIRED` when the employee has no wizard row) |
+| `POST /api/v1/people` | body accepts `isOnboardingRequired` (boolean, default false): false creates the employee as `NOT_REQUIRED` |
+| `GET /api/v1/shell` and `GET /api/v1/me` | `data.onboarding = { status, isRequired }`; `isRequired` is true for NOT_STARTED / IN_PROGRESS / REOPENED: redirect to the wizard |
 
 Responses use the repo's wrapper: `{ ok, message?, data }`; everything in this file is the `data` part. `POST .../submission` answers 201 with the payload (status SUBMITTED).
 `422` field errors: `{ "type", "title", "status", "detail", "code":"VALIDATION_FAILED", "errors": { "<jsonPath>": "message" } }`; paths are those of the step body
@@ -36,14 +36,14 @@ Responses use the repo's wrapper: `{ ok, message?, data }`; everything in this f
 Present address with `isSameAsPermanent: true`: the server copies every permanent value (district included); the other present fields may be omitted.
 
 Masking: `GET` returns bank account number, PAN, Aadhaar, UAN masked (`"XXXXXXXX1234"`) with `"hasX": true`; the full value is returned only by
-`GET /api/onboarding/mine/secrets` (`{ bankAccountNumber, pan, aadhaar }`, owner only, audited) used by the Summary eye toggle and by the form when editing.
+`GET /api/v1/onboarding/mine/secrets` (`{ bankAccountNumber, pan, aadhaar }`, owner only, audited) used by the Summary eye toggle and by the form when editing.
 When the employee saves step 3 without changing a masked field the client sends `null` for it = keep the stored value.
 
-## Payload (GET /api/onboarding/mine)
+## Payload (GET /api/v1/onboarding/mine)
 ```
 {
  "status": "IN_PROGRESS", "currentStep": 2, "stepStatus": {"1":"COMPLETE","2":"UNVISITED",...}, "isReadOnly": false, "submittedAt": null,
- "header": { "name": "AMIT JASPAL", "employeeCode": "JC074", "photoUrl": null|"/api/...", "department": null, "designation": null, "location": "Delhi",
+ "header": { "name": "AMIT JASPAL", "employeeCode": "JC074", "photoUrl": null|"/api/v1/...", "department": null, "designation": null, "location": "Delhi",
              "pointOfContact": { "name": "...", "email": "...", "phone": "..." } | null },
  "personal": {
    "bloodGroup": use the display strings "A +ve","A -ve","B +ve","B -ve","AB +ve","AB -ve","O +ve","O -ve",
@@ -88,21 +88,21 @@ Supersedes anything above that conflicts (REOPENED is gone).
 Employee is LOCKED (gate `isRequired = true`) in NOT_STARTED, IN_PROGRESS, SUBMITTED, CHANGES_REQUESTED. Only NOT_REQUIRED and APPROVED are free.
 
 ## Hard lock (server side, not only UI)
-A filter (like PolicyGateFilter/SubscriptionGateFilter) answers 403 problem `onboarding-pending` for EVERY `/api/**` call of a locked employee except: auth/session/logout/refresh, `/api/me`, `/api/shell` (reduced), `/api/onboarding/**` (own wizard, bank lookups, attachments, secrets, submission), language/locale preference, own notifications read. Frontend: a locked employee sees NO menu at all (no sidebar items, no search, no bell): only a minimal bar with logo, name, language, Sign out. Wizard when NOT_STARTED/IN_PROGRESS/CHANGES_REQUESTED; a read-only "Submitted, waiting for HR review" page with the Summary when SUBMITTED; after APPROVED the normal portal.
+A filter (like PolicyGateFilter/SubscriptionGateFilter) answers 403 problem `onboarding-pending` for EVERY `/api/v1/**` call of a locked employee except: auth/session/logout/refresh, `/api/v1/me`, `/api/v1/shell` (reduced), `/api/v1/onboarding/**` (own wizard, bank lookups, attachments, secrets, submission), language/locale preference, own notifications read. Frontend: a locked employee sees NO menu at all (no sidebar items, no search, no bell): only a minimal bar with logo, name, language, Sign out. Wizard when NOT_STARTED/IN_PROGRESS/CHANGES_REQUESTED; a read-only "Submitted, waiting for HR review" page with the Summary when SUBMITTED; after APPROVED the normal portal.
 
 ## Employee submit / HR decision
-- `POST /api/onboarding/mine/submission` -> SUBMITTED (also from CHANGES_REQUESTED = resubmit; clears the review flags). Notifies HR (in-app notification to everyone with `people.add`).
-- `GET /api/onboarding/mine` additionally returns `reviewComment: string|null`, `reviewFlags: [{section, comment}]`, `reviewedAt`, `approvedAt`. Sections keys: `PERSONAL`, `ADDRESS`, `QUALIFICATIONS`, `EMPLOYMENT`, `ACCOUNTS`, `FAMILY`, `NOMINATIONS`, `ATTACHMENTS` (steps: PERSONAL/ADDRESS/QUALIFICATIONS = 1, EMPLOYMENT = 2, ACCOUNTS = 3, FAMILY = 4, NOMINATIONS = 5, ATTACHMENTS = 6). UI: red stepper step + red section header + HR comment under it for every flagged section, and a banner with the overall comment.
+- `POST /api/v1/onboarding/mine/submission` -> SUBMITTED (also from CHANGES_REQUESTED = resubmit; clears the review flags). Notifies HR (in-app notification to everyone with `people.add`).
+- `GET /api/v1/onboarding/mine` additionally returns `reviewComment: string|null`, `reviewFlags: [{section, comment}]`, `reviewedAt`, `approvedAt`. Sections keys: `PERSONAL`, `ADDRESS`, `QUALIFICATIONS`, `EMPLOYMENT`, `ACCOUNTS`, `FAMILY`, `NOMINATIONS`, `ATTACHMENTS` (steps: PERSONAL/ADDRESS/QUALIFICATIONS = 1, EMPLOYMENT = 2, ACCOUNTS = 3, FAMILY = 4, NOMINATIONS = 5, ATTACHMENTS = 6). UI: red stepper step + red section header + HR comment under it for every flagged section, and a banner with the overall comment.
 - HR (permission `people.add`):
-  - `POST /api/people/{id}/onboarding/approvals` (body `{}`) -> APPROVED, only from SUBMITTED; employee gets in-app notification + email "Onboarding approved".
-  - `POST /api/people/{id}/onboarding/rejections` body `{ comment, flags: [{section, comment}] }` (>= 1 flag, comment required) -> CHANGES_REQUESTED; employee gets in-app notification + email (the alert) naming the sections.
-  - Both audited. `PUT /api/people/{id}/onboarding/status` (REOPENED) is removed.
+  - `POST /api/v1/people/{id}/onboarding/approvals` (body `{}`) -> APPROVED, only from SUBMITTED; employee gets in-app notification + email "Onboarding approved".
+  - `POST /api/v1/people/{id}/onboarding/rejections` body `{ comment, flags: [{section, comment}] }` (>= 1 flag, comment required) -> CHANGES_REQUESTED; employee gets in-app notification + email (the alert) naming the sections.
+  - Both audited. `PUT /api/v1/people/{id}/onboarding/status` (REOPENED) is removed.
 
 ## HR creates onboardings and fills them on behalf (new menu item "Onboard employee"; the old "Add employee" stays as is and is NOT_REQUIRED)
-- `GET /api/onboardings?status=&search=&page=` (HR): list of onboardings: `{ employeeId, name, employeeCode, email, designation, department, status, submittedAt, currentStep }`.
-- `POST /api/onboardings` (HR): body = the minimal master data (same fields/validation as the add-employee form's first part: firstName, lastName, workEmail, phone, dateOfJoining, designation, departmentId, managerId, roleId, location/time zone as the add-employee form needs) -> creates the employee with portal access ON, onboarding NOT_STARTED, sends the invitation email (greytHR-style "Hi NAME, Glad to have you onboard! ... Let's Get Started" with the portal link and the work email as username; MailService/MailTemplates), 201 with `{ employeeId }`.
-- HR acts on the employee's behalf with the same payloads as `/mine`: `GET /api/people/{id}/onboarding` (masked), `PUT /api/people/{id}/onboarding/steps/{step}`, `PUT /api/people/{id}/onboarding/current-step`, `POST /api/people/{id}/onboarding/attachments`, `DELETE /api/people/{id}/onboarding/attachments/{fileId}`, `GET /api/people/{id}/onboarding/attachments/{fileId}/file`, `GET /api/people/{id}/onboarding/secrets` (audited), `POST /api/people/{id}/onboarding/submission` (HR submits for them = SUBMITTED, then HR may approve). Allowed in every status except APPROVED (409) and NOT_REQUIRED (404). Every write audited.
-- Add-employee (`POST /api/people`): `isOnboardingRequired` default becomes FALSE and the checkbox disappears from that form (existing flow unchanged: immediate access, NOT_REQUIRED).
-- Shapes as built: `GET /api/onboardings` answers `data = { rows: [{ employeeId, name, employeeCode, email, designation, department, status, submittedAt, currentStep }], total, page, take }` (query `status`, `search` on name/email/code, `page`, `pageSize` default 25 max 100; newest first; NOT_REQUIRED never listed; unknown status = 400). `POST /api/onboardings` body = `{ firstName, middleName?, lastName, workEmail, phoneCountry? ("+91"), phone, location? ("IN_IST" default), joiningOffice?, designation, departmentId, managerId, dateOfJoining, shift?, roleId }`, answers 201 `data = { employeeId }`; the father's name is NOT asked (the employee gives it in step 1). Duplicate email = the add-employee error (422 "... already uses that email."). The invitation mail is queued after the creation is committed; a failing mail is only logged.
-- `GET /api/people/{id}/onboarding/secrets` answers `{ bankAccountNumber, pan, aadhaar }` (`Cache-Control: no-store`, audited). HR writes are audited with the HR as actor and `onBehalfOfEmployeeId` in the audit data. A bad slot key = 422, as for the employee.
+- `GET /api/v1/onboardings?status=&search=&page=` (HR): list of onboardings: `{ employeeId, name, employeeCode, email, designation, department, status, submittedAt, currentStep }`.
+- `POST /api/v1/onboardings` (HR): body = the minimal master data (same fields/validation as the add-employee form's first part: firstName, lastName, workEmail, phone, dateOfJoining, designation, departmentId, managerId, roleId, location/time zone as the add-employee form needs) -> creates the employee with portal access ON, onboarding NOT_STARTED, sends the invitation email (greytHR-style "Hi NAME, Glad to have you onboard! ... Let's Get Started" with the portal link and the work email as username; MailService/MailTemplates), 201 with `{ employeeId }`.
+- HR acts on the employee's behalf with the same payloads as `/mine`: `GET /api/v1/people/{id}/onboarding` (masked), `PUT /api/v1/people/{id}/onboarding/steps/{step}`, `PUT /api/v1/people/{id}/onboarding/current-step`, `POST /api/v1/people/{id}/onboarding/attachments`, `DELETE /api/v1/people/{id}/onboarding/attachments/{fileId}`, `GET /api/v1/people/{id}/onboarding/attachments/{fileId}/file`, `GET /api/v1/people/{id}/onboarding/secrets` (audited), `POST /api/v1/people/{id}/onboarding/submission` (HR submits for them = SUBMITTED, then HR may approve). Allowed in every status except APPROVED (409) and NOT_REQUIRED (404). Every write audited.
+- Add-employee (`POST /api/v1/people`): `isOnboardingRequired` default becomes FALSE and the checkbox disappears from that form (existing flow unchanged: immediate access, NOT_REQUIRED).
+- Shapes as built: `GET /api/v1/onboardings` answers `data = { rows: [{ employeeId, name, employeeCode, email, designation, department, status, submittedAt, currentStep }], total, page, take }` (query `status`, `search` on name/email/code, `page`, `pageSize` default 25 max 100; newest first; NOT_REQUIRED never listed; unknown status = 400). `POST /api/v1/onboardings` body = `{ firstName, middleName?, lastName, workEmail, phoneCountry? ("+91"), phone, location? ("IN_IST" default), joiningOffice?, designation, departmentId, managerId, dateOfJoining, shift?, roleId }`, answers 201 `data = { employeeId }`; the father's name is NOT asked (the employee gives it in step 1). Duplicate email = the add-employee error (422 "... already uses that email."). The invitation mail is queued after the creation is committed; a failing mail is only logged.
+- `GET /api/v1/people/{id}/onboarding/secrets` answers `{ bankAccountNumber, pan, aadhaar }` (`Cache-Control: no-store`, audited). HR writes are audited with the HR as actor and `onBehalfOfEmployeeId` in the audit data. A bad slot key = 422, as for the employee.
 

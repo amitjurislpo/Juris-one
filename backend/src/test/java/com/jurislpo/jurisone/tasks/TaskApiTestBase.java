@@ -83,22 +83,22 @@ abstract class TaskApiTestBase extends IntegrationTest {
 
     /** Creates a project and returns its id. */
     String project(Cookie cookie, String key, String visibility) throws Exception {
-        return postCreated(cookie, "/api/projects", "{\"key\":\"" + key + "\",\"name\":\"Project " + key + " " + suffix + "\",\"visibility\":\"" + visibility + "\"}")
+        return postCreated(cookie, "/api/v1/projects", "{\"key\":\"" + key + "\",\"name\":\"Project " + key + " " + suffix + "\",\"visibility\":\"" + visibility + "\"}")
                 .get("id").asText();
     }
 
     void addMember(Cookie cookie, String projectId, Person person, String role) throws Exception {
-        mockMvc.perform(write(post("/api/projects/" + projectId + "/members")).cookie(cookie).content("{\"employeeId\":\"" + person.id() + "\",\"role\":\"" + role + "\"}"))
+        mockMvc.perform(write(post("/api/v1/projects/" + projectId + "/members")).cookie(cookie).content("{\"employeeId\":\"" + person.id() + "\",\"role\":\"" + role + "\"}"))
                 .andExpect(status().isCreated());
     }
 
     /** Creates a task ({@code fields} is the JSON body without braces) and returns {@code {id, key}}. */
     JsonNode task(Cookie cookie, String fields) throws Exception {
-        return postCreated(cookie, "/api/tasks", "{" + fields + "}");
+        return postCreated(cookie, "/api/v1/tasks", "{" + fields + "}");
     }
 
     int version(Cookie cookie, String taskId) throws Exception {
-        return getData(cookie, "/api/tasks/" + taskId).get("version").asInt();
+        return getData(cookie, "/api/v1/tasks/" + taskId).get("version").asInt();
     }
 
     /** The id of a step of a project (null = the business default set) by name. */

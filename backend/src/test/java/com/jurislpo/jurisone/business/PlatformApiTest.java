@@ -80,9 +80,9 @@ class PlatformApiTest extends IntegrationTest {
 
         // the owner is the business admin: lands on Overview, manages roles, can't reach the platform API
         Cookie cookie = signIn(ownerEmail);
-        mockMvc.perform(get("/api/me").cookie(cookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.landing").value("/overview"));
-        mockMvc.perform(get("/api/roles").cookie(cookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data[0].key").value("owner"));
-        mockMvc.perform(get("/api/platform/businesses").cookie(cookie)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/me").cookie(cookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.landing").value("/overview"));
+        mockMvc.perform(get("/api/v1/roles").cookie(cookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data[0].key").value("owner"));
+        mockMvc.perform(get("/api/v1/platform/businesses").cookie(cookie)).andExpect(status().isForbidden());
 
         // the next employee gets the next ID of this business
         UUID department = jdbc.queryForObject("SELECT id FROM departments WHERE business_id = ? AND name = 'Finance'", UUID.class, business);
@@ -95,12 +95,12 @@ class PlatformApiTest extends IntegrationTest {
         String email = "platform." + UUID.randomUUID().toString().substring(0, 6) + "@jurisone.test";
         superAdmin(email);
         Cookie cookie = signIn(email);
-        mockMvc.perform(get("/api/me").cookie(cookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.landing").value("/platform"))
+        mockMvc.perform(get("/api/v1/me").cookie(cookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.landing").value("/platform"))
                 .andExpect(jsonPath("$.data.subscriptionActive").value(org.hamcrest.Matchers.nullValue()));
-        mockMvc.perform(get("/api/platform/businesses").cookie(cookie)).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/platform/businesses").cookie(cookie)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.code == '" + TestData.DEFAULT_BUSINESS + "')]").exists());
-        mockMvc.perform(get("/api/people").cookie(cookie)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/payroll").cookie(cookie)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/people").cookie(cookie)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/payroll").cookie(cookie)).andExpect(status().isForbidden());
     }
 
     @Test
@@ -115,13 +115,13 @@ class PlatformApiTest extends IntegrationTest {
         assertThat(platformCompany.ensure()).isEqualTo(company); // idempotent
 
         Cookie cookie = signIn(email);
-        mockMvc.perform(get("/api/me").cookie(cookie)).andExpect(jsonPath("$.data.landing").value("/platform"))
+        mockMvc.perform(get("/api/v1/me").cookie(cookie)).andExpect(jsonPath("$.data.landing").value("/platform"))
                 .andExpect(jsonPath("$.data.subscriptionActive").value(true)); // the platform company needs no plan
         // the console still works across businesses, and doesn't list the platform company as a customer
-        String list = mockMvc.perform(get("/api/platform/businesses").cookie(cookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String list = mockMvc.perform(get("/api/v1/platform/businesses").cookie(cookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(list).contains(customerCode).doesNotContain(company.toString());
-        mockMvc.perform(get("/api/platform/businesses/" + company).cookie(cookie)).andExpect(status().isNotFound());
-        mockMvc.perform(write(put("/api/platform/businesses/" + company + "/status")).cookie(cookie).content("{\"status\":\"SUSPENDED\"}")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/platform/businesses/" + company).cookie(cookie)).andExpect(status().isNotFound());
+        mockMvc.perform(write(put("/api/v1/platform/businesses/" + company + "/status")).cookie(cookie).content("{\"status\":\"SUSPENDED\"}")).andExpect(status().isNotFound());
 
         // its own employees: the super admin adds one; customers' people are not there
         for (String[] shift : new String[][] {{"IN_NIGHT", "19:30", "04:30", "IN"}, {"IN_DAY", "09:30", "18:30", "IN"}, {"US_DAY", "09:00", "18:00", "US"}}) {
@@ -134,15 +134,15 @@ class PlatformApiTest extends IntegrationTest {
             {"firstName":"Kiran","lastName":"Rao","fatherName":"M Rao","email":"kiran.%s@jurisone.test","phoneCountry":"+91","phone":"9876501234","location":"",
              "joiningOffice":"Head office","pan":"","aadhaar":"","uan":"","address":"","designation":"HR Manager","departmentId":"%s","managerId":"%s",
              "dateOfJoining":"2026-10-01","shift":"IN_DAY","roleId":"%s"}""".formatted(TestData.letters(5), hrDept, superAdminId, hrRole);
-        String created = mockMvc.perform(write(post("/api/people")).cookie(cookie).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String created = mockMvc.perform(write(post("/api/v1/people")).cookie(cookie).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         assertThat(created).contains("JO-");
-        String people = mockMvc.perform(get("/api/people").cookie(cookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String people = mockMvc.perform(get("/api/v1/people").cookie(cookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(people).contains("Kiran Rao").doesNotContain(customerEmp.toString()).doesNotContain(email);
         // and a customer's admin can't reach them
         UUID ownerRole = customer.role("owner", "dir", "roles.manage", "people.view", "people.add");
         String ownerEmail = TestData.letters(8) + "@customer.test";
         customer.employee("PO-" + TestData.letters(4).toUpperCase(), ownerEmail, ownerRole);
-        String theirs = mockMvc.perform(get("/api/people?search=Kiran").cookie(signIn(ownerEmail))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String theirs = mockMvc.perform(get("/api/v1/people?search=Kiran").cookie(signIn(ownerEmail))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(theirs).doesNotContain("Kiran Rao");
     }
 }

@@ -26,7 +26,7 @@ services:
       timeout: 5s
       retries: 10
 
-  # Spring Boot API (BACKEND_PORT on the host, 8080 inside). The web app (juris-one-frontend) proxies /api/* to it.
+  # Spring Boot API (BACKEND_PORT on the host, 8080 inside). The web app (juris-one-frontend) proxies /api/v1/* to it.
   backend:
     build: ./backend
     container_name: ${COMPOSE_PROJECT_NAME:-jurisone}-backend

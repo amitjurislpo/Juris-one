@@ -46,11 +46,11 @@ class TaskJobsTest extends TaskApiTestBase {
         assertThat(run("2031-03-12T09:00:00Z").get("overdue")).isEqualTo(0);
         assertThat(bell(doer.id(), "JOB-1 is overdue (due 11 Mar 2031): File returns")).isEqualTo(1);
         // a new due date re-arms the reminders
-        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":0,\"dueDate\":\"2031-03-14\"}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/v1/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":0,\"dueDate\":\"2031-03-14\"}")).andExpect(status().isOk());
         assertThat(run("2031-03-13T04:00:00Z").get("dueSoon")).isEqualTo(1);
         assertThat(bell(doer.id(), "JOB-1 is due tomorrow%")).isEqualTo(2);
         // done tasks get nothing
-        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":1,\"statusCategory\":\"DONE\"}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/v1/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":1,\"statusCategory\":\"DONE\"}")).andExpect(status().isOk());
         assertThat(run("2031-03-15T04:00:00Z").get("overdue")).isEqualTo(0);
         // bell only
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" IN (?, ?) AND subject NOT LIKE '%sign-in code%'", Integer.class,
@@ -100,20 +100,20 @@ class TaskJobsTest extends TaskApiTestBase {
         assertThat(bell(accountable.id(), "Personal task is due in 1 hour (due 10 Mar 2031 17:00): Send the offer")).isEqualTo(1);
         assertThat(bell(doer.id(), "%due in%: No reminder")).isZero();
         // the due time moves: sent again for the new moment
-        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":0,\"dueTime\":\"20:00\"}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/v1/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":0,\"dueTime\":\"20:00\"}")).andExpect(status().isOk());
         assertThat(run("2031-03-10T13:00:00Z").get("reminders")).isEqualTo(0); // 18:30 India: before 19:00
         assertThat(run("2031-03-10T13:31:00Z").get("reminders")).isEqualTo(1); // 19:01 India
         assertThat(bell(doer.id(), "%due in 1 hour (due 10 Mar 2031 20:00): Send the offer")).isEqualTo(1);
         // a new offset sends again too
-        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":1,\"reminderBeforeMinutes\":1440}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/v1/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":1,\"reminderBeforeMinutes\":1440}")).andExpect(status().isOk());
         assertThat(run("2031-03-10T13:40:00Z").get("reminders")).isEqualTo(1);
         assertThat(bell(doer.id(), "%due in 1 day (due 10 Mar 2031 20:00): Send the offer")).isEqualTo(1);
         // never after the due moment
-        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":2,\"reminderBeforeMinutes\":15}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/v1/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":2,\"reminderBeforeMinutes\":15}")).andExpect(status().isOk());
         assertThat(run("2031-03-10T14:45:00Z").get("reminders")).isEqualTo(0); // 20:15 India: already due
         // done tasks get nothing
-        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":3,\"dueDate\":\"2031-03-20\",\"reminderBeforeMinutes\":240}")).andExpect(status().isOk());
-        mockMvc.perform(write(patch("/api/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":4,\"statusCategory\":\"DONE\"}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/v1/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":3,\"dueDate\":\"2031-03-20\",\"reminderBeforeMinutes\":240}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/v1/tasks/" + id)).cookie(hr.cookie()).content("{\"version\":4,\"statusCategory\":\"DONE\"}")).andExpect(status().isOk());
         assertThat(run("2031-03-20T15:00:00Z").get("reminders")).isEqualTo(0);
     }
 

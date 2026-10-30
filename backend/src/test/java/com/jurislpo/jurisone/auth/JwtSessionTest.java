@@ -79,7 +79,7 @@ class JwtSessionTest extends IntegrationTest {
         assertThat(payload).contains("\"sub\":\"" + signed.id() + "\"").contains("\"sid\"").contains("\"iss\":\"jurisone\"");
         JwtService.AccessClaims claims = jwtService.verify(signed.accessCookie().getValue());
         assertThat(claims.employeeId()).isEqualTo(signed.id());
-        mockMvc.perform(get("/api/me").cookie(signed.accessCookie())).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/me").cookie(signed.accessCookie())).andExpect(status().isOk());
     }
 
     @Test
@@ -87,60 +87,60 @@ class JwtSessionTest extends IntegrationTest {
         Signed signed = signIn();
         String sessionId = jdbc.queryForObject("SELECT id FROM sessions WHERE employee_id = ?", String.class, signed.id());
         String expiredToken = jwtService.issue(signed.id(), sessionId, Instant.now().minusSeconds(6 * 60));
-        mockMvc.perform(get("/api/me").cookie(new Cookie("jo_at", expiredToken))).andExpect(status().isUnauthorized())
+        mockMvc.perform(get("/api/v1/me").cookie(new Cookie("jo_at", expiredToken))).andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(jsonPath("$.code").value("TOKEN_EXPIRED"))
                 .andExpect(jsonPath("$.detail").value("Your session has ended. Please sign in again."))
                 .andExpect(jsonPath("$.status").value(401));
 
         String forged = signed.accessCookie().getValue().substring(0, signed.accessCookie().getValue().lastIndexOf('.') + 1) + "AAAA";
-        mockMvc.perform(get("/api/me").cookie(new Cookie("jo_at", forged))).andExpect(status().isUnauthorized())
+        mockMvc.perform(get("/api/v1/me").cookie(new Cookie("jo_at", forged))).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
     }
 
     @Test
     void refreshRotatesAndAReusedRefreshTokenRevokesTheSession() throws Exception {
         Signed signed = signIn();
-        MockHttpServletResponse response = mockMvc.perform(write(post("/api/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isCreated()).andReturn().getResponse();
+        MockHttpServletResponse response = mockMvc.perform(write(post("/api/v1/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isCreated()).andReturn().getResponse();
         String refreshedAccessToken = cookie(response, "jo_at"), refreshedRefreshToken = cookie(response, "jo_rt");
         assertThat(refreshedRefreshToken).isNotEqualTo(signed.refreshCookie().getValue());
-        mockMvc.perform(get("/api/me").cookie(new Cookie("jo_at", refreshedAccessToken))).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/me").cookie(new Cookie("jo_at", refreshedAccessToken))).andExpect(status().isOk());
 
         // the old refresh token was used — presenting it again means it was copied
-        mockMvc.perform(write(post("/api/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isUnauthorized())
+        mockMvc.perform(write(post("/api/v1/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
-        mockMvc.perform(get("/api/me").cookie(new Cookie("jo_at", refreshedAccessToken))).andExpect(status().isUnauthorized());
-        mockMvc.perform(write(post("/api/auth/session-refreshes")).cookie(new Cookie("jo_rt", refreshedRefreshToken))).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/me").cookie(new Cookie("jo_at", refreshedAccessToken))).andExpect(status().isUnauthorized());
+        mockMvc.perform(write(post("/api/v1/auth/session-refreshes")).cookie(new Cookie("jo_rt", refreshedRefreshToken))).andExpect(status().isUnauthorized());
         assertThat(jdbc.queryForObject("SELECT revoked_reason FROM sessions WHERE employee_id = ?", String.class, signed.id())).isEqualTo("refresh_reuse");
     }
 
     @Test
     void disablingAccessStopsTheNextRequestAndRefresh() throws Exception {
         Signed signed = signIn();
-        mockMvc.perform(get("/api/me").cookie(signed.accessCookie())).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/me").cookie(signed.accessCookie())).andExpect(status().isOk());
         jdbc.update("UPDATE employees SET portal_access = false WHERE id = ?", signed.id());
-        mockMvc.perform(get("/api/me").cookie(signed.accessCookie())).andExpect(status().isUnauthorized());
-        mockMvc.perform(write(post("/api/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/me").cookie(signed.accessCookie())).andExpect(status().isUnauthorized());
+        mockMvc.perform(write(post("/api/v1/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isUnauthorized());
     }
 
     @Test
     void signOutRevokesTheSessionEvenWithOnlyTheRefreshCookie() throws Exception {
         Signed signed = signIn();
-        mockMvc.perform(write(delete("/api/auth/session")).cookie(signed.refreshCookie())).andExpect(status().isOk());
-        mockMvc.perform(get("/api/me").cookie(signed.accessCookie())).andExpect(status().isUnauthorized());
-        mockMvc.perform(write(post("/api/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isUnauthorized());
+        mockMvc.perform(write(delete("/api/v1/auth/session")).cookie(signed.refreshCookie())).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/me").cookie(signed.accessCookie())).andExpect(status().isUnauthorized());
+        mockMvc.perform(write(post("/api/v1/auth/session-refreshes")).cookie(signed.refreshCookie())).andExpect(status().isUnauthorized());
     }
 
     @Test
     void errorsAreProblemDetails() throws Exception {
         Signed signed = signIn();
-        mockMvc.perform(get("/api/people/not-a-uuid").cookie(signed.accessCookie())).andExpect(status().isForbidden())
+        mockMvc.perform(get("/api/v1/people/not-a-uuid").cookie(signed.accessCookie())).andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(jsonPath("$.code").value("FORBIDDEN")).andExpect(jsonPath("$.title").value("Forbidden"))
-                .andExpect(jsonPath("$.instance").value("/api/people/not-a-uuid"));
-        mockMvc.perform(write(post("/api/leave/requests")).cookie(signed.accessCookie()).content("{nope")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.instance").value("/api/v1/people/not-a-uuid"));
+        mockMvc.perform(write(post("/api/v1/leave/requests")).cookie(signed.accessCookie()).content("{nope")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
-        mockMvc.perform(post("/api/leave/requests").cookie(signed.accessCookie()).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden())
+        mockMvc.perform(post("/api/v1/leave/requests").cookie(signed.accessCookie()).contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("CROSS_SITE_BLOCKED"));
     }
 }

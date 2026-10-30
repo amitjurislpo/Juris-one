@@ -81,13 +81,13 @@ class AttendanceApiTest extends IntegrationTest {
     @Test
     void checkInAndOutFollowTheButtonTheUserSaw() throws Exception {
         Person person = person(empRole);
-        mockMvc.perform(write(post("/api/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.detail").value("You're not checked in."));
-        mockMvc.perform(write(post("/api/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"IN\"}"))
+        mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.detail").value("You're not checked in."));
+        mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"IN\"}"))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.message").value("Checked in. Have a productive shift.")).andExpect(jsonPath("$.data.kind").value("IN"));
-        mockMvc.perform(write(post("/api/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"IN\"}")).andExpect(jsonPath("$.detail").value("You're already checked in."));
-        mockMvc.perform(write(post("/api/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.detail").value("Just recorded — give it a few seconds."));
+        mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"IN\"}")).andExpect(jsonPath("$.detail").value("You're already checked in."));
+        mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"OUT\"}")).andExpect(jsonPath("$.detail").value("Just recorded — give it a few seconds."));
         jdbc.update("UPDATE punches SET at = at - interval '2 hours' WHERE employee_id = ?", person.id());
-        mockMvc.perform(write(post("/api/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"OUT\"}"))
+        mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content("{\"expect\":\"OUT\"}"))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.matchesPattern("Checked out — 2h 0[01]m recorded today")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM punches WHERE employee_id = ? AND source = 'WEB' AND ip IS NULL", Integer.class, person.id())).isEqualTo(2);
     }
@@ -100,7 +100,7 @@ class AttendanceApiTest extends IntegrationTest {
         Instant punchIn = AttendanceEngine.atLocal(shiftDay, "19:50", "Asia/Kolkata"), out = AttendanceEngine.atLocal(shiftDay.plusDays(1), "02:00", "Asia/Kolkata");
         jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source) VALUES (?, ?, ?, 'IN', 'WEB'), (?, ?, ?, 'OUT', 'WEB')",
                 UUID.randomUUID(), person.id(), Timestamp.from(punchIn), UUID.randomUUID(), person.id(), Timestamp.from(out));
-        JsonNode page = json.readTree(mockMvc.perform(get("/api/attendance/mine?month=2026-09&date=2026-09-14").cookie(person.cookie())).andExpect(status().isOk())
+        JsonNode page = json.readTree(mockMvc.perform(get("/api/v1/attendance/mine?month=2026-09&date=2026-09-14").cookie(person.cookie())).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString()).get("data");
         assertThat(page.get("tracked").asBoolean()).isTrue();
         assertThat(page.get("selectedDate").asText()).isEqualTo("2026-09-14");
@@ -111,7 +111,7 @@ class AttendanceApiTest extends IntegrationTest {
         assertThat(day.get("firstIn").asText()).isEqualTo("7:50 PM");
         assertThat(day.get("lastOut").asText()).isEqualTo("2:00 AM");
         // September 2026 locks on 1 Oct 10:00 IST
-        mockMvc.perform(write(post("/api/attendance/regularizations")).cookie(person.cookie())
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(person.cookie())
                 .content("{\"date\":\"2026-09-14\",\"kind\":\"LATE_CHECKIN\",\"proposedIn\":\"\",\"proposedOut\":\"\",\"reason\":\"traffic\"}"))
                 .andExpect(jsonPath("$.detail").value("Attendance for this month is locked. Ask Finance to adjust LOP in payroll."));
     }
@@ -125,15 +125,15 @@ class AttendanceApiTest extends IntegrationTest {
         while (AttendanceEngine.dowOf(day) == 0 || AttendanceEngine.dowOf(day) == 6) day = day.plusDays(1);
         if (!day.isBefore(today.minusDays(1))) return; // too early in the month for a finished working day
         String body = "{\"date\":\"" + day + "\",\"kind\":\"ABSENT\",\"proposedIn\":\"\",\"proposedOut\":\"\",\"reason\":\"was at client\"}";
-        mockMvc.perform(write(post("/api/attendance/regularizations")).cookie(person.cookie()).content(body))
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(person.cookie()).content(body))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.message").value("Regularization sent — HR, Finance or Admin can approve it"));
-        mockMvc.perform(write(post("/api/attendance/regularizations")).cookie(person.cookie()).content(body)).andExpect(jsonPath("$.detail").value("You already have a pending request for this day."));
-        mockMvc.perform(write(post("/api/attendance/regularizations")).cookie(person.cookie())
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(person.cookie()).content(body)).andExpect(jsonPath("$.detail").value("You already have a pending request for this day."));
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(person.cookie())
                 .content("{\"date\":\"" + day + "\",\"kind\":\"LATE_CHECKIN\",\"proposedIn\":\"\",\"proposedOut\":\"\",\"reason\":\"\"}"))
                 .andExpect(jsonPath("$.detail").value("There's no late mark on this day."));
         String id = jdbc.queryForObject("SELECT id::text FROM regularization_requests WHERE employee_id = ?", String.class, person.id());
-        mockMvc.perform(write(delete("/api/attendance/regularizations/" + id)).cookie(person.cookie())).andExpect(jsonPath("$.message").value("Request withdrawn"));
-        mockMvc.perform(write(delete("/api/attendance/regularizations/" + id)).cookie(person.cookie())).andExpect(jsonPath("$.detail").value("Only pending requests can be withdrawn."));
+        mockMvc.perform(write(delete("/api/v1/attendance/regularizations/" + id)).cookie(person.cookie())).andExpect(jsonPath("$.message").value("Request withdrawn"));
+        mockMvc.perform(write(delete("/api/v1/attendance/regularizations/" + id)).cookie(person.cookie())).andExpect(jsonPath("$.detail").value("Only pending requests can be withdrawn."));
     }
 
     @Test
@@ -144,17 +144,17 @@ class AttendanceApiTest extends IntegrationTest {
         jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source) VALUES (?, ?, ?, 'IN', 'WEB'), (?, ?, ?, 'OUT', 'WEB')",
                 UUID.randomUUID(), employee.id(), Timestamp.from(AttendanceEngine.atLocal(day, "19:31", "Asia/Kolkata")),
                 UUID.randomUUID(), employee.id(), Timestamp.from(AttendanceEngine.atLocal(day.plusDays(1), "04:40", "Asia/Kolkata")));
-        mockMvc.perform(get("/api/attendance/register?date=2026-09-16&search=" + employee.code()).cookie(hrPerson.cookie())).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/attendance/register?date=2026-09-16&search=" + employee.code()).cookie(hrPerson.cookie())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rows[0].status").value("Present"))
                 .andExpect(jsonPath("$.data.rows[0].checkIn.text").value("7:31 PM IST"))
                 .andExpect(jsonPath("$.data.rows[0].checkOut.text").value("4:40 AM IST (+1)"));
-        mockMvc.perform(get("/api/attendance/register?date=2026-09-16&timeZone=America/New_York&search=" + employee.code()).cookie(hrPerson.cookie()))
+        mockMvc.perform(get("/api/v1/attendance/register?date=2026-09-16&timeZone=America/New_York&search=" + employee.code()).cookie(hrPerson.cookie()))
                 .andExpect(jsonPath("$.data.rows[0].checkIn.text").value("10:01 AM EDT")).andExpect(jsonPath("$.data.rows[0].checkIn.local").value("7:31 PM IST"));
-        mockMvc.perform(get("/api/attendance/register/export?view=month&month=2026-09&search=" + employee.code()).cookie(hrPerson.cookie())).andExpect(status().isOk())
+        mockMvc.perform(get("/api/v1/attendance/register/export?view=month&month=2026-09&search=" + employee.code()).cookie(hrPerson.cookie())).andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.startsWith("﻿Employee ID,Name,Department,Team,2026-09-01,")));
-        mockMvc.perform(get("/api/attendance/register").cookie(employee.cookie())).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/attendance/register")).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/attendance/register/export").cookie(employee.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/attendance/register").cookie(employee.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/attendance/register")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/attendance/register/export").cookie(employee.cookie())).andExpect(status().isForbidden());
     }
 
     @Test

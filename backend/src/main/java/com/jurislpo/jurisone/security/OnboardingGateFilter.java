@@ -1,5 +1,8 @@
 package com.jurislpo.jurisone.security;
 
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX_SLASH;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.exception.Problems;
 import com.jurislpo.jurisone.service.EmployeeOnboardingService;
@@ -31,8 +34,8 @@ public class OnboardingGateFilter extends OncePerRequestFilter {
     public static final String MESSAGE = "Your onboarding is not complete yet. Finish it, or wait for HR to approve it, before using JurisOne.";
 
     /** Reachable while locked (prefixes; {@code /api/me} and {@code /api/shell} are exact). */
-    static final List<String> OPEN_PREFIXES = List.of("/api/auth/", "/api/onboarding/", "/api/audit/page-views", "/api/profile/photo");
-    static final List<String> OPEN_EXACT = List.of("/api/me", "/api/shell", "/api/notifications");
+    static final List<String> OPEN_PREFIXES = List.of(PREFIX + "/auth/", PREFIX + "/onboarding/", PREFIX + "/audit/page-views", PREFIX + "/profile/photo");
+    static final List<String> OPEN_EXACT = List.of(PREFIX + "/me", PREFIX + "/shell", PREFIX + "/notifications");
 
     private final EmployeeOnboardingService onboarding;
     private final ObjectMapper json;
@@ -45,10 +48,10 @@ public class OnboardingGateFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        if (!uri.startsWith("/api/") || "OPTIONS".equals(request.getMethod())) return true;
+        if (!uri.startsWith(PREFIX_SLASH) || "OPTIONS".equals(request.getMethod())) return true;
         if (OPEN_PREFIXES.stream().anyMatch(uri::startsWith)) return true;
         // reading the notification box is open; changing it is not
-        return OPEN_EXACT.contains(uri) && ("GET".equals(request.getMethod()) || !"/api/notifications".equals(uri));
+        return OPEN_EXACT.contains(uri) && ("GET".equals(request.getMethod()) || !(PREFIX + "/notifications").equals(uri));
     }
 
     @Override

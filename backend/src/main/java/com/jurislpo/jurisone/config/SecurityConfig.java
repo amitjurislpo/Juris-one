@@ -1,5 +1,7 @@
 package com.jurislpo.jurisone.config;
 
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
+
 import com.jurislpo.jurisone.security.JsonAuthEntryPoint;
 import com.jurislpo.jurisone.security.OnboardingGateFilter;
 import com.jurislpo.jurisone.security.OriginCheckFilter;
@@ -38,7 +40,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     /** Reachable without a session. */
-    static final String[] PUBLIC = {"/api/auth/session", "/api/auth/session-refreshes", "/api/auth/otp-requests"};
+    static final String[] PUBLIC = {PREFIX + "/auth/session", PREFIX + "/auth/session-refreshes", PREFIX + "/auth/otp-requests"};
 
     @Bean
     SecurityFilterChain apiFilterChain(HttpSecurity http, JwtAuthFilter sessions, OriginCheckFilter origin, SubscriptionGateFilter subscription,
@@ -73,7 +75,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(HttpMethod.GET, "/actuator/health/**", "/actuator/health").permitAll()
                 .requestMatchers(PUBLIC).permitAll()
-                .requestMatchers("/api/**").authenticated()
+                .requestMatchers(PREFIX + "/**").authenticated()
                 .anyRequest().denyAll());
         return http.build();
     }
@@ -123,7 +125,7 @@ public class SecurityConfig {
         corsConfiguration.setAllowedHeaders(List.of("Content-Type", "Accept"));
         corsConfiguration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource corsConfigurationSource = new UrlBasedCorsConfigurationSource();
-        corsConfigurationSource.registerCorsConfiguration("/api/**", corsConfiguration);
+        corsConfigurationSource.registerCorsConfiguration(PREFIX + "/**", corsConfiguration);
         return corsConfigurationSource;
     }
 }

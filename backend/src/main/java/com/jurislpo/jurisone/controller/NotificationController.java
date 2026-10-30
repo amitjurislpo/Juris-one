@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** The signed-in user's notification box (always reachable, even before policies are accepted or after expiry). */
 @RestController
-@RequestMapping("/api/notifications")
+@RequestMapping("/api/v1/notifications")
 public class NotificationController {
 
     public record ReadBody(Boolean read) {}

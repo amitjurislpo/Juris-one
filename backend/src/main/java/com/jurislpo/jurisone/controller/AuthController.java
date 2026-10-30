@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** /api/auth/* — the sign-in pages of the web app call these. */
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/api/v1/auth")
 public class AuthController {
 
     public record LoginRequest(String identifier, String otp, Boolean remember, String next) {}

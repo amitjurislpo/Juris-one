@@ -34,13 +34,13 @@ public class JurisTrackController {
         this.gateway = gateway;
     }
 
-    @GetMapping("/api/juris-track")
+    @GetMapping("/api/v1/juris-track")
     public ApiResult<Map<String, Object>> get() {
         requireModule();
         return ApiResult.success(Map.of("module", Nav.JURIS_TRACK, "status", "ACTIVE"));
     }
 
-    @RequestMapping("/api/juris-track/**")
+    @RequestMapping("/api/v1/juris-track/**")
     public void forward(HttpServletRequest request, HttpServletResponse response) throws IOException {
         gateway.forward(requireModule(), request, response);
     }

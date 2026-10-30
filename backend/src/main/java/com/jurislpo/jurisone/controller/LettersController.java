@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  * to them ({@code /mine}, {@code /{id}/pdf}).
  */
 @RestController
-@RequestMapping("/api/letters")
+@RequestMapping("/api/v1/letters")
 public class LettersController {
 
     private final Auth auth;

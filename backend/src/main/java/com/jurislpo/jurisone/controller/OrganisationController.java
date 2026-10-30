@@ -35,34 +35,34 @@ public class OrganisationController {
         this.holidays = holidays;
     }
 
-    @GetMapping("/api/departments")
+    @GetMapping("/api/v1/departments")
     public ApiResult<DepartmentsService.Page> departments(@RequestParam Map<String, String> queryParams) {
         return ApiResult.success(departments.page(auth.requirePage("departments"), queryParams));
     }
 
-    @PostMapping("/api/departments")
+    @PostMapping("/api/v1/departments")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> createDepartment(@RequestBody CreateDepartment body, HttpServletRequest request) {
         return ApiResult.message(departments.create(auth.assertPerm("dept.manage"), body.name(), body.headId(), body.description(), RequestMeta.of(request).ipAddress()));
     }
 
-    @DeleteMapping("/api/departments/{id}")
+    @DeleteMapping("/api/v1/departments/{id}")
     public ApiResult<Void> deleteDepartment(@PathVariable String id, HttpServletRequest request) {
         return ApiResult.message(departments.delete(auth.assertPerm("dept.manage"), id, RequestMeta.of(request).ipAddress()));
     }
 
-    @GetMapping("/api/holidays")
+    @GetMapping("/api/v1/holidays")
     public ApiResult<HolidaysService.Page> holidays(@RequestParam Map<String, String> queryParams) {
         return ApiResult.success(holidays.page(auth.requirePage("holidays"), queryParams));
     }
 
-    @PostMapping("/api/holidays")
+    @PostMapping("/api/v1/holidays")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> addHoliday(@RequestBody AddHoliday body, HttpServletRequest request) {
         return ApiResult.message(holidays.add(auth.assertPerm("holidays.manage"), body.date(), body.name(), body.region(), RequestMeta.of(request).ipAddress()));
     }
 
-    @DeleteMapping("/api/holidays/{id}")
+    @DeleteMapping("/api/v1/holidays/{id}")
     public ApiResult<Void> deleteHoliday(@PathVariable String id, HttpServletRequest request) {
         return ApiResult.message(holidays.delete(auth.assertPerm("holidays.manage"), id, RequestMeta.of(request).ipAddress()));
     }

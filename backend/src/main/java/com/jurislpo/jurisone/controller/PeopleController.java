@@ -42,25 +42,25 @@ public class PeopleController {
         this.people = people;
     }
 
-    @GetMapping("/api/people")
+    @GetMapping("/api/v1/people")
     public ApiResult<PeopleService.Page> page(@RequestParam Map<String, String> queryParams) {
         return ApiResult.success(people.page(auth.requirePage("employees"), queryParams));
     }
 
-    @GetMapping("/api/directory")
+    @GetMapping("/api/v1/directory")
     public ApiResult<PeopleService.Directory> directory(@RequestParam Map<String, String> queryParams) {
         auth.requirePage("directory");
         return ApiResult.success(people.directory(queryParams));
     }
 
     /** The profile drawer (masked identity numbers; no salary). */
-    @GetMapping("/api/people/{id}")
+    @GetMapping("/api/v1/people/{id}")
     public ApiResult<PeopleService.Profile> profile(@PathVariable String id) {
         return ApiResult.success(people.profile(auth.assertPerm("people.view"), id));
     }
 
     /** The directory photo of an employee of this business (any signed-in user): image bytes, cached for an hour; 404 when none. */
-    @GetMapping("/api/people/{id}/photo")
+    @GetMapping("/api/v1/people/{id}/photo")
     public ResponseEntity<byte[]> photo(@PathVariable String id, @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
         auth.current();
         PhotoService.Photo photo = photos.read(id);
@@ -72,25 +72,25 @@ public class PeopleController {
     }
 
     /** HR / the admin set someone's photo (raw image bytes as the body, as for My profile): the same rule as editing that employee. */
-    @PutMapping("/api/people/{id}/photo")
+    @PutMapping("/api/v1/people/{id}/photo")
     public ApiResult<Map<String, Long>> setPhoto(@PathVariable String id, @RequestBody(required = false) byte[] body, @RequestHeader(value = HttpHeaders.CONTENT_TYPE, required = false) String type, HttpServletRequest request) {
         long photoVersion = photos.setFor(auth.assertPerm("people.add"), id, type, body, RequestMeta.of(request).ipAddress());
         return ApiResult.success("Photo saved", Map.of("photo", photoVersion));
     }
 
-    @DeleteMapping("/api/people/{id}/photo")
+    @DeleteMapping("/api/v1/people/{id}/photo")
     public ApiResult<Void> removePhoto(@PathVariable String id, HttpServletRequest request) {
         photos.removeFor(auth.assertPerm("people.add"), id, RequestMeta.of(request).ipAddress());
         return ApiResult.message("Photo removed");
     }
 
     /** Full phone number and address (people.add); every read is audited. */
-    @GetMapping("/api/people/{id}/contact")
+    @GetMapping("/api/v1/people/{id}/contact")
     public ApiResult<Map<String, String>> reveal(@PathVariable String id, HttpServletRequest request) {
         return ApiResult.success(people.reveal(auth.assertPerm("people.add"), id, RequestMeta.of(request).ipAddress()));
     }
 
-    @PutMapping("/api/people/{id}/access")
+    @PutMapping("/api/v1/people/{id}/access")
     public ApiResult<Void> access(@PathVariable String id, @RequestBody AccessChange body, HttpServletRequest request) {
         return ApiResult.message(people.toggleAccess(auth.assertPerm("access.toggle"), id, body.enabled(), RequestMeta.of(request).ipAddress()));
     }
@@ -99,7 +99,7 @@ public class PeopleController {
      * Sets the employment status: {@code {"status": "ACTIVE"}} makes a probation employee permanent (the admin (owner) or HR);
      * {@code {"status": "EXITED", "exitDate": "YYYY-MM-DD"}} marks them exited, turns access off and ends their sessions.
      */
-    @PutMapping("/api/people/{id}/status")
+    @PutMapping("/api/v1/people/{id}/status")
     public ApiResult<Void> setStatus(@PathVariable String id, @RequestBody StatusChange body, HttpServletRequest request) {
         String ipAddress = RequestMeta.of(request).ipAddress();
         String status = body == null || body.status() == null ? "" : body.status();
@@ -111,26 +111,26 @@ public class PeopleController {
     }
 
     /** Add (no {@code id}) or edit form options. */
-    @GetMapping("/api/people/form-options")
+    @GetMapping("/api/v1/people/form-options")
     public ApiResult<PeopleService.FormOptions> form(@RequestParam(required = false) String id) {
         return ApiResult.success(people.formOptions(auth.assertPerm("people.add"), id));
     }
 
-    @PostMapping("/api/people")
+    @PostMapping("/api/v1/people")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> create(@RequestBody EmployeeInput body, HttpServletRequest request) {
         PeopleService.Saved saved = people.save(auth.assertPerm("people.add"), body, null, RequestMeta.of(request).ipAddress());
         return ApiResult.success(saved.message(), Map.of("id", saved.id(), "code", saved.code()));
     }
 
-    @PutMapping("/api/people/{id}")
+    @PutMapping("/api/v1/people/{id}")
     public ApiResult<Map<String, String>> update(@PathVariable String id, @RequestBody EmployeeInput body, HttpServletRequest request) {
         PeopleService.Saved saved = people.save(auth.assertPerm("people.add"), body, id, RequestMeta.of(request).ipAddress());
         return ApiResult.success(saved.message(), Map.of("id", saved.id(), "code", saved.code()));
     }
 
     /** CSV (people.view): same filters as the page; no salary and no identity numbers. */
-    @GetMapping("/api/people/export")
+    @GetMapping("/api/v1/people/export")
     public ResponseEntity<byte[]> export(@RequestParam Map<String, String> queryParams) {
         PeopleService.Export exportFile = people.export(auth.assertPerm("people.view"), queryParams);
         return csv(exportFile.filename(), exportFile.body());

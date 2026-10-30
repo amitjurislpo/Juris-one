@@ -39,7 +39,7 @@ public class ProfileController {
         this.onboarding = onboarding;
     }
 
-    @GetMapping("/api/profile")
+    @GetMapping("/api/v1/profile")
     public ApiResult<Map<String, Object>> mine() {
         CurrentUser user = auth.requirePage("profile");
         Map<String, Object> row = new java.util.LinkedHashMap<>(profiles.mine(user));
@@ -48,25 +48,25 @@ public class ProfileController {
     }
 
     /** {@code {fatherName, dateOfBirth, currentAddress, permanentAddress, emergencyName, emergencyRelation, emergencyPhoneCountry, emergencyPhone}} */
-    @PutMapping("/api/profile")
+    @PutMapping("/api/v1/profile")
     public ApiResult<Void> update(@RequestBody ProfileService.ProfileInput body, HttpServletRequest request) {
         return ApiResult.message(profiles.update(auth.requirePage("profile"), body, RequestMeta.of(request).ipAddress()));
     }
 
     /** My own photo: the raw image bytes (JPEG, PNG or WebP, at most 400 KB) as the request body. Answers {@code {photo: <version>}}. */
-    @PutMapping("/api/profile/photo")
+    @PutMapping("/api/v1/profile/photo")
     public ApiResult<Map<String, Long>> setPhoto(@RequestBody(required = false) byte[] body, @RequestHeader(value = HttpHeaders.CONTENT_TYPE, required = false) String type, HttpServletRequest request) {
         long photoVersion = photos.setOwn(auth.requirePage("profile"), type, body, RequestMeta.of(request).ipAddress());
         return ApiResult.success("Photo saved", Map.of("photo", photoVersion));
     }
 
-    @DeleteMapping("/api/profile/photo")
+    @DeleteMapping("/api/v1/profile/photo")
     public ApiResult<Void> removePhoto(HttpServletRequest request) {
         photos.removeOwn(auth.requirePage("profile"), RequestMeta.of(request).ipAddress());
         return ApiResult.message("Photo removed");
     }
 
-    @GetMapping("/api/profile/documents/{docId}/file")
+    @GetMapping("/api/v1/profile/documents/{docId}/file")
     public ResponseEntity<byte[]> document(@PathVariable String docId) {
         CurrentUser user = auth.requirePage("profile");
         EmployeeOnboardingService.FileOut file = onboarding.document(user.id().toString(), docId);

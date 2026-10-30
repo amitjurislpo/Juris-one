@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  * task follows from their role in its project and their part in the task (assignee, accountable, reporter, follower, manager).
  */
 @RestController
-@RequestMapping("/api/tasks")
+@RequestMapping("/api/v1/tasks")
 public class TaskController {
 
     private final Auth auth;
