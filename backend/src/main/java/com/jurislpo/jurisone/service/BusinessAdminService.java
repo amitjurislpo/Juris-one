@@ -15,8 +15,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /** The super admin's management of businesses and their sub admins (owners). Runs in system mode. */
 @Service
@@ -24,6 +26,8 @@ public class BusinessAdminService {
 
     static final java.util.regex.Pattern GSTIN = java.util.regex.Pattern.compile("^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$");
     public static final List<String> TIME_ZONES = List.of("Asia/Kolkata", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles");
+
+    private static final String RETIRED = "That short name was used before and has been retired. It can never be used again.";
 
     private final BusinessAdminRepository repo;
     private final BusinessSetupService setup;
@@ -122,6 +126,7 @@ public class BusinessAdminService {
         String problem = BusinessSlugs.problem(code);
         if (problem != null) throw new UserException(HttpStatus.BAD_REQUEST, problem);
         if (!repo.findIdsByCode(code, null).isEmpty()) throw new UserException(HttpStatus.CONFLICT, "Another business already uses the short name \"" + code + "\".");
+        if (repo.isSlugRetired(code)) throw new UserException(HttpStatus.CONFLICT, RETIRED);
         return code;
     }
 
@@ -192,10 +197,47 @@ public class BusinessAdminService {
         int count = repo.updateStatus(id, status);
         if (count == 0) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         if ("SUSPENDED".equals(status)) {
-            repo.revokeSessionsOfBusiness(id);
+            repo.revokeSessionsOfBusiness(id, "business_suspended");
         }
         audit.log(user.id(), "business.status", "business", id.toString(), null, Map.of("status", status), ipAddress);
         return "SUSPENDED".equals(status) ? "Business suspended — everyone in it has been signed out" : "Business reactivated";
+    }
+
+    // ───────────────────────── web address (short name) change, super admin only ─────────────────────────
+
+    public record SlugChange(String slug, String releasedAt, String releasedBy) {}
+
+    /**
+     * Changes a business's short name (its web address). The old one is retired for good, everybody of the business is signed out
+     * and the change is audited, all in one transaction. 400 malformed or reserved, 404 unknown business, 409 taken by another
+     * business or retired, 422 the same as now.
+     */
+    @Transactional
+    public void changeSlug(CurrentUser user, String businessIdRaw, String slugRaw, String ipAddress) {
+        UUID id = Check.uuid(businessIdRaw);
+        String slug = slugRaw == null ? "" : slugRaw.trim().toLowerCase(Locale.ROOT);
+        String problem = BusinessSlugs.problem(slug);
+        if (problem != null) throw new UserException(HttpStatus.BAD_REQUEST, problem);
+        String old = repo.lockCode(id);
+        if (old == null) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
+        if (old.equals(slug)) throw new UserException("That is already this business's short name.");
+        if (!repo.findIdsByCode(slug, id).isEmpty()) throw new UserException(HttpStatus.CONFLICT, "Another business already uses the short name \"" + slug + "\".");
+        if (repo.isSlugRetired(slug)) throw new UserException(HttpStatus.CONFLICT, RETIRED);
+        try {
+            repo.retireSlug(old, id, user.id());
+            repo.updateCode(id, slug);
+        } catch (DuplicateKeyException e) {
+            throw new UserException(HttpStatus.CONFLICT, "That short name was taken a moment ago. Choose another.");
+        }
+        repo.revokeSessionsOfBusiness(id, "web_address_changed");
+        audit.log(user.id(), "business.slug.change", "business", id.toString(), Map.of("slug", old), Map.of("slug", slug, "retiredSlug", old), ipAddress);
+    }
+
+    /** The retired short names of a business, newest first. */
+    public List<SlugChange> slugHistory(String businessIdRaw) {
+        UUID id = customerBusiness(businessIdRaw);
+        return repo.findSlugHistory(id).stream().map(row -> new SlugChange((String) row.get("slug"),
+                Format.isoTimestamp(((java.sql.Timestamp) row.get("released_at")).toInstant()), row.get("released_by") == null ? null : row.get("released_by").toString())).toList();
     }
 
     // ───────────────────────── sub admins ─────────────────────────

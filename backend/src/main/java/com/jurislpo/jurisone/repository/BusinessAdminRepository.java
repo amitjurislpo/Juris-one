@@ -101,10 +101,33 @@ public class BusinessAdminRepository {
         return jdbc.update("UPDATE businesses SET status = ?, updated_at = now() WHERE id = ? AND NOT is_platform", status, id);
     }
 
-    /** Revokes every active session of the business's employees (reason business_suspended). */
-    public void revokeSessionsOfBusiness(UUID id) {
-        jdbc.update("UPDATE sessions SET revoked_at = now(), revoked_reason = 'business_suspended' WHERE revoked_at IS NULL "
-                + "AND employee_id IN (SELECT id FROM employees WHERE business_id = ?)", id);
+    /** Revokes every active session of the business's employees, with the given reason (business_suspended, web_address_changed). */
+    public void revokeSessionsOfBusiness(UUID id, String reason) {
+        jdbc.update("UPDATE sessions SET revoked_at = now(), revoked_reason = ? WHERE revoked_at IS NULL "
+                + "AND employee_id IN (SELECT id FROM employees WHERE business_id = ?)", reason, id);
+    }
+
+    /** The current short name of a customer business, locked until the end of the transaction (null when there is no such customer business). */
+    public String lockCode(UUID id) {
+        return jdbc.queryForList("SELECT code FROM businesses WHERE id = ? AND NOT is_platform FOR UPDATE", String.class, id).stream().findFirst().orElse(null);
+    }
+
+    /** Whether the short name has been retired (it is in the history of some business). */
+    public boolean isSlugRetired(String slug) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT jurisone_slug_retired(?)", Boolean.class, slug));
+    }
+
+    public void retireSlug(String slug, UUID businessId, UUID releasedBy) {
+        jdbc.update("INSERT INTO business_slug_history (slug, business_id, released_by) VALUES (?, ?, ?)", slug, businessId, releasedBy);
+    }
+
+    public void updateCode(UUID id, String code) {
+        jdbc.update("UPDATE businesses SET code = ?, updated_at = now() WHERE id = ?", code, id);
+    }
+
+    /** The retired short names of a business, newest first. */
+    public List<Map<String, Object>> findSlugHistory(UUID businessId) {
+        return jdbc.queryForList("SELECT slug, released_at, released_by FROM business_slug_history WHERE business_id = ? ORDER BY released_at DESC, slug", businessId);
     }
 
     /** Whether the email is used by any account. */
