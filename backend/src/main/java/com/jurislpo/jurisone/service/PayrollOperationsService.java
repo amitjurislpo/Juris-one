@@ -12,6 +12,7 @@ import com.jurislpo.jurisone.engine.Csv;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.repository.PayrollOperationsRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
+import com.jurislpo.jurisone.tenancy.TenantContext;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Files;
@@ -28,7 +29,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -47,11 +47,10 @@ public class PayrollOperationsService {
     private final PiiCrypto piiCrypto;
     private final ObjectMapper json;
     private final Path storageDir;
-    private final String appUrl;
+    private final BusinessUrls businessUrls;
 
     public PayrollOperationsService(PayrollOperationsRepository repo, TransactionTemplate transactionTemplate, PayrollService payroll, PayslipPdf payslipPdf, SettingsService settings, AuditService audit,
-                             MailService mail, PiiCrypto piiCrypto, ObjectMapper json, JurisOneProperties props,
-                             @Value("${jurisone.app-url:http://localhost:3005}") String appUrl) {
+                             MailService mail, PiiCrypto piiCrypto, ObjectMapper json, JurisOneProperties props, BusinessUrls businessUrls) {
         this.repo = repo;
         this.transactionTemplate = transactionTemplate;
         this.payroll = payroll;
@@ -62,7 +61,7 @@ public class PayrollOperationsService {
         this.piiCrypto = piiCrypto;
         this.json = json;
         this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
-        this.appUrl = appUrl.replaceAll("/$", "");
+        this.businessUrls = businessUrls;
     }
 
     static String requireMonth(String value) {
@@ -260,10 +259,11 @@ public class PayrollOperationsService {
             }
         });
         if (notify) {
+            String payslipsUrl = businessUrls.forBusiness(TenantContext.current(), "/payslips");
             for (Map<String, Object> employee : employees.values()) {
                 String label = Format.monthLabel(yearMonth);
                 mail.send((String) employee.get("email"), new MailTemplates.Content("Your " + label + " payslip is ready",
-                        "Hi " + employee.get("full_name") + ",\n\nYour payslip for " + label + " has been published. View or download it in JurisOne: " + appUrl + "/payslips", null));
+                        "Hi " + employee.get("full_name") + ",\n\nYour payslip for " + label + " has been published. View or download it in JurisOne: " + payslipsUrl, null));
             }
         }
         return files.size();
