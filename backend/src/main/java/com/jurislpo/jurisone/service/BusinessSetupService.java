@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.jurislpo.jurisone.config.BusinessSlugs;
 import com.jurislpo.jurisone.repository.BusinessSetupRepository;
 import com.jurislpo.jurisone.repository.RoleTemplateRepository;
 import com.jurislpo.jurisone.tenancy.TenantContext;
@@ -37,10 +38,9 @@ public class BusinessSetupService {
         this.templates = templates;
     }
 
-    /** A URL-safe code from a name: "Juris Consultants" → "juris-consultants". */
+    /** A safe URL slug from a name (see {@link BusinessSlugs#derive}), without checking whether it is taken. */
     public static String slug(String name) {
-        String slug = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
-        return slug.isEmpty() ? "business" : slug.substring(0, Math.min(40, slug.length()));
+        return BusinessSlugs.derive(name, candidate -> false);
     }
 
     /** A default employee ID prefix: initials of the name ("Juris Consultants" → "JC"), 2–5 letters. */
