@@ -48,8 +48,8 @@ flowchart TB
     subgraph JO["JurisOne  Spring Boot  API port 8080"]
         direction TB
         JOAUTH["Sign-in by emailed code, cookies jo_at and jo_rt"]:::built
-        JOGATE["Module gate: plan or grant JURIS_TRACK, placeholder GET /api/juris-track"]:::built
-        GW["Gateway  /api/juris-track/**  checks session, module, permission"]:::planned
+        JOGATE["Module gate: plan or grant JURIS_TRACK, placeholder GET /api/v1/juris-track"]:::built
+        GW["Gateway  /api/v1/juris-track/**  checks session, module, permission"]:::planned
         SIGN["Token signer  private key, one JWT per request"]:::planned
         ROSTERPUSH["Roster push job  employees and managers"]:::planned
         JODB[("JurisOne database  employees, roles, reporting manager")]:::built
@@ -69,7 +69,7 @@ flowchart TB
     FUTURE["future: IAM JCG / Sita sign-in  not part of version 1.0"]:::planned
 
     UI1 -->|"cookies"| JOAUTH
-    UI2 -->|"fetch /api/juris-track/**"| GW
+    UI2 -->|"fetch /api/v1/juris-track/**"| GW
     UI3 -->|"fetch /api, cookies"| TRACKAUTH
     JOAUTH --> JODB
     GW --> JOGATE
@@ -129,7 +129,7 @@ flowchart LR
         EA["JurisTrack API  same code, integration.enabled=true"]:::built
         ED[("juristrack DB  one row set per business")]:::built
         EB -->|"JurisOne login"| EW
-        EW -->|"/api/juris-track/** with jo cookies"| EG
+        EW -->|"/api/v1/juris-track/** with jo cookies"| EG
         EG -->|"Bearer JWT per request"| EA
         EA --> ED
     end
@@ -145,7 +145,7 @@ flowchart LR
 | Login screen | JurisTrack's emailed code | JurisOne's (unchanged) |
 | Session | `jt_at` (about 5 minutes, renewed silently) and `jt_rt` (rotating) | JurisOne's; JurisTrack sets no cookie |
 | API caller | The browser, through the web app's `/api` proxy | The JurisOne gateway only (`[P]`); the JurisTrack API port is internal (`[S]` network rule) |
-| Frontend | `src/standalone` supplies the `TrackContext` with `apiBasePath=/api` `[B]` | JurisOne supplies a `TrackContext` with `apiBasePath=/api/juris-track` and empty headers `[P]`; the seam itself is `[B]` |
+| Frontend | `src/standalone` supplies the `TrackContext` with `apiBasePath=/api` `[B]` | JurisOne supplies a `TrackContext` with `apiBasePath=/api/v1/juris-track` and empty headers `[P]`; the seam itself is `[B]` |
 | Users and business | Created by the super admin and the owner | Created just in time from the token `[B]` or pushed by the roster `[S]` |
 | Endpoints and rules | Identical | Identical (one `CurrentUser`, built from the cookie or from the token) |
 
@@ -166,7 +166,7 @@ sequenceDiagram
     participant DB as JurisTrack DB and audit
 
     Emp->>UI: Click Juris Track in the sidebar [B] nav item exists, [P] real pages
-    UI->>GW: GET /api/juris-track/me/time with jo_at cookie [P]
+    UI->>GW: GET /api/v1/juris-track/me/time with jo_at cookie [P]
     GW->>GW: Check JurisOne session, module JURIS_TRACK, permission [B] placeholder check, [P] for the gateway
     alt Session invalid or module not in plan
         GW-->>UI: 401 or 404 [B] placeholder, [P] gateway
@@ -411,7 +411,7 @@ JurisTrack side
 JurisOne side (nothing of this exists yet)
 - [ ] Choose and generate the key pair; private key only in JurisOne; give JurisTrack the public key and the exact `iss` value
 - [ ] "JurisTrack manager" grant in JurisOne roles and permissions; mapping function JurisOne role -> `trackRole`
-- [ ] Gateway controller `/api/juris-track/**`: session, module gate, permission, per-call token, forward, error mapping, rate limit
+- [ ] Gateway controller `/api/v1/juris-track/**`: session, module gate, permission, per-call token, forward, error mapping, rate limit
 - [ ] Token signer service (one JWT per request, 5 minutes, `jti`)
 - [ ] Roster push: change hooks plus nightly job, service token
 - [ ] JurisOne frontend embeds `src/track` (package or federation), supplies its `TrackContext`, merges the Hindi messages, replaces the "Coming soon" page
@@ -425,7 +425,7 @@ Later versions
 ## 10. Open points for the owner
 
 1. **Token issuer value.** `INTEGRATION.md` says `iss=jurisone`; the settings use JurisOne's public URL (`http://localhost:3005`, `https://people.example.com`). Pick one value and use it on both sides.
-2. **Gateway path.** Default `/api/juris-track/**` extending the existing placeholder `GET /api/juris-track`. Confirm.
+2. **Gateway path.** Default `/api/v1/juris-track/**` extending the existing placeholder `GET /api/v1/juris-track`. Confirm.
 3. **Does the JurisOne business owner become `ADMIN` in JurisTrack?** Today only `EMPLOYEE` and `MANAGER` are sent by design; `ADMIN` only if JurisOne wants an owner-type user.
 4. **Unlinking.** Should JurisOne stop its tokens first, and should people of an unlinked business be able to sign in standalone at once?
 5. **How the JurisTrack manager grant looks in JurisOne:** a new permission in the roles screen, or derived from "has reports"?

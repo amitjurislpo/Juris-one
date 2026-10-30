@@ -25,7 +25,7 @@ public class OnboardingReviewController {
     }
 
     /** The body is ignored (send {@code {}}). */
-    @PostMapping("/api/people/{id}/onboarding/approvals")
+    @PostMapping("/api/v1/people/{id}/onboarding/approvals")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> approve(@PathVariable String id, HttpServletRequest request) {
         review.approve(auth.assertPerm("people.add"), id, RequestMeta.of(request).ipAddress());
@@ -33,7 +33,7 @@ public class OnboardingReviewController {
     }
 
     /** {@code {"comment": "...", "flags": [{"section": "ADDRESS", "comment": "..."}]}} */
-    @PostMapping("/api/people/{id}/onboarding/rejections")
+    @PostMapping("/api/v1/people/{id}/onboarding/rejections")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> reject(@PathVariable String id, @RequestBody OnboardingReviewService.RejectionInput body, HttpServletRequest request) {
         review.reject(auth.assertPerm("people.add"), id, body, RequestMeta.of(request).ipAddress());

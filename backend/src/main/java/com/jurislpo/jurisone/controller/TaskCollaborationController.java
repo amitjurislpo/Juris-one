@@ -32,7 +32,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 /** Comments, history and files of a task (page {@code my-tasks}); each needs the person to see the task. */
 @RestController
-@RequestMapping("/api/tasks/{taskId}")
+@RequestMapping("/api/v1/tasks/{taskId}")
 public class TaskCollaborationController {
 
     private final Auth auth;

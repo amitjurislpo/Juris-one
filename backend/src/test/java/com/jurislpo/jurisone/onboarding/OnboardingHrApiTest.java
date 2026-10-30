@@ -82,7 +82,7 @@ class OnboardingHrApiTest extends IntegrationTest {
     }
 
     String start(String name) throws Exception {
-        return body(mockMvc.perform(write(post("/api/onboardings")).cookie(hr).content(startBody(name + "." + suffix + "@example.com"))).andExpect(status().isCreated())).at("/data/employeeId").asText();
+        return body(mockMvc.perform(write(post("/api/v1/onboardings")).cookie(hr).content(startBody(name + "." + suffix + "@example.com"))).andExpect(status().isCreated())).at("/data/employeeId").asText();
     }
 
     ResultActions putJson(Cookie cookie, String path, String content) throws Exception {
@@ -90,11 +90,11 @@ class OnboardingHrApiTest extends IntegrationTest {
     }
 
     JsonNode saveOk(String employeeId, int step, String content) throws Exception {
-        return body(putJson(hr, "/api/people/" + employeeId + "/onboarding/steps/" + step, content).andExpect(status().isOk())).get("data");
+        return body(putJson(hr, "/api/v1/people/" + employeeId + "/onboarding/steps/" + step, content).andExpect(status().isOk())).get("data");
     }
 
     ResultActions upload(Cookie cookie, String employeeId, String slotKey) throws Exception {
-        return mockMvc.perform(multipart("/api/people/" + employeeId + "/onboarding/attachments").file(new MockMultipartFile("file", "proof.pdf", "application/pdf", EmployeeOnboardingApiTest.PDF))
+        return mockMvc.perform(multipart("/api/v1/people/" + employeeId + "/onboarding/attachments").file(new MockMultipartFile("file", "proof.pdf", "application/pdf", EmployeeOnboardingApiTest.PDF))
                 .param("slotKey", slotKey).cookie(cookie).header("origin", "http://localhost:3005").header("host", "localhost:3005"));
     }
 
@@ -117,7 +117,7 @@ class OnboardingHrApiTest extends IntegrationTest {
     @Test
     void hrStartsAnOnboardingAndTheInvitationIsQueued() throws Exception {
         String email = "meera." + suffix + "@example.com";
-        JsonNode created = body(mockMvc.perform(write(post("/api/onboardings")).cookie(hr).content(startBody(email.toUpperCase()))).andExpect(status().isCreated()));
+        JsonNode created = body(mockMvc.perform(write(post("/api/v1/onboardings")).cookie(hr).content(startBody(email.toUpperCase()))).andExpect(status().isCreated()));
         String employeeId = created.at("/data/employeeId").asText();
         assertThat(employeeId).isNotBlank();
 
@@ -132,15 +132,15 @@ class OnboardingHrApiTest extends IntegrationTest {
 
         // the new employee signs in and the wizard is theirs
         Cookie newcomer = signIn(email);
-        mockMvc.perform(get("/api/onboarding/mine").cookie(newcomer)).andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("NOT_STARTED"))
+        mockMvc.perform(get("/api/v1/onboarding/mine").cookie(newcomer)).andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("NOT_STARTED"))
                 .andExpect(jsonPath("$.data.header.employeeCode").value(jdbc.queryForObject("SELECT code FROM employees WHERE id = ?::uuid", String.class, employeeId)));
 
         // same errors as add-employee; nothing is created or mailed twice
-        mockMvc.perform(write(post("/api/onboardings")).cookie(hr).content(startBody(email))).andExpect(status().isUnprocessableEntity())
+        mockMvc.perform(write(post("/api/v1/onboardings")).cookie(hr).content(startBody(email))).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.endsWith("already uses that email.")));
-        mockMvc.perform(write(post("/api/onboardings")).cookie(hr).content(startBody("nope"))).andExpect(status().is4xxClientError())
+        mockMvc.perform(write(post("/api/v1/onboardings")).cookie(hr).content(startBody("nope"))).andExpect(status().is4xxClientError())
                 .andExpect(jsonPath("$.detail").value("Enter a valid email"));
-        mockMvc.perform(write(post("/api/onboardings")).cookie(hr).content(startBody("other." + suffix + "@example.com").replace("\"lastName\":\"Joshi\"", "\"lastName\":\"\"")))
+        mockMvc.perform(write(post("/api/v1/onboardings")).cookie(hr).content(startBody("other." + suffix + "@example.com").replace("\"lastName\":\"Joshi\"", "\"lastName\":\"\"")))
                 .andExpect(status().is4xxClientError()).andExpect(jsonPath("$.detail").value("Last name is required"));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ? AND subject LIKE 'Welcome aboard%'", Integer.class, email)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM employees WHERE email = ?", Integer.class, email)).isEqualTo(1);
@@ -149,10 +149,10 @@ class OnboardingHrApiTest extends IntegrationTest {
     @Test
     void onlyPeopleAddMayStartListOrFill() throws Exception {
         String employeeId = start("a");
-        mockMvc.perform(write(post("/api/onboardings")).cookie(plain).content(startBody("x." + suffix + "@example.com"))).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/onboardings").cookie(plain)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/onboardings")).andExpect(status().isUnauthorized());
-        String base = "/api/people/" + employeeId + "/onboarding";
+        mockMvc.perform(write(post("/api/v1/onboardings")).cookie(plain).content(startBody("x." + suffix + "@example.com"))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/onboardings").cookie(plain)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/onboardings")).andExpect(status().isUnauthorized());
+        String base = "/api/v1/people/" + employeeId + "/onboarding";
         putJson(plain, base + "/steps/1", EmployeeOnboardingApiTest.STEP1).andExpect(status().isForbidden());
         putJson(plain, base + "/current-step", "{\"step\":2}").andExpect(status().isForbidden());
         upload(plain, employeeId, "bank").andExpect(status().isForbidden());
@@ -168,7 +168,7 @@ class OnboardingHrApiTest extends IntegrationTest {
     @Test
     void hrFillsAllSixStepsOnBehalfAndSubmits() throws Exception {
         String employeeId = start("b");
-        String base = "/api/people/" + employeeId + "/onboarding";
+        String base = "/api/v1/people/" + employeeId + "/onboarding";
 
         JsonNode first = saveOk(employeeId, 1, EmployeeOnboardingApiTest.STEP1);
         assertThat(first.get("status").asText()).isEqualTo("IN_PROGRESS");
@@ -217,21 +217,21 @@ class OnboardingHrApiTest extends IntegrationTest {
     @Test
     void invalidPayloadsAnswerTheSameErrorsAsTheEmployeeSide() throws Exception {
         String employeeId = start("c");
-        JsonNode errors = body(putJson(hr, "/api/people/" + employeeId + "/onboarding/steps/1", "{}").andExpect(status().isUnprocessableEntity())).get("errors");
+        JsonNode errors = body(putJson(hr, "/api/v1/people/" + employeeId + "/onboarding/steps/1", "{}").andExpect(status().isUnprocessableEntity())).get("errors");
         assertThat(errors.has("personal")).isTrue();
         assertThat(errors.has("permanentAddress")).isTrue();
         assertThat(errors.has("education")).isTrue();
         // the same body on the employee's own endpoint gives the same map
         Cookie newcomer = signIn("c." + suffix + "@example.com");
-        JsonNode own = body(putJson(newcomer, "/api/onboarding/mine/steps/1", "{}").andExpect(status().isUnprocessableEntity())).get("errors");
+        JsonNode own = body(putJson(newcomer, "/api/v1/onboarding/mine/steps/1", "{}").andExpect(status().isUnprocessableEntity())).get("errors");
         assertThat(own).isEqualTo(errors);
 
         String invalid = EmployeeOnboardingApiTest.STEP1.replace("\"pin\":\"110001\"", "\"pin\":\"11\"").replace("\"toYear\":2012", "\"toYear\":2005");
-        errors = body(putJson(hr, "/api/people/" + employeeId + "/onboarding/steps/1", invalid).andExpect(status().isUnprocessableEntity())).get("errors");
+        errors = body(putJson(hr, "/api/v1/people/" + employeeId + "/onboarding/steps/1", invalid).andExpect(status().isUnprocessableEntity())).get("errors");
         assertThat(errors.get("permanentAddress.pin").asText()).contains("6 digits");
         assertThat(errors.get("education[0].toYear").asText()).contains("cannot be before");
-        putJson(hr, "/api/people/" + employeeId + "/onboarding/steps/7", "{}").andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/people/" + employeeId + "/onboarding/submission")).cookie(hr)).andExpect(status().isUnprocessableEntity());
+        putJson(hr, "/api/v1/people/" + employeeId + "/onboarding/steps/7", "{}").andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/people/" + employeeId + "/onboarding/submission")).cookie(hr)).andExpect(status().isUnprocessableEntity());
         assertThat(jdbc.queryForObject("SELECT status FROM employee_onboardings WHERE employee_id = ?::uuid", String.class, employeeId)).isEqualTo("NOT_STARTED"); // nothing saved
         upload(hr, employeeId, "not-a-slot").andExpect(status().isUnprocessableEntity());
     }
@@ -239,7 +239,7 @@ class OnboardingHrApiTest extends IntegrationTest {
     @Test
     void approvedOrNotRequiredOrForeignOnboardingsAreRefused() throws Exception {
         String employeeId = start("d");
-        String base = "/api/people/" + employeeId + "/onboarding";
+        String base = "/api/v1/people/" + employeeId + "/onboarding";
         saveOk(employeeId, 1, EmployeeOnboardingApiTest.STEP1);
         upload(hr, employeeId, "address_permanent").andExpect(status().isCreated());
 
@@ -263,13 +263,13 @@ class OnboardingHrApiTest extends IntegrationTest {
         TestData stranger = new TestData(jdbc).inBusiness("onboard-other-" + suffix);
         UUID strangerId = stranger.employee("ST-" + suffix, "st." + suffix + "@example.com", stranger.role("employee", "self"));
         jdbc.update("INSERT INTO employee_onboardings (id, business_id, employee_id, status) VALUES (?, ?, ?, 'NOT_STARTED')", UUID.randomUUID(), stranger.business(), strangerId);
-        String foreign = "/api/people/" + strangerId + "/onboarding";
+        String foreign = "/api/v1/people/" + strangerId + "/onboarding";
         putJson(hr, foreign + "/steps/1", EmployeeOnboardingApiTest.STEP1).andExpect(status().isNotFound());
         putJson(hr, foreign + "/current-step", "{\"step\":2}").andExpect(status().isNotFound());
         upload(hr, strangerId.toString(), "bank").andExpect(status().isNotFound());
         mockMvc.perform(get(foreign + "/secrets").cookie(hr)).andExpect(status().isNotFound());
         mockMvc.perform(write(post(foreign + "/submission")).cookie(hr)).andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/onboardings?search=ST-" + suffix).cookie(hr)).andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(0));
+        mockMvc.perform(get("/api/v1/onboardings?search=ST-" + suffix).cookie(hr)).andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(0));
         assertThat(jdbc.queryForObject("SELECT status FROM employee_onboardings WHERE employee_id = ?", String.class, strangerId)).isEqualTo("NOT_STARTED");
     }
 
@@ -288,7 +288,7 @@ class OnboardingHrApiTest extends IntegrationTest {
         UUID old = data.employee("OLD-" + suffix, "old." + suffix + "@example.com", employeeRoleId);
         jdbc.update("INSERT INTO employee_onboardings (id, business_id, employee_id, status) VALUES (?, ?, ?, 'NOT_REQUIRED')", UUID.randomUUID(), data.business(), old);
 
-        JsonNode all = body(mockMvc.perform(get("/api/onboardings?search=" + suffix).cookie(hr)).andExpect(status().isOk())).get("data");
+        JsonNode all = body(mockMvc.perform(get("/api/v1/onboardings?search=" + suffix).cookie(hr)).andExpect(status().isOk())).get("data");
         assertThat(all.get("total").asInt()).isEqualTo(3);
         assertThat(all.at("/rows/0/employeeId").asText()).isEqualTo(third);
         assertThat(all.at("/rows/1/employeeId").asText()).isEqualTo(second);
@@ -305,12 +305,12 @@ class OnboardingHrApiTest extends IntegrationTest {
         assertThat(all.at("/rows/2/submittedAt").isNull()).isTrue();
         assertThat(all.get("page").asInt()).isEqualTo(1);
 
-        mockMvc.perform(get("/api/onboardings?status=SUBMITTED&search=" + suffix).cookie(hr)).andExpect(jsonPath("$.data.total").value(1)).andExpect(jsonPath("$.data.rows[0].employeeId").value(second));
-        mockMvc.perform(get("/api/onboardings?status=NOT_STARTED&search=" + suffix).cookie(hr)).andExpect(jsonPath("$.data.total").value(1)).andExpect(jsonPath("$.data.rows[0].employeeId").value(first));
-        mockMvc.perform(get("/api/onboardings?status=APPROVED&search=" + suffix).cookie(hr)).andExpect(jsonPath("$.data.total").value(1));
-        mockMvc.perform(get("/api/onboardings?status=NOT_REQUIRED").cookie(hr)).andExpect(status().isBadRequest());
-        mockMvc.perform(get("/api/onboardings?search=old." + suffix).cookie(hr)).andExpect(jsonPath("$.data.total").value(0));
-        mockMvc.perform(get("/api/onboardings?search=" + suffix + "&pageSize=2&page=2").cookie(hr)).andExpect(jsonPath("$.data.total").value(3))
+        mockMvc.perform(get("/api/v1/onboardings?status=SUBMITTED&search=" + suffix).cookie(hr)).andExpect(jsonPath("$.data.total").value(1)).andExpect(jsonPath("$.data.rows[0].employeeId").value(second));
+        mockMvc.perform(get("/api/v1/onboardings?status=NOT_STARTED&search=" + suffix).cookie(hr)).andExpect(jsonPath("$.data.total").value(1)).andExpect(jsonPath("$.data.rows[0].employeeId").value(first));
+        mockMvc.perform(get("/api/v1/onboardings?status=APPROVED&search=" + suffix).cookie(hr)).andExpect(jsonPath("$.data.total").value(1));
+        mockMvc.perform(get("/api/v1/onboardings?status=NOT_REQUIRED").cookie(hr)).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/onboardings?search=old." + suffix).cookie(hr)).andExpect(jsonPath("$.data.total").value(0));
+        mockMvc.perform(get("/api/v1/onboardings?search=" + suffix + "&pageSize=2&page=2").cookie(hr)).andExpect(jsonPath("$.data.total").value(3))
                 .andExpect(jsonPath("$.data.rows.length()").value(1)).andExpect(jsonPath("$.data.rows[0].employeeId").value(first)).andExpect(jsonPath("$.data.page").value(2))
                 .andExpect(jsonPath("$.data.take").value(2));
     }

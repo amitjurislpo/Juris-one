@@ -32,7 +32,7 @@ public class AuditController {
     }
 
     /** Any signed-in user. Path must start with "/" (the query is dropped, 200 characters at most). Over the per-session rate it is quietly ignored. */
-    @PostMapping("/api/audit/page-views")
+    @PostMapping("/api/v1/audit/page-views")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> pageView(@RequestBody PageView body, HttpServletRequest request) {
         CurrentUser user = auth.assertPerm();

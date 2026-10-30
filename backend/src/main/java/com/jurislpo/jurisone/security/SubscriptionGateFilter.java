@@ -1,5 +1,8 @@
 package com.jurislpo.jurisone.security;
 
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX_SLASH;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.service.SubscriptionService;
 import com.jurislpo.jurisone.exception.Problems;
@@ -34,9 +37,9 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
             + "Please contact your administrator to renew.";
 
     /** Reachable with no usable subscription at all (not started / none). */
-    static final List<String> OPEN = List.of("/api/auth/", "/api/me", "/api/shell");
+    static final List<String> OPEN = List.of(PREFIX + "/auth/", PREFIX + "/me", PREFIX + "/shell");
     /** Still writable once the subscription has ended. */
-    static final List<String> WRITABLE_WHEN_ENDED = List.of("/api/auth/", "/api/notifications", "/api/audit/page-views"); // page views are only recorded
+    static final List<String> WRITABLE_WHEN_ENDED = List.of(PREFIX + "/auth/", PREFIX + "/notifications", PREFIX + "/audit/page-views"); // page views are only recorded
 
     private final SubscriptionService subscriptions;
     private final ObjectMapper json;
@@ -49,7 +52,7 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        return !uri.startsWith("/api/") || OPEN.stream().anyMatch(uri::startsWith);
+        return !uri.startsWith(PREFIX_SLASH) || OPEN.stream().anyMatch(uri::startsWith);
     }
 
     @Override

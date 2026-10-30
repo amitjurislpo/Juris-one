@@ -35,19 +35,19 @@ public class OnboardingAttachmentController {
         this.attachments = attachments;
     }
 
-    @PostMapping("/api/onboarding/mine/attachments")
+    @PostMapping("/api/v1/onboarding/mine/attachments")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, Object>> upload(@RequestParam String slotKey, @RequestParam MultipartFile file, HttpServletRequest request) throws IOException {
         return ApiResult.success(attachments.upload(auth.assertPerm(), slotKey, file.getOriginalFilename(), file.getBytes(), RequestMeta.of(request).ipAddress()));
     }
 
-    @DeleteMapping("/api/onboarding/mine/attachments/{id}")
+    @DeleteMapping("/api/v1/onboarding/mine/attachments/{id}")
     public ApiResult<Void> delete(@PathVariable String id, HttpServletRequest request) {
         attachments.delete(auth.assertPerm(), id, RequestMeta.of(request).ipAddress());
         return ApiResult.message("File removed");
     }
 
-    @GetMapping("/api/onboarding/mine/attachments/{id}/file")
+    @GetMapping("/api/v1/onboarding/mine/attachments/{id}/file")
     public ResponseEntity<byte[]> file(@PathVariable String id, @RequestParam(defaultValue = "false") boolean download) {
         FileOut file = attachments.file(auth.assertPerm(), id);
         ContentDisposition disposition = (download ? ContentDisposition.attachment() : ContentDisposition.inline()).filename(file.name(), StandardCharsets.UTF_8).build();
@@ -56,7 +56,7 @@ public class OnboardingAttachmentController {
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store").header("X-Content-Type-Options", "nosniff").body(file.bytes());
     }
 
-    @GetMapping("/api/onboarding/mine/secrets")
+    @GetMapping("/api/v1/onboarding/mine/secrets")
     public ResponseEntity<ApiResult<Map<String, String>>> secrets(HttpServletRequest request) {
         return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .body(ApiResult.success(attachments.secrets(auth.assertPerm(), RequestMeta.of(request).ipAddress())));

@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** The signed-in user and the app shell. */
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/v1")
 public class CurrentUserController {
 
     private final Auth auth;

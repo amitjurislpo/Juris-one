@@ -104,7 +104,7 @@ public final class JurisTrackStub {
 
     /** The roster pushes received so far ({@code PUT /api/integration/employees}). */
     public static List<Received> rosterRequests() {
-        return RECEIVED.stream().filter(received -> "PUT".equals(received.method()) && "/api/integration/employees".equals(received.pathAndQuery())).toList();
+        return RECEIVED.stream().filter(received -> "PUT".equals(received.method()) && "/api/v1/integration/employees".equals(received.pathAndQuery())).toList();
     }
 
     public static void reset() {

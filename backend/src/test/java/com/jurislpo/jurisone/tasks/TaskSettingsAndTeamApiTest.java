@@ -24,36 +24,36 @@ class TaskSettingsAndTeamApiTest extends TaskApiTestBase {
     @Test
     void theOwnerChangesTheDefaultStepsForNewProjectsAndPersonalTasks() throws Exception {
         Person owner = person(ownerRole, "owner"), hr = person(hrRole, "hr");
-        mockMvc.perform(get("/api/task-settings").cookie(hr.cookie())).andExpect(status().isForbidden());
-        mockMvc.perform(write(post("/api/task-settings/workflow-statuses")).cookie(hr.cookie()).content("{\"name\":\"X\",\"category\":\"TODO\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/task-settings").cookie(hr.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/task-settings/workflow-statuses")).cookie(hr.cookie()).content("{\"name\":\"X\",\"category\":\"TODO\"}")).andExpect(status().isForbidden());
         // a new business: the built-in steps, not stored yet
-        JsonNode settings = getData(owner.cookie(), "/api/task-settings");
+        JsonNode settings = getData(owner.cookie(), "/api/v1/task-settings");
         assertThat(names(settings.get("defaultStatuses"))).containsExactly("To do", "In progress", "In review", "Done", "Cancelled");
         assertThat(settings.get("defaultStatuses").get(0).get("id").isNull()).isTrue();
         String existing = project(hr.cookie(), "OLD", "PRIVATE"); // copies the default set (and stores it)
-        String waiting = postCreated(owner.cookie(), "/api/task-settings/workflow-statuses", "{\"name\":\"Waiting\",\"category\":\"IN_PROGRESS\",\"color\":\"amber\"}")
+        String waiting = postCreated(owner.cookie(), "/api/v1/task-settings/workflow-statuses", "{\"name\":\"Waiting\",\"category\":\"IN_PROGRESS\",\"color\":\"amber\"}")
                 .get("id").asText();
-        mockMvc.perform(write(put("/api/task-settings/workflow-statuses/" + statusId(null, "In review"))).cookie(owner.cookie())
+        mockMvc.perform(write(put("/api/v1/task-settings/workflow-statuses/" + statusId(null, "In review"))).cookie(owner.cookie())
                 .content("{\"name\":\"Checking\",\"category\":\"IN_PROGRESS\",\"color\":\"purple\"}")).andExpect(status().isOk());
         String personal = task(hr.cookie(), "\"title\":\"Personal\",\"statusId\":\"" + statusId(null, "Cancelled") + "\"").get("id").asText();
-        mockMvc.perform(write(delete("/api/task-settings/workflow-statuses/" + statusId(null, "Cancelled"))).cookie(owner.cookie())).andExpect(status().isUnprocessableEntity());
-        mockMvc.perform(write(delete("/api/task-settings/workflow-statuses/" + statusId(null, "Cancelled") + "?moveTasksToStatusId=" + waiting)).cookie(owner.cookie()))
+        mockMvc.perform(write(delete("/api/v1/task-settings/workflow-statuses/" + statusId(null, "Cancelled"))).cookie(owner.cookie())).andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(write(delete("/api/v1/task-settings/workflow-statuses/" + statusId(null, "Cancelled") + "?moveTasksToStatusId=" + waiting)).cookie(owner.cookie()))
                 .andExpect(status().isOk());
-        assertThat(getData(hr.cookie(), "/api/tasks/" + personal).get("statusName").asText()).isEqualTo("Waiting");
-        settings = getData(owner.cookie(), "/api/task-settings");
+        assertThat(getData(hr.cookie(), "/api/v1/tasks/" + personal).get("statusName").asText()).isEqualTo("Waiting");
+        settings = getData(owner.cookie(), "/api/v1/task-settings");
         assertThat(names(settings.get("defaultStatuses"))).containsExactly("To do", "In progress", "Checking", "Done", "Waiting");
         List<String> ids = new ArrayList<>();
         settings.get("defaultStatuses").forEach(s -> ids.add(s.get("id").asText()));
         java.util.Collections.reverse(ids);
-        mockMvc.perform(write(put("/api/task-settings/workflow-status-order")).cookie(owner.cookie()).content("{\"statusIds\":[\"" + String.join("\",\"", ids) + "\"]}"))
+        mockMvc.perform(write(put("/api/v1/task-settings/workflow-status-order")).cookie(owner.cookie()).content("{\"statusIds\":[\"" + String.join("\",\"", ids) + "\"]}"))
                 .andExpect(status().isOk());
         // new projects get the new set; existing ones keep theirs
         String fresh = project(hr.cookie(), "NEW", "PRIVATE");
-        assertThat(names(getData(hr.cookie(), "/api/projects/" + fresh).get("statuses"))).containsExactly("Waiting", "Done", "Checking", "In progress", "To do");
-        assertThat(names(getData(hr.cookie(), "/api/projects/" + existing).get("statuses"))).containsExactly("To do", "In progress", "In review", "Done", "Cancelled");
+        assertThat(names(getData(hr.cookie(), "/api/v1/projects/" + fresh).get("statuses"))).containsExactly("Waiting", "Done", "Checking", "In progress", "To do");
+        assertThat(names(getData(hr.cookie(), "/api/v1/projects/" + existing).get("statuses"))).containsExactly("To do", "In progress", "In review", "Done", "Cancelled");
         // business labels show in the settings; counts
-        postCreated(owner.cookie(), "/api/task-labels", "{\"name\":\"Compliance\",\"color\":\"green\"}");
-        settings = getData(owner.cookie(), "/api/task-settings");
+        postCreated(owner.cookie(), "/api/v1/task-labels", "{\"name\":\"Compliance\",\"color\":\"green\"}");
+        settings = getData(owner.cookie(), "/api/v1/task-settings");
         assertThat(settings.get("labels").get(0).get("name").asText()).isEqualTo("Compliance");
         assertThat(settings.get("projectCount").asInt()).isEqualTo(2);
         assertThat(settings.get("taskCount").asInt()).isEqualTo(1);
@@ -73,18 +73,18 @@ class TaskSettingsAndTeamApiTest extends TaskApiTestBase {
         task(hr.cookie(), "\"title\":\"Not the team\",\"assigneeId\":\"" + loner.id() + "\"");
         // the manager has reports now: sign in again so the session sees them
         Person managerAgain = new Person(manager.id(), manager.email(), signIn(manager.email()));
-        JsonNode direct = getData(managerAgain.cookie(), "/api/tasks/team");
+        JsonNode direct = getData(managerAgain.cookie(), "/api/v1/tasks/team");
         assertThat(direct.get("rows").findValuesAsText("title")).containsExactly("Report work");
         assertThat(direct.get("people").size()).isEqualTo(1);
         assertThat(direct.get("people").get(0).get("open").asInt()).isEqualTo(1);
         assertThat(direct.get("people").get(0).get("overdue").asInt()).isEqualTo(1);
-        JsonNode both = getData(managerAgain.cookie(), "/api/tasks/team?depth=2");
+        JsonNode both = getData(managerAgain.cookie(), "/api/v1/tasks/team?depth=2");
         assertThat(both.get("rows").findValuesAsText("title")).containsExactlyInAnyOrder("Report work", "Deeper work");
         assertThat(both.get("people").size()).isEqualTo(2);
-        assertThat(getData(managerAgain.cookie(), "/api/tasks/team?depth=2&employeeId=" + deeper.id()).get("total").asInt()).isEqualTo(1);
-        assertThat(getData(managerAgain.cookie(), "/api/tasks/team?depth=2&employeeId=" + loner.id()).get("total").asInt()).isZero();
-        assertThat(getData(managerAgain.cookie(), "/api/tasks/team?depth=2&indirectAssigneeId=" + manager.id()).get("total").asInt()).isEqualTo(1);
+        assertThat(getData(managerAgain.cookie(), "/api/v1/tasks/team?depth=2&employeeId=" + deeper.id()).get("total").asInt()).isEqualTo(1);
+        assertThat(getData(managerAgain.cookie(), "/api/v1/tasks/team?depth=2&employeeId=" + loner.id()).get("total").asInt()).isZero();
+        assertThat(getData(managerAgain.cookie(), "/api/v1/tasks/team?depth=2&indirectAssigneeId=" + manager.id()).get("total").asInt()).isEqualTo(1);
         // the page needs reports
-        mockMvc.perform(get("/api/tasks/team").cookie(loner.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/tasks/team").cookie(loner.cookie())).andExpect(status().isForbidden());
     }
 }

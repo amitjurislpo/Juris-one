@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
  * and assign / take back assets.
  */
 @RestController
-@RequestMapping("/api/assets")
+@RequestMapping("/api/v1/assets")
 public class AssetController {
 
     private final Auth auth;

@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code projects.create} (or {@code tasks.manage}); everything else depends on the person's role in the project.
  */
 @RestController
-@RequestMapping("/api/projects")
+@RequestMapping("/api/v1/projects")
 public class ProjectController {
 
     private final Auth auth;

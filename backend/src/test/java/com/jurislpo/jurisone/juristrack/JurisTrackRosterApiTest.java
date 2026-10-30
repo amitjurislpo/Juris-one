@@ -164,7 +164,7 @@ class JurisTrackRosterApiTest extends IntegrationTest {
         assertThat(((Map<?, ?>) summary.get("employees")).get("created")).isEqualTo(2);
         Received call = awaitPushes(data.business(), 1).get(0);
         assertThat(call.method()).isEqualTo("PUT");
-        assertThat(call.pathAndQuery()).isEqualTo("/api/integration/employees");
+        assertThat(call.pathAndQuery()).isEqualTo("/api/v1/integration/employees");
         assertThat(call.headers().get("content-type")).startsWith("application/json");
         assertThat(call.headers().get("x-request-id")).isNotBlank();
         JsonNode body = json.readTree(call.body());
@@ -265,7 +265,7 @@ class JurisTrackRosterApiTest extends IntegrationTest {
             String email = jdbc.queryForObject("SELECT email FROM employees WHERE id = ?", String.class, id);
             if (shift[0] == null) jdbc.update("UPDATE employees SET shift_id = NULL WHERE id = ?", id);
             JurisTrackStub.reset();
-            mockMvc.perform(get("/api/juris-track/me/time").cookie(signIn(email))).andExpect(status().isOk());
+            mockMvc.perform(get("/api/v1/juris-track/me/time").cookie(signIn(email))).andExpect(status().isOk());
             JWTClaimsSet claims = claimsOf(JurisTrackStub.received().get(0));
             if (shift[2] == null) assertThat(claims.getClaims()).doesNotContainKey("shiftCode");
             else assertThat(claims.getStringClaim("shiftCode")).isEqualTo(shift[2]);
@@ -282,7 +282,7 @@ class JurisTrackRosterApiTest extends IntegrationTest {
         Hr hr = hr(data);
         String email = "new." + TestData.letters(6) + "@example.com";
 
-        String created = mockMvc.perform(write(post("/api/people")).cookie(hr.cookie()).content(personBody(hr, email, "Meera"))).andExpect(status().isCreated())
+        String created = mockMvc.perform(write(post("/api/v1/people")).cookie(hr.cookie()).content(personBody(hr, email, "Meera"))).andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         String id = json.readTree(created).at("/data/id").asText();
         JsonNode afterAdd = json.readTree(awaitPushes(data.business(), 1).get(0).body());
@@ -293,11 +293,11 @@ class JurisTrackRosterApiTest extends IntegrationTest {
         assertThat(added.get("shiftCode").asText()).isEqualTo("IN_DAY");
         assertThat(person(afterAdd, hr.id()).get("role").asText()).isEqualTo("MANAGER"); // the new report makes the HR manager a manager
 
-        mockMvc.perform(write(put("/api/people/" + id)).cookie(hr.cookie()).content(personBody(hr, email, "Meeraa"))).andExpect(status().isOk());
+        mockMvc.perform(write(put("/api/v1/people/" + id)).cookie(hr.cookie()).content(personBody(hr, email, "Meeraa"))).andExpect(status().isOk());
         JsonNode afterEdit = json.readTree(awaitPushes(data.business(), 2).get(1).body());
         assertThat(person(afterEdit, UUID.fromString(id)).get("firstName").asText()).isEqualTo("Meeraa");
 
-        mockMvc.perform(write(put("/api/people/" + id + "/status")).cookie(hr.cookie()).content("{\"status\":\"EXITED\",\"exitDate\":\"2026-10-20\"}")).andExpect(status().isOk());
+        mockMvc.perform(write(put("/api/v1/people/" + id + "/status")).cookie(hr.cookie()).content("{\"status\":\"EXITED\",\"exitDate\":\"2026-10-20\"}")).andExpect(status().isOk());
         JsonNode afterExit = json.readTree(awaitPushes(data.business(), 3).get(2).body());
         assertThat(person(afterExit, UUID.fromString(id)).get("isActive").asBoolean()).isFalse();
         assertThat(person(afterExit, hr.id()).get("role").asText()).isEqualTo("EMPLOYEE");
@@ -307,7 +307,7 @@ class JurisTrackRosterApiTest extends IntegrationTest {
     void aBusinessWithoutTheModuleIsNeverPushed() throws Exception {
         TestData data = business("Asia/Kolkata", false);
         Hr hr = hr(data);
-        mockMvc.perform(write(post("/api/people")).cookie(hr.cookie()).content(personBody(hr, "plain." + TestData.letters(6) + "@example.com", "Asha"))).andExpect(status().isCreated());
+        mockMvc.perform(write(post("/api/v1/people")).cookie(hr.cookie()).content(personBody(hr, "plain." + TestData.letters(6) + "@example.com", "Asha"))).andExpect(status().isCreated());
         awaitPushes(data.business(), 0);
     }
 
@@ -317,14 +317,14 @@ class JurisTrackRosterApiTest extends IntegrationTest {
         Hr hr = hr(data);
         JurisTrackStub.hangUp(true);
         String email = "down." + TestData.letters(6) + "@example.com";
-        String created = mockMvc.perform(write(post("/api/people")).cookie(hr.cookie()).content(personBody(hr, email, "Asha"))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String created = mockMvc.perform(write(post("/api/v1/people")).cookie(hr.cookie()).content(personBody(hr, email, "Asha"))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String id = json.readTree(created).at("/data/id").asText();
         awaitPushes(data.business(), 1); // it tried, JurisTrack hung up
         assertThat(jdbc.queryForObject("SELECT count(*) FROM employees WHERE id = ?::uuid", Integer.class, id)).isEqualTo(1);
 
         JurisTrackStub.hangUp(false);
         JurisTrackStub.answerWith(500, "application/json", "{}");
-        mockMvc.perform(write(put("/api/people/" + id)).cookie(hr.cookie()).content(personBody(hr, email, "Ashaa"))).andExpect(status().isOk());
+        mockMvc.perform(write(put("/api/v1/people/" + id)).cookie(hr.cookie()).content(personBody(hr, email, "Ashaa"))).andExpect(status().isOk());
         awaitPushes(data.business(), 2);
         assertThat(jdbc.queryForObject("SELECT first_name FROM employees WHERE id = ?::uuid", String.class, id)).isEqualTo("Ashaa");
     }
@@ -381,7 +381,7 @@ class JurisTrackRosterApiTest extends IntegrationTest {
         employee(data, "IN_DAY", "Asia/Kolkata", "ACTIVE", null);
         Cookie admin = superAdmin();
 
-        mockMvc.perform(write(post("/api/platform/businesses/" + data.business() + "/juris-track-syncs")).cookie(admin)).andExpect(status().isCreated())
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + data.business() + "/juris-track-syncs")).cookie(admin)).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.employees.created").value(2)).andExpect(jsonPath("$.data.shifts.created").value(1));
         awaitPushes(data.business(), 1);
         String after = jdbc.queryForObject("SELECT after::text FROM audit_log WHERE action = 'juristrack.roster_synced' AND entity_id = ?", String.class, data.business().toString());
@@ -393,11 +393,11 @@ class JurisTrackRosterApiTest extends IntegrationTest {
         TestData data = business("Asia/Kolkata", true);
         Cookie admin = superAdmin();
         JurisTrackStub.hangUp(true);
-        mockMvc.perform(write(post("/api/platform/businesses/" + data.business() + "/juris-track-syncs")).cookie(admin)).andExpect(status().isBadGateway())
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + data.business() + "/juris-track-syncs")).cookie(admin)).andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("JURISTRACK_UNAVAILABLE"));
         JurisTrackStub.hangUp(false);
         JurisTrackStub.answerWith(400, "application/problem+json", "{\"status\":400}");
-        mockMvc.perform(write(post("/api/platform/businesses/" + data.business() + "/juris-track-syncs")).cookie(admin)).andExpect(status().isBadGateway())
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + data.business() + "/juris-track-syncs")).cookie(admin)).andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("JURISTRACK_REFUSED"));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'juristrack.roster_synced' AND entity_id = ?", Integer.class, data.business().toString())).isZero();
     }
@@ -406,10 +406,10 @@ class JurisTrackRosterApiTest extends IntegrationTest {
     void onlyTheSuperAdminCanSendItAndTheBusinessMustExistAndHaveJurisTrack() throws Exception {
         TestData data = business("Asia/Kolkata", true), plain = business("Asia/Kolkata", false);
         Cookie hrCookie = hr(data).cookie();
-        mockMvc.perform(write(post("/api/platform/businesses/" + data.business() + "/juris-track-syncs")).cookie(hrCookie)).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + data.business() + "/juris-track-syncs")).cookie(hrCookie)).andExpect(status().isForbidden());
         Cookie admin = superAdmin();
-        mockMvc.perform(write(post("/api/platform/businesses/" + UUID.randomUUID() + "/juris-track-syncs")).cookie(admin)).andExpect(status().isNotFound());
-        mockMvc.perform(write(post("/api/platform/businesses/" + plain.business() + "/juris-track-syncs")).cookie(admin)).andExpect(status().isConflict())
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + UUID.randomUUID() + "/juris-track-syncs")).cookie(admin)).andExpect(status().isNotFound());
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + plain.business() + "/juris-track-syncs")).cookie(admin)).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("JURISTRACK_NOT_ACTIVE"));
         assertThat(JurisTrackStub.rosterRequests()).isEmpty();
     }
@@ -419,7 +419,7 @@ class JurisTrackRosterApiTest extends IntegrationTest {
         TestData data = business("Asia/Kolkata", false);
         employee(data, "IN_DAY", "Asia/Kolkata", "ACTIVE", null);
         Cookie admin = superAdmin();
-        mockMvc.perform(write(post("/api/platform/businesses/" + data.business() + "/modules")).cookie(admin).content("{\"module\":\"JURIS_TRACK\",\"source\":\"COMPLIMENTARY\"}"))
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + data.business() + "/modules")).cookie(admin).content("{\"module\":\"JURIS_TRACK\",\"source\":\"COMPLIMENTARY\"}"))
                 .andExpect(status().isCreated());
         JsonNode body = json.readTree(awaitPushes(data.business(), 1).get(0).body());
         assertThat(body.get("employees")).hasSize(1);

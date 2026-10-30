@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** The super admin's platform API: businesses, sub admins, plans and subscriptions (system mode). */
 @RestController
-@RequestMapping("/api/platform")
+@RequestMapping("/api/v1/platform")
 public class PlatformController {
 
     public record StatusBody(String status) {}

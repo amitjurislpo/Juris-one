@@ -47,39 +47,39 @@ public class TaxController {
     }
 
     // declarations
-    @GetMapping("/api/declarations")
+    @GetMapping("/api/v1/declarations")
     public ApiResult<Map<String, Object>> declare() {
         return ApiResult.success(taxOperations.declarePage(auth.requirePage("declare")));
     }
 
-    @PutMapping("/api/declarations/regime")
+    @PutMapping("/api/v1/declarations/regime")
     public ApiResult<Void> regime(@RequestBody RegimeRequest body, HttpServletRequest request) {
         String message = taxOperations.setRegime(auth.assertPerm("self"), body.regime(), RequestMeta.of(request).ipAddress());
         return message == null ? ApiResult.success() : ApiResult.message(message);
     }
 
-    @PutMapping("/api/declarations/profile")
+    @PutMapping("/api/v1/declarations/profile")
     public ApiResult<Void> profile(@RequestBody TaxOperationsService.ProfileInput body) {
         taxOperations.saveProfile(auth.assertPerm("self"), body);
         return ApiResult.success();
     }
 
     /** Set the declared amount (₹) for one item, e.g. {@code PUT /api/declarations/items/ppf {"amount": 50000}}. */
-    @PutMapping("/api/declarations/items/{key}")
+    @PutMapping("/api/v1/declarations/items/{key}")
     public ApiResult<Void> item(@PathVariable String key, @RequestBody AmountBody body) {
         String message = taxOperations.saveItem(auth.assertPerm("self"), new TaxOperationsService.ItemInput(key, body.amount()));
         return message == null ? ApiResult.success() : ApiResult.message(message);
     }
 
     /** Send every draft with an amount to Finance for verification. */
-    @PostMapping("/api/declarations/submissions")
+    @PostMapping("/api/v1/declarations/submissions")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> submit(HttpServletRequest request) {
         return ApiResult.message(taxOperations.submitForVerification(auth.assertPerm("self"), RequestMeta.of(request).ipAddress()));
     }
 
     /** Multipart upload of a proof document ({@code file}, {@code item}): 201 {data:{name}}; failures use the standard problem response. */
-    @PostMapping(value = "/api/declarations/proofs", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(value = "/api/v1/declarations/proofs", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> upload(@RequestPart(name = "file", required = false) MultipartFile file, @RequestParam(name = "item", required = false) String item) {
         try {
@@ -91,7 +91,7 @@ public class TaxController {
     }
 
     /** The original route: view a proof (owner or proofs.verify); 404 when missing. */
-    @GetMapping("/api/declarations/proofs/{id}")
+    @GetMapping("/api/v1/declarations/proofs/{id}")
     public ResponseEntity<byte[]> proof(@PathVariable String id) {
         TaxOperationsService.ProofFile file = taxOperations.proofFile(auth.assertPerm(), id);
         if (file == null) return ResponseEntity.status(404).contentType(MediaType.TEXT_PLAIN).body("Not found".getBytes());
@@ -102,26 +102,26 @@ public class TaxController {
     }
 
     // proofs (Finance)
-    @GetMapping("/api/proofs")
+    @GetMapping("/api/v1/proofs")
     public ApiResult<Map<String, Object>> proofs(@RequestParam Map<String, String> queryParams) {
         auth.requirePage("proofs");
         return ApiResult.success(taxOperations.proofsPage(queryParams));
     }
 
-    @GetMapping("/api/proofs/{employeeId}")
+    @GetMapping("/api/v1/proofs/{employeeId}")
     public ApiResult<Map<String, Object>> proofDetail(@PathVariable String employeeId) {
         return ApiResult.success(taxOperations.proofDetail(auth.assertPerm("proofs.verify"), employeeId));
     }
 
     /** Approve / reject one declared item ({@code {approve, reason?}}; a rejection needs a reason). */
-    @PutMapping("/api/proofs/items/{id}/decision")
+    @PutMapping("/api/v1/proofs/items/{id}/decision")
     public ApiResult<Void> decide(@PathVariable String id, @RequestBody ProofDecisionBody body, HttpServletRequest request) {
         return ApiResult.message(taxOperations.decideProof(auth.assertPerm("proofs.verify"), new TaxOperationsService.ProofDecision(id, body.approve(), body.reason()),
                 RequestMeta.of(request).ipAddress()));
     }
 
     /** Approve every pending item of one employee ({@code {"approve": true}}). */
-    @PutMapping("/api/proofs/{employeeId}/decision")
+    @PutMapping("/api/v1/proofs/{employeeId}/decision")
     public ApiResult<Void> approveAll(@PathVariable String employeeId, @RequestBody ApproveAllBody body, HttpServletRequest request) {
         CurrentUser user = auth.assertPerm("proofs.verify");
         if (!Boolean.TRUE.equals(body.approve())) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected true");
@@ -129,32 +129,32 @@ public class TaxController {
     }
 
     // Tax & TDS
-    @GetMapping("/api/tax")
+    @GetMapping("/api/v1/tax")
     public ApiResult<Map<String, Object>> tax(@RequestParam Map<String, String> queryParams) {
         return ApiResult.success(taxOperations.taxPage(auth.requirePage("tax"), queryParams));
     }
 
-    @GetMapping("/api/tax/{employeeId}")
+    @GetMapping("/api/v1/tax/{employeeId}")
     public ApiResult<Map<String, Object>> taxDetail(@PathVariable String employeeId) {
         auth.assertPerm("tax.view");
         return ApiResult.success(taxOperations.taxDetail(employeeId));
     }
 
     /** Finance overrides an employee's regime ({@code {"regime": "NEW" | "OLD"}}). */
-    @PutMapping("/api/tax/{employeeId}/regime")
+    @PutMapping("/api/v1/tax/{employeeId}/regime")
     public ApiResult<Void> override(@PathVariable String employeeId, @RequestBody RegimeRequest body, HttpServletRequest request) {
         return ApiResult.message(taxOperations.overrideRegime(auth.assertPerm("tax.view"), employeeId, body.regime(), RequestMeta.of(request).ipAddress()));
     }
 
     /** Previous employer income and TDS this FY (Form 12B), in rupees. */
-    @PutMapping("/api/tax/{employeeId}/previous-employer")
+    @PutMapping("/api/v1/tax/{employeeId}/previous-employer")
     public ApiResult<Void> previous(@PathVariable String employeeId, @RequestBody PreviousEmployerBody body, HttpServletRequest request) {
         return ApiResult.message(taxOperations.setPreviousEmployer(auth.assertPerm("tax.view"), new TaxOperationsService.PreviousEmployerInput(employeeId, body.income(), body.tds()),
                 RequestMeta.of(request).ipAddress()));
     }
 
     /** The original route: CSV with the page's filters. */
-    @GetMapping("/api/tax/export")
+    @GetMapping("/api/v1/tax/export")
     public ResponseEntity<byte[]> export(@RequestParam Map<String, String> queryParams) {
         TaxOperationsService.Export exportFile = taxOperations.export(auth.assertPerm("tax.view"), queryParams);
         return PeopleController.csv(exportFile.filename(), exportFile.body());

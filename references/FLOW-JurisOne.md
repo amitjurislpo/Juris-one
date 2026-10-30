@@ -25,7 +25,7 @@ flowchart LR
     end
     subgraph Web["Web app"]
         SPA["React SPA - pages, English and Hindi"]
-        PROXY["Same-origin proxy: /api/* goes to the API"]
+        PROXY["Same-origin proxy: /api/v1/* goes to the API"]
     end
     subgraph Api["Spring Boot API"]
         AUD["Audit filter - records every write and sensitive read"]
@@ -72,7 +72,7 @@ sequenceDiagram
     participant M as Email service
 
     U->>B: Enter official email
-    B->>A: POST /api/auth/otp-requests
+    B->>A: POST /api/v1/auth/otp-requests
     A->>A: Rate limit 10 per IP and 5 per email in 15 min
     alt Too many requests
         A-->>B: 429 try again in N minutes
@@ -87,7 +87,7 @@ sequenceDiagram
         A-->>B: Same answer for everyone - a code is on its way
     end
     U->>B: Enter code and keep me signed in
-    B->>A: POST /api/auth/session email, code, remember, next
+    B->>A: POST /api/v1/auth/session email, code, remember, next
     A->>A: Check IP limit, 30 failures in 15 min gives 429
     A->>DB: Verify code - once only, 5 tries
     alt Wrong or expired code
@@ -102,12 +102,12 @@ sequenceDiagram
         end
     end
     Note over B,A: Later, every request carries the cookies
-    B->>A: GET /api/home
+    B->>A: GET /api/v1/home
     A->>DB: Verify JWT then check session row and employee still allowed
     alt Access token valid
         A-->>B: 200 data
     else 401 token expired or session revoked
-        B->>A: POST /api/auth/session-refreshes once, shared by parallel calls
+        B->>A: POST /api/v1/auth/session-refreshes once, shared by parallel calls
         alt Refresh token valid
             A->>DB: Rotate refresh token
             A-->>B: 201 new cookies
@@ -119,7 +119,7 @@ sequenceDiagram
         end
     end
     U->>B: Sign out
-    B->>A: DELETE /api/auth/session
+    B->>A: DELETE /api/v1/auth/session
     A->>DB: Revoke session, audit
     A-->>B: 200 cookies cleared
 ```
@@ -180,12 +180,12 @@ sequenceDiagram
     actor FIN as Finance
     actor E as New employee
 
-    HR->>API: POST /api/people with isOnboardingRequired (default false)
+    HR->>API: POST /api/v1/people with isOnboardingRequired (default false)
     API->>API: Check employee limit of the plan, email unused, assignable role
     API-->>HR: 201 employee created, onboarding NOT_REQUIRED (NOT_STARTED when isOnboardingRequired is true)
     API-->>FIN: Bell - salary structure pending, India only
     E->>API: Sign in with the emailed code, section 2
-    E->>API: GET /api/shell - onboarding status and isRequired
+    E->>API: GET /api/v1/shell - onboarding status and isRequired
     alt isRequired is false
         API-->>E: Normal landing page
     else NOT_STARTED, IN_PROGRESS or CHANGES_REQUESTED
@@ -194,7 +194,7 @@ sequenceDiagram
         API-->>E: Read-only waiting page, every other API answers 403 onboarding-pending
     end
     loop Steps 1 to 5
-        E->>API: PUT /api/onboarding/mine/steps/n
+        E->>API: PUT /api/v1/onboarding/mine/steps/n
         alt A field is missing or invalid
             API-->>E: 422 errors by field path, nothing saved
         else Valid
@@ -203,21 +203,21 @@ sequenceDiagram
     end
     E->>API: POST attachments per slot - pdf doc docx jpg png, max 10 MB
     API-->>E: 400/413 when the type, content or size is wrong
-    E->>API: POST /api/onboarding/mine/submission
+    E->>API: POST /api/v1/onboarding/mine/submission
     alt A step or a mandatory file is missing
         API-->>E: 422 lists everything missing
     else Complete
         API-->>E: 201 SUBMITTED, read-only - every write answers 409
         API-->>HR: Bell - onboarding submitted for review
     end
-    HR->>API: GET /api/people/id/onboarding - masked data and files
+    HR->>API: GET /api/v1/people/id/onboarding - masked data and files
     alt HR approves
-        HR->>API: POST /api/people/id/onboarding/approvals
+        HR->>API: POST /api/v1/people/id/onboarding/approvals
         API-->>E: APPROVED, bell and email, the portal opens
     else HR sends it back
-        HR->>API: POST /api/people/id/onboarding/rejections - comment and flags per section
+        HR->>API: POST /api/v1/people/id/onboarding/rejections - comment and flags per section
         API-->>E: CHANGES_REQUESTED, bell and email with the flagged sections
-        E->>API: Fix the flagged sections, POST /api/onboarding/mine/submission again
+        E->>API: Fix the flagged sections, POST /api/v1/onboarding/mine/submission again
         API-->>HR: SUBMITTED again, flags cleared, bell
     end
 ```
@@ -304,7 +304,7 @@ sequenceDiagram
     participant L as Leave ledger
     participant N as Bell and email
 
-    E->>API: POST /api/attendance/regularizations date, kind, proposed times, reason
+    E->>API: POST /api/v1/attendance/regularizations date, kind, proposed times, reason
     API->>API: Day fits the kind? month not locked? not a future day? no open request?
     alt Refused
         API-->>E: 422 reason, for example This day isn't marked as loss of pay
@@ -316,7 +316,7 @@ sequenceDiagram
         E->>API: DELETE regularization
         API-->>E: CANCELLED, only while pending
     end
-    AP->>API: PUT /api/attendance/regularizations/id/decision approve or decline, note
+    AP->>API: PUT /api/v1/attendance/regularizations/id/decision approve or decline, note
     alt Own request
         API-->>AP: Refused - you can't decide your own request
     else Already decided
@@ -459,13 +459,13 @@ sequenceDiagram
     participant T as Tax engine
     participant P as Payroll
 
-    E->>API: PUT /api/declarations/regime new or old
+    E->>API: PUT /api/v1/declarations/regime new or old
     alt Finance set the regime or the change date has passed
         API-->>E: Refused - contact Finance
     else Allowed
         API-->>E: Saved and audited tax.regime_change
     end
-    E->>API: PUT /api/declarations/items/key amount, whole rupees
+    E->>API: PUT /api/v1/declarations/items/key amount, whole rupees
     alt Item is Pending with Finance
         API-->>E: Refused - wait for the decision
     else Approved or Rejected item changed
@@ -479,13 +479,13 @@ sequenceDiagram
     else Stored
         API-->>E: Proof attached
     end
-    E->>API: POST /api/declarations/submissions
+    E->>API: POST /api/v1/declarations/submissions
     alt Not old regime, no proof for an item, or rent over 1 lakh without landlord PAN
         API-->>E: Refused - says which item
     else All good
         API-->>E: Items Pending
     end
-    F->>API: GET /api/proofs and open the drawer
+    F->>API: GET /api/v1/proofs and open the drawer
     API->>T: TDS now versus TDS if all pending are approved
     T-->>F: Preview
     F->>API: PUT decision approve or reject
@@ -503,7 +503,7 @@ sequenceDiagram
     P->>T: Monthly TDS uses approved amounts only
     T-->>P: Annual tax minus TDS already deducted, divided by remaining months, never below zero
     opt Finance overrides regime or adds previous employer income
-        F->>API: PUT /api/tax/employeeId/regime or previous-employer
+        F->>API: PUT /api/v1/tax/employeeId/regime or previous-employer
         API-->>E: Bell - Finance set your regime
     end
 ```
@@ -524,20 +524,20 @@ sequenceDiagram
     participant SPA as Web app
 
     HR->>API: Create draft - title, text, optional PDF, requires acknowledgement
-    HR->>API: PUT /api/policies/id/status PUBLISHED
+    HR->>API: PUT /api/v1/policies/id/status PUBLISHED
     alt No text and no PDF, or nothing changed since last version
         API-->>HR: Refused
     else Publish
         API->>DB: Save immutable version with SHA-256 of text and file
         API-->>E: Bell - stays until accepted
     end
-    E->>API: Any request, for example GET /api/home
+    E->>API: Any request, for example GET /api/v1/home
     API->>API: Gate - user must accept, owners and read-only businesses are exempt
     alt Pending policy exists
         API-->>SPA: 428 POLICY_ACK_REQUIRED
         SPA-->>E: Only the acknowledgement screen is shown
-        E->>API: GET /api/policies/pending and read
-        E->>API: POST /api/policies/id/acknowledgements version
+        E->>API: GET /api/v1/policies/pending and read
+        E->>API: POST /api/v1/policies/id/acknowledgements version
         alt A newer version was published meanwhile
             API-->>E: 409 read the new version first
         else Accepted
@@ -664,10 +664,10 @@ sequenceDiagram
     actor IA as Indirect assignee accountable
     actor MN as Mentioned person
 
-    U->>API: GET /api/tasks/assignees search
+    U->>API: GET /api/v1/tasks/assignees search
     API-->>U: People, project members first, with reporting manager name
     Note over U: Form suggests the assignee's manager as accountable but never sets it
-    U->>API: POST /api/tasks project, title, assignee, accountable, due date and time, reminder, description with @mentions
+    U->>API: POST /api/v1/tasks project, title, assignee, accountable, due date and time, reminder, description with @mentions
     API->>API: Is the project active and does the user have MEMBER or OWNER role or tasks.manage?
     alt Project archived
         API-->>U: 422 read-only
@@ -725,7 +725,7 @@ sequenceDiagram
     actor F as Followers and assignees
     actor MN as Mentioned person
 
-    U->>API: POST /api/tasks/id/comments text up to 5000 with @mentions
+    U->>API: POST /api/v1/tasks/id/comments text up to 5000 with @mentions
     API->>API: Can the user view and comment on this task?
     alt Cannot see the task
         API-->>U: 404
@@ -739,7 +739,7 @@ sequenceDiagram
         API-->>F: Bell - new comment, one notice per person
         API-->>U: 201
     end
-    U->>API: POST /api/tasks/id/attachments file
+    U->>API: POST /api/v1/tasks/id/attachments file
     alt Type not allowed by its first bytes, over 10 MB or over 20 files
         API-->>U: 400 with message
     else Stored
@@ -905,9 +905,9 @@ sequenceDiagram
         F->>F: Log ERROR and count jurisone.audit.write.failures - request is not broken
     end
     F-->>B: Response with X-Request-Id
-    B->>F: POST /api/audit/page-views on each page open
+    B->>F: POST /api/v1/audit/page-views on each page open
     Note over AU: Append-only table - a trigger refuses update and delete. No bodies, cookies, codes or tokens are stored
-    O->>F: GET /api/audit or /api/platform/audit with filters
+    O->>F: GET /api/v1/audit or /api/v1/platform/audit with filters
     F->>AU: Also recorded as a sensitive read
     AU-->>O: Rows - business log for owner, all businesses for super admin, CSV export
 ```

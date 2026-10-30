@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** Task labels (page {@code projects}): business labels need {@code tasks.manage}, a project's labels a project owner. */
 @RestController
-@RequestMapping("/api/task-labels")
+@RequestMapping("/api/v1/task-labels")
 public class TaskLabelController {
 
     private final Auth auth;

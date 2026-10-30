@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** /api/roles — Roles & permissions page (roles.manage). */
 @RestController
-@RequestMapping("/api/roles")
+@RequestMapping("/api/v1/roles")
 public class RolesController {
 
 

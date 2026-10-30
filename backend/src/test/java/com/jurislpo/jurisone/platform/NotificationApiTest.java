@@ -68,7 +68,7 @@ class NotificationApiTest extends IntegrationTest {
     }
 
     JsonNode inbox(String query) throws Exception {
-        return json.readTree(mockMvc.perform(get("/api/notifications" + query).cookie(employee)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+        return json.readTree(mockMvc.perform(get("/api/v1/notifications" + query).cookie(employee)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
                 .at("/data");
     }
 
@@ -88,42 +88,42 @@ class NotificationApiTest extends IntegrationTest {
         assertThat(inbox("?unread=true&limit=1").at("/pages").asInt()).isEqualTo(2);
 
         // opening the bell / shell doesn't mark anything read any more
-        mockMvc.perform(get("/api/shell").cookie(employee)).andExpect(jsonPath("$.data.unread").value(2))
+        mockMvc.perform(get("/api/v1/shell").cookie(employee)).andExpect(jsonPath("$.data.unread").value(2))
                 .andExpect(jsonPath("$.data.notes[0].unread").value(true));
-        mockMvc.perform(write(patch("/api/notifications/" + oldId)).cookie(employee).content("{\"read\":true}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/v1/notifications/" + oldId)).cookie(employee).content("{\"read\":true}")).andExpect(status().isOk());
         assertThat(inbox("").at("/unread").asInt()).isEqualTo(1);
-        mockMvc.perform(write(patch("/api/notifications/" + oldId)).cookie(employee).content("{\"read\":false}")).andExpect(status().isOk());
+        mockMvc.perform(write(patch("/api/v1/notifications/" + oldId)).cookie(employee).content("{\"read\":false}")).andExpect(status().isOk());
         assertThat(inbox("").at("/unread").asInt()).isEqualTo(2);
         // someone else's notification doesn't exist for you
-        mockMvc.perform(write(patch("/api/notifications/" + oldId)).cookie(owner).content("{\"read\":true}")).andExpect(status().isNotFound());
-        mockMvc.perform(write(patch("/api/notifications")).cookie(employee).content("{\"read\":true}")).andExpect(status().isOk())
+        mockMvc.perform(write(patch("/api/v1/notifications/" + oldId)).cookie(owner).content("{\"read\":true}")).andExpect(status().isNotFound());
+        mockMvc.perform(write(patch("/api/v1/notifications")).cookie(employee).content("{\"read\":true}")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.count").value(2));
         assertThat(inbox("").at("/unread").asInt()).isZero();
     }
 
     @Test
     void aPolicyNotificationStaysUntilThePolicyIsAccepted() throws Exception {
-        String policy = json.readTree(mockMvc.perform(write(post("/api/policies")).cookie(owner).content("{\"title\":\"Code of conduct\",\"body\":\"Be kind.\"}"))
+        String policy = json.readTree(mockMvc.perform(write(post("/api/v1/policies")).cookie(owner).content("{\"title\":\"Code of conduct\",\"body\":\"Be kind.\"}"))
                 .andReturn().getResponse().getContentAsString()).at("/data/id").asText();
-        mockMvc.perform(write(put("/api/policies/" + policy + "/status")).cookie(owner).content("{\"status\":\"PUBLISHED\"}")).andExpect(status().isOk());
+        mockMvc.perform(write(put("/api/v1/policies/" + policy + "/status")).cookie(owner).content("{\"status\":\"PUBLISHED\"}")).andExpect(status().isOk());
         note("Leave approved", 1);
 
         JsonNode box = inbox(""); // reachable while the policy waits
         String sticky = null;
         for (JsonNode item : box.at("/items")) if (item.at("/sticky").asBoolean()) sticky = item.at("/id").asText();
         assertThat(sticky).isNotNull();
-        mockMvc.perform(write(patch("/api/notifications/" + sticky)).cookie(employee).content("{\"read\":true}")).andExpect(status().isUnprocessableEntity())
+        mockMvc.perform(write(patch("/api/v1/notifications/" + sticky)).cookie(employee).content("{\"read\":true}")).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value("This stays until you accept the policy."));
-        mockMvc.perform(write(patch("/api/notifications")).cookie(employee).content("{\"read\":true}")).andExpect(jsonPath("$.data.count").value(1));
+        mockMvc.perform(write(patch("/api/v1/notifications")).cookie(employee).content("{\"read\":true}")).andExpect(jsonPath("$.data.count").value(1));
         assertThat(inbox("").at("/unread").asInt()).isEqualTo(1);
 
         // version 2 replaces the notification; accepting it clears it
-        mockMvc.perform(write(put("/api/policies/" + policy)).cookie(owner).content("{\"title\":\"Code of conduct\",\"body\":\"Be kind. Be honest.\"}"))
+        mockMvc.perform(write(put("/api/v1/policies/" + policy)).cookie(owner).content("{\"title\":\"Code of conduct\",\"body\":\"Be kind. Be honest.\"}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(write(put("/api/policies/" + policy + "/status")).cookie(owner).content("{\"status\":\"PUBLISHED\"}")).andExpect(status().isOk());
+        mockMvc.perform(write(put("/api/v1/policies/" + policy + "/status")).cookie(owner).content("{\"status\":\"PUBLISHED\"}")).andExpect(status().isOk());
         assertThat(inbox("?unread=true").at("/total").asInt()).isEqualTo(1);
         assertThat(inbox("?unread=true").at("/items/0/text").asText()).startsWith("Updated policy: Code of conduct");
-        mockMvc.perform(write(post("/api/policies/" + policy + "/acknowledgements")).cookie(employee).content("{\"version\":2}")).andExpect(status().isCreated());
+        mockMvc.perform(write(post("/api/v1/policies/" + policy + "/acknowledgements")).cookie(employee).content("{\"version\":2}")).andExpect(status().isCreated());
         assertThat(inbox("").at("/unread").asInt()).isZero();
     }
 }

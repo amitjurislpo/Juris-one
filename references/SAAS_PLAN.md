@@ -38,7 +38,7 @@ Builds on the Next.js UI + Spring Boot API (`backend/`). Everything below is new
 
 - **Plan:** name, price (₹/period), period in months, max active employees, modules (`JURIS_TRACK` for now), active flag.
 - **Subscription:** business, plan, start date, end date, status (active / expired / cancelled), notes. History is kept; renewing adds a new row.
-- **Access rule:** a business can be used only while a subscription covers today (IST). After that, users can still sign in, but every page shows "Your subscription has ended — contact your administrator" and every business API answers **402 Payment Required** (`SUBSCRIPTION_INACTIVE`) — except sign-in / sign-out, `GET /api/me`, the shell, the subscription page and the owner's employee export. The super admin is never blocked.
+- **Access rule:** a business can be used only while a subscription covers today (IST). After that, users can still sign in, but every page shows "Your subscription has ended — contact your administrator" and every business API answers **402 Payment Required** (`SUBSCRIPTION_INACTIVE`) — except sign-in / sign-out, `GET /api/v1/me`, the shell, the subscription page and the owner's employee export. The super admin is never blocked.
 - **Warnings:** 7 days and 1 day before the end date and on expiry, owners get an email and a dashboard notification.
 - **Employee export:** the owner can download all employee details as Excel (`.xlsx`) at any time (identity numbers masked unless the owner explicitly includes them, which is audited).
 - **Max employees:** adding / enabling an employee beyond the plan limit is refused with a clear message.
@@ -48,7 +48,7 @@ Builds on the Next.js UI + Spring Boot API (`backend/`). Everything below is new
 
 - Plans can include the module `JURIS_TRACK`, **or** the super admin grants it to a business directly: complimentary (free) or paid (price, start and end dates). A grant is independent of the plan.
 - **Included:** the sidebar shows *Juris Track* and `/juris-track` renders a "Coming soon" page.
-- **Not included:** no menu item, and `/juris-track` (page) and `/api/juris-track/**` (API) answer **404**, so it can't be reached by URL either.
+- **Not included:** no menu item, and `/juris-track` (page) and `/api/v1/juris-track/**` (API) answer **404**, so it can't be reached by URL either.
 
 ### 1.4 Policies and acknowledgement
 
@@ -77,11 +77,11 @@ Statuses: `INVITED → IN_PROGRESS → SUBMITTED → CHANGES_REQUESTED → VERIF
 
 ## 2. Security (Spring Security + JWT)
 
-- **Sign in** `POST /api/auth/session` (email + password) → sets two HTTP-only, Secure (in prod), SameSite=Lax cookies, both `Path=/`:
+- **Sign in** `POST /api/v1/auth/session` (email + password) → sets two HTTP-only, Secure (in prod), SameSite=Lax cookies, both `Path=/`:
   - `jo_at` — JWT access token, HS256 signed with `JWT_SECRET` (env, ≥ 32 bytes, no default), **5 min**. Claims: `iss` (`jurisone`), `sub` (employee id), `sid` (session id), `iat`, `exp`, `jti` (S2 adds `bid`, the business).
   - `jo_rt` — opaque refresh token, valid until the session ends (12 h, or `SESSION_TTL_DAYS` with "keep me signed in"); stored as SHA-256 in `refresh_tokens`, **rotated** on every use. Presenting a used one again revokes the whole session (after a 30-second grace window that absorbs the browser's parallel requests).
-- **Silent renewal:** Next.js `proxy.ts` runs before every page, server action and browser `/api` request; when `jo_at` is missing or has < 30 s left it calls `POST /api/auth/session/refresh` and passes the new cookies both to this request and to the browser. An idle user's access token simply expires; the next click renews it while the session is valid.
-- `DELETE /api/auth/session` revokes the session (from the access token, or the refresh cookie when the access token has expired) and clears the cookies.
+- **Silent renewal:** Next.js `proxy.ts` runs before every page, server action and browser `/api` request; when `jo_at` is missing or has < 30 s left it calls `POST /api/v1/auth/session/refresh` and passes the new cookies both to this request and to the browser. An idle user's access token simply expires; the next click renews it while the session is valid.
+- `DELETE /api/v1/auth/session` revokes the session (from the access token, or the refresh cookie when the access token has expired) and clears the cookies.
 - **Immediate revocation:** each request verifies the JWT signature and expiry, then one indexed lookup checks the `sid` session (not revoked / expired) and the employee (portal access, not exited, has a user row). Disabling access, marking exited, a password reset and sign-out revoke sessions → the next request is rejected (401) and refresh fails.
 - **Authorization:** a `JwtAuthenticationFilter` builds the principal with authorities = permission keys (`PERM_pay.view`, …) + `ROLE_SUPER_ADMIN` / `ROLE_OWNER`; controllers use `@PreAuthorize` plus the existing row-level rules in services. Tenant isolation is enforced in the data layer (§3.2), not only in controllers.
 - **CSRF:** cookies are SameSite=Lax and every write still needs the Origin check; CORS allows only `APP_URL`.
@@ -124,15 +124,15 @@ Statuses: `INVITED → IN_PROGRESS → SUBMITTED → CHANGES_REQUESTED → VERIF
 
 | Area | Endpoints |
 |---|---|
-| Platform (super admin) | `GET/POST /api/platform/businesses` · `GET/PUT /api/platform/businesses/{id}` · `PUT /api/platform/businesses/{id}/status` · `GET/POST /api/platform/businesses/{id}/owners` (create sub admin → invite email) · `DELETE /api/platform/businesses/{id}/owners/{userId}` · `GET/POST /api/platform/plans` · `PUT /api/platform/plans/{id}` · `GET/POST /api/platform/businesses/{id}/subscriptions` · `PUT /api/platform/subscriptions/{id}` |
-| Business | `GET/PUT /api/business` (profile, owner) · `GET /api/business/subscription` · `GET /api/business/employees/export` (`.xlsx`, owner) |
-| Modules (super admin) | `GET/POST /api/platform/businesses/{id}/modules` (complimentary / paid grant) · `PUT /api/platform/modules/{id}` · `DELETE /api/platform/modules/{id}` |
-| Auth | `POST /api/auth/session` · `POST /api/auth/session/refresh` · `DELETE /api/auth/session` · password reset / invite as today |
-| Policies | `GET/POST /api/policies` · `GET/PUT/DELETE /api/policies/{id}` · `PUT /api/policies/{id}/status` (publish / archive) · `GET /api/policies/pending` (mine, needing ack) · `POST /api/policies/{id}/acknowledgements` · `GET /api/policies/{id}/acknowledgements` (HR) |
-| Notifications | `GET /api/notifications?unread=` · `PATCH /api/notifications/{id}` (read) · `PATCH /api/notifications` (all read) |
-| Onboarding (HR) | `GET/POST /api/onboardings` · `GET/PUT /api/onboardings/{id}` · `POST /api/onboardings/{id}/invitations` (resend) · `PUT /api/onboardings/{id}/documents/{docId}/status` · `PUT /api/onboardings/{id}/status` (request changes / verified / cancelled) · `POST /api/onboardings/{id}/employee` (add employee) |
-| Onboarding (candidate, token) | `GET /api/onboarding/{token}` · `PUT /api/onboarding/{token}` (save form) · `POST /api/onboarding/{token}/documents` (multipart) · `DELETE /api/onboarding/{token}/documents/{docId}` · `POST /api/onboarding/{token}/submission` |
-| Juris Track | `GET /api/juris-track` (404 without the module) |
+| Platform (super admin) | `GET/POST /api/v1/platform/businesses` · `GET/PUT /api/v1/platform/businesses/{id}` · `PUT /api/v1/platform/businesses/{id}/status` · `GET/POST /api/v1/platform/businesses/{id}/owners` (create sub admin → invite email) · `DELETE /api/v1/platform/businesses/{id}/owners/{userId}` · `GET/POST /api/v1/platform/plans` · `PUT /api/v1/platform/plans/{id}` · `GET/POST /api/v1/platform/businesses/{id}/subscriptions` · `PUT /api/v1/platform/subscriptions/{id}` |
+| Business | `GET/PUT /api/v1/business` (profile, owner) · `GET /api/v1/business/subscription` · `GET /api/v1/business/employees/export` (`.xlsx`, owner) |
+| Modules (super admin) | `GET/POST /api/v1/platform/businesses/{id}/modules` (complimentary / paid grant) · `PUT /api/v1/platform/modules/{id}` · `DELETE /api/v1/platform/modules/{id}` |
+| Auth | `POST /api/v1/auth/session` · `POST /api/v1/auth/session/refresh` · `DELETE /api/v1/auth/session` · password reset / invite as today |
+| Policies | `GET/POST /api/v1/policies` · `GET/PUT/DELETE /api/v1/policies/{id}` · `PUT /api/v1/policies/{id}/status` (publish / archive) · `GET /api/v1/policies/pending` (mine, needing ack) · `POST /api/v1/policies/{id}/acknowledgements` · `GET /api/v1/policies/{id}/acknowledgements` (HR) |
+| Notifications | `GET /api/v1/notifications?unread=` · `PATCH /api/v1/notifications/{id}` (read) · `PATCH /api/v1/notifications` (all read) |
+| Onboarding (HR) | `GET/POST /api/v1/onboardings` · `GET/PUT /api/v1/onboardings/{id}` · `POST /api/v1/onboardings/{id}/invitations` (resend) · `PUT /api/v1/onboardings/{id}/documents/{docId}/status` · `PUT /api/v1/onboardings/{id}/status` (request changes / verified / cancelled) · `POST /api/v1/onboardings/{id}/employee` (add employee) |
+| Onboarding (candidate, token) | `GET /api/v1/onboarding/{token}` · `PUT /api/v1/onboarding/{token}` (save form) · `POST /api/v1/onboarding/{token}/documents` (multipart) · `DELETE /api/v1/onboarding/{token}/documents/{docId}` · `POST /api/v1/onboarding/{token}/submission` |
+| Juris Track | `GET /api/v1/juris-track` (404 without the module) |
 
 ## 5. Frontend (same design system as the prototype)
 

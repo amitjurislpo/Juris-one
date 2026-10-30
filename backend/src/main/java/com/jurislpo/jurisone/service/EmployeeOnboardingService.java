@@ -1,5 +1,7 @@
 package com.jurislpo.jurisone.service;
 
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -184,7 +186,7 @@ public class EmployeeOnboardingService {
         header.put("name", employee.get("full_name"));
         header.put("employeeCode", employee.get("code"));
         Long photoVersion = PhotoService.version(employee.get("photo_updated_at"));
-        header.put("photoUrl", photoVersion == null ? null : "/api/people/" + employeeId + "/photo?v=" + photoVersion);
+        header.put("photoUrl", photoVersion == null ? null : PREFIX + "/people/" + employeeId + "/photo?v=" + photoVersion);
         header.put("department", employee.get("department_name"));
         header.put("designation", employee.get("designation"));
         header.put("location", PeopleRules.locationOfTimeZone((String) employee.get("time_zone")).label());

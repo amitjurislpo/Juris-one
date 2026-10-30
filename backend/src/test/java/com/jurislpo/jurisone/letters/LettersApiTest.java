@@ -100,7 +100,7 @@ class LettersApiTest extends IntegrationTest {
 
     String issue(Cookie cookie, String type, UUID employee, String lastWorkingDate) throws Exception {
         String body = "{\"templateId\":\"" + templateId(type) + "\",\"employeeId\":\"" + employee + "\"" + (lastWorkingDate == null ? "" : ",\"lastWorkingDate\":\"" + lastWorkingDate + "\"") + "}";
-        return json.readTree(mockMvc.perform(write(post("/api/letters")).cookie(cookie).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString())
+        return json.readTree(mockMvc.perform(write(post("/api/v1/letters")).cookie(cookie).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString())
                 .at("/data/id").asText();
     }
 
@@ -119,12 +119,12 @@ class LettersApiTest extends IntegrationTest {
 
         // HR's edit survives a second seeding
         String id = templateId("EXPERIENCE");
-        mockMvc.perform(write(put("/api/letters/templates/" + id)).cookie(hrCookie).content("{\"name\":\"Experience letter\",\"subject\":\"Experience\",\"body\":\"This certifies {{employee.name}} worked here as {{designation}}.\"}"))
+        mockMvc.perform(write(put("/api/v1/letters/templates/" + id)).cookie(hrCookie).content("{\"name\":\"Experience letter\",\"subject\":\"Experience\",\"body\":\"This certifies {{employee.name}} worked here as {{designation}}.\"}"))
                 .andExpect(status().isOk());
         seed(business);
         seed(business);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM letter_templates WHERE business_id = ?", Integer.class, business)).isEqualTo(5);
-        mockMvc.perform(get("/api/letters/templates/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.subject").value("Experience")).andExpect(jsonPath("$.data.version").value(2));
+        mockMvc.perform(get("/api/v1/letters/templates/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.subject").value("Experience")).andExpect(jsonPath("$.data.version").value(2));
 
         // a business made through the setup service gets them too
         String otherSuffix = TestData.letters(6);
@@ -138,33 +138,33 @@ class LettersApiTest extends IntegrationTest {
 
     @Test
     void templatesAreManagedByLetterManagersOnly() throws Exception {
-        mockMvc.perform(get("/api/letters/templates").cookie(emp1)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/letters/templates").cookie(fin)).andExpect(status().isForbidden()); // salary rights alone don't give HR's pages
-        mockMvc.perform(get("/api/letters/templates")).andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/api/letters/templates").cookie(hrCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(5))
+        mockMvc.perform(get("/api/v1/letters/templates").cookie(emp1)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/letters/templates").cookie(fin)).andExpect(status().isForbidden()); // salary rights alone don't give HR's pages
+        mockMvc.perform(get("/api/v1/letters/templates")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/letters/templates").cookie(hrCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(5))
                 .andExpect(jsonPath("$.data[0].body").doesNotExist());
-        mockMvc.perform(get("/api/letters/fields").cookie(hrCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.fields[?(@.name == 'ctc')].salary").value(true));
+        mockMvc.perform(get("/api/v1/letters/fields").cookie(hrCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.fields[?(@.name == 'ctc')].salary").value(true));
 
         String create = "{\"type\":\"EXPERIENCE\",\"name\":\"Short experience note\",\"subject\":\"Experience of {{employee.name}}\",\"body\":\"{{employee.name}} worked at {{business.name}} until {{lastWorkingDate}}.\"}";
-        mockMvc.perform(write(post("/api/letters/templates")).cookie(emp1).content(create)).andExpect(status().isForbidden());
-        String id = json.readTree(mockMvc.perform(write(post("/api/letters/templates")).cookie(hrCookie).content(create)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString())
+        mockMvc.perform(write(post("/api/v1/letters/templates")).cookie(emp1).content(create)).andExpect(status().isForbidden());
+        String id = json.readTree(mockMvc.perform(write(post("/api/v1/letters/templates")).cookie(hrCookie).content(create)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString())
                 .at("/data/id").asText();
-        mockMvc.perform(write(post("/api/letters/templates")).cookie(hrCookie).content(create)).andExpect(status().isConflict());
-        mockMvc.perform(get("/api/letters/templates/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.needsSalary").value(false)).andExpect(jsonPath("$.data.version").value(1));
+        mockMvc.perform(write(post("/api/v1/letters/templates")).cookie(hrCookie).content(create)).andExpect(status().isConflict());
+        mockMvc.perform(get("/api/v1/letters/templates/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.needsSalary").value(false)).andExpect(jsonPath("$.data.version").value(1));
         // unknown merge fields and stray braces are refused, so are a bad type and short text
-        mockMvc.perform(write(post("/api/letters/templates")).cookie(hrCookie).content(create.replace("Short experience note", "Other").replace("{{business.name}}", "{{company}}")))
+        mockMvc.perform(write(post("/api/v1/letters/templates")).cookie(hrCookie).content(create.replace("Short experience note", "Other").replace("{{business.name}}", "{{company}}")))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value(Matchers.containsString("{{company}}")));
-        mockMvc.perform(write(put("/api/letters/templates/" + id)).cookie(hrCookie).content("{\"name\":\"Short experience note\",\"subject\":\"Hi\",\"body\":\"Dear {{employee.name, thanks for everything.\"}"))
+        mockMvc.perform(write(put("/api/v1/letters/templates/" + id)).cookie(hrCookie).content("{\"name\":\"Short experience note\",\"subject\":\"Hi\",\"body\":\"Dear {{employee.name, thanks for everything.\"}"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/letters/templates")).cookie(hrCookie).content(create.replace("EXPERIENCE", "PAYSLIP"))).andExpect(status().isBadRequest());
-        mockMvc.perform(write(post("/api/letters/templates")).cookie(hrCookie).content("{\"type\":\"OFFER\",\"name\":\"Tiny\",\"subject\":\"Tiny\",\"body\":\"x\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/letters/templates")).cookie(hrCookie).content(create.replace("EXPERIENCE", "PAYSLIP"))).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/letters/templates")).cookie(hrCookie).content("{\"type\":\"OFFER\",\"name\":\"Tiny\",\"subject\":\"Tiny\",\"body\":\"x\"}")).andExpect(status().isBadRequest());
         // an edit makes a new version; a template switched off can't be issued
-        mockMvc.perform(write(put("/api/letters/templates/" + id)).cookie(hrCookie).content("{\"name\":\"Short experience note\",\"subject\":\"Experience\",\"body\":\"{{employee.name}} worked at {{business.name}}.\",\"active\":false}"))
+        mockMvc.perform(write(put("/api/v1/letters/templates/" + id)).cookie(hrCookie).content("{\"name\":\"Short experience note\",\"subject\":\"Experience\",\"body\":\"{{employee.name}} worked at {{business.name}}.\",\"active\":false}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/api/letters/templates/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.version").value(2)).andExpect(jsonPath("$.data.active").value(false));
-        mockMvc.perform(write(post("/api/letters")).cookie(hrCookie).content("{\"templateId\":\"" + id + "\",\"employeeId\":\"" + e1 + "\"}")).andExpect(status().isUnprocessableEntity())
+        mockMvc.perform(get("/api/v1/letters/templates/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.version").value(2)).andExpect(jsonPath("$.data.active").value(false));
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(hrCookie).content("{\"templateId\":\"" + id + "\",\"employeeId\":\"" + e1 + "\"}")).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value(Matchers.containsString("switched off")));
-        mockMvc.perform(get("/api/letters/templates/" + UUID.randomUUID()).cookie(hrCookie)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/letters/templates/" + UUID.randomUUID()).cookie(hrCookie)).andExpect(status().isNotFound());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action LIKE 'letter_template.%' AND business_id = ?", Integer.class, business)).isEqualTo(2);
     }
 
@@ -193,53 +193,53 @@ class LettersApiTest extends IntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE employee_id = ? AND text LIKE ?", Integer.class, e1, "%" + row.get("reference_no") + "%")).isEqualTo(1);
         // ...and gets it by email too (with no mail server set up the mail is only logged, and issuing still succeeds)
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ? AND subject LIKE ?", Integer.class, "e1." + suffix + "@example.com", "%" + row.get("reference_no") + "%")).isEqualTo(1);
-        mockMvc.perform(get("/api/letters/mine").cookie(emp1)).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2))
+        mockMvc.perform(get("/api/v1/letters/mine").cookie(emp1)).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].body").doesNotExist()).andExpect(jsonPath("$.data[?(@.id == '" + id + "')].reference").value(row.get("reference_no")));
-        byte[] pdfBytes = mockMvc.perform(get("/api/letters/" + id + "/pdf").cookie(emp1)).andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF))
+        byte[] pdfBytes = mockMvc.perform(get("/api/v1/letters/" + id + "/pdf").cookie(emp1)).andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF))
                 .andReturn().getResponse().getContentAsByteArray();
         assertThat(pdfBytes).isEqualTo((byte[]) row.get("pdf"));
         assertThat(new String(pdfBytes, 0, 4, StandardCharsets.ISO_8859_1)).isEqualTo("%PDF");
-        mockMvc.perform(get("/api/letters/" + id).cookie(emp1)).andExpect(status().isOk()).andExpect(jsonPath("$.data.body").value(text)).andExpect(jsonPath("$.data.bodySha256").value(row.get("body_sha256")));
+        mockMvc.perform(get("/api/v1/letters/" + id).cookie(emp1)).andExpect(status().isOk()).andExpect(jsonPath("$.data.body").value(text)).andExpect(jsonPath("$.data.bodySha256").value(row.get("body_sha256")));
 
         // other employees can't read it; HR can; unknown ids are 404
-        mockMvc.perform(get("/api/letters/mine").cookie(emp2)).andExpect(jsonPath("$.data.length()").value(0));
-        mockMvc.perform(get("/api/letters/" + id).cookie(emp2)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/letters/" + id + "/pdf").cookie(emp2)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/letters/" + id + "/pdf").cookie(hrCookie)).andExpect(status().isOk());
-        mockMvc.perform(get("/api/letters/" + UUID.randomUUID()).cookie(hrCookie)).andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/letters/not-an-id").cookie(hrCookie)).andExpect(status().isBadRequest());
-        mockMvc.perform(get("/api/letters?employeeId=" + e1).cookie(hrCookie)).andExpect(jsonPath("$.data.length()").value(2)).andExpect(jsonPath("$.data[0].canOpen").value(true));
-        mockMvc.perform(get("/api/letters?employeeId=" + e2).cookie(hrCookie)).andExpect(jsonPath("$.data.length()").value(0));
+        mockMvc.perform(get("/api/v1/letters/mine").cookie(emp2)).andExpect(jsonPath("$.data.length()").value(0));
+        mockMvc.perform(get("/api/v1/letters/" + id).cookie(emp2)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/letters/" + id + "/pdf").cookie(emp2)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/letters/" + id + "/pdf").cookie(hrCookie)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/letters/" + UUID.randomUUID()).cookie(hrCookie)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/letters/not-an-id").cookie(hrCookie)).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/letters?employeeId=" + e1).cookie(hrCookie)).andExpect(jsonPath("$.data.length()").value(2)).andExpect(jsonPath("$.data[0].canOpen").value(true));
+        mockMvc.perform(get("/api/v1/letters?employeeId=" + e2).cookie(hrCookie)).andExpect(jsonPath("$.data.length()").value(0));
         // employees can't issue or list
-        mockMvc.perform(write(post("/api/letters")).cookie(emp1).content("{\"templateId\":\"" + templateId("EXPERIENCE") + "\",\"employeeId\":\"" + e1 + "\"}")).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/letters").cookie(emp1)).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(emp1).content("{\"templateId\":\"" + templateId("EXPERIENCE") + "\",\"employeeId\":\"" + e1 + "\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/letters").cookie(emp1)).andExpect(status().isForbidden());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'letter.issue' AND business_id = ?", Integer.class, business)).isEqualTo(2);
     }
 
     @Test
     void aMissingValueIsAnErrorAndConsumesNoReferenceNumber() throws Exception {
         String body = "{\"templateId\":\"" + templateId("EXPERIENCE") + "\",\"employeeId\":\"" + e1 + "\"}";
-        mockMvc.perform(write(post("/api/letters")).cookie(hrCookie).content(body)).andExpect(status().isUnprocessableEntity())
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(hrCookie).content(body)).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value(Matchers.containsString("{{lastWorkingDate}}")));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM issued_letters WHERE business_id = ?", Integer.class, business)).isZero();
         // typing the last working day when issuing fixes it, and the first letter is still number 1
-        mockMvc.perform(write(post("/api/letters")).cookie(hrCookie).content(body.replace("}", ",\"lastWorkingDate\":\"2026-05-15\"}"))).andExpect(status().isCreated())
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(hrCookie).content(body.replace("}", ",\"lastWorkingDate\":\"2026-05-15\"}"))).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.reference").value(Matchers.endsWith("/0001")));
-        mockMvc.perform(write(post("/api/letters")).cookie(hrCookie).content(body.replace("}", ",\"lastWorkingDate\":\"2020-01-01\"}"))).andExpect(status().isUnprocessableEntity())
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(hrCookie).content(body.replace("}", ",\"lastWorkingDate\":\"2020-01-01\"}"))).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value(Matchers.containsString("before the joining date")));
-        mockMvc.perform(write(post("/api/letters")).cookie(hrCookie).content(body.replace("}", ",\"lastWorkingDate\":\"soon\"}"))).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(hrCookie).content(body.replace("}", ",\"lastWorkingDate\":\"soon\"}"))).andExpect(status().isBadRequest());
         // an employee without a department can't get a letter that names it
         jdbc.update("UPDATE employees SET department_id = NULL WHERE id = ?", e1);
-        mockMvc.perform(write(post("/api/letters")).cookie(hrCookie).content(body.replace("}", ",\"lastWorkingDate\":\"2026-05-15\"}"))).andExpect(status().isUnprocessableEntity())
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(hrCookie).content(body.replace("}", ",\"lastWorkingDate\":\"2026-05-15\"}"))).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value(Matchers.containsString("{{department}}")));
-        mockMvc.perform(write(post("/api/letters")).cookie(hrCookie).content("{\"templateId\":\"" + templateId("EXPERIENCE") + "\",\"employeeId\":\"" + UUID.randomUUID() + "\"}")).andExpect(status().isNotFound());
-        mockMvc.perform(write(post("/api/letters")).cookie(hrCookie).content("{\"templateId\":\"nope\",\"employeeId\":\"" + e1 + "\"}")).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(hrCookie).content("{\"templateId\":\"" + templateId("EXPERIENCE") + "\",\"employeeId\":\"" + UUID.randomUUID() + "\"}")).andExpect(status().isNotFound());
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(hrCookie).content("{\"templateId\":\"nope\",\"employeeId\":\"" + e1 + "\"}")).andExpect(status().isBadRequest());
     }
 
     @Test
     void previewsEscapeHtmlAndSaveNothing() throws Exception {
         jdbc.update("UPDATE employees SET full_name = ? WHERE id = ?", "<b>Raj</b> & O'Neil", e1);
-        String url = "/api/letters/previews?templateId=" + templateId("EMPLOYMENT_VERIFICATION") + "&employeeId=" + e1;
+        String url = "/api/v1/letters/previews?templateId=" + templateId("EMPLOYMENT_VERIFICATION") + "&employeeId=" + e1;
         mockMvc.perform(get(url).cookie(hrCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.text").value(Matchers.containsString("<b>Raj</b> & O'Neil")))
                 .andExpect(jsonPath("$.data.html").value(Matchers.containsString("&lt;b&gt;Raj&lt;/b&gt; &amp; O&#39;Neil")))
                 .andExpect(jsonPath("$.data.html").value(Matchers.not(Matchers.containsString("<b>"))));
@@ -247,7 +247,7 @@ class LettersApiTest extends IntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM issued_letters WHERE business_id = ?", Integer.class, business)).isZero();
         // such a name still gets a PDF
         String id = issue(hrCookie, "EMPLOYMENT_VERIFICATION", e1, null);
-        mockMvc.perform(get("/api/letters/" + id + "/pdf").cookie(hrCookie)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/letters/" + id + "/pdf").cookie(hrCookie)).andExpect(status().isOk());
     }
 
     // ───────────────────────── salary letters ─────────────────────────
@@ -257,43 +257,43 @@ class LettersApiTest extends IntegrationTest {
         String offer = templateId("OFFER");
         String body = "{\"templateId\":\"" + offer + "\",\"employeeId\":\"" + e1 + "\"}";
         // HR can't preview or issue the offer letter; Finance alone (struct.manage, no letters.manage) can't use HR's page either
-        mockMvc.perform(get("/api/letters/previews?templateId=" + offer + "&employeeId=" + e1).cookie(hrCookie)).andExpect(status().isForbidden());
-        mockMvc.perform(write(post("/api/letters")).cookie(hrCookie).content(body)).andExpect(status().isForbidden());
-        mockMvc.perform(write(post("/api/letters")).cookie(fin).content(body)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/letters/previews?templateId=" + offer + "&employeeId=" + e1).cookie(hrCookie)).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(hrCookie).content(body)).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(fin).content(body)).andExpect(status().isForbidden());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM issued_letters WHERE business_id = ?", Integer.class, business)).isZero();
 
         // the owner (letters.manage + struct.manage) needs a salary structure for the CTC
-        mockMvc.perform(write(post("/api/letters")).cookie(owner).content(body)).andExpect(status().isUnprocessableEntity())
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(owner).content(body)).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value(Matchers.containsString("no salary structure")));
         addStructure(e1);
-        String id = json.readTree(mockMvc.perform(write(post("/api/letters")).cookie(owner).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString())
+        String id = json.readTree(mockMvc.perform(write(post("/api/v1/letters")).cookie(owner).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString())
                 .at("/data/id").asText();
         Map<String, Object> row = jdbc.queryForMap("SELECT body, needs_salary FROM issued_letters WHERE id = ?::uuid", id);
         assertThat((String) row.get("body")).contains("Rs. 12,00,000").contains("Twelve Lakh");   // (40,000 + 20,000 + 5,000 + 35,000) x 12
         assertThat(row.get("needs_salary")).isEqualTo(true);
 
         // HR sees that it exists, never what it says: not the text, not the PDF
-        mockMvc.perform(get("/api/letters?employeeId=" + e1).cookie(hrCookie)).andExpect(jsonPath("$.data[0].needsSalary").value(true)).andExpect(jsonPath("$.data[0].canOpen").value(false))
+        mockMvc.perform(get("/api/v1/letters?employeeId=" + e1).cookie(hrCookie)).andExpect(jsonPath("$.data[0].needsSalary").value(true)).andExpect(jsonPath("$.data[0].canOpen").value(false))
                 .andExpect(jsonPath("$.data[0].body").doesNotExist());
-        mockMvc.perform(get("/api/letters/" + id).cookie(hrCookie)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/letters/" + id + "/pdf").cookie(hrCookie)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/letters/" + id).cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.body").value(Matchers.containsString("Rs. 12,00,000")));
+        mockMvc.perform(get("/api/v1/letters/" + id).cookie(hrCookie)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/letters/" + id + "/pdf").cookie(hrCookie)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/letters/" + id).cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.body").value(Matchers.containsString("Rs. 12,00,000")));
         // the employee it is addressed to can read it; another employee can't
-        mockMvc.perform(get("/api/letters/" + id + "/pdf").cookie(emp1)).andExpect(status().isOk());
-        mockMvc.perform(get("/api/letters/" + id).cookie(emp2)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/letters/" + id + "/pdf").cookie(emp1)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/letters/" + id).cookie(emp2)).andExpect(status().isForbidden());
     }
 
     @Test
     void aTemplateThatUsesASalaryFieldIsFlaggedWhoeverWritesIt() throws Exception {
         String templateJson = "{\"type\":\"OFFER\",\"name\":\"HR offer\",\"subject\":\"Offer\",\"body\":\"Dear {{employee.name}}, your package is {{ctc}} a year.\"}";
-        String id = json.readTree(mockMvc.perform(write(post("/api/letters/templates")).cookie(hrCookie).content(templateJson)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString())
+        String id = json.readTree(mockMvc.perform(write(post("/api/v1/letters/templates")).cookie(hrCookie).content(templateJson)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString())
                 .at("/data/id").asText();
-        mockMvc.perform(get("/api/letters/templates/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.needsSalary").value(true));
-        mockMvc.perform(write(post("/api/letters")).cookie(hrCookie).content("{\"templateId\":\"" + id + "\",\"employeeId\":\"" + e1 + "\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/letters/templates/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.needsSalary").value(true));
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(hrCookie).content("{\"templateId\":\"" + id + "\",\"employeeId\":\"" + e1 + "\"}")).andExpect(status().isForbidden());
         // taking the field out is the only way to a letter HR can issue
-        mockMvc.perform(write(put("/api/letters/templates/" + id)).cookie(hrCookie).content("{\"name\":\"HR offer\",\"subject\":\"Offer\",\"body\":\"Dear {{employee.name}}, welcome to {{business.name}}.\"}")).andExpect(status().isOk());
-        mockMvc.perform(get("/api/letters/templates/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.needsSalary").value(false));
-        mockMvc.perform(write(post("/api/letters")).cookie(hrCookie).content("{\"templateId\":\"" + id + "\",\"employeeId\":\"" + e1 + "\"}")).andExpect(status().isCreated());
+        mockMvc.perform(write(put("/api/v1/letters/templates/" + id)).cookie(hrCookie).content("{\"name\":\"HR offer\",\"subject\":\"Offer\",\"body\":\"Dear {{employee.name}}, welcome to {{business.name}}.\"}")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/letters/templates/" + id).cookie(hrCookie)).andExpect(jsonPath("$.data.needsSalary").value(false));
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(hrCookie).content("{\"templateId\":\"" + id + "\",\"employeeId\":\"" + e1 + "\"}")).andExpect(status().isCreated());
     }
 
     // ───────────────────────── immutability and tenancy ─────────────────────────
@@ -304,14 +304,14 @@ class LettersApiTest extends IntegrationTest {
         String id = issue(hrCookie, "EXPERIENCE", e1, null);
         String text = jdbc.queryForObject("SELECT body FROM issued_letters WHERE id = ?::uuid", String.class, id);
         // the template, the employee and the business change afterwards; the letter doesn't
-        mockMvc.perform(write(put("/api/letters/templates/" + templateId("EXPERIENCE"))).cookie(hrCookie)
+        mockMvc.perform(write(put("/api/v1/letters/templates/" + templateId("EXPERIENCE"))).cookie(hrCookie)
                 .content("{\"name\":\"Experience letter\",\"subject\":\"Changed\",\"body\":\"Completely different text for {{employee.name}}.\"}")).andExpect(status().isOk());
         jdbc.update("UPDATE employees SET designation = 'Director' WHERE id = ?", e1);
-        mockMvc.perform(get("/api/letters/" + id).cookie(emp1)).andExpect(jsonPath("$.data.body").value(text)).andExpect(jsonPath("$.data.subject").value("Experience certificate"));
+        mockMvc.perform(get("/api/v1/letters/" + id).cookie(emp1)).andExpect(jsonPath("$.data.body").value(text)).andExpect(jsonPath("$.data.subject").value("Experience certificate"));
         assertThatThrownBy(() -> jdbc.update("UPDATE issued_letters SET body = 'x' WHERE id = ?::uuid", id)).isInstanceOf(DataAccessException.class).rootCause().hasMessageContaining("permanent record");
         assertThatThrownBy(() -> jdbc.update("DELETE FROM issued_letters WHERE id = ?::uuid", id)).isInstanceOf(DataAccessException.class).rootCause().hasMessageContaining("permanent record");
-        mockMvc.perform(write(put("/api/letters/" + id)).cookie(hrCookie).content("{}")).andExpect(status().isMethodNotAllowed());
-        mockMvc.perform(write(delete("/api/letters/" + id)).cookie(hrCookie)).andExpect(status().isMethodNotAllowed());
+        mockMvc.perform(write(put("/api/v1/letters/" + id)).cookie(hrCookie).content("{}")).andExpect(status().isMethodNotAllowed());
+        mockMvc.perform(write(delete("/api/v1/letters/" + id)).cookie(hrCookie)).andExpect(status().isMethodNotAllowed());
     }
 
     @Test
@@ -331,17 +331,17 @@ class LettersApiTest extends IntegrationTest {
         seed(other.business());
         Cookie otherHrCookie = signIn("hr2." + otherSuffix + "@example.com");
 
-        mockMvc.perform(get("/api/letters").cookie(otherHrCookie)).andExpect(jsonPath("$.data.length()").value(0));
-        mockMvc.perform(get("/api/letters/" + id).cookie(otherHrCookie)).andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/letters/" + id + "/pdf").cookie(otherHrCookie)).andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/letters/templates/" + foreignTemplate).cookie(otherHrCookie)).andExpect(status().isNotFound());
-        mockMvc.perform(write(post("/api/letters")).cookie(otherHrCookie).content("{\"templateId\":\"" + foreignTemplate + "\",\"employeeId\":\"" + otherEmployee + "\"}")).andExpect(status().isNotFound());
-        mockMvc.perform(write(post("/api/letters")).cookie(otherHrCookie).content("{\"templateId\":\"" + jdbc.queryForObject("SELECT id::text FROM letter_templates WHERE business_id = ? AND type = 'EXPERIENCE'", String.class, other.business())
+        mockMvc.perform(get("/api/v1/letters").cookie(otherHrCookie)).andExpect(jsonPath("$.data.length()").value(0));
+        mockMvc.perform(get("/api/v1/letters/" + id).cookie(otherHrCookie)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/letters/" + id + "/pdf").cookie(otherHrCookie)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/letters/templates/" + foreignTemplate).cookie(otherHrCookie)).andExpect(status().isNotFound());
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(otherHrCookie).content("{\"templateId\":\"" + foreignTemplate + "\",\"employeeId\":\"" + otherEmployee + "\"}")).andExpect(status().isNotFound());
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(otherHrCookie).content("{\"templateId\":\"" + jdbc.queryForObject("SELECT id::text FROM letter_templates WHERE business_id = ? AND type = 'EXPERIENCE'", String.class, other.business())
                 + "\",\"employeeId\":\"" + e1 + "\"}")).andExpect(status().isNotFound());
         // its own first letter is number 1 again
-        mockMvc.perform(write(post("/api/letters")).cookie(otherHrCookie).content("{\"templateId\":\"" + jdbc.queryForObject("SELECT id::text FROM letter_templates WHERE business_id = ? AND type = 'EXPERIENCE'", String.class, other.business())
+        mockMvc.perform(write(post("/api/v1/letters")).cookie(otherHrCookie).content("{\"templateId\":\"" + jdbc.queryForObject("SELECT id::text FROM letter_templates WHERE business_id = ? AND type = 'EXPERIENCE'", String.class, other.business())
                 + "\",\"employeeId\":\"" + otherEmployee + "\"}")).andExpect(status().isCreated()).andExpect(jsonPath("$.data.reference").value(Matchers.endsWith("/0001")));
-        mockMvc.perform(get("/api/letters/templates").cookie(otherHrCookie)).andExpect(jsonPath("$.data.length()").value(5));
+        mockMvc.perform(get("/api/v1/letters/templates").cookie(otherHrCookie)).andExpect(jsonPath("$.data.length()").value(5));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM issued_letters WHERE business_id = ?", Integer.class, business)).isEqualTo(1);
     }
 }

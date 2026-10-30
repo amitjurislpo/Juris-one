@@ -39,24 +39,24 @@ public class AttendanceController {
     }
 
     /** ?month=YYYY-MM&date=YYYY-MM-DD; {@code tracked:false} when attendance isn't tracked for the user. */
-    @GetMapping("/api/attendance/mine")
+    @GetMapping("/api/v1/attendance/mine")
     public ApiResult<MyAttendanceService.Page> me(@RequestParam Map<String, String> queryParams) {
         return ApiResult.success(mine.page(auth.requirePage("attendance"), queryParams));
     }
 
-    @PostMapping("/api/attendance/regularizations")
+    @PostMapping("/api/v1/attendance/regularizations")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> requestRegularization(@RequestBody MyAttendanceService.RegularizationInput body, HttpServletRequest request) {
         return ApiResult.message(mine.requestRegularization(auth.assertPerm("self"), body, RequestMeta.of(request).ipAddress()));
     }
 
-    @DeleteMapping("/api/attendance/regularizations/{id}")
+    @DeleteMapping("/api/v1/attendance/regularizations/{id}")
     public ApiResult<Void> cancelRegularization(@PathVariable String id) {
         return ApiResult.message(mine.cancelRegularization(auth.assertPerm("self"), id));
     }
 
     /** Check in / check out ({@code {"expect": "IN" | "OUT"}} — the button the user saw). */
-    @PostMapping("/api/attendance/punches")
+    @PostMapping("/api/v1/attendance/punches")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> punch(@RequestBody PunchRequest body, HttpServletRequest request) {
         CurrentUser user = auth.assertPerm("self");
@@ -67,13 +67,13 @@ public class AttendanceController {
     }
 
     /** Register page data: daily log (?date=&timeZone=&status=) or monthly grid (?view=month&month=), paged 50. */
-    @GetMapping("/api/attendance/register")
+    @GetMapping("/api/v1/attendance/register")
     public ApiResult<Map<String, Object>> registerPage(@RequestParam Map<String, String> queryParams) {
         return ApiResult.success(register.page(auth.requirePage("register"), queryParams));
     }
 
     /** CSV (att.all) — same filters as the page. */
-    @GetMapping("/api/attendance/register/export")
+    @GetMapping("/api/v1/attendance/register/export")
     public ResponseEntity<byte[]> export(@RequestParam Map<String, String> queryParams) {
         RegisterService.Export exportFile = register.export(auth.assertPerm("att.all"), queryParams);
         return PeopleController.csv(exportFile.filename(), exportFile.body());

@@ -62,35 +62,35 @@ class ProfileAndListApiTest extends IntegrationTest {
 
     @Test
     void theListLeavesOutYourselfAndTheOwner() throws Exception {
-        String hrList = mockMvc.perform(get("/api/people").cookie(hrCookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String hrList = mockMvc.perform(get("/api/v1/people").cookie(hrCookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(hrList).contains("LX-" + suffix, "LE-" + suffix).doesNotContain("LH-" + suffix, "LO-" + suffix);
-        mockMvc.perform(get("/api/people").cookie(hrCookie)).andExpect(jsonPath("$.data.total").value(2)).andExpect(jsonPath("$.data.counts.current").value(2));
-        String ownerList = mockMvc.perform(get("/api/people").cookie(owner)).andReturn().getResponse().getContentAsString();
+        mockMvc.perform(get("/api/v1/people").cookie(hrCookie)).andExpect(jsonPath("$.data.total").value(2)).andExpect(jsonPath("$.data.counts.current").value(2));
+        String ownerList = mockMvc.perform(get("/api/v1/people").cookie(owner)).andReturn().getResponse().getContentAsString();
         assertThat(ownerList).contains("LH-" + suffix, "LX-" + suffix, "LE-" + suffix).doesNotContain("LO-" + suffix);
         // the export has everyone but the owner (including the person exporting)
-        String csv = mockMvc.perform(get("/api/people/export").cookie(hrCookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String csv = mockMvc.perform(get("/api/v1/people/export").cookie(hrCookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(csv).contains("LH-" + suffix, "LX-" + suffix, "LE-" + suffix).doesNotContain("LO-" + suffix);
         // employees have no list at all
-        mockMvc.perform(get("/api/people").cookie(employee)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/people").cookie(employee)).andExpect(status().isForbidden());
     }
 
     @Test
     void everyoneEditsTheirOwnPersonalDetailsButNotEmailOrPhone() throws Exception {
-        mockMvc.perform(get("/api/profile").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.code").value("LE-" + suffix))
+        mockMvc.perform(get("/api/v1/profile").cookie(employee)).andExpect(status().isOk()).andExpect(jsonPath("$.data.code").value("LE-" + suffix))
                 .andExpect(jsonPath("$.data.email").value("emp." + suffix + "@example.com"));
-        mockMvc.perform(write(put("/api/profile")).cookie(employee).content("""
+        mockMvc.perform(write(put("/api/v1/profile")).cookie(employee).content("""
             {"fatherName":"Ravi Kumar","dateOfBirth":"1995-05-20","currentAddress":"5 MG Road, Pune","permanentAddress":"","emergencyName":"Asha",
              "emergencyRelation":"Mother","emergencyPhoneCountry":"+91","emergencyPhone":"98765"}""")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("Emergency contact: India numbers have 10 digits."));
-        mockMvc.perform(write(put("/api/profile")).cookie(employee).content("""
+        mockMvc.perform(write(put("/api/v1/profile")).cookie(employee).content("""
             {"fatherName":"Ravi Kumar","dateOfBirth":"1995-05-20","currentAddress":"5 MG Road, Pune","permanentAddress":"","emergencyName":"Asha",
              "emergencyRelation":"Mother","emergencyPhoneCountry":"+91","emergencyPhone":"98765 43210","email":"hacker@example.com","phone":"9999999999"}"""))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/api/profile").cookie(employee)).andExpect(jsonPath("$.data.fatherName").value("Ravi Kumar"))
+        mockMvc.perform(get("/api/v1/profile").cookie(employee)).andExpect(jsonPath("$.data.fatherName").value("Ravi Kumar"))
                 .andExpect(jsonPath("$.data.currentAddress").value("5 MG Road, Pune")).andExpect(jsonPath("$.data.emergencyPhone").value("9876543210"))
                 .andExpect(jsonPath("$.data.email").value("emp." + suffix + "@example.com"));
         assertThat(jdbc.queryForObject("SELECT address_enc FROM employees WHERE code = ?", String.class, "LE-" + suffix)).doesNotContain("MG Road"); // encrypted
         // the owner has a profile page too
-        mockMvc.perform(get("/api/profile").cookie(owner)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/profile").cookie(owner)).andExpect(status().isOk());
     }
 }
