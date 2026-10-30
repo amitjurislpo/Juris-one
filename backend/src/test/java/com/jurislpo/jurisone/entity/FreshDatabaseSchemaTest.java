@@ -139,7 +139,7 @@ class FreshDatabaseSchemaTest {
     /** Business-owned rows take their business from app.business_id (set on this test's transaction). */
     UUID insideABusiness() {
         UUID businessId = UUID.randomUUID();
-        jdbc.update("INSERT INTO businesses (id, name, code, employee_prefix) VALUES (?, 'Schema test', ?, 'ST')", businessId, "schema-" + businessId);
+        jdbc.update("INSERT INTO businesses (id, name, code, employee_prefix) VALUES (?, 'Schema test', ?, 'ST')", businessId, "schema-" + businessId.toString().substring(0, 8));
         jdbc.queryForObject("SELECT set_config('app.business_id', ?, false)", String.class, businessId.toString());
         return businessId;
     }
