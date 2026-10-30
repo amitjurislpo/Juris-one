@@ -1,6 +1,7 @@
 package com.jurislpo.jurisone.service;
 
 import com.jurislpo.jurisone.common.Check;
+import com.jurislpo.jurisone.config.BusinessSlugs;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.PeopleRules;
@@ -114,13 +115,29 @@ public class BusinessAdminService {
         return code + " " + phone.substring(spaceIndex + 1).replaceAll("\\D", "");
     }
 
+    /** The short name (slug) of a new business: the one given (validated, 409 when taken) or one derived from the name (never taken). */
+    private String newCode(String given, String name) {
+        if (given == null || given.isBlank()) return BusinessSlugs.derive(name, candidate -> !repo.findIdsByCode(candidate, null).isEmpty());
+        String code = given.trim().toLowerCase(Locale.ROOT);
+        String problem = BusinessSlugs.problem(code);
+        if (problem != null) throw new UserException(HttpStatus.BAD_REQUEST, problem);
+        if (!repo.findIdsByCode(code, null).isEmpty()) throw new UserException(HttpStatus.CONFLICT, "Another business already uses the short name \"" + code + "\".");
+        return code;
+    }
+
+    /** The short name never changes after creation (only a super admin's separate, audited rename may): blank or the same is fine, a different one is refused. */
+    private String currentCode(String given, UUID editing) {
+        String current = repo.findCode(editing);
+        if (given != null && !given.isBlank() && !given.trim().toLowerCase(Locale.ROOT).equals(current)) {
+            throw new UserException("The short name is the business's web address and can't be changed.");
+        }
+        return current;
+    }
+
     ValidatedProfile validate(ProfileInput input, UUID editing) {
         if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Business details are missing.");
         String name = Check.trimmed(input.name(), 2, "Enter the business name.", 120, "Keep the name under 120 characters.");
-        String code = input.code() == null || input.code().isBlank() ? BusinessSetupService.slug(name) : input.code().trim().toLowerCase(Locale.ROOT);
-        if (!code.matches("^[a-z0-9]+(-[a-z0-9]+)*$") || code.length() > 40) {
-            throw new UserException(HttpStatus.BAD_REQUEST, "The short name uses lowercase letters, numbers and dashes (up to 40).");
-        }
+        String code = editing == null ? newCode(input.code(), name) : currentCode(input.code(), editing);
         String prefix = input.employeePrefix() == null || input.employeePrefix().isBlank() ? BusinessSetupService.defaultPrefix(name)
                 : input.employeePrefix().trim().toUpperCase(Locale.ROOT);
         if (!prefix.matches("^[A-Z]{2,5}$")) throw new UserException(HttpStatus.BAD_REQUEST, "The employee ID prefix is 2 to 5 letters, e.g. AB.");
@@ -134,8 +151,6 @@ public class BusinessAdminService {
             gstin = gstin.toUpperCase(Locale.ROOT);
             if (!GSTIN.matcher(gstin).matches()) throw new UserException(HttpStatus.BAD_REQUEST, "GSTIN looks like 22AAAAA0000A1Z5.");
         }
-        List<UUID> clash = repo.findIdsByCode(code, editing);
-        if (!clash.isEmpty()) throw new UserException(HttpStatus.CONFLICT, "Another business already uses the short name \"" + code + "\".");
         if (editing != null) {
             String before = repo.findEmployeePrefix(editing);
             long people = repo.countEmployees(editing);
@@ -166,7 +181,7 @@ public class BusinessAdminService {
         UUID id = Check.uuid(idRaw);
         if (!repo.customerBusinessExists(id)) throw new UserException(HttpStatus.NOT_FOUND, "Business not found.");
         ValidatedProfile validated = validate(input, id);
-        repo.updateProfile(id, validated.name(), validated.legalName(), validated.code(), validated.prefix(), validated.timeZone(), validated.contactEmail(), validated.contactPhone(), validated.address(), validated.gstin());
+        repo.updateProfile(id, validated.name(), validated.legalName(), validated.prefix(), validated.timeZone(), validated.contactEmail(), validated.contactPhone(), validated.address(), validated.gstin());
         audit.log(user.id(), "business.update", "business", id.toString(), null, Map.of("name", validated.name(), "code", validated.code()), ipAddress);
     }
 

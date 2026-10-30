@@ -82,12 +82,18 @@ public class BusinessAdminRepository {
         return !jdbc.queryForList("SELECT 1 FROM businesses WHERE id = ? AND NOT is_platform", id).isEmpty();
     }
 
-    public void updateProfile(UUID id, String name, String legalName, String code, String prefix, String timeZone, String contactEmail, String contactPhone,
+    /** The business's short name (slug); null when the business does not exist. */
+    public String findCode(UUID id) {
+        return jdbc.queryForList("SELECT code FROM businesses WHERE id = ?", String.class, id).stream().findFirst().orElse(null);
+    }
+
+    /** Updates the profile; the short name (code) is deliberately not part of it: it never changes after creation. */
+    public void updateProfile(UUID id, String name, String legalName, String prefix, String timeZone, String contactEmail, String contactPhone,
                               String address, String gstin) {
         jdbc.update("""
-            UPDATE businesses SET name = ?, legal_name = ?, code = ?, employee_prefix = ?, time_zone = ?, contact_email = ?, contact_phone = ?, address = ?,
+            UPDATE businesses SET name = ?, legal_name = ?, employee_prefix = ?, time_zone = ?, contact_email = ?, contact_phone = ?, address = ?,
               gstin = ?, updated_at = now() WHERE id = ?""",
-                name, legalName, code, prefix, timeZone, contactEmail, contactPhone, address, gstin, id);
+                name, legalName, prefix, timeZone, contactEmail, contactPhone, address, gstin, id);
     }
 
     /** Sets a customer business's status; returns the number of rows changed. */
