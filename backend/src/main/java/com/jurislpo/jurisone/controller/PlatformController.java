@@ -33,6 +33,8 @@ public class PlatformController {
 
     public record StatusBody(String status) {}
 
+    public record SlugBody(String slug) {}
+
     public record AccessBody(Boolean enabled) {}
 
     public record TemplateKeyBody(String templateKey) {}
@@ -111,6 +113,25 @@ public class PlatformController {
     public ApiResult<Void> status(@PathVariable String id, @RequestBody StatusBody body, HttpServletRequest request) {
         return asPlatform(() -> {
             return ApiResult.message(businesses.setStatus(admin(), id, body.status(), RequestMeta.of(request).ipAddress()));
+        });
+    }
+
+    /** {@code {"slug": "<new short name>"}}: the business's web address changes; the old one is retired forever and everybody of the business is signed out. */
+    @PostMapping("/businesses/{businessId}/slug-changes")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResult<Void> changeSlug(@PathVariable String businessId, @RequestBody SlugBody body, HttpServletRequest request) {
+        return asPlatform(() -> {
+            businesses.changeSlug(admin(), businessId, body.slug(), RequestMeta.of(request).ipAddress());
+            return ApiResult.message("Web address changed; everybody of this business has been signed out");
+        });
+    }
+
+    /** The business's retired web addresses, newest first. */
+    @GetMapping("/businesses/{businessId}/slug-changes")
+    public ApiResult<List<BusinessAdminService.SlugChange>> slugChanges(@PathVariable String businessId) {
+        return asPlatform(() -> {
+            admin();
+            return ApiResult.success(businesses.slugHistory(businessId));
         });
     }
 
