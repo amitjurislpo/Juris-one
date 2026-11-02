@@ -48,9 +48,9 @@ public class ApprovalsRepository {
     }
 
     /** Decides the regularization if it is still pending; returns rows changed (0 = someone else decided first). */
-    public int decideRegularization(UUID id, String status, UUID decidedBy, Timestamp decidedAt, String decidedRole) {
-        return jdbc.update("UPDATE regularization_requests SET status = ?::\"RequestStatus\", decided_by = ?, decided_at = ?, decided_role = ? WHERE id = ? AND status = 'PENDING'",
-                status, decidedBy, decidedAt, decidedRole, id);
+    public int decideRegularization(UUID id, String status, UUID decidedBy, Timestamp decidedAt, String decidedRole, String note) {
+        return jdbc.update("UPDATE regularization_requests SET status = ?::\"RequestStatus\", decided_by = ?, decided_at = ?, decided_role = ?, decision_note = ?, updated_at = now() "
+                + "WHERE id = ? AND status = 'PENDING'", status, decidedBy, decidedAt, decidedRole, note, id);
     }
 
     public void insertRegularizationPunchIn(UUID employeeId, Timestamp timestamp) {

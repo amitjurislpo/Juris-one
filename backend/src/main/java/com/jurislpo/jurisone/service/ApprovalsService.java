@@ -3,6 +3,7 @@ package com.jurislpo.jurisone.service;
 import com.jurislpo.jurisone.service.AttendanceService.AttendanceEmployee;
 import com.jurislpo.jurisone.service.AttendanceService.DayView;
 import com.jurislpo.jurisone.common.ListParams;
+import com.jurislpo.jurisone.exception.ApiException;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.engine.Format;
@@ -107,11 +108,12 @@ public class ApprovalsService {
     }
 
     /**
-     * Regularization goes to HR, Finance and Admin together (`appr.reg`); the first decision is final.
-     * Approval effects: absent → paid day; late → mark removed; missed check-out → punch added; holiday work → comp-off credit.
+     * Regularization goes to Admin and HR together (`appr.reg`); the first decision is final; a rejection needs remarks.
+     * Approval effects: absent → paid day (and the asked-for punches when the day has none); late → mark removed; missed check-out → punch added; holiday work → comp-off credit.
      */
     public String decideRegularization(CurrentUser user, Decision decision, String ipAddress) {
         Parsed parsed = parse(decision);
+        if (!parsed.approve() && (parsed.note() == null || parsed.note().isEmpty())) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the remarks for rejecting this request.");
         List<Map<String, Object>> rows = repo.findRegularizationForDecision(parsed.id());
         if (rows.isEmpty()) throw new UserException("Request not found.");
         Map<String, Object> row = rows.get(0);
@@ -133,11 +135,21 @@ public class ApprovalsService {
         }
         Timestamp proposedIn = (Timestamp) row.get("proposed_in"), proposedOut = (Timestamp) row.get("proposed_out");
         if (parsed.approve() && "MISSED_CHECKOUT".equals(kind) && proposedOut == null) throw new UserException("The request has no check-out time.");
+        boolean addAbsentPunches = false;
+        if (parsed.approve() && "ABSENT".equals(kind) && proposedIn != null && proposedOut != null) {
+            AttendanceEmployee employee = attendanceService.loadAttendanceEmployees("e.id = ?", employeeId).get(0);
+            addAbsentPunches = attendanceService.attendanceFor(List.of(employee), date, date, Instant.now()).get(employee.id()).get(0).punches.isEmpty();
+        }
+        boolean addPunches = addAbsentPunches;
 
         double compOffDays = compOff;
         transactionTemplate.executeWithoutResult(transactionStatus -> {
-            int count = repo.decideRegularization(parsed.id(), parsed.approve() ? "APPROVED" : "DECLINED", user.id(), Timestamp.from(Instant.now()), user.roleName());
-            if (count == 0) throw new UserException("Someone else decided this request a moment ago.");
+            int count = repo.decideRegularization(parsed.id(), parsed.approve() ? "APPROVED" : "DECLINED", user.id(), Timestamp.from(Instant.now()), user.roleName(), parsed.note());
+            if (count == 0) throw new ApiException(HttpStatus.CONFLICT, "REGULARIZATION_ALREADY_DECIDED", "Someone else decided this request a moment ago.");
+            if (addPunches) {
+                repo.insertRegularizationPunchIn(employeeId, proposedIn);
+                repo.insertRegularizationPunchOut(employeeId, proposedOut);
+            }
             if (parsed.approve() && "MISSED_CHECKOUT".equals(kind)) {
                 if (proposedIn != null) {
                     repo.insertRegularizationPunchIn(employeeId, proposedIn);

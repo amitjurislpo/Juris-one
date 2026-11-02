@@ -111,6 +111,7 @@ public class BusinessSetupService {
             repo.insertDepartmentIfMissing(UUID.randomUUID(), department[0], department[1], createdBy);
         }
         repo.seedLetterTemplates(TenantContext.current());
+        repo.seedRegularizationReasons();
         return ids;
     }
 

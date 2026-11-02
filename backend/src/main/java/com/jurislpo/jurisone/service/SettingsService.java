@@ -21,6 +21,8 @@ public class SettingsService {
             "attendance.policy", """
                 {"fullDayHours":8,"halfDayHours":4,"graceMinutes":15,"lateMarksPerHalfDayLop":3,"weeklyOffs":[0,6],
                  "absenceJobBufferMinutes":120,"lockDayOfNextMonth":1,"lockTime":"10:00","shiftTargetHours":9,"trackingStartDate":"2026-04-01"}""",
+            "attendance.regularization", """
+                {"backDateLimitDays":30,"monthlyLimit":30,"attachmentMandatory":false}""",
             "employee.policy", """
                 {"probationMonths":6}""",
             "auth.policy", """
@@ -32,12 +34,15 @@ public class SettingsService {
             "company", """
                 {"name":"Juris Consultants","address":"[Registered office address]"}""");
 
-    public static final List<String> KEYS = List.of("attendance.policy", "employee.policy", "auth.policy", "payroll.policy", "tax.policy", "company");
+    public static final List<String> KEYS = List.of("attendance.policy", "attendance.regularization", "employee.policy", "auth.policy", "payroll.policy", "tax.policy", "company");
 
     public record AuthPolicy(int maxFailedAttempts, int lockMinutes, int ipWindowMinutes, int ipMaxAttempts) {}
 
     public record AttendancePolicy(double fullDayHours, double halfDayHours, int graceMinutes, int lateMarksPerHalfDayLop, List<Integer> weeklyOffs,
                                    int absenceJobBufferMinutes, int lockDayOfNextMonth, String lockTime, double shiftTargetHours, String trackingStartDate) {}
+
+    /** Rules for attendance regularization requests: how far back, how many a month, and whether a file must be attached. */
+    public record RegularizationPolicy(int backDateLimitDays, int monthlyLimit, boolean attachmentMandatory) {}
 
     public record EmployeePolicy(int probationMonths) {}
 
@@ -82,6 +87,7 @@ public class SettingsService {
 
     public AuthPolicy auth() { return get("auth.policy", AuthPolicy.class); }
     public AttendancePolicy attendance() { return get("attendance.policy", AttendancePolicy.class); }
+    public RegularizationPolicy regularization() { return get("attendance.regularization", RegularizationPolicy.class); }
     public EmployeePolicy employee() { return get("employee.policy", EmployeePolicy.class); }
     public PayrollPolicy payroll() { return get("payroll.policy", PayrollPolicy.class); }
     public TaxPolicy tax() { return get("tax.policy", TaxPolicy.class); }
