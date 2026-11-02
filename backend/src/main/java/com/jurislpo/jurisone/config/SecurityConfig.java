@@ -8,6 +8,7 @@ import com.jurislpo.jurisone.security.OriginCheckFilter;
 import com.jurislpo.jurisone.security.PolicyGateFilter;
 import com.jurislpo.jurisone.security.SubscriptionGateFilter;
 import com.jurislpo.jurisone.security.JwtAuthFilter;
+import com.jurislpo.jurisone.security.TenantHostFilter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -43,7 +44,7 @@ public class SecurityConfig {
     static final String[] PUBLIC = {PREFIX + "/auth/session", PREFIX + "/auth/session-refreshes", PREFIX + "/auth/otp-requests"};
 
     @Bean
-    SecurityFilterChain apiFilterChain(HttpSecurity http, JwtAuthFilter sessions, OriginCheckFilter origin, SubscriptionGateFilter subscription,
+    SecurityFilterChain apiFilterChain(HttpSecurity http, JwtAuthFilter sessions, TenantHostFilter tenantHost, OriginCheckFilter origin, SubscriptionGateFilter subscription,
                                OnboardingGateFilter onboardingGate, PolicyGateFilter policyGate, JsonAuthEntryPoint entryPoint,
                                @Value("${jurisone.env:dev}") String environment)
             throws Exception {
@@ -68,6 +69,7 @@ public class SecurityConfig {
             .requestCache(r -> r.disable())
             .addFilterAfter(origin, SecurityContextHolderFilter.class)
             .addFilterBefore(sessions, AnonymousAuthenticationFilter.class)
+            .addFilterBefore(tenantHost, JwtAuthFilter.class) // observe only: which business the host names (flag jurisone.tenant-host.enabled)
             .addFilterAfter(subscription, JwtAuthFilter.class) // needs the business the JWT filter set
             .addFilterAfter(onboardingGate, SubscriptionGateFilter.class) // 402 before 403: a paused business can't finish anything
             .addFilterAfter(policyGate, OnboardingGateFilter.class) // an unfinished onboarding comes before the policies
@@ -84,6 +86,13 @@ public class SecurityConfig {
     @Bean
     FilterRegistrationBean<JwtAuthFilter> sessionFilterRegistration(JwtAuthFilter jwtAuthFilter) {
         FilterRegistrationBean<JwtAuthFilter> registration = new FilterRegistrationBean<>(jwtAuthFilter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
+    FilterRegistrationBean<TenantHostFilter> tenantHostFilterRegistration(TenantHostFilter tenantHostFilter) {
+        FilterRegistrationBean<TenantHostFilter> registration = new FilterRegistrationBean<>(tenantHostFilter);
         registration.setEnabled(false);
         return registration;
     }
