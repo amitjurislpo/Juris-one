@@ -38,6 +38,7 @@ class JurisTrackGatewayApiTest extends IntegrationTest {
 
     @Autowired MockMvc mockMvc;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.jurislpo.jurisone.service.JurisTrackRosterService roster;
     TestData data;
     UUID role;
     static int sequence = 100;
@@ -139,9 +140,50 @@ class JurisTrackGatewayApiTest extends IntegrationTest {
         assertThat(asEmployee.getIssuer()).isEqualTo("http://localhost:3005");
         assertThat(asEmployee.getAudience()).containsExactly("juristrack");
         assertThat(asEmployee.getJWTID()).isNotEqualTo(again.getJWTID());
-        // the one with an active direct report is the JurisTrack manager
-        assertThat(asManager.getStringClaim("trackRole")).isEqualTo("MANAGER");
+        // having an active direct report does not make a JurisTrack manager: only the role does
+        assertThat(asManager.getStringClaim("trackRole")).isEqualTo("EMPLOYEE");
         assertThat(asManager.getClaims()).doesNotContainKey("managerId");
+    }
+
+    @Test
+    void theBusinessOwnerIsAnAdminAndAJurisTrackManagerIsAManagerWithoutReportsAndHoldingTheRoleAsAnAdditionalOneCounts() throws Exception {
+        Person owner = person(data, data.role("jt-owner", "self", "dir", "business.manage", "roles.manage"));
+        Person managerByRole = person(data, data.role("juristrack_manager", "self", "juristrack.manager"));
+        Person plain = person(data, role), plainWithAdditionalRole = person(data, role);
+        jdbc.update("INSERT INTO employee_additional_roles (employee_id, role_id) VALUES (?, ?)", plainWithAdditionalRole.id(), data.role("juristrack_manager"));
+        // an owner who also has reports is still the admin; an employee with no role and no reports stays an employee
+        for (Person person : new Person[] {owner, managerByRole, plain, plainWithAdditionalRole}) mockMvc.perform(get("/api/v1/juris-track/me/time").cookie(person.cookie())).andExpect(status().isOk());
+        assertThat(claimsOf(JurisTrackStub.received().get(0)).getStringClaim("trackRole")).isEqualTo("ADMIN");
+        assertThat(claimsOf(JurisTrackStub.received().get(1)).getStringClaim("trackRole")).isEqualTo("MANAGER");
+        assertThat(claimsOf(JurisTrackStub.received().get(2)).getStringClaim("trackRole")).isEqualTo("EMPLOYEE");
+        assertThat(claimsOf(JurisTrackStub.received().get(3)).getStringClaim("trackRole")).isEqualTo("MANAGER");
+        // the owner's token is the admin's only when the owner permission is held: a super admin of the platform has none
+        jdbc.update("UPDATE employees SET reporting_manager_id = ? WHERE id = ?", owner.id(), plain.id());
+        JurisTrackStub.reset();
+        mockMvc.perform(get("/api/v1/juris-track/me/time").cookie(owner.cookie())).andExpect(status().isOk());
+        assertThat(claimsOf(JurisTrackStub.received().get(0)).getStringClaim("trackRole")).isEqualTo("ADMIN");
+    }
+
+    @Test
+    void aSuspendedBusinessCannotReachJurisTrackAndNothingIsForwardedOrSynced() throws Exception {
+        TestData suspended = new TestData(jdbc).inBusiness("jt-suspended" + (++sequence));
+        grantModule(suspended.business());
+        Person worker = person(suspended, suspended.role("jt-susp-employee", "self", "dir"));
+        mockMvc.perform(get("/api/v1/juris-track/me/time").cookie(worker.cookie())).andExpect(status().isOk());
+        JurisTrackStub.reset();
+
+        jdbc.update("UPDATE businesses SET status = 'SUSPENDED' WHERE id = ?", suspended.business());
+        // the existing session is dead on the very next call, reads and writes alike, and nothing reaches JurisTrack
+        mockMvc.perform(get("/api/v1/juris-track/me/time").cookie(worker.cookie())).andExpect(status().isUnauthorized());
+        mockMvc.perform(write(post("/api/v1/juris-track/me/time-events")).cookie(worker.cookie()).content("{\"type\":\"START\"}")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/juris-track").cookie(worker.cookie())).andExpect(status().isUnauthorized());
+        // no new sign-in either
+        mockMvc.perform(write(post("/api/v1/auth/session")).content("{\"identifier\":\"" + jdbc.queryForObject("SELECT email FROM employees WHERE id = ?", String.class, worker.id()) + "\",\"otp\":\"000000\"}"))
+                .andExpect(status().isUnauthorized());
+        // and the roster of a suspended business is not pushed
+        assertThat(roster.isModuleActive(suspended.business())).isFalse();
+        assertThat(roster.businessesWithModule()).doesNotContain(suspended.business());
+        assertThat(JurisTrackStub.received()).isEmpty();
     }
 
     @Test

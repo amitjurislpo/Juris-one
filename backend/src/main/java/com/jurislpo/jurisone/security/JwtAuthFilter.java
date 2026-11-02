@@ -102,7 +102,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
         }
         UUID roleId = (UUID) row.get("role_id");
-        List<String> perms = sessions.findPermissionKeys(roleId);
+        List<String> perms = sessions.findPermissionKeys(roleId, (UUID) row.get("id"));
         return new CurrentUser(
                 (UUID) row.get("id"), (String) row.get("code"), (String) row.get("full_name"), (String) row.get("email"), (String) row.get("designation"),
                 roleId, (String) row.get("role_key"), (String) row.get("role_name"), java.util.Set.copyOf(new HashSet<>(perms)),

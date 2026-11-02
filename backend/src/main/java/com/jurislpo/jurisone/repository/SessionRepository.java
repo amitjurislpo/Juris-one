@@ -89,7 +89,10 @@ public class SessionRepository {
         jdbc.update("UPDATE sessions SET last_seen_at = now() WHERE id = ?", sessionId);
     }
 
-    public List<String> findPermissionKeys(UUID roleId) {
-        return jdbc.queryForList("SELECT permission_key FROM role_permissions WHERE role_id = ?", String.class, roleId);
+    /** The permissions of the main role plus those of every additional role of the employee. */
+    public List<String> findPermissionKeys(UUID roleId, UUID employeeId) {
+        return jdbc.queryForList("""
+                SELECT permission_key FROM role_permissions WHERE role_id = ?
+                UNION SELECT rp.permission_key FROM role_permissions rp JOIN employee_additional_roles a ON a.role_id = rp.role_id WHERE a.employee_id = ?""", String.class, roleId, employeeId);
     }
 }

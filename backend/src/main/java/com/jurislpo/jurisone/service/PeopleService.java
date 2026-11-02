@@ -287,6 +287,9 @@ public class PeopleService {
         // changing a role is for the admin and HR only: anyone else editing sees just the person's current role
         boolean editingOne = current != null;
         List<RoleRow> allowed = roles.stream().filter(r -> roleAllowed(actor, r, currentRole) && (!editingOne || PeopleRules.canManageStatusAndRole(actor) || r.id().equals(currentRole))).toList();
+        // a role that exists only with a module (the JurisTrack manager) is offered only to a business that has the module
+        java.util.Set<String> activeModules = subscriptions.activeModules(user.businessId());
+        allowed = allowed.stream().filter(r -> r.id().equals(currentRole) || AdditionalRolesService.isOffered(repo.findRolePermissions(r.id()), activeModules)).toList();
         RoleRow employeeRole = roles.stream().filter(r -> "employee".equals(r.key())).findFirst().orElse(null);
         Map<String, String> shiftCodes = repo.findShiftCodesById();
 
@@ -419,6 +422,9 @@ public class PeopleService {
         String currentRole = current == null ? null : current.get("role_id").toString();
         boolean canAssign = PeopleRules.canAssignRole(actor, employeeInput.roleId(), currentRole) || (PeopleRules.isAdmin(actor) && !PeopleRules.isAdminRole((String) role.get("key")));
         if (!canAssign) throw new UserException("You can't give people the " + role.get("name") + " role.");
+        if (!employeeInput.roleId().equals(currentRole) && !AdditionalRolesService.isOffered(repo.findRolePermissions(employeeInput.roleId()), subscriptions.activeModules(user.businessId()))) {
+            throw new UserException("The " + role.get("name") + " role isn't available to this business.");
+        }
         if (current != null && !employeeInput.roleId().equals(currentRole) && !PeopleRules.canManageStatusAndRole(actor)) throw new UserException("Only the admin or HR can change someone's role.");
 
         // Department: must exist; locked to the actor's own department where the rule applies.

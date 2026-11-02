@@ -154,7 +154,7 @@ public class AuthService {
         after.put("userAgent", meta.userAgent());
         audit.log(employee.getId(), "auth.login", "session", employee.getId().toString(), null, after, meta.ipAddress());
 
-        Set<String> perms = new HashSet<>(repo.findPermissionKeys(employee.getRoleId()));
+        Set<String> perms = new HashSet<>(repo.findPermissionKeys(employee.getRoleId(), employee.getId()));
         String target = next != null && next.startsWith("/") && !next.startsWith("//") ? next : Nav.landingFor(perms);
         return new LoginResult(target, issued.cookies());
     }

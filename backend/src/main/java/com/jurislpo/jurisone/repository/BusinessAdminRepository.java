@@ -69,7 +69,7 @@ public class BusinessAdminRepository {
     /** The business's roles (system mode), oldest first, with how many people hold each. */
     public List<BusinessRole> findRoles(UUID businessId) {
         return jdbc.query("""
-            SELECT r.id::text, r.key, r.name, (SELECT count(*) FROM employees e WHERE e.role_id = r.id) AS employees
+            SELECT r.id::text, r.key, r.name, ((SELECT count(*) FROM employees e WHERE e.role_id = r.id) + (SELECT count(*) FROM employee_additional_roles a WHERE a.role_id = r.id)) AS employees
             FROM roles r WHERE r.business_id = ? ORDER BY r.created_at, r.name""",
                 (resultSet, i) -> new BusinessRole(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getLong(4)), businessId);
     }

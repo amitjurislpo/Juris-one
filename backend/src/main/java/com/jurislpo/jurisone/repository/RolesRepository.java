@@ -37,13 +37,13 @@ public class RolesRepository {
 
     /** Current (not exited) employees with the role, by name. */
     public List<Member> findCurrentMembers(UUID roleId) {
-        return jdbc.query("SELECT id, full_name FROM employees WHERE role_id = ? AND status <> 'EXITED' ORDER BY full_name ASC",
-                (resultSet, i) -> new Member(resultSet.getString(1), resultSet.getString(2)), roleId);
+        return jdbc.query("SELECT id, full_name FROM employees WHERE status <> 'EXITED' AND (role_id = ? OR id IN (SELECT employee_id FROM employee_additional_roles WHERE role_id = ?)) ORDER BY full_name ASC",
+                (resultSet, i) -> new Member(resultSet.getString(1), resultSet.getString(2)), roleId, roleId);
     }
 
     /** Employees ever given the role, past ones included. */
     public Integer countEmployees(UUID roleId) {
-        return jdbc.queryForObject("SELECT count(*) FROM employees WHERE role_id = ?", Integer.class, roleId);
+        return jdbc.queryForObject("SELECT (SELECT count(*) FROM employees WHERE role_id = ?) + (SELECT count(*) FROM employee_additional_roles WHERE role_id = ?)", Integer.class, roleId, roleId);
     }
 
     /** id, name and is_locked of a role (empty when not found). */
