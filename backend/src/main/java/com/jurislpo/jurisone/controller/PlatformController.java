@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -89,6 +90,15 @@ public class PlatformController {
             Map<String, String> ids = businesses.create(admin(), body, RequestMeta.of(request).ipAddress());
             rosterTrigger.rosterChanged(com.jurislpo.jurisone.common.Check.uuid(ids.get("id")));
             return ApiResult.success("Business created", ids);
+        });
+    }
+
+    /** Whether a short name can be used for a new business: {@code {slug, available, reason, message, suggestions}} (always 200; see the service). */
+    @GetMapping("/business-slug-availabilities")
+    public ApiResult<BusinessAdminService.SlugAvailability> slugAvailability(@RequestParam(required = false) String slug) {
+        return asPlatform(() -> {
+            admin();
+            return ApiResult.success(businesses.slugAvailability(slug));
         });
     }
 

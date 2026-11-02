@@ -38,11 +38,6 @@ public class BusinessSetupService {
         this.templates = templates;
     }
 
-    /** A safe URL slug from a name (see {@link BusinessSlugs#derive}), without checking whether it is taken. */
-    public static String slug(String name) {
-        return BusinessSlugs.derive(name, candidate -> false);
-    }
-
     /** A default employee ID prefix: initials of the name ("Juris Consultants" → "JC"), 2–5 letters. */
     public static String defaultPrefix(String name) {
         StringBuilder builder = new StringBuilder();
