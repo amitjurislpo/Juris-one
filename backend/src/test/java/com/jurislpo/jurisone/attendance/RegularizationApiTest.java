@@ -341,6 +341,91 @@ class RegularizationApiTest extends IntegrationTest {
         mockMvc.perform(get("/api/v1/attendance/mine/days/31-12-2026").cookie(employee.cookie())).andExpect(status().isBadRequest());
     }
 
+    String absentBody(LocalDate day, LocalDate toDate, UUID employeeId) {
+        return "{\"date\":\"" + day + "\"," + (toDate == null ? "" : "\"toDate\":\"" + toDate + "\",") + (employeeId == null ? "" : "\"employeeId\":\"" + employeeId + "\",")
+                + "\"kind\":\"ABSENT\",\"checkIn\":\"" + day + "T09:30\",\"checkOut\":\"" + day + "T18:30\",\"reasonId\":\"" + forgotCheckOut + "\",\"description\":\"\"}";
+    }
+
+    static String withEmployee(String body, String employeeId) {
+        return body.replace("{", "{\"employeeId\":\"" + employeeId + "\",");
+    }
+
+    @Test
+    void adminOrHrCanRaiseARequestOnBehalfOfAnEmployeeOfTheirOwnBusinessOnly() throws Exception {
+        Person employee = person(employeeRole), colleague = person(employeeRole), hr = person(hrRole), secondHr = person(hrRole);
+        TestData stranger = data.inBusiness("regularization-other");
+        Person outsider = person(stranger, stranger.role("employee", "self", "dir"));
+        LocalDate day = workday(2);
+        punchIn(employee, day, "09:30");
+        String plain = missedCheckOut(day, "19:00", forgotCheckOut, "");
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(colleague.cookie()).content(withEmployee(plain, employee.id().toString()))).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(hr.cookie()).content(withEmployee(plain, outsider.id().toString()))).andExpect(status().isNotFound());
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(hr.cookie()).content(withEmployee(plain, "1' OR '1'='1"))).andExpect(status().isBadRequest());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM regularization_requests WHERE employee_id IN (?, ?)", Integer.class, employee.id(), outsider.id())).isZero();
+
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(hr.cookie()).content(withEmployee(plain, employee.id().toString()))).andExpect(status().isCreated());
+        String id = idOf(employee, day);
+        assertThat(jdbc.queryForObject("SELECT created_by FROM regularization_requests WHERE id = ?::uuid", UUID.class, id)).isEqualTo(hr.id());
+        assertThat(jdbc.queryForObject("SELECT employee_id FROM regularization_requests WHERE id = ?::uuid", UUID.class, id)).isEqualTo(employee.id());
+        assertThat(jdbc.queryForObject("SELECT actor_id FROM audit_log WHERE action = 'regularization.request_on_behalf' AND entity_id = ?", UUID.class, id)).isEqualTo(hr.id());
+        assertThat(jdbc.queryForObject("SELECT after->>'onBehalfOf' FROM audit_log WHERE action = 'regularization.request_on_behalf' AND entity_id = ?", String.class, id)).isEqualTo(employee.id().toString());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE employee_id = ? AND link = '/attendance?tab=regularization'", Integer.class, employee.id())).isEqualTo(1);
+        // the employee sees it in their own list; the one who raised it cannot approve it, another approver can
+        mockMvc.perform(get("/api/v1/attendance/regularizations?scope=mine").cookie(employee.cookie())).andExpect(jsonPath("$.data.total").value(1));
+        mockMvc.perform(write(put("/api/v1/attendance/regularizations/" + id + "/decision")).cookie(hr.cookie()).content("{\"approve\":true}")).andExpect(status().isUnprocessableEntity());
+        mockMvc.perform(write(put("/api/v1/attendance/regularizations/" + id + "/decision")).cookie(secondHr.cookie()).content("{\"approve\":true}")).andExpect(status().isOk());
+        // the form's prefill for another employee: approvers only, same business only
+        mockMvc.perform(get("/api/v1/attendance/mine/days/" + day).queryParam("employeeId", employee.id().toString()).cookie(colleague.cookie())).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/attendance/mine/days/" + day).queryParam("employeeId", outsider.id().toString()).cookie(hr.cookie())).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/attendance/mine/days/" + day).queryParam("employeeId", employee.id().toString()).cookie(hr.cookie())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.checkInLocal").value(day + "T09:30"));
+    }
+
+    @Test
+    void aRangeMakesOneRequestPerDayAndReportsEachDay() throws Exception {
+        Person employee = person(employeeRole);
+        LocalDate first = workday(12), last = first.plusDays(6); // always covers a weekend
+        JsonNode days = json.readTree(mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(employee.cookie()).content(absentBody(first, last, null)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).get("data");
+        assertThat(days.size()).isEqualTo(7);
+        int created = 0;
+        for (JsonNode day : days) if (day.get("ok").asBoolean()) created++;
+        assertThat(created).isBetween(4, 5); // weekdays only (a holiday could remove one more)
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM regularization_requests WHERE employee_id = ?", Integer.class, employee.id())).isEqualTo(created);
+        assertThat(jdbc.queryForObject("SELECT count(DISTINCT batch_id) FROM regularization_requests WHERE employee_id = ? AND batch_id IS NOT NULL", Integer.class, employee.id())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT to_char(proposed_out AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') FROM regularization_requests WHERE employee_id = ? LIMIT 1", String.class, employee.id())).isEqualTo("18:30");
+        // the same range again: every day is now pending, none is created
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(employee.cookie()).content(absentBody(first, last, null))).andExpect(status().isUnprocessableEntity());
+        // a range is limited in length and order
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(employee.cookie()).content(absentBody(first, first.plusDays(40), null))).andExpect(status().isBadRequest());
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(employee.cookie()).content(absentBody(first, first.minusDays(1), null))).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void theMonthlyLimitIsCountedPerDayInARange() throws Exception {
+        Person employee = person(employeeRole);
+        jdbc.update("INSERT INTO settings (business_id, key, value, updated_at) VALUES (?, 'attendance.regularization', '{\"monthlyLimit\":2}', now()) ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value", data.business());
+        LocalDate first = workday(12), last = first.plusDays(6);
+        JsonNode days = json.readTree(mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(employee.cookie()).content(absentBody(first, last, null)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).get("data");
+        boolean limitReported = false;
+        for (JsonNode day : days) if (!day.get("ok").asBoolean() && day.get("message").asText().startsWith("They have") == false && day.get("message").asText().startsWith("You have used all 2")) limitReported = true;
+        // within one month at most two are made, and the days over the limit say so
+        assertThat(jdbc.queryForObject("SELECT max(c) FROM (SELECT count(*) c FROM regularization_requests WHERE employee_id = ? GROUP BY date_trunc('month', work_date)) x", Integer.class, employee.id())).isLessThanOrEqualTo(2);
+        assertThat(limitReported).isTrue();
+    }
+
+    @Test
+    void aRangeOnBehalfNeedsApproverRightsAndCarriesTheSubject() throws Exception {
+        Person employee = person(employeeRole), hr = person(hrRole);
+        LocalDate first = workday(12), last = first.plusDays(2);
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(employee.cookie()).content(absentBody(first, last, hr.id()))).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(hr.cookie()).content(absentBody(first, last, employee.id()))).andExpect(status().isCreated());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM regularization_requests WHERE employee_id = ? AND created_by = ? AND batch_id IS NOT NULL", Integer.class, employee.id(), hr.id()))
+                .isGreaterThanOrEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM regularization_requests WHERE employee_id = ?", Integer.class, hr.id())).isZero();
+    }
+
     @Test
     void financeLostTheRegularizationApproval() {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM role_templates WHERE key IN ('fm', 'fe') AND 'appr.reg' = ANY(permissions)", Integer.class)).isZero();

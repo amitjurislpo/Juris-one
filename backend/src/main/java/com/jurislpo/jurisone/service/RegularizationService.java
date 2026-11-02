@@ -10,6 +10,7 @@ import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.RegularizationRules;
 import com.jurislpo.jurisone.entity.DayStatus;
 import com.jurislpo.jurisone.exception.ApiException;
+import com.jurislpo.jurisone.exception.ForbiddenException;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.repository.RegularizationRepository;
 import com.jurislpo.jurisone.repository.RegularizationRepository.Filter;
@@ -71,7 +72,7 @@ public class RegularizationService {
             new FileType("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ZIP_MAGIC));
 
     /** The body of a new request. {@code checkIn}/{@code checkOut} are local to the employee ({@code yyyy-MM-ddTHH:mm}); {@code proposedIn}/{@code proposedOut} ("HH:mm") and {@code reason} are the old body, still accepted. */
-    public record CreateInput(String date, String kind, String checkIn, String checkOut, String reasonId, String description, String proposedIn, String proposedOut, String reason) {}
+    public record CreateInput(String date, String toDate, String employeeId, String kind, String checkIn, String checkOut, String reasonId, String description, String proposedIn, String proposedOut, String reason) {}
 
     public record Upload(String fileName, byte[] bytes) {}
 
@@ -101,8 +102,13 @@ public class RegularizationService {
     }
 
     private AttendanceEmployee employeeOf(CurrentUser user) {
-        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", user.id());
-        if (employees.isEmpty()) throw new UserException(MyAttendanceService.NOT_TRACKED);
+        return employeeFor(user.id(), false);
+    }
+
+    /** A tracked employee of the signed-in user's business (row-level security hides other businesses); "not found" for anybody else. */
+    private AttendanceEmployee employeeFor(UUID employeeId, boolean onBehalf) {
+        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", employeeId);
+        if (employees.isEmpty()) throw onBehalf ? new UserException(HttpStatus.NOT_FOUND, "Employee not found.") : new UserException(MyAttendanceService.NOT_TRACKED);
         return employees.get(0);
     }
 
@@ -133,7 +139,7 @@ public class RegularizationService {
                              List<String> eligibleKinds, String pendingRequestId) {}
 
     /** What is recorded for one of my days and which kinds of request fit it: prefills the request form. */
-    public DayPreview dayPreview(CurrentUser user, String dateText) {
+    public DayPreview dayPreview(CurrentUser user, String dateText, String employeeIdText) {
         Check.isoDate(dateText, "Invalid date.");
         LocalDate date;
         try {
@@ -141,13 +147,18 @@ public class RegularizationService {
         } catch (java.time.DateTimeException e) {
             throw new UserException(HttpStatus.BAD_REQUEST, "Invalid date.");
         }
-        AttendanceEmployee employee = employeeOf(user);
+        UUID subjectId = user.id();
+        if (!isBlank(employeeIdText) && !Check.uuid(employeeIdText).equals(user.id())) {
+            if (!user.can("appr.reg")) throw new ForbiddenException();
+            subjectId = Check.uuid(employeeIdText);
+        }
+        AttendanceEmployee employee = employeeFor(subjectId, !subjectId.equals(user.id()));
         Instant now = Instant.now();
         DayView day = dayOf(employee, date, now);
         List<String> eligible = new ArrayList<>();
         if (!date.isAfter(attendanceService.currentWorkDate(employee, now))) {
             for (String kind : RegularizationRules.KINDS) {
-                if (kindProblem(kind, day) == null && repo.openStatus(user.id(), date, kind).isEmpty()) eligible.add(kind);
+                if (kindProblem(kind, day) == null && repo.openStatus(subjectId, date, kind).isEmpty()) eligible.add(kind);
             }
         }
         String zone = employee.timeZone();
@@ -159,37 +170,106 @@ public class RegularizationService {
 
     // ───────────────────────── make a request ─────────────────────────
 
-    public String create(CurrentUser user, CreateInput input, Upload upload, String ipAddress) {
+    public static final int MAX_RANGE_DAYS = 31;
+
+    /** One day of a request: whether it was made, and why not. */
+    public record DayOutcome(String date, boolean ok, String message) {}
+
+    public record Created(String message, List<DayOutcome> days) {}
+
+    /** The stored attachment of one call (written once, shared by every day of a range). */
+    private record StoredFile(String name, String mime, int bytes, String path) {}
+
+    /**
+     * Makes a request for the signed-in employee, or (Admin / HR, {@code employeeId}) on behalf of an employee of the same business.
+     * With {@code toDate} it is a range: one request per day sharing a batch id, every day following all the rules on its own (a day
+     * that does not fit is reported and skipped). The times given are for the first day; later days get the same times of day.
+     */
+    public Created create(CurrentUser user, CreateInput input, Upload upload, String ipAddress) {
         if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input");
         Check.isoDate(input.date(), "Invalid string: must match pattern /^\\d{4}-\\d{2}-\\d{2}$/");
-        LocalDate date;
+        LocalDate first = parseDate(input.date());
+        LocalDate last = first;
+        if (!isBlank(input.toDate())) {
+            Check.isoDate(input.toDate(), "Invalid date.");
+            last = parseDate(input.toDate());
+            if (last.isBefore(first)) throw new UserException(HttpStatus.BAD_REQUEST, "The last day can't be before the first day.");
+            if (first.until(last, java.time.temporal.ChronoUnit.DAYS) + 1 > MAX_RANGE_DAYS) throw new UserException(HttpStatus.BAD_REQUEST, "A range can cover at most " + MAX_RANGE_DAYS + " days.");
+        }
+        boolean isRange = !last.equals(first);
+
+        UUID subjectId = user.id();
+        if (!isBlank(input.employeeId())) {
+            UUID requested = Check.uuid(input.employeeId());
+            if (!requested.equals(user.id())) {
+                if (!user.can("appr.reg")) throw new ForbiddenException();
+                subjectId = requested;
+            }
+        }
+        boolean onBehalf = !subjectId.equals(user.id());
+        AttendanceEmployee subject = employeeFor(subjectId, onBehalf);
+
+        StoredFile stored = null;
+        if (upload != null) {
+            String name = safeFileName(upload.fileName());
+            FileType type = checkedType(name, upload.bytes());
+            stored = new StoredFile(name, type.mime(), upload.bytes().length, storeFile(subject.code(), UUID.randomUUID(), name, upload.bytes()));
+        }
+        UUID batchId = isRange ? UUID.randomUUID() : null;
+        List<DayOutcome> outcomes = new ArrayList<>();
+        int created = 0;
+        long dayOffset = 0;
+        for (LocalDate day = first; !day.isAfter(last); day = day.plusDays(1), dayOffset++) {
+            try {
+                createOne(user, subject, onBehalf, day, dayOffset, input, stored, upload != null, batchId, ipAddress);
+                outcomes.add(new DayOutcome(day.toString(), true, "Regularization request added successfully"));
+                created++;
+            } catch (ApiException e) {
+                if (!isRange) {
+                    removeFile(stored == null ? null : stored.path());
+                    throw e;
+                }
+                outcomes.add(new DayOutcome(day.toString(), false, e.getMessage()));
+            }
+        }
+        if (created == 0) {
+            removeFile(stored == null ? null : stored.path());
+            throw new UserException(outcomes.get(0).message());
+        }
+        String message = isRange ? created + " of " + outcomes.size() + " requests added" : "Regularization request added successfully";
+        return new Created(message, outcomes);
+    }
+
+    private static LocalDate parseDate(String text) {
         try {
-            date = LocalDate.parse(input.date());
+            return LocalDate.parse(text);
         } catch (java.time.DateTimeException e) {
             throw new UserException(HttpStatus.BAD_REQUEST, "Invalid date.");
         }
+    }
+
+    private void createOne(CurrentUser actor, AttendanceEmployee employee, boolean onBehalf, LocalDate date, long dayOffset, CreateInput input, StoredFile stored, boolean hasUpload,
+                           UUID batchId, String ipAddress) {
         String kind = Check.oneOf(input.kind(), RegularizationRules.KINDS);
         boolean legacy = isBlank(input.checkIn()) && isBlank(input.checkOut()) && isBlank(input.reasonId());
-
-        AttendanceEmployee employee = employeeOf(user);
+        UUID subjectId = employee.id();
         String zone = employee.timeZone();
         Instant now = Instant.now();
         RegularizationPolicy rules = settings.regularization();
         LocalDate today = attendanceService.currentWorkDate(employee, now);
         if (date.isAfter(today)) throw new UserException("You can't regularize a future day.");
         AttendanceService.ResolvedAttendancePolicy policy = attendanceService.policy();
-        if (attendanceService.isMonthLocked(input.date().substring(0, 7), policy, now)) throw new UserException("Attendance for this month is locked. Ask Finance to adjust LOP in payroll.");
+        if (attendanceService.isMonthLocked(date.toString().substring(0, 7), policy, now)) throw new UserException("Attendance for this month is locked. Ask Finance to adjust LOP in payroll.");
         if (date.isBefore(today.minusDays(rules.backDateLimitDays()))) throw new UserException("Requests can be made up to " + rules.backDateLimitDays() + " days back.");
 
         DayView day = dayOf(employee, date, now);
         String problem = kindProblem(kind, day);
         if (problem != null) throw new UserException(problem);
-        if (repo.hasPending(user.id(), date)) throw alreadyPending(date);
-        List<String> openStatuses = repo.openStatus(user.id(), date, kind);
-        if (!openStatuses.isEmpty()) throw new UserException("This day is already regularized.");
+        if (repo.hasPending(subjectId, date)) throw alreadyPending(date);
+        if (!repo.openStatus(subjectId, date, kind).isEmpty()) throw new UserException("This day is already regularized.");
         YearMonth month = YearMonth.from(date);
-        int used = repo.countUsed(user.id(), month.atDay(1), month.atEndOfMonth());
-        if (used >= rules.monthlyLimit()) throw new UserException("You have used all " + rules.monthlyLimit() + " regularization requests for " + Format.monthLabel(month.toString()) + ".");
+        int used = repo.countUsed(subjectId, month.atDay(1), month.atEndOfMonth());
+        if (used >= rules.monthlyLimit()) throw new UserException((onBehalf ? "They have" : "You have") + " used all " + rules.monthlyLimit() + " regularization requests for " + Format.monthLabel(month.toString()) + ".");
 
         Instant checkIn, checkOut;
         String reasonText;
@@ -207,8 +287,8 @@ public class RegularizationService {
             if ("MISSED_CHECKOUT".equals(kind) && checkOut == null) throw new UserException("Enter the time you actually checked out.");
             if (reasonText.isEmpty()) reasonText = null;
         } else {
-            checkIn = RegularizationRules.parseLocalDateTime(input.checkIn(), zone);
-            checkOut = RegularizationRules.parseLocalDateTime(input.checkOut(), zone);
+            checkIn = shifted(RegularizationRules.parseLocalDateTime(input.checkIn(), zone), input.checkIn(), dayOffset, zone);
+            checkOut = shifted(RegularizationRules.parseLocalDateTime(input.checkOut(), zone), input.checkOut(), dayOffset, zone);
             RegularizationRules.requireTimesFor(kind, checkIn, checkOut);
             RegularizationRules.checkTimes(date, checkIn, checkOut, day.dayResult.firstIn, zone, now);
             if (isBlank(input.reasonId())) throw new UserException(HttpStatus.BAD_REQUEST, "Choose a reason.");
@@ -220,7 +300,7 @@ public class RegularizationService {
             if (reason.requiresDescription() && description.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Add a description for this reason.");
             if (description.isEmpty()) description = null;
             reasonText = description == null ? reason.label() : reason.label() + " — " + description;
-            if (rules.attachmentMandatory() && upload == null) throw new UserException(HttpStatus.BAD_REQUEST, "Attach a supporting document.");
+            if (rules.attachmentMandatory() && !hasUpload) throw new UserException(HttpStatus.BAD_REQUEST, "Attach a supporting document.");
         }
 
         // Old = what is recorded now; New = what the day would be once approved (the server's numbers, never the browser's).
@@ -231,37 +311,40 @@ public class RegularizationService {
         String newStatus = RegularizationRules.newStatus(oldStatus, kind, newMinutes, policy.engine());
 
         UUID id = UUID.randomUUID();
-        String attachmentPath = null, attachmentName = null, attachmentMime = null;
-        Integer attachmentBytes = null;
-        if (upload != null) {
-            attachmentName = safeFileName(upload.fileName());
-            FileType type = checkedType(attachmentName, upload.bytes());
-            attachmentMime = type.mime();
-            attachmentBytes = upload.bytes().length;
-            attachmentPath = storeFile(employee.code(), id, attachmentName, upload.bytes());
-        }
         try {
-            repo.insert(new NewRequest(id, user.id(), date, kind, checkIn, checkOut, reasonText, reasonId, description, day.dayResult.firstIn, day.dayResult.lastOut, day.dayResult.workedMinutes,
-                    oldStatus, newMinutes, newStatus, user.id(), attachmentName, attachmentMime, attachmentBytes, attachmentPath));
+            repo.insert(new NewRequest(id, subjectId, date, kind, checkIn, checkOut, reasonText, reasonId, description, day.dayResult.firstIn, day.dayResult.lastOut, day.dayResult.workedMinutes,
+                    oldStatus, newMinutes, newStatus, actor.id(), stored == null ? null : stored.name(), stored == null ? null : stored.mime(), stored == null ? null : stored.bytes(),
+                    stored == null ? null : stored.path(), batchId));
         } catch (DuplicateKeyException e) {
-            removeFile(attachmentPath);
             throw alreadyPending(date); // two requests for the same day at the same moment: the database index decides
-        } catch (RuntimeException e) {
-            removeFile(attachmentPath);
-            throw e;
         }
         Map<String, Object> view = new LinkedHashMap<>();
-        view.put("date", input.date());
+        view.put("date", date.toString());
         view.put("kind", kind);
         view.put("checkIn", checkIn == null ? null : MyAttendanceService.formatIsoInstant(checkIn));
         view.put("checkOut", checkOut == null ? null : MyAttendanceService.formatIsoInstant(checkOut));
         view.put("reasonId", reasonId == null ? null : reasonId.toString());
-        view.put("hasAttachment", attachmentPath != null);
-        audit.log(user.id(), "regularization.request", "regularization", id.toString(), null, view, ipAddress);
-        for (UUID approverId : repo.approverIds(user.id())) {
-            notifications.notify(approverId, user.name() + " asked to regularize attendance for " + Format.formatDayMonth(date), "/approvals?tab=regularizations");
+        view.put("hasAttachment", stored != null);
+        if (batchId != null) view.put("batchId", batchId.toString());
+        if (onBehalf) {
+            view.put("onBehalfOf", subjectId.toString()); // the actor is the audit row's actor; the employee it was raised for is named here
+            view.put("employeeCode", employee.code());
         }
-        return "Regularization request added successfully";
+        audit.log(actor.id(), onBehalf ? "regularization.request_on_behalf" : "regularization.request", "regularization", id.toString(), null, view, ipAddress);
+        if (onBehalf) {
+            notifications.notify(subjectId, actor.name() + " raised a regularization request for you for " + Format.formatDayMonth(date), "/attendance?tab=regularization");
+        }
+        for (UUID approverId : repo.approverIds(subjectId)) {
+            if (approverId.equals(actor.id())) continue;
+            notifications.notify(approverId, (onBehalf ? actor.name() + " raised a regularization request for " + employee.name() : actor.name() + " asked to regularize attendance")
+                    + " for " + Format.formatDayMonth(date), "/approvals?tab=regularizations");
+        }
+    }
+
+    /** Later days of a range get the first day's times of day (the check-out keeps its day offset, so a night shift still ends next morning). */
+    private static Instant shifted(Instant instant, String text, long dayOffset, String zone) {
+        if (instant == null || dayOffset == 0) return instant;
+        return java.time.LocalDateTime.parse(text).plusDays(dayOffset).atZone(ZoneId.of(zone)).toInstant();
     }
 
     private static ApiException alreadyPending(LocalDate date) {

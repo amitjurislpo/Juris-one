@@ -43,7 +43,7 @@ public class ApprovalsRepository {
     /** The regularization request with the employee's name (empty when not found). */
     public List<Map<String, Object>> findRegularizationForDecision(UUID id) {
         return jdbc.queryForList("""
-            SELECT r.employee_id, r.work_date, r.kind::text AS kind, r.status::text AS status, r.proposed_in, r.proposed_out, e.full_name
+            SELECT r.employee_id, r.created_by, r.work_date, r.kind::text AS kind, r.status::text AS status, r.proposed_in, r.proposed_out, e.full_name
             FROM regularization_requests r JOIN employees e ON e.id = r.employee_id WHERE r.id = ?""", id);
     }
 

@@ -9,6 +9,7 @@ import com.jurislpo.jurisone.repository.RegularizationRepository.Item;
 import com.jurislpo.jurisone.security.Auth;
 import com.jurislpo.jurisone.service.RegularizationService;
 import com.jurislpo.jurisone.service.RegularizationService.CreateInput;
+import com.jurislpo.jurisone.service.RegularizationService.DayOutcome;
 import com.jurislpo.jurisone.service.RegularizationService.DayPreview;
 import com.jurislpo.jurisone.service.RegularizationService.DecisionResult;
 import com.jurislpo.jurisone.service.RegularizationService.FileOut;
@@ -58,20 +59,20 @@ public class RegularizationController {
 
     /** What is recorded for one of my days, and which request types fit it (prefills the form). */
     @GetMapping("/api/v1/attendance/mine/days/{date}")
-    public ApiResult<DayPreview> day(@PathVariable String date) {
-        return ApiResult.success(regularizations.dayPreview(auth.assertPerm("self"), date));
+    public ApiResult<DayPreview> day(@PathVariable String date, @RequestParam(required = false) String employeeId) {
+        return ApiResult.success(regularizations.dayPreview(auth.assertPerm("self", "appr.reg"), date, employeeId));
     }
 
     @PostMapping(value = "/api/v1/attendance/regularizations", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Void> create(@RequestBody CreateInput body, HttpServletRequest request) {
-        return ApiResult.message(regularizations.create(auth.assertPerm("self"), body, null, RequestMeta.of(request).ipAddress()));
+    public ApiResult<List<DayOutcome>> create(@RequestBody CreateInput body, HttpServletRequest request) {
+        return created(regularizations.create(auth.assertPerm("self", "appr.reg"), body, null, RequestMeta.of(request).ipAddress()));
     }
 
     /** The same with one attachment: parts "request" (the JSON body) and "file". */
     @PostMapping(value = "/api/v1/attendance/regularizations", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Void> createWithAttachment(@RequestParam("request") String requestJson, @RequestParam(value = "file", required = false) MultipartFile file, HttpServletRequest request)
+    public ApiResult<List<DayOutcome>> createWithAttachment(@RequestParam("request") String requestJson, @RequestParam(value = "file", required = false) MultipartFile file, HttpServletRequest request)
             throws IOException {
         CreateInput body;
         try {
@@ -80,7 +81,11 @@ public class RegularizationController {
             throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input");
         }
         Upload upload = file == null || file.isEmpty() ? null : new Upload(file.getOriginalFilename(), file.getBytes());
-        return ApiResult.message(regularizations.create(auth.assertPerm("self"), body, upload, RequestMeta.of(request).ipAddress()));
+        return created(regularizations.create(auth.assertPerm("self", "appr.reg"), body, upload, RequestMeta.of(request).ipAddress()));
+    }
+
+    private static ApiResult<List<DayOutcome>> created(RegularizationService.Created created) {
+        return ApiResult.success(created.message(), created.days());
     }
 
     /** ?scope=mine|all&status=&month=YYYY-MM&search=&departmentId=&employeeId=&page=; scope=all needs appr.reg. */

@@ -118,7 +118,7 @@ public class ApprovalsService {
         if (rows.isEmpty()) throw new UserException("Request not found.");
         Map<String, Object> row = rows.get(0);
         UUID employeeId = (UUID) row.get("employee_id");
-        if (employeeId.equals(user.id())) throw new UserException("You can't decide your own request.");
+        if (employeeId.equals(user.id()) || user.id().equals(row.get("created_by"))) throw new UserException("You can't decide your own request.");
         if (!"PENDING".equals(row.get("status"))) throw new UserException("This request was already decided.");
         LocalDate date = ((Date) row.get("work_date")).toLocalDate();
         String kind = (String) row.get("kind");

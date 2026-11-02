@@ -33,7 +33,7 @@ public class RegularizationRepository {
 
     public record NewRequest(UUID id, UUID employeeId, LocalDate workDate, String kind, Instant checkIn, Instant checkOut, String reasonText, UUID reasonId, String description,
                              Instant oldCheckIn, Instant oldCheckOut, Integer oldMinutes, String oldStatus, Integer newMinutes, String newStatus, UUID createdBy,
-                             String attachmentName, String attachmentMime, Integer attachmentBytes, String attachmentPath) {}
+                             String attachmentName, String attachmentMime, Integer attachmentBytes, String attachmentPath, UUID batchId) {}
 
     /** Filters of the list; every value is bound as a parameter. Null = no filter. */
     public record Filter(UUID employeeId, String status, LocalDate from, LocalDate to, String search, UUID departmentId) {}
@@ -95,11 +95,11 @@ public class RegularizationRepository {
     public void insert(NewRequest request) {
         jdbc.update("""
             INSERT INTO regularization_requests (id, employee_id, work_date, kind, proposed_in, proposed_out, reason, status, reason_id, description,
-                old_check_in, old_check_out, old_minutes, old_status, new_minutes, new_status, created_by, attachment_name, attachment_mime, attachment_bytes, attachment_path, created_at, updated_at)
-            VALUES (?, ?, ?, ?::"RegularizationKind", ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())""",
+                old_check_in, old_check_out, old_minutes, old_status, new_minutes, new_status, created_by, attachment_name, attachment_mime, attachment_bytes, attachment_path, batch_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?::"RegularizationKind", ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())""",
                 request.id(), request.employeeId(), Date.valueOf(request.workDate()), request.kind(), ts(request.checkIn()), ts(request.checkOut()), request.reasonText(), request.reasonId(),
                 request.description(), ts(request.oldCheckIn()), ts(request.oldCheckOut()), request.oldMinutes(), request.oldStatus(), request.newMinutes(), request.newStatus(), request.createdBy(),
-                request.attachmentName(), request.attachmentMime(), request.attachmentBytes(), request.attachmentPath());
+                request.attachmentName(), request.attachmentMime(), request.attachmentBytes(), request.attachmentPath(), request.batchId());
     }
 
     /** Is there already a pending request for this employee and day? */
