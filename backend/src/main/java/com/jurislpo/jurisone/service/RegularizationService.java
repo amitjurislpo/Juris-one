@@ -219,9 +219,10 @@ public class RegularizationService {
         List<DayOutcome> outcomes = new ArrayList<>();
         int created = 0;
         long dayOffset = 0;
+        List<LocalDate> waiting = new ArrayList<>(); // days now waiting for a decision (not auto-approved): the approvers get ONE email for them
         for (LocalDate day = first; !day.isAfter(last); day = day.plusDays(1), dayOffset++) {
             try {
-                createOne(user, subject, onBehalf, day, dayOffset, input, stored, upload != null, batchId, ipAddress);
+                if (createOne(user, subject, onBehalf, day, dayOffset, input, stored, upload != null, batchId, ipAddress)) waiting.add(day);
                 outcomes.add(new DayOutcome(day.toString(), true, "Regularization request added successfully"));
                 created++;
             } catch (ApiException e) {
@@ -236,6 +237,7 @@ public class RegularizationService {
             removeFile(stored == null ? null : stored.path());
             throw new UserException(outcomes.get(0).message());
         }
+        emailApprovers(user, subject, onBehalf, waiting);
         String message = isRange ? created + " of " + outcomes.size() + " requests added" : "Regularization request added successfully";
         return new Created(message, outcomes);
     }
@@ -248,7 +250,19 @@ public class RegularizationService {
         }
     }
 
-    private void createOne(CurrentUser actor, AttendanceEmployee employee, boolean onBehalf, LocalDate date, long dayOffset, CreateInput input, StoredFile stored, boolean hasUpload,
+    /** One email to every Admin / HR approver for the request (or the whole range) just raised; the bell notification is sent per day. */
+    private void emailApprovers(CurrentUser actor, AttendanceEmployee employee, boolean onBehalf, List<LocalDate> days) {
+        if (days.isEmpty()) return;
+        String span = days.size() == 1 ? Format.formatDayMonth(days.get(0)) : Format.formatDayMonth(days.get(0)) + " to " + Format.formatDayMonth(days.get(days.size() - 1)) + " (" + days.size() + " days)";
+        String who = onBehalf ? actor.name() + " raised a regularization request for " + employee.name() : employee.name() + " asked to regularize attendance";
+        for (UUID approverId : repo.approverIds(employee.id())) {
+            if (approverId.equals(actor.id())) continue;
+            notifications.emailEmployee(approverId, name -> MailTemplates.regularizationRequested(name, who, span));
+        }
+    }
+
+    /** Returns true when the new request is waiting for a decision (false when auto-approve decided it at once). */
+    private boolean createOne(CurrentUser actor, AttendanceEmployee employee, boolean onBehalf, LocalDate date, long dayOffset, CreateInput input, StoredFile stored, boolean hasUpload,
                            UUID batchId, String ipAddress) {
         String kind = Check.oneOf(input.kind(), RegularizationRules.KINDS);
         boolean legacy = isBlank(input.checkIn()) && isBlank(input.checkOut()) && isBlank(input.reasonId());
@@ -334,11 +348,22 @@ public class RegularizationService {
         if (onBehalf) {
             notifications.notify(subjectId, actor.name() + " raised a regularization request for you for " + Format.formatDayMonth(date), "/attendance?tab=regularization");
         }
+        if (onBehalf && rules.autoApprove() && actor.can("appr.reg")) {
+            // Auto-approve is on and an approver raised this for an employee: approve it now, as the approver. If the approval is refused (for example a
+            // rule changed a moment ago) the request simply stays pending for a normal decision.
+            try {
+                approvals.decideRegularization(actor, new ApprovalsService.Decision(id.toString(), true, "Auto-approved: raised by " + actor.name() + " for the employee"), ipAddress, true);
+                return false;
+            } catch (ApiException e) {
+                // stays pending
+            }
+        }
         for (UUID approverId : repo.approverIds(subjectId)) {
             if (approverId.equals(actor.id())) continue;
             notifications.notify(approverId, (onBehalf ? actor.name() + " raised a regularization request for " + employee.name() : actor.name() + " asked to regularize attendance")
                     + " for " + Format.formatDayMonth(date), "/approvals?tab=regularizations");
         }
+        return true;
     }
 
     /** Later days of a range get the first day's times of day (the check-out keeps its day offset, so a night shift still ends next morning). */
@@ -467,6 +492,7 @@ public class RegularizationService {
         out.put("backDateLimitDays", rules.backDateLimitDays());
         out.put("monthlyLimit", rules.monthlyLimit());
         out.put("attachmentMandatory", rules.attachmentMandatory());
+        out.put("autoApprove", rules.autoApprove());
         out.put("maxAttachmentMb", MAX_ATTACHMENT_MB);
         out.put("month", month.toString());
         out.put("usedThisMonth", used);

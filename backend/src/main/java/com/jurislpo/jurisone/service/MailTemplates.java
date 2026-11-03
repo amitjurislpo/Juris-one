@@ -45,6 +45,15 @@ public final class MailTemplates {
                         + (hasNote ? "<p style=\"color:#5D5F6D\">Note: " + escapeHtml(note) + "</p>" : "")));
     }
 
+    /** An approver is told that a regularization request is waiting ({@code who} is a sentence such as "Asha Rao asked to regularize attendance"). */
+    public static Content regularizationRequested(String name, String who, String span) {
+        return new Content(
+                "Regularization request waiting for your decision",
+                "Hi " + name + ",\n\n" + who + " for " + span + ". Open Approvals in JurisOne to approve or reject it.",
+                shell("Regularization request", "<p>Hi " + escapeHtml(name) + ", " + escapeHtml(who) + " for <b>" + escapeHtml(span) + "</b>.</p>"
+                        + "<p style=\"color:#5D5F6D\">Open Approvals in JurisOne to approve or reject it.</p>"));
+    }
+
     /** An HR letter was issued to the employee; the PDF is attached and also lives under My letters. */
     public static Content letter(String name, String business, String subject, String reference, String link) {
         return new Content(
