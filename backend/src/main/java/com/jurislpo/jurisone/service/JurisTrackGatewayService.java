@@ -8,6 +8,7 @@ import com.jurislpo.jurisone.common.RequestMeta;
 import com.jurislpo.jurisone.config.JurisTrackProperties;
 import com.jurislpo.jurisone.engine.JurisTrackShifts;
 import com.jurislpo.jurisone.engine.Nav;
+import com.jurislpo.jurisone.engine.Permissions;
 import com.jurislpo.jurisone.exception.ApiException;
 import com.jurislpo.jurisone.security.AuditTrail;
 import com.jurislpo.jurisone.security.CurrentUser;
@@ -207,7 +208,7 @@ public class JurisTrackGatewayService {
     }
 
     /**
-     * The claims about the signed-in employee. Track role: MANAGER when the employee has at least one active direct report, else EMPLOYEE.
+     * The claims about the signed-in employee. Track role: see {@link JurisTrackTokenIssuer.TrackRole#of}.
      * The manager is the employee's assigned reporting manager in JurisOne.
      * The shift code is the employee's JurisOne shift as JurisTrack knows it (see {@link JurisTrackShifts#trackCode}), null without a shift.
      */
@@ -218,7 +219,7 @@ public class JurisTrackGatewayService {
                 resultSet -> {
                     resultSet.next();
                     return new JurisTrackTokenIssuer.Subject(user.id(), user.email(), user.name(), user.businessId(), resultSet.getString("business_name"),
-                            (UUID) resultSet.getObject("reporting_manager_id"), user.hasReports() ? JurisTrackTokenIssuer.TrackRole.MANAGER : JurisTrackTokenIssuer.TrackRole.EMPLOYEE,
+                            (UUID) resultSet.getObject("reporting_manager_id"), JurisTrackTokenIssuer.TrackRole.of(user.perms().contains(Permissions.BUSINESS_MANAGE), user.perms().contains(Permissions.JURISTRACK_MANAGER)),
                             resultSet.getString("shift_code") == null ? null
                                     : JurisTrackShifts.trackCode(resultSet.getString("shift_code"), resultSet.getString("shift_region"), resultSet.getString("time_zone")));
                 }, user.id());

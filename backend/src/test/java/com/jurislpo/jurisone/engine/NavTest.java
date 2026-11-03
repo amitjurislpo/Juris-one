@@ -27,7 +27,7 @@ class NavTest {
         ADMIN = Set.copyOf(permissions);
     }
     static final Set<String> HR_MANAGER = set("self", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "holidays.manage");
-    static final Set<String> FIN_EXEC = set("self", "dir", "appr.reg", "pay.view", "tax.view", "proofs.verify");
+    static final Set<String> FIN_EXEC = set("self", "dir", "pay.view", "tax.view", "proofs.verify");
     static final Set<String> EMPLOYEE = set("self", "dir");
 
     @Test
@@ -61,10 +61,11 @@ class NavTest {
     }
 
     @Test
-    @DisplayName("lets Finance Executive approve regularizations but not leave")
+    @DisplayName("keeps Finance Executive out of approvals (Admin and HR approve regularizations)")
     void finExec() {
         List<String> visibleIds = visible(FIN_EXEC, false);
-        assertThat(visibleIds).contains("approvals", "payroll");
+        assertThat(visibleIds).contains("payroll");
+        assertThat(visibleIds).doesNotContain("approvals");
         assertThat(visibleIds).doesNotContain("register");
     }
 

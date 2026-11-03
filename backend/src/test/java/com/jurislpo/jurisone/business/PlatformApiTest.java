@@ -71,10 +71,11 @@ class PlatformApiTest extends IntegrationTest {
         String ownerEmail = "owner." + suffix + "@acme.test";
         UUID owner = TenantContext.call(business, () -> setup.addOwner(new BusinessSetupService.NewOwner("Asha Owner", ownerEmail, null), null));
 
-        assertThat(jdbc.queryForObject("SELECT code FROM employees WHERE id = ?", String.class, owner)).isEqualTo("AA-001");
+        assertThat(jdbc.queryForObject("SELECT code FROM employees WHERE id = ?", String.class, owner)).isEqualTo("AA01");
         assertThat(jdbc.queryForList("SELECT key FROM roles WHERE business_id = ? ORDER BY key", String.class, business))
                 .containsExactly("employee", "fe", "fm", "hre", "hrm", "owner");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM settings WHERE business_id = ?", Integer.class, business)).isEqualTo(6);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM settings WHERE business_id = ?", Integer.class, business)).isEqualTo(7);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM regularization_reasons WHERE business_id = ?", Integer.class, business)).isEqualTo(5);
         assertThat(jdbc.queryForList("SELECT name FROM departments WHERE business_id = ? ORDER BY name", String.class, business))
                 .containsExactly("Finance", "Human Resources");
 
@@ -131,11 +132,11 @@ class PlatformApiTest extends IntegrationTest {
         UUID hrDept = jdbc.queryForObject("SELECT id FROM departments WHERE business_id = ? AND name = 'Human Resources'", UUID.class, company);
         UUID hrRole = jdbc.queryForObject("SELECT id FROM roles WHERE business_id = ? AND key = 'hrm'", UUID.class, company);
         String body = """
-            {"firstName":"Kiran","lastName":"Rao","fatherName":"M Rao","email":"kiran.%s@jurisone.test","phoneCountry":"+91","phone":"9876501234","location":"",
+            {"firstName":"Kiran","lastName":"Rao","fatherName":"M Rao","email":"kiran.%s@jurisone.test","phoneCountry":"+91","paymentType":"BANK_TRANSFER","phone":"9876501234","location":"",
              "joiningOffice":"Head office","pan":"","aadhaar":"","uan":"","address":"","designation":"HR Manager","departmentId":"%s","managerId":"%s",
              "dateOfJoining":"2026-10-01","shift":"IN_DAY","roleId":"%s"}""".formatted(TestData.letters(5), hrDept, superAdminId, hrRole);
         String created = mockMvc.perform(write(post("/api/v1/people")).cookie(cookie).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
-        assertThat(created).contains("JO-");
+        assertThat(created).containsPattern("JO[0-9]+");
         String people = mockMvc.perform(get("/api/v1/people").cookie(cookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(people).contains("Kiran Rao").doesNotContain(customerEmp.toString()).doesNotContain(email);
         // and a customer's admin can't reach them

@@ -126,8 +126,8 @@ class AttendanceApiTest extends IntegrationTest {
         if (!day.isBefore(today.minusDays(1))) return; // too early in the month for a finished working day
         String body = "{\"date\":\"" + day + "\",\"kind\":\"ABSENT\",\"proposedIn\":\"\",\"proposedOut\":\"\",\"reason\":\"was at client\"}";
         mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(person.cookie()).content(body))
-                .andExpect(status().isCreated()).andExpect(jsonPath("$.message").value("Regularization sent — HR, Finance or Admin can approve it"));
-        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(person.cookie()).content(body)).andExpect(jsonPath("$.detail").value("You already have a pending request for this day."));
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.message").value("Regularization request added successfully"));
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(person.cookie()).content(body)).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("REGULARIZATION_ALREADY_PENDING"));
         mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(person.cookie())
                 .content("{\"date\":\"" + day + "\",\"kind\":\"LATE_CHECKIN\",\"proposedIn\":\"\",\"proposedOut\":\"\",\"reason\":\"\"}"))
                 .andExpect(jsonPath("$.detail").value("There's no late mark on this day."));

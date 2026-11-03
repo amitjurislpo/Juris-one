@@ -36,7 +36,7 @@ class PayrollTaxTest {
     static final Structure JC074 = new Structure(7_500_000, 3_000_000, 750_000, 3_750_000); // ₹1,50,000 / month
 
     @Nested
-    @DisplayName("golden case — JC-074 Amit Jaspal, September 2026 (REQUIREMENTS §7)")
+    @DisplayName("golden case — JC074 Amit Jaspal, September 2026 (REQUIREMENTS §7)")
     class Golden {
         @Test
         @DisplayName("joined 8 Sep with 1 LOP → 22 of 30 paid days")

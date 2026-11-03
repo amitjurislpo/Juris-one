@@ -80,6 +80,16 @@ public class BusinessSetupRepository {
         jdbc.query("SELECT jurisone_seed_letter_templates(?)", resultSet -> {}, businessId);
     }
 
+    /** The default regularization reasons of the current business (nothing happens when it already has some). */
+    public void seedRegularizationReasons() {
+        jdbc.update("""
+            INSERT INTO regularization_reasons (id, label, requires_description, sort_order)
+            SELECT gen_random_uuid(), v.label, v.requires_description, v.sort_order
+            FROM (VALUES ('Forgot to check-in', false, 1), ('Forgot to check-out', false, 2), ('System / biometric issue', false, 3), ('Client visit', false, 4), ('Other', true, 5))
+                 AS v(label, requires_description, sort_order)
+            WHERE NOT EXISTS (SELECT 1 FROM regularization_reasons)""");
+    }
+
     public void insertDepartmentIfMissing(UUID id, String name, String description, UUID createdBy) {
         jdbc.update("INSERT INTO departments (id, name, description, created_by) VALUES (?, ?, ?, ?) ON CONFLICT (business_id, name) DO NOTHING",
                 id, name, description, createdBy);
@@ -100,10 +110,16 @@ public class BusinessSetupRepository {
         jdbc.execute("SELECT pg_advisory_xact_lock(74201, hashtext(jurisone_tenant_id()::text))");
     }
 
-    /** The highest number among employee codes {@code <prefix>-<n>}, or null when there is none. */
+    /** How many digits the current business pads its employee codes to. */
+    public int findCodeDigits() {
+        Integer digits = jdbc.queryForObject("SELECT code_digits FROM businesses WHERE id = jurisone_tenant_id()", Integer.class);
+        return digits == null ? 2 : digits;
+    }
+
+    /** The highest number among employee codes {@code <prefix><n>}, or null when there is none. */
     public Integer findMaxCodeNumber(String prefix) {
         return jdbc.queryForObject("SELECT max(substring(code from ?)::int) FROM employees WHERE code ~ ?", Integer.class,
-                prefix.length() + 2, "^" + prefix + "-[0-9]+$");
+                prefix.length() + 1, com.jurislpo.jurisone.engine.EmployeeCodes.seriesPattern(prefix));
     }
 
     /** Inserts an ACTIVE employee with portal access. */

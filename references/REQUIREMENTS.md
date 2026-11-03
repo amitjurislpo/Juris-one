@@ -85,8 +85,8 @@ The super admin keeps a catalogue of **role templates** (Platform → role templ
 | **Admin** | Everything **except `self`**: no attendance, leave or payslip of their own | All roles |
 | **HR Manager** | self, dir, att.all, appr.leave, appr.reg, people.view, people.add, access.toggle, dept.manage, holidays.manage, projects.create | HR Executive, Employee |
 | **HR Executive** | self, dir, att.all, appr.leave, appr.reg, people.view | none |
-| **Finance Manager** | self, dir, appr.reg, people.view, people.add, access.toggle, dept.manage, pay.view, pay.close, struct.manage, tax.view, proofs.verify | Finance Executive (into **Finance dept only**) |
-| **Finance Executive** | self, dir, appr.reg, pay.view, tax.view, proofs.verify (**cannot close payroll**) | none |
+| **Finance Manager** | self, dir, people.view, people.add, access.toggle, dept.manage, pay.view, pay.close, struct.manage, tax.view, proofs.verify | Finance Executive (into **Finance dept only**) |
+| **Finance Executive** | self, dir, pay.view, tax.view, proofs.verify (**cannot close payroll**) | none |
 | **Employee** | self, dir | none |
 
 `tasks.manage` is on the Owner (Admin) template only; `projects.create` on the Owner and HR Manager templates (Finance Manager and the other roles do not create projects, but anyone can be made a project owner).
@@ -154,9 +154,15 @@ The super admin keeps a catalogue of **role templates** (Platform → role templ
    - shift: India Night 7:30 PM–4:30 AM IST, India Day 9:30 AM–6:30 PM IST, US Day 9:00 AM–6:00 PM local
    - role: only from the creator's assignable roles. A Finance Manager's department is locked to Finance.
 
+**Slim add form (adding; editing keeps the rules above).** Only these are mandatory when adding: first name, last name, work email, phone, **payment type** (`BANK_TRANSFER`, `CHEQUE`, `CASH`), and the employee code when the business series is Manual (or when HR chooses Custom). Father's name, designation, department, manager, joining date (today if empty), shift and role (the plain Employee role if empty) are optional, as are **gender** (`FEMALE`, `MALE`, `OTHER`) and **employment type** (`PERMANENT`, `PROBATION`, `CONTRACT`, `INTERN`, `CONSULTANT`, `PART_TIME`, `FIXED_TERM`, stored beside, not instead of, the Probation/Active status). All are validated on the server (400 for a value outside the list).
+
+**Employee code.** Not the same as the internal employee id. Shape: the business's short prefix plus digits, **no hyphen** (`JSC01`, `JL07`); migration V30 stripped the hyphen from existing codes (`JC058` is `JC058`; old codes keep their digit count; history in letters, acknowledgements, audit and payslip snapshots is not rewritten). Per business `code_series_mode`: `AUTO` (next number after the highest in the series, zero-padded to `code_digits`, default 2, and growing past 99: `JSC100`) or `MANUAL` (HR must type every code). In both modes HR may type a **Custom** code for one employee: capital letters then digits (`^[A-Z]{1,10}[0-9]{1,6}$`), unique per business (409 when taken). The mode is read with `GET /api/v1/settings/employee-code-series` and set with `PUT` (`{"mode": "AUTO"|"MANUAL"}`, `roles.manage`, audited as `business.code_series`).
+
+**Initiate onboarding (Employees list).** There is no separate Onboard menu. The Employees list has multi-select and **Initiate onboarding**: `POST /api/v1/onboarding/invitations` with `{"employeeIds": [...], "filledBy": "EMPLOYEE" | "HR"}` (`people.add`, at most 100 ids, 201 with one outcome per employee). `EMPLOYEE` (default) emails the existing wizard link; `HR` sends no email and HR completes the wizard from the employee's profile with the existing `/api/v1/people/{id}/onboarding/...` endpoints, then approves it (the Approve step asks "Are you sure?"). Allowed from `NOT_REQUIRED`, `NOT_STARTED`, `IN_PROGRESS` (a resend, employee-filled only); refused per employee for submitted/changes-requested/approved onboardings, past employees, ids of another business (reported as not found) and, for `EMPLOYEE`, accounts with portal access off. Audited as `onboarding.initiated` / `onboarding.initiation_refused`. Submitted forms waiting for review are listed on the Employees page.
+
 **System-generated fields:**
 
-- Employee ID is generated as `JC-###` (next number).
+- Employee ID (code) is generated as the business prefix plus the next number, for example `JSC03` (see Employee code).
 - Status:
   - Onboarding if joining is in the future
   - Probation, then Active
@@ -224,14 +230,19 @@ When a new India employee is added, Finance is notified: "salary structure pendi
 
 **Regularization:**
 
-- **Request types:** absent, late check-in, missed check-out, holiday work (credits a comp-off).
-- **Fields:** date, type, proposed times, reason (optional).
-- **Routing:** the request goes to **HR, Finance and Admin together**. Anyone with `appr.reg` can decide, and **the first decision is final**. Store who decided and when.
+- **Request types:** absent, late check-in, missed check-out, holiday work (credits a comp-off). The employee chooses the type; the server checks it fits the day.
+- **Fields:** date, type, **check-in and check-out** (local date-time; absent needs both, late check-in the check-in, missed check-out the check-out; check-out after check-in, at most 24 h apart, night shifts may end the next morning, nothing in the future), **reason** from the business's list (Forgot to check-in, Forgot to check-out, System / biometric issue, Client visit, Other; editable by Admin / HR), description (max 500; mandatory for reasons that require it, e.g. Other), optional attachment (pdf, xls(x), doc(x), jpg, png; max 5 MB; mandatory when the setting says so).
+- **Old and New:** the server stores what was recorded (check-in, check-out, hours, status) and what the day would be once approved; the browser's numbers are never trusted.
+- **Rules (settings `attendance.regularization`, edited by Admin / HR):** back-date limit (default 30 days), requests per month (default 30, withdrawn ones do not count), attachment mandatory (default no). Holidays and weekends are **not** blocked.
+- **One pending request per employee per day** (409 `REGULARIZATION_ALREADY_PENDING`; a database unique index backs it).
+- **Routing:** the request goes to **Admin and HR together** (`appr.reg`; Finance does not approve). The first decision is final (409 `REGULARIZATION_ALREADY_DECIDED` when two decide at once). A rejection needs remarks. Several requests can be decided at once. Store who decided, when and the remarks. Nobody decides their own request. Approvers get a bell notification when a request arrives.
+- **Visibility:** an employee sees their own requests; Admin / HR see the whole business; anybody else, or another business, gets 404.
 - **Effect of approval:**
-  - an absent day becomes paid, which removes the LOP from payroll
+  - an absent day becomes paid, which removes the LOP from payroll (and the asked-for punches are recorded when the day has none)
   - a late mark is removed
+  - a missed check-out gets its check-out punch
   - holiday work adds a comp-off balance
-- Requests are only allowed before that month's attendance lock.
+- Requests are only allowed before that month's attendance lock. Every write is in the audit log.
 
 **Attendance register** (`att.all`: HR, Admin):
 
@@ -593,7 +604,7 @@ Every task table has `business_id` and row-level security like the other busines
   - row-level rules (employees see only their own data unless they hold a permission)
   - CSRF protection, input validation (zod)
   - PII encrypted at rest, HTTPS only
-- **Accuracy:** money as integers. Payroll and tax logic is pure functions with unit tests. Golden test: JC-074 Amit Jaspal for Sep 2026 (joined 8 Sep, 1 LOP, structure Basic 75,000 / HRA 30,000 / LTA 7,500 / Special 37,500, previous employer ₹7.5L income / ₹38,000 TDS, new regime) gives monthly TDS ≈ ₹14,926 and 22/30 paid days.
+- **Accuracy:** money as integers. Payroll and tax logic is pure functions with unit tests. Golden test: JC074 Amit Jaspal for Sep 2026 (joined 8 Sep, 1 LOP, structure Basic 75,000 / HRA 30,000 / LTA 7,500 / Special 37,500, previous employer ₹7.5L income / ₹38,000 TDS, new regime) gives monthly TDS ≈ ₹14,926 and 22/30 paid days.
 - **Time zones:** every date and time is computed in the employee's zone. Register views can convert to any zone.
 - **Responsive:** works on phone (sidebar becomes a drawer). Meets WCAG AA contrast. Keyboard accessible.
 - **Performance:** pages load in under 2s for 500 employees, with server-side pagination.
@@ -605,15 +616,15 @@ Every task table has `business_id` and row-level security like the other busines
 
 | ID | Name | Role | Notes |
 |---|---|---|---|
-| JC-002 | Sana Kapoor | Admin | |
-| JC-004 | Arjun Mehta | Finance Manager | |
-| JC-012 | Riya Malhotra | HR Manager | |
-| JC-015 | Pooja Nair | HR Executive | reports to Riya |
-| JC-018 | Rohan Gupta | Finance Executive | reports to Arjun |
-| JC-035 | Nazneen Khan | Employee (has team) | Technology |
-| JC-049 / 058 / 072 / 074 / 081 | Naman, Kavya, Siddharth, Amit, Farhan | Employee | report to Nazneen; JC-081 access disabled |
-| JC-030 | Vikas Rao | Employee | Exited 31 Aug 2026 |
-| JC-090 / 091 | Emily Carter / Daniel Brooks | Employee | US · New York / Los Angeles |
+| JC002 | Sana Kapoor | Admin | |
+| JC004 | Arjun Mehta | Finance Manager | |
+| JC012 | Riya Malhotra | HR Manager | |
+| JC015 | Pooja Nair | HR Executive | reports to Riya |
+| JC018 | Rohan Gupta | Finance Executive | reports to Arjun |
+| JC035 | Nazneen Khan | Employee (has team) | Technology |
+| JC049 / 058 / 072 / 074 / 081 | Naman, Kavya, Siddharth, Amit, Farhan | Employee | report to Nazneen; JC081 access disabled |
+| JC030 | Vikas Rao | Employee | Exited 31 Aug 2026 |
+| JC090 / 091 | Emily Carter / Daniel Brooks | Employee | US · New York / Los Angeles |
 
 Seed the 2026 holidays (India + US + Christmas for everyone), the departments and the salary structures as in the prototype.
 
