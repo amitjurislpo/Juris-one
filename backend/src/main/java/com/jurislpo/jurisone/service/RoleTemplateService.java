@@ -130,9 +130,14 @@ public class RoleTemplateService {
         return all.stream().filter(t -> t.active() && (t.mandatory() || want.contains(t.key()))).toList();
     }
 
-    /** Every active template (the demo seed and the platform company). */
+    /** Every active template that needs no module (the demo seed and the platform company); a module role is added to a business that has the module. */
     List<Template> allActive() {
-        return repo.findAll().stream().filter(Template::active).toList();
+        return repo.findAll().stream().filter(t -> t.active() && AdditionalRolesService.isOffered(t.permissions(), Set.of())).toList();
+    }
+
+    /** Active templates that exist only with a module (for example the JurisTrack manager): a business gets them when it gets the module. */
+    List<Template> moduleTemplates() {
+        return repo.findAll().stream().filter(t -> t.active() && !AdditionalRolesService.isOffered(t.permissions(), Set.of())).toList();
     }
 
     /** The template (any state) or null. */

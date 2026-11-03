@@ -93,4 +93,34 @@ class JurisTrackRosterTriggerTest {
         verify(roster, times(2)).syncBusiness(first);
         verify(roster, times(2)).syncBusiness(third);
     }
+
+    @Test
+    void aStatusChangeIsPushedOnlyForABusinessWithTheModuleAndNeverThrows() throws Exception {
+        UUID withModule = UUID.randomUUID(), without = UUID.randomUUID();
+        when(roster.businessesWithModuleAnyStatus()).thenReturn(List.of(withModule));
+        trigger.statusChanged(withModule);
+        trigger.statusChanged(without);
+        verify(roster, timeout(3000).times(1)).pushStatus(withModule);
+        Thread.sleep(300);
+        verify(roster, times(0)).pushStatus(without);
+        // a failing push is caught (it is retried later), and a gateway that is off pushes nothing
+        org.mockito.Mockito.doThrow(new ApiException(HttpStatus.BAD_GATEWAY, "JURISTRACK_UNAVAILABLE", "down")).when(roster).pushStatus(withModule);
+        trigger.statusChanged(withModule);
+        verify(roster, timeout(3000).times(2)).pushStatus(withModule);
+        when(roster.isGatewayOn()).thenReturn(false);
+        trigger.statusChanged(without);
+        Thread.sleep(300);
+        verify(roster, times(0)).pushStatus(without);
+    }
+
+    @Test
+    void theFullResyncAlsoTellsEveryBusinessWithTheModuleItsStatusSuspendedOnesIncluded() {
+        UUID active = UUID.randomUUID(), suspended = UUID.randomUUID();
+        when(roster.businessesWithModuleAnyStatus()).thenReturn(List.of(active, suspended));
+        when(roster.businessesWithModule()).thenReturn(List.of(active)); // the suspended one gets no roster
+        org.assertj.core.api.Assertions.assertThat(trigger.syncAllBusinesses()).isEqualTo(1);
+        verify(roster).pushStatus(active);
+        verify(roster).pushStatus(suspended);
+        verify(roster, times(0)).syncBusiness(suspended);
+    }
 }

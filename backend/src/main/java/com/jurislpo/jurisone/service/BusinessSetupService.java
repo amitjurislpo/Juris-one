@@ -127,6 +127,12 @@ public class BusinessSetupService {
         return id;
     }
 
+    /** Like {@link #addRole}, but does nothing when the current business already has the role. */
+    public void addRoleIfMissing(RoleTemplateRepository.Template template) {
+        requireBusiness();
+        if (repo.findRoleIds(template.key()).isEmpty()) addRole(template);
+    }
+
     /** Replaces the role's permissions and assignable roles with the template's current ones. */
     public void syncRole(UUID roleId, RoleTemplateRepository.Template template) {
         requireBusiness();
