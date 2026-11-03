@@ -168,10 +168,10 @@ public class EmployeeOnboardingRepository {
         jdbc.update("DELETE FROM onboarding_personal WHERE onboarding_id = ?", id);
         jdbc.update("""
             INSERT INTO onboarding_personal (onboarding_id, blood_group, personal_email, father_name, marital_status, marriage_date, spouse_name, country_of_origin, nationality,
-                is_international_employee, is_physically_challenged, disability_type, gender, date_of_birth, height_cm, weight_kg, identification_mark, religion, caste, hobby)
+                is_international_employee, is_physically_challenged, disability_type, gender, date_of_birth_enc, height_cm, weight_kg, identification_mark, religion, caste, hobby)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", id, columns.get("bloodGroup"), columns.get("personalEmail"), columns.get("fatherName"),
                 columns.get("maritalStatus"), date((String) columns.get("marriageDate")), columns.get("spouseName"), columns.get("countryOfOrigin"), columns.get("nationality"),
-                columns.get("isInternationalEmployee"), columns.get("isPhysicallyChallenged"), columns.get("disabilityType"), columns.get("gender"), date((String) columns.get("dateOfBirth")),
+                columns.get("isInternationalEmployee"), columns.get("isPhysicallyChallenged"), columns.get("disabilityType"), columns.get("gender"), columns.get("dateOfBirthEnc"),
                 columns.get("heightCm"), columns.get("weightKg"), columns.get("identificationMark"), columns.get("religion"), columns.get("caste"), columns.get("hobby"));
     }
 

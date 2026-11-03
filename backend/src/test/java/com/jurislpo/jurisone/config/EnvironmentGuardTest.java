@@ -18,7 +18,7 @@ class EnvironmentGuardTest {
         environment.put("jurisone.mail.host", "smtp.example.com");
         environment.put("jurisone.app-url", "https://people.example.com");
         environment.put("jurisone.security.jwt-secret", "x".repeat(40));
-        environment.put("jurisone.security.pii-encryption-key", "k".repeat(44));
+        environment.put("jurisone.security.pii-encryption-key", "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=");
         environment.put("spring.datasource.password", "db-password");
         return environment;
     }
@@ -50,6 +50,7 @@ class EnvironmentGuardTest {
         environment.put("jurisone.seed.demo", "true");
         environment.put("jurisone.app-url", "http://sqe.internal:3015");
         environment.put("jurisone.mail.host", "smtp.example.com");
+        environment.put("jurisone.security.pii-encryption-key", "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=");
         assertThat(problems(environment)).isEmpty();
         environment.put("jurisone.otp.fixed-code", "000000");
         environment.put("jurisone.mail.host", "");
@@ -150,5 +151,18 @@ class EnvironmentGuardTest {
         dev.put("jurisone.tenant-host.enabled", "true");
         dev.put("jurisone.tenant-host.base-domain", "localhost");
         assertThat(problems(dev)).isEmpty();
+    }
+
+    @Test
+    void theEncryptionKeyIsRequiredAndMustBeValidInEverySharedEnvironment() {
+        for (String environmentName : List.of("sqe", "uat", "prd")) {
+            Map<String, String> environment = good(environmentName);
+            environment.remove("jurisone.security.pii-encryption-key");
+            assertThat(problems(environment)).as(environmentName + " missing").singleElement().asString().startsWith("jurisone.security.pii-encryption-key");
+            environment.put("jurisone.security.pii-encryption-key", "too-short");
+            assertThat(problems(environment)).as(environmentName + " short").singleElement().asString().contains("32 bytes");
+            environment.put("jurisone.security.pii-encryption-key", "<generate: openssl rand -base64 32>");
+            assertThat(problems(environment)).as(environmentName + " placeholder").singleElement().asString().startsWith("jurisone.security.pii-encryption-key");
+        }
     }
 }
