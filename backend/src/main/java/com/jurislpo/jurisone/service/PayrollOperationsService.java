@@ -219,7 +219,8 @@ public class PayrollOperationsService {
         try {
             Files.createDirectories(directory);
             for (PayrollService.PayRow payRow : rows) {
-                Map<String, Object> row = repo.payslipEmployee(payRow.employeeId());
+                Map<String, Object> row = new LinkedHashMap<>(repo.payslipEmployee(payRow.employeeId()));
+                row.put("bank_name", piiCrypto.decryptOrLegacy((String) row.get("bank_name"))); // the stored column is encrypted; the payslip snapshot needs the bank's name
                 employees.put(payRow.employeeId(), row);
                 PayrollService.Snapshot snapshot = payroll.toSnapshot(payRow, yearMonth, row, company, payDate);
                 String snapJson = json.writeValueAsString(snapshot);
@@ -472,7 +473,7 @@ public class PayrollOperationsService {
                 for (PayrollLine payrollLine : lines) {
                     if (payrollLine.net() <= 0) continue;
                     Map<String, Object> employee = employees.get(payrollLine.employeeId());
-                    rows.add(Arrays.asList(payrollLine.code(), payrollLine.name(), decryptOrBlank.apply((String) employee.get("bank_account_enc")), emptyIfNull(employee.get("bank_ifsc")), emptyIfNull(employee.get("bank_name")), rupees(payrollLine.net()), "Salary " + month));
+                    rows.add(Arrays.asList(payrollLine.code(), payrollLine.name(), decryptOrBlank.apply((String) employee.get("bank_account_enc")), emptyIfNull(piiCrypto.decryptOrLegacy((String) employee.get("bank_ifsc"))), emptyIfNull(piiCrypto.decryptOrLegacy((String) employee.get("bank_name"))), rupees(payrollLine.net()), "Salary " + month));
                 }
                 return new Export("bank-transfer-" + month + suffix + ".csv", Csv.toCsv(List.of("Employee ID", "Beneficiary name", "Account number", "IFSC", "Bank", "Amount (INR)", "Narration"), rows));
             }

@@ -54,12 +54,16 @@ public class EnvironmentGuard {
             if (blankTo(get.apply("jurisone.juristrack.private-key"), "").isBlank()) out.add("jurisone.juristrack.private-key must be set when the JurisTrack gateway is enabled (JURISTRACK_PRIVATE_KEY)");
         }
         if ("true".equalsIgnoreCase(blankTo(get.apply("jurisone.tenant-host.enabled"), "false"))) out.addAll(tenantHostProblems(get));
+        // the key that encrypts employee data: required (and valid) in every shared environment; only dev may use the key written in application-dev.properties
+        String piiKey = blankTo(get.apply("jurisone.security.pii-encryption-key"), "");
+        if (piiKey.isBlank() || piiKey.contains("<")) out.add("jurisone.security.pii-encryption-key is not set (PII_ENCRYPTION_KEY: 32 random bytes, base64)");
+        else if (!isValidAesKey(piiKey)) out.add("jurisone.security.pii-encryption-key must be 32 bytes, base64-encoded");
         if (!STRICT.contains(name)) return out;
         if ("true".equalsIgnoreCase(blankTo(get.apply("jurisone.seed.demo"), "false"))) out.add("jurisone.seed.demo must be false (no demo data outside dev and sqe)");
         if (!blankTo(get.apply("jurisone.app-url"), "").startsWith("https://")) out.add("jurisone.app-url must be an https:// URL");
         for (String key : SECRETS) {
             String value = blankTo(get.apply(key), "");
-            if (value.isBlank() || value.contains("<")) out.add(key + " is not set (still a placeholder or empty)");
+            if (!"jurisone.security.pii-encryption-key".equals(key) && (value.isBlank() || value.contains("<"))) out.add(key + " is not set (still a placeholder or empty)");
         }
         return out;
     }
@@ -74,6 +78,14 @@ public class EnvironmentGuard {
         String adminLabel = blankTo(get.apply("jurisone.tenant-host.admin-label"), "admin").trim();
         if (!DNS_LABEL.matcher(adminLabel).matches()) out.add("jurisone.tenant-host.admin-label must be one lowercase DNS label (letters, digits, hyphens)");
         return out;
+    }
+
+    private static boolean isValidAesKey(String value) {
+        try {
+            return java.util.Base64.getDecoder().decode(value.trim()).length == 32;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private static String blankTo(String value, String fallback) {

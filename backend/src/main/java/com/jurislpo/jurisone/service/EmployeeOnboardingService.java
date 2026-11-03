@@ -146,7 +146,7 @@ public class EmployeeOnboardingService {
         String status = (String) row.get("status");
         Map<String, Object> employee = repo.findEmployeeHeader(employeeId).get(0);
         Data data = load(onboardingId, false);
-        Personal personal = data.personal() != null ? data.personal() : new Personal(null, null, (String) employee.get("father_name"), null, null, null, null, null, null, null, null, null, null,
+        Personal personal = data.personal() != null ? data.personal() : new Personal(null, null, piiCrypto.decryptOrLegacy((String) employee.get("father_name")), null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null);
         List<Slot> slots = slotsFor(onboardingId);
         List<Map<String, Object>> files = attachments.filesOf(onboardingId);
@@ -273,7 +273,7 @@ public class EmployeeOnboardingService {
     private Data load(UUID onboardingId, boolean revealSecrets) {
         Personal personal = repo.findPersonal(onboardingId).stream().findFirst().map(row -> new Personal(text(row.get("blood_group")), text(row.get("personal_email")), text(row.get("father_name")),
                 text(row.get("marital_status")), text(row.get("marriage_date")), text(row.get("spouse_name")), text(row.get("country_of_origin")), text(row.get("nationality")),
-                flag(row.get("is_international_employee")), flag(row.get("is_physically_challenged")), text(row.get("disability_type")), text(row.get("gender")), text(row.get("date_of_birth")),
+                flag(row.get("is_international_employee")), flag(row.get("is_physically_challenged")), text(row.get("disability_type")), text(row.get("gender")), dateOfBirth(row),
                 (BigDecimal) row.get("height_cm"), (BigDecimal) row.get("weight_kg"), text(row.get("identification_mark")), text(row.get("religion")), text(row.get("caste")), text(row.get("hobby")))).orElse(null);
         Address permanent = null;
         PresentAddress present = null;
@@ -297,9 +297,9 @@ public class EmployeeOnboardingService {
                 text(row.get("ifsc")), text(row.get("bank_name")), text(row.get("branch")), text(row.get("branch_address")), text(row.get("name_as_per_bank")), text(row.get("account_type")))).orElse(null);
         Statutory statutory = repo.findStatutory(onboardingId).stream().findFirst().map(row -> new Statutory(text(row.get("previous_pf_number")),
                 revealSecrets ? piiCrypto.decrypt((String) row.get("uan_enc")) : mask(text(row.get("uan_last4"))), row.get("uan_enc") != null,
-                revealSecrets ? piiCrypto.decrypt((String) row.get("pan_enc")) : mask(text(row.get("pan_last4"))), row.get("pan_enc") != null, text(row.get("name_per_pan")),
-                revealSecrets ? piiCrypto.decrypt((String) row.get("aadhaar_enc")) : mask(text(row.get("aadhaar_last4"))), row.get("aadhaar_enc") != null, text(row.get("name_per_aadhaar")),
-                text(row.get("passport_number")), text(row.get("name_per_passport")), text(row.get("passport_expiry")))).orElse(null);
+                revealSecrets ? piiCrypto.decrypt((String) row.get("pan_enc")) : mask(text(row.get("pan_last4"))), row.get("pan_enc") != null, plain(row.get("name_per_pan")),
+                revealSecrets ? piiCrypto.decrypt((String) row.get("aadhaar_enc")) : mask(text(row.get("aadhaar_last4"))), row.get("aadhaar_enc") != null, plain(row.get("name_per_aadhaar")),
+                plain(row.get("passport_number")), plain(row.get("name_per_passport")), text(row.get("passport_expiry")))).orElse(null);
         List<FamilyMember> family = repo.findFamilyMembers(onboardingId).stream().map(row -> new FamilyMember(text(row.get("id")), text(row.get("name")), text(row.get("relationship")),
                 text(row.get("date_of_birth")), text(row.get("gender")), text(row.get("blood_group")), text(row.get("nationality")), flag(row.get("is_minor")), flag(row.get("has_mental_illness")),
                 Boolean.TRUE.equals(row.get("is_minor")) ? new Guardian(text(row.get("guardian_name")), text(row.get("guardian_relationship")), text(row.get("guardian_line1")),
@@ -409,6 +409,16 @@ public class EmployeeOnboardingService {
         return rows.stream().map(row -> (UUID) row.get("id")).collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
+    /** A text column that is stored encrypted (old rows may still hold plain text). */
+    private String plain(Object stored) {
+        return text(piiCrypto.decryptOrLegacy((String) stored));
+    }
+
+    /** The date of birth of a saved personal section: from the encrypted column, or the old plain date. */
+    private String dateOfBirth(Map<String, Object> row) {
+        return row.get("date_of_birth_enc") != null ? piiCrypto.decrypt((String) row.get("date_of_birth_enc")) : text(row.get("date_of_birth"));
+    }
+
     private static String c(String value) {
         return OnboardingRules.clean(value);
     }
@@ -441,7 +451,7 @@ public class EmployeeOnboardingService {
         columns.put("isPhysicallyChallenged", personal.isPhysicallyChallenged());
         columns.put("disabilityType", Boolean.TRUE.equals(personal.isPhysicallyChallenged()) ? c(personal.disabilityType()) : null);
         columns.put("gender", c(personal.gender()));
-        columns.put("dateOfBirth", c(personal.dateOfBirth()));
+        columns.put("dateOfBirthEnc", piiCrypto.encrypt(c(personal.dateOfBirth())));
         columns.put("heightCm", personal.heightCm());
         columns.put("weightKg", personal.weightKg());
         columns.put("identificationMark", c(personal.identificationMark()));
@@ -540,12 +550,12 @@ public class EmployeeOnboardingService {
         columns.put("uanLast4", PiiCrypto.last4(uan));
         columns.put("panEnc", piiCrypto.encrypt(pan));
         columns.put("panLast4", PiiCrypto.last4(pan));
-        columns.put("namePerPan", c(statutory.namePerPan()));
+        columns.put("namePerPan", piiCrypto.encrypt(c(statutory.namePerPan())));
         columns.put("aadhaarEnc", piiCrypto.encrypt(aadhaar));
         columns.put("aadhaarLast4", PiiCrypto.last4(aadhaar));
-        columns.put("namePerAadhaar", c(statutory.namePerAadhaar()));
-        columns.put("passportNumber", c(statutory.passportNumber()));
-        columns.put("namePerPassport", c(statutory.namePerPassport()));
+        columns.put("namePerAadhaar", piiCrypto.encrypt(c(statutory.namePerAadhaar())));
+        columns.put("passportNumber", piiCrypto.encrypt(c(statutory.passportNumber())));
+        columns.put("namePerPassport", piiCrypto.encrypt(c(statutory.namePerPassport())));
         columns.put("passportExpiry", c(statutory.passportNumber()) == null ? null : c(statutory.passportExpiry()));
         repo.saveStatutory(onboardingId, columns);
         if (c(statutory.passportNumber()) == null) attachments.deleteAllFor(onboardingId, "passport");

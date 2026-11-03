@@ -173,6 +173,10 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         JsonNode audit = json.readTree(jdbc.queryForObject("SELECT after::text FROM audit_log WHERE action = 'employee.create' AND entity_id = ?", String.class, id));
         assertThat(audit.get("dateOfJoining").asText()).isEqualTo("2031-10-12T00:00:00.000Z");
         assertThat(audit.has("panEnc")).isFalse();
+        // the father's name is stored encrypted, shown on the profile, and kept out of the audit entry
+        assertThat(jdbc.queryForObject("SELECT father_name FROM employees WHERE id = ?::uuid", String.class, id)).startsWith("v1.").doesNotContain("Prakash");
+        assertThat(audit.toString()).doesNotContain("Prakash");
+        mockMvc.perform(get("/api/v1/people/" + id).cookie(hrCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.fatherName").value("Prakash Joshi"));
         assertThat(audit.get("piiProvided").toString()).isEqualTo("[\"phone\",\"address\",\"pan\",\"aadhaar\"]");
 
         // HR profile: masked PII, no salary

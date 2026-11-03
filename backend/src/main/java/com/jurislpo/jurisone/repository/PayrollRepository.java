@@ -14,8 +14,13 @@ public class PayrollRepository {
 
     private final JdbcTemplate jdbc;
 
-    public PayrollRepository(JdbcTemplate jdbc) {
+    private final com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots;
+    private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
+
+    public PayrollRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots) {
         this.jdbc = jdbc;
+        this.salaryAmounts = salaryAmounts;
+        this.snapshots = snapshots;
     }
 
     /** The id of the month's payroll run (empty when there is none). */
@@ -48,14 +53,14 @@ public class PayrollRepository {
 
     /** The salary structure in force on {@code onDate}. */
     public Map<String, Object> structureOn(UUID employeeId, LocalDate onDate) {
-        return jdbc.queryForMap("SELECT basic, hra, lta, special FROM salary_structures WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1",
-                employeeId, Date.valueOf(onDate));
+        return salaryAmounts.withAmounts(jdbc.queryForMap("SELECT amounts_enc, basic, hra, lta, special FROM salary_structures WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1",
+                employeeId, Date.valueOf(onDate)));
     }
 
     /** (employee id, snapshot JSON text) of every payslip in the month's run. */
     public List<Map.Entry<UUID, String>> payslipSnapshots(String yearMonth) {
-        return jdbc.query("SELECT p.employee_id, p.snapshot::text FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE r.month = ?",
-                (resultSet, i) -> Map.entry((UUID) resultSet.getObject(1), resultSet.getString(2)), yearMonth);
+        return jdbc.query("SELECT p.employee_id, p.snapshot::text, p.snapshot_enc FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE r.month = ?",
+                (resultSet, i) -> Map.entry((UUID) resultSet.getObject(1), snapshots.read(resultSet.getString(2), resultSet.getString(3))), yearMonth);
     }
 
     public List<Map<String, Object>> findRun(String yearMonth) {

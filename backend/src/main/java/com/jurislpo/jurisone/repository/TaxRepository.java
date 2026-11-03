@@ -12,8 +12,13 @@ public class TaxRepository {
 
     private final JdbcTemplate jdbc;
 
-    public TaxRepository(JdbcTemplate jdbc) {
+    private final com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots;
+    private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
+
+    public TaxRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots) {
         this.jdbc = jdbc;
+        this.salaryAmounts = salaryAmounts;
+        this.snapshots = snapshots;
     }
 
     /** Both regimes' tax tables for a financial year (slabs and surcharge as JSON text). */
@@ -41,9 +46,9 @@ public class TaxRepository {
 
     /** Snapshots of the employee's closed payslips for months in [fromYm, beforeYm). */
     public List<Map<String, Object>> closedPayslipSnapshots(UUID employeeId, String fromMonth, String beforeMonth) {
-        return jdbc.queryForList("""
-            SELECT p.snapshot::text AS snapshot, r.month FROM payslips p JOIN payroll_runs r ON r.id = p.run_id
-            WHERE p.employee_id = ? AND r.status = 'CLOSED' AND r.month >= ? AND r.month < ?""", employeeId, fromMonth, beforeMonth);
+        return snapshots.withSnapshots(jdbc.queryForList("""
+            SELECT p.snapshot::text AS snapshot, p.snapshot_enc, r.month FROM payslips p JOIN payroll_runs r ON r.id = p.run_id
+            WHERE p.employee_id = ? AND r.status = 'CLOSED' AND r.month >= ? AND r.month < ?""", employeeId, fromMonth, beforeMonth));
     }
 
     public Map<String, Object> employmentDates(UUID employeeId) {
@@ -52,6 +57,7 @@ public class TaxRepository {
 
     /** The employee's salary structures, oldest first. */
     public List<Map<String, Object>> salaryStructures(UUID employeeId) {
-        return jdbc.queryForList("SELECT effective_from, basic, hra, lta, special FROM salary_structures WHERE employee_id = ? ORDER BY effective_from ASC", employeeId);
+        return jdbc.queryForList("SELECT effective_from, amounts_enc, basic, hra, lta, special FROM salary_structures WHERE employee_id = ? ORDER BY effective_from ASC", employeeId)
+                .stream().map(salaryAmounts::withAmounts).toList();
     }
 }
