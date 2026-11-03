@@ -7,7 +7,9 @@ import com.jurislpo.jurisone.exception.Problems;
 import com.jurislpo.jurisone.common.RequestMeta;
 import com.jurislpo.jurisone.exception.UnauthenticatedException;
 import com.jurislpo.jurisone.security.Auth;
+import com.jurislpo.jurisone.security.HostBusiness;
 import com.jurislpo.jurisone.security.JwtAuthFilter;
+import com.jurislpo.jurisone.security.TenantHostGuard;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** /api/auth/* — the sign-in pages of the web app call these. */
+/** /api/v1/auth/* — the sign-in pages of the web app call these. With per-business addresses on, each call is bound to the request's host. */
 @RestController
 @RequestMapping("/api/v1/auth")
 public class AuthController {
@@ -35,8 +37,10 @@ public class AuthController {
     private final AuthService auth;
     private final SessionService sessions;
     private final Auth current;
+    private final TenantHostGuard hostGuard;
 
-    public AuthController(AuthService auth, SessionService sessions, Auth current) {
+    public AuthController(AuthService auth, SessionService sessions, Auth current, TenantHostGuard hostGuard) {
+        this.hostGuard = hostGuard;
         this.auth = auth;
         this.sessions = sessions;
         this.current = current;
@@ -55,7 +59,7 @@ public class AuthController {
         RequestMeta meta = RequestMeta.of(request);
         com.jurislpo.jurisone.security.AuditTrail.hint(request, "identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(body.identifier()));
         boolean remember = Boolean.TRUE.equals(body.remember());
-        AuthService.LoginResult loginResult = auth.loginWithOtp(body.identifier(), body.otp(), remember, body.next(), meta);
+        AuthService.LoginResult loginResult = auth.loginWithOtp(body.identifier(), body.otp(), remember, body.next(), hostGuard.bindingOf(request), meta);
         return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.SET_COOKIE, setCookies(loginResult.cookies())).body(ApiResult.success(Map.of("redirect", loginResult.redirect())));
     }
 
@@ -64,7 +68,7 @@ public class AuthController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> requestOtp(@RequestBody OtpRequest body, HttpServletRequest request) {
         com.jurislpo.jurisone.security.AuditTrail.hint(request, "identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(body.email()));
-        return ApiResult.message(auth.requestOtp(body.email(), RequestMeta.of(request)));
+        return ApiResult.message(auth.requestOtp(body.email(), hostGuard.bindingOf(request), RequestMeta.of(request)));
     }
 
     /**
@@ -73,8 +77,14 @@ public class AuthController {
      */
     @PostMapping("/session-refreshes")
     public ResponseEntity<?> refresh(HttpServletRequest request) {
+        HostBusiness host = hostGuard.bindingOf(request);
+        RequestMeta meta = RequestMeta.of(request);
+        if (host != null && host.kind() == HostBusiness.Kind.UNKNOWN) { // a host that names no business: neutral 404, the cookie is not looked at
+            hostGuard.refused(null, "refresh", "unknown_host", host, meta.ipAddress());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Problems.of(HttpStatus.NOT_FOUND, Problems.NOT_FOUND, "Not found.", request.getRequestURI()));
+        }
         try {
-            SessionService.Issued issued = sessions.refresh(JwtAuthFilter.cookie(request, SessionService.REFRESH_COOKIE), RequestMeta.of(request));
+            SessionService.Issued issued = sessions.refresh(JwtAuthFilter.cookie(request, SessionService.REFRESH_COOKIE), host, meta);
             return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.SET_COOKIE, setCookies(issued.cookies())).body(ApiResult.success());
         } catch (SessionService.RefreshRefused e) {
             ProblemDetail problem = Problems.of(HttpStatus.UNAUTHORIZED, Problems.UNAUTHENTICATED, UnauthenticatedException.MESSAGE, request.getRequestURI());

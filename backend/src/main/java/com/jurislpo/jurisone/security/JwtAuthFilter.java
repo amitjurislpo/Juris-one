@@ -43,8 +43,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final SessionRepository sessions;
     private final JwtService jwtService;
+    private final TenantHostGuard hostGuard;
 
-    public JwtAuthFilter(SessionRepository sessions, JwtService jwtService) {
+    public JwtAuthFilter(SessionRepository sessions, JwtService jwtService, TenantHostGuard hostGuard) {
+        this.hostGuard = hostGuard;
         this.sessions = sessions;
         this.jwtService = jwtService;
     }
@@ -58,6 +60,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 try {
                     JwtService.AccessClaims claims = jwtService.verify(token);
                     CurrentUser user = load(claims);
+                    if (user != null && !isOnItsHost(request, claims, user)) user = null; // per-business addresses: signed out on any other host
                     if (user != null) {
                         List<SimpleGrantedAuthority> auth = user.perms().stream().map(SimpleGrantedAuthority::new).toList();
                         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(user, null, auth));
@@ -74,6 +77,23 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    /**
+     * With per-business addresses on (jurisone.tenant-host.enabled): the token must carry the {@code bid} claim of the business the real Host
+     * names, and the session's employee must belong to that business in the database (platform users: only the platform host). Anything else
+     * is refused as if signed out (401) and audited. Binding off: always true.
+     */
+    private boolean isOnItsHost(HttpServletRequest request, JwtService.AccessClaims claims, CurrentUser user) {
+        HostBusiness host = hostGuard.bindingOf(request);
+        if (host == null) return true;
+        String reason = null;
+        if (host.kind() == HostBusiness.Kind.UNKNOWN) reason = "unknown_host";
+        else if (!TenantHostGuard.permits(host, user.businessId())) reason = "wrong_host";
+        else if (!TenantHostGuard.permitsClaim(host, claims.businessBinding()) || !TenantHostGuard.bindingClaim(user.businessId()).equals(claims.businessBinding())) reason = "token_not_for_host";
+        if (reason == null) return true;
+        hostGuard.refused(user.id(), "access_token", reason, host, com.jurislpo.jurisone.common.RequestMeta.of(request).ipAddress());
+        return false;
     }
 
     /** A cookie's value, or null. */

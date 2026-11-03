@@ -11,7 +11,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MvcResult;
 
-/** With the flag on (base domain localhost) the host is resolved and mismatches are counted, but nothing else changes. */
+/** With the flag on (base domain localhost) the host is resolved and mismatches are counted; tokens bound to another host are refused (step 5). */
 @TestPropertySource(properties = {"jurisone.tenant-host.enabled=true", "jurisone.tenant-host.base-domain=localhost"})
 class TenantHostFlagOnTest extends TenantHostObserveTestBase {
 
@@ -38,37 +38,33 @@ class TenantHostFlagOnTest extends TenantHostObserveTestBase {
     }
 
     @Test
-    void mismatchesAreCountedPerKind() throws Exception {
-        double unknown = count("host_unknown"), otherBusiness = count("business_user_on_other_business_host");
-        double platform = count("business_user_on_platform_host"), anonymous = count("anonymous_on_unknown_host");
+    void mismatchesAreCountedAndATokenOnTheWrongHostIsRefused() throws Exception {
+        double anonymous = count("anonymous_on_unknown_host");
         double total = countAll();
 
-        call(alphaSlug + ".localhost", true); // the user's own business: fine
+        assertThat(call(alphaSlug + ".localhost", true).getResponse().getStatus()).isEqualTo(200); // the user's own business: fine
         call(alphaSlug + ".localhost", false); // not signed in on a business host: fine
         call("admin.localhost", false); // not signed in on the platform host: fine
         assertThat(countAll()).isEqualTo(total);
 
-        call(betaSlug + ".localhost", true);
-        assertThat(count("business_user_on_other_business_host")).isEqualTo(otherBusiness + 1);
-        call("admin.localhost", true);
-        assertThat(count("business_user_on_platform_host")).isEqualTo(platform + 1);
-        call("nobody-" + TestData.letters(8) + ".localhost", true);
-        assertThat(count("host_unknown")).isEqualTo(unknown + 1);
+        // the signed-in person on another business's or the platform's host is signed out (401); an unknown host answers the neutral 404 (step 6)
+        assertThat(call(betaSlug + ".localhost", true).getResponse().getStatus()).isEqualTo(401);
+        assertThat(call("admin.localhost", true).getResponse().getStatus()).isEqualTo(401);
+        assertThat(call("nobody-" + TestData.letters(8) + ".localhost", true).getResponse().getStatus()).isEqualTo(404);
         call("localhost:3005", false, "X-Forwarded-Host", alphaSlug + ".localhost"); // a forged header does not make it a known host
-        assertThat(count("anonymous_on_unknown_host")).isEqualTo(anonymous + 1);
-        assertThat(countAll()).isEqualTo(total + 4);
+        assertThat(count("anonymous_on_unknown_host")).isEqualTo(anonymous + 2); // the refused unknown-host token counts as anonymous, plus this call
     }
 
     @Test
-    void aFailingLookupNeverFailsTheRequest() throws Exception {
+    void aFailingLookupNeverFailsTheRequestAndFailsClosed() throws Exception {
         String failingSlug = "failing-" + TestData.letters(8);
         doThrow(new IllegalStateException("database down")).when(businessRepository).findIdByCode(failingSlug);
         double total = countAll();
         MvcResult failed = call(failingSlug + ".localhost", true);
         MvcResult plain = call("localhost:3005", true);
-        assertThat(failed.getResponse().getStatus()).isEqualTo(200);
+        assertThat(failed.getResponse().getStatus()).isEqualTo(404); // no resolved host: fails closed with the neutral 404, it does not crash
         assertThat(body(failed)).isEqualTo(body(plain));
         assertThat(hostOf(failed)).isNull();
-        assertThat(countAll()).isEqualTo(total + 1); // only the plain call (unknown host) counted
+        assertThat(countAll()).isEqualTo(total + 1); // only the plain call (unknown host, now signed out) counted
     }
 }
