@@ -35,11 +35,25 @@ public class JurisTrackTokenIssuer {
         }
     }
 
-    public enum TrackRole { MANAGER, EMPLOYEE }
+    /**
+     * What a person is in JurisTrack. ADMIN: the business owner (permission {@code business.manage}; never the platform's super admin, who has none).
+     * MANAGER: only a holder of the JurisTrack manager permission (the "JurisTrack manager" role, main or additional); having reports alone gives
+     * nothing. Otherwise EMPLOYEE. Permissions come from the main role and every additional role.
+     */
+    public enum TrackRole {
+        ADMIN, MANAGER, EMPLOYEE;
+
+        public static TrackRole of(boolean isBusinessOwner, boolean isJurisTrackManager) {
+            if (isBusinessOwner) return ADMIN;
+            return isJurisTrackManager ? MANAGER : EMPLOYEE;
+        }
+    }
 
     private static final Duration MAXIMUM_LIFETIME = Duration.ofMinutes(10);
     /** The scope of the service token JurisTrack accepts for {@code PUT /api/integration/employees}. */
     public static final String SERVICE_SCOPE = "employees:sync";
+    /** The scope of the service token JurisTrack accepts for `PUT /api/v1/integration/business/status` (suspend or reactivate the linked business). */
+    public static final String STATUS_SCOPE = "business:status";
 
     private final String issuer;
     private final String audience;
@@ -93,10 +107,15 @@ public class JurisTrackTokenIssuer {
      * and {@code businessName} name the business whose roster is sent. One token per call (own {@code jti}), never logged or stored.
      */
     public String issueService(UUID businessId, String businessName) {
+        return issueService(businessId, businessName, SERVICE_SCOPE);
+    }
+
+    /** Like {@link #issueService(UUID, String)} for another scope; a token carries exactly one scope and each JurisTrack endpoint accepts only its own. */
+    public String issueService(UUID businessId, String businessName, String scope) {
         if (signer == null) throw new IllegalStateException("the JurisTrack gateway is disabled");
         Instant now = Instant.now();
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .issuer(issuer).audience(audience).claim("scope", SERVICE_SCOPE)
+                .issuer(issuer).audience(audience).claim("scope", scope)
                 .claim("businessId", businessId.toString()).claim("businessName", businessName)
                 .issueTime(Date.from(now)).expirationTime(Date.from(now.plus(lifetime))).jwtID(UUID.randomUUID().toString()).build();
         return sign(claims);

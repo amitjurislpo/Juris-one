@@ -40,9 +40,12 @@ public class AuthRepository {
         entityManager.persist(loginHistory);
     }
 
-    /** The permission keys of a role. */
-    public List<String> findPermissionKeys(UUID roleId) {
-        return entityManager.createQuery("SELECT p.permissionKey FROM RolePermission p WHERE p.roleId = :r", String.class)
-                .setParameter("r", roleId).getResultList();
+    /** The permission keys of the employee: the main role's plus those of every additional role. */
+    public List<String> findPermissionKeys(UUID roleId, UUID employeeId) {
+        List<?> keys = entityManager.createNativeQuery("""
+                SELECT permission_key FROM role_permissions WHERE role_id = :r
+                UNION SELECT rp.permission_key FROM role_permissions rp JOIN employee_additional_roles a ON a.role_id = rp.role_id WHERE a.employee_id = :e""")
+                .setParameter("r", roleId).setParameter("e", employeeId).getResultList();
+        return keys.stream().map(String::valueOf).toList();
     }
 }

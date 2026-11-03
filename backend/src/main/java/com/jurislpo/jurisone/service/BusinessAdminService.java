@@ -36,9 +36,11 @@ public class BusinessAdminService {
     private final ModuleGrantService grants;
     private final SessionService sessions;
     private final AuditService audit;
+    private final JurisTrackRosterTrigger rosterTrigger;
 
     public BusinessAdminService(BusinessAdminRepository repo, BusinessSetupService setup, RoleTemplateService roleTemplates, SubscriptionService subscriptions,
-                                ModuleGrantService grants, SessionService sessions, AuditService audit) {
+                                ModuleGrantService grants, SessionService sessions, AuditService audit, JurisTrackRosterTrigger rosterTrigger) {
+        this.rosterTrigger = rosterTrigger;
         this.roleTemplates = roleTemplates;
         this.grants = grants;
         this.repo = repo;
@@ -242,6 +244,8 @@ public class BusinessAdminService {
             repo.revokeSessionsOfBusiness(id, "business_suspended");
         }
         audit.log(user.id(), "business.status", "business", id.toString(), null, Map.of("status", status), ipAddress);
+        rosterTrigger.statusChanged(id); // JurisTrack follows (best effort, retried, healed by the full resync)
+        if ("ACTIVE".equals(status)) rosterTrigger.rosterChanged(id); // what changed while it was suspended goes now
         return "SUSPENDED".equals(status) ? "Business suspended — everyone in it has been signed out" : "Business reactivated";
     }
 
@@ -334,11 +338,27 @@ public class BusinessAdminService {
                 .orElseThrow(() -> new UserException(HttpStatus.NOT_FOUND, "That role isn't part of this business."));
     }
 
+    /**
+     * Gives the business the roles that exist only with a module it now has (the JurisTrack manager when it has Juris Track), unless it has them
+     * already. Idempotent; called whenever a plan or a grant may have given the business a module. Does nothing for a business without the module.
+     */
+    public void ensureModuleRoles(UUID business) {
+        java.util.Set<String> modules = subscriptions.activeModules(business);
+        if (modules.isEmpty()) return;
+        for (var template : roleTemplates.moduleTemplates()) {
+            if (!AdditionalRolesService.isOffered(template.permissions(), modules)) continue;
+            TenantContext.run(business, () -> setup.addRoleIfMissing(template));
+        }
+    }
+
     /** Gives an existing business one more role from the catalogue. */
     public Map<String, String> addRole(CurrentUser user, String businessIdRaw, String templateKey, String ipAddress) {
         UUID business = customerBusiness(businessIdRaw);
         var template = roleTemplates.any(templateKey == null ? "" : templateKey);
         if (template == null || !template.active()) throw new UserException("Unknown or switched-off role: " + templateKey + ".");
+        if (!AdditionalRolesService.isOffered(template.permissions(), subscriptions.activeModules(business))) {
+            throw new UserException("The " + template.name() + " role needs a module this business doesn't have.");
+        }
         UUID id = TenantContext.call(business, () -> setup.addRole(template));
         audit.log(user.id(), "business.role_add", "role", id.toString(), null, Map.of("business", business.toString(), "template", template.key()), ipAddress);
         return Map.of("id", id.toString());

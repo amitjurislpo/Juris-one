@@ -210,6 +210,11 @@ public class PeopleRepository {
                 (resultSet, i) -> new RoleRow(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getInt(4)));
     }
 
+    /** The permission keys of a role (for the module check). */
+    public List<String> findRolePermissions(String roleId) {
+        return jdbc.queryForList("SELECT permission_key FROM role_permissions WHERE role_id = ?::uuid", String.class, roleId);
+    }
+
     /** Shift id → code. */
     public Map<String, String> findShiftCodesById() {
         Map<String, String> shiftCodes = new HashMap<>();
@@ -295,7 +300,7 @@ public class PeopleRepository {
     public List<UUID> findFinanceRecipients() {
         return jdbc.queryForList("""
             SELECT e.id FROM employees e WHERE e.status <> 'EXITED' AND e.portal_access
-              AND EXISTS (SELECT 1 FROM role_permissions p WHERE p.role_id = e.role_id AND p.permission_key = 'struct.manage')""", UUID.class);
+              AND jurisone_employee_has_permission(e.id, 'struct.manage')""", UUID.class);
     }
 
     public void insertStructuresNotification(UUID employeeId, String text) {

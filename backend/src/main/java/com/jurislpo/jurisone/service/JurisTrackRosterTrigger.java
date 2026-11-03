@@ -87,6 +87,43 @@ public class JurisTrackRosterTrigger {
         }
     }
 
+    /**
+     * The business was suspended or reactivated: JurisTrack is told after the transaction commits, never on the request's thread, so a JurisTrack
+     * problem can never fail the suspension. A failed delivery is tried again after 10 seconds, 1, 5 and 30 minutes; whatever is still undelivered is
+     * sent by the next full resync ({@link #syncAllBusinesses}), so the two sides converge. The state is read when the push runs, so quick
+     * toggles end on the last one.
+     */
+    public void statusChanged(UUID businessId) {
+        if (businessId == null || !roster.isGatewayOn()) return;
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    scheduleStatusPush(businessId, 0, 0);
+                }
+            });
+        } else {
+            scheduleStatusPush(businessId, 0, 0);
+        }
+    }
+
+    private static final long[] STATUS_RETRY_SECONDS = {10, 60, 300, 1800};
+
+    private void scheduleStatusPush(UUID businessId, int attempt, long delaySeconds) {
+        try {
+            executor.schedule(() -> {
+                try {
+                    if (roster.businessesWithModuleAnyStatus().contains(businessId)) roster.pushStatus(businessId);
+                } catch (RuntimeException e) {
+                    log.warn("[juristrack] status push for business {} failed (attempt {}): {}", businessId, attempt + 1, e.getClass().getSimpleName());
+                    if (attempt < STATUS_RETRY_SECONDS.length) scheduleStatusPush(businessId, attempt + 1, STATUS_RETRY_SECONDS[attempt]);
+                }
+            }, delaySeconds, TimeUnit.SECONDS);
+        } catch (RuntimeException e) { // the executor is shutting down
+            log.warn("[juristrack] status push for business {} not scheduled: {}", businessId, e.getClass().getSimpleName());
+        }
+    }
+
     private void schedule(UUID businessId) {
         try {
             pending.computeIfAbsent(businessId, id -> executor.schedule(() -> {
@@ -112,6 +149,17 @@ public class JurisTrackRosterTrigger {
     public int syncAllBusinesses() {
         int synced = 0;
         try {
+            // every business with the module is told whether it is suspended (idempotent), so a missed push converges here
+            for (UUID businessId : roster.businessesWithModuleAnyStatus()) {
+                try {
+                    roster.pushStatus(businessId);
+                } catch (ApiException e) {
+                    log.warn("[juristrack] status resync of business {} failed: {} {}", businessId, e.status().value(), e.code());
+                    if ("JURISTRACK_UNAVAILABLE".equals(e.code())) break;
+                } catch (RuntimeException e) {
+                    log.warn("[juristrack] status resync of business {} failed: {}", businessId, e.getClass().getSimpleName());
+                }
+            }
             List<UUID> businesses = roster.businessesWithModule();
             for (UUID businessId : businesses) {
                 try {

@@ -13,10 +13,9 @@ public class JurisTrackRosterRepository {
     public record BusinessRow(UUID id, String name, String timeZone) {}
 
     /**
-     * One employee as the roster needs them. {@code hasActiveReports}: at least one direct report who is not a past employee (the rule of the
-     * token's track role). The shift columns are null without a shift.
+     * One employee as the roster needs them. {@code isJurisTrackManager}: holds the JurisTrack manager permission through the main role or any additional role. The shift columns are null without a shift.
      */
-    public record EmployeeRow(UUID id, String email, String fullName, String firstName, String lastName, String code, String status, UUID managerId, boolean hasActiveReports,
+    public record EmployeeRow(UUID id, String email, String fullName, String firstName, String lastName, String code, String status, UUID managerId, boolean isJurisTrackManager,
                               String timeZone, String shiftCode, String shiftName, String shiftStart, String shiftEnd, String shiftRegion) {}
 
     private final JdbcTemplate jdbc;
@@ -31,6 +30,11 @@ public class JurisTrackRosterRepository {
                 (resultSet, i) -> new BusinessRow((UUID) resultSet.getObject(1), resultSet.getString(2), resultSet.getString(3)), businessId).stream().findFirst();
     }
 
+    /** Whether the super admin suspended the business. */
+    public boolean isSuspended(UUID businessId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT status = 'SUSPENDED' FROM businesses WHERE id = ?", Boolean.class, businessId));
+    }
+
     /** Every customer business (the platform company has no subscription and no JurisTrack). */
     public List<UUID> findCustomerBusinessIds() {
         return jdbc.queryForList("SELECT id FROM businesses WHERE NOT is_platform ORDER BY created_at", UUID.class);
@@ -40,7 +44,7 @@ public class JurisTrackRosterRepository {
     public List<EmployeeRow> findEmployees(UUID businessId) {
         return jdbc.query("""
                 SELECT e.id, e.email, e.full_name, e.first_name, e.last_name, e.code, e.status::text, e.reporting_manager_id,
-                       EXISTS (SELECT 1 FROM employees r WHERE r.reporting_manager_id = e.id AND r.status <> 'EXITED') AS has_active_reports,
+                       jurisone_employee_has_permission(e.id, 'juristrack.manager') AS is_juristrack_manager,
                        e.time_zone, s.code, s.name, s.start_local, s.end_local, s.region::text
                 FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id
                 WHERE e.business_id = ? ORDER BY e.created_at, e.code""",
