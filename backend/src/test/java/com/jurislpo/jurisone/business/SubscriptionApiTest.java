@@ -107,7 +107,7 @@ class SubscriptionApiTest extends IntegrationTest {
                 .andReturn().getResponse().getContentAsString()).at("/data");
         assertThat(detail.at("/business/employeePrefix").asText()).isEqualTo("NL");
         assertThat(detail.at("/business/gstin").asText()).isEqualTo("27AAPFU0939F1ZV");
-        assertThat(detail.at("/owners/0/code").asText()).isEqualTo("NL-001");
+        assertThat(detail.at("/owners/0/code").asText()).isEqualTo("NL01");
         assertThat(detail.at("/subscription/state").asText()).isEqualTo("ACTIVE");
         assertThat(detail.at("/subscriptions/0/pricePaise").asLong()).isEqualTo(499_950);
 
@@ -123,7 +123,7 @@ class SubscriptionApiTest extends IntegrationTest {
         // a second sub admin: no invite email, they sign in with the emailed code
         mockMvc.perform(write(post("/api/v1/platform/businesses/" + created.business() + "/owners")).cookie(superAdmin)
                 .content("{\"name\":\"Second Owner\",\"email\":\"second." + created.ownerEmail() + "\"}")).andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.code").value("NL-002"));
+                .andExpect(jsonPath("$.data.code").value("NL02"));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ?", Integer.class, "second." + created.ownerEmail())).isZero();
         signIn("second." + created.ownerEmail());
         // the same email can't be used twice on the platform

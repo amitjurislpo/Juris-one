@@ -84,6 +84,19 @@ public class EmployeeOnboardingRepository {
               AND jurisone_employee_has_permission(e.id, 'people.add')""", UUID.class);
     }
 
+    /** The onboarding and the employee facts needed to initiate onboarding for these employees (row-level security hides other businesses). */
+    public List<Map<String, Object>> findForInvitation(List<UUID> employeeIds) {
+        String placeholders = String.join(", ", java.util.Collections.nCopies(employeeIds.size(), "?"));
+        return jdbc.queryForList("SELECT e.id AS employee_id, e.full_name, e.email, e.portal_access, e.status::text AS employee_status, o.id AS onboarding_id, o.status "
+                + "FROM employees e JOIN employee_onboardings o ON o.employee_id = e.id WHERE e.id IN (" + placeholders + ")", employeeIds.toArray());
+    }
+
+    /** Onboarding is initiated: NOT_STARTED unless already in progress, filled by the employee or HR. */
+    public void markInitiated(UUID id, String filledBy) {
+        jdbc.update("UPDATE employee_onboardings SET status = CASE WHEN status = 'IN_PROGRESS' THEN status ELSE 'NOT_STARTED' END, filled_by = ?, invited_at = now(), "
+                + "updated_at = now() WHERE id = ?", filledBy, id);
+    }
+
     /** Name and email of an employee (for the decision mail). */
     public List<Map<String, Object>> findEmployeeContact(UUID employeeId) {
         return jdbc.queryForList("SELECT full_name, email FROM employees WHERE id = ?", employeeId);

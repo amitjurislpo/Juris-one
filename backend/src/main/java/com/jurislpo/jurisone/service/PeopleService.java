@@ -7,6 +7,7 @@ import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.crypto.Masks;
 import com.jurislpo.jurisone.crypto.PiiCrypto;
 import com.jurislpo.jurisone.engine.Csv;
+import com.jurislpo.jurisone.engine.EmployeeCodes;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.PeopleRules;
 import com.jurislpo.jurisone.engine.PeopleRules.Actor;
@@ -245,14 +246,28 @@ public class PeopleService {
 
     public record Editing(String code, String name, Last4 last4, boolean hasAddress, boolean hadManager) {}
 
-    public record FormOptions(String nextCode, List<DepartmentOption> departments, String lockedDepartmentId, List<Manager> managers, List<RoleOption> roles,
+    public record FormOptions(String codeSeriesMode, String nextCode, List<DepartmentOption> departments, String lockedDepartmentId, List<Manager> managers, List<RoleOption> roles,
                               EmployeeInput defaults, Editing editing) {}
 
     /** Next employee ID in this business: its prefix plus the next number, e.g. AB-007 (row-level security scopes the max). */
     String nextCode() {
         String prefix = repo.findEmployeePrefix();
-        Integer maxNumber = repo.findMaxCodeNumber(prefix);
-        return prefix + "-" + String.format(java.util.Locale.ROOT, "%03d", (maxNumber == null ? 0 : maxNumber) + 1);
+        return EmployeeCodes.next(prefix, ((Number) repo.findCodeSeries().get("code_digits")).intValue(), repo.findMaxCodeNumber(prefix));
+    }
+
+    /** Whether new employees get their code automatically (AUTO) or HR must type it (MANUAL). */
+    public String codeSeriesMode() {
+        return (String) repo.findCodeSeries().get("code_series_mode");
+    }
+
+    /** Sets the business's code series (AUTO or MANUAL); admin level (roles.manage), audited. */
+    public void setCodeSeriesMode(CurrentUser user, String mode, String ipAddress) {
+        if (mode == null || !EmployeeCodes.SERIES_MODES.contains(mode)) throw bad("Choose Auto or Manual");
+        String before = codeSeriesMode();
+        transactionTemplate.executeWithoutResult(transactionStatus -> {
+            repo.updateCodeSeriesMode(mode);
+            audit.log(user.id(), "business.code_series", "business", user.businessId() == null ? null : user.businessId().toString(), Map.of("mode", before), Map.of("mode", mode), ipAddress);
+        });
     }
 
     private Map<String, Object> editable(Actor actor, UUID editId) {
@@ -303,7 +318,9 @@ public class PeopleService {
                     PeopleRules.locationOfTimeZone((String) current.get("time_zone")).value(), current.get("joining_office") == null ? "" : (String) current.get("joining_office"),
                     "", "", "", "", (String) current.get("designation"), current.get("department_id") == null ? "" : current.get("department_id").toString(),
                     current.get("reporting_manager_id") == null ? "" : current.get("reporting_manager_id").toString(),
-                    ((Date) current.get("date_of_joining")).toLocalDate().toString(), shift, currentRole, null);
+                    ((Date) current.get("date_of_joining")).toLocalDate().toString(), shift, currentRole, null,
+                    valueOrEmpty(current.get("employment_type")), valueOrEmpty(current.get("payment_type")),
+                    valueOrEmpty(current.get("gender")), "");
         } else {
             DepartmentOption department = locked != null ? (departments.isEmpty() ? null : departments.get(0))
                     : departments.stream().filter(d -> !List.of("Human Resources", "Finance").contains(d.name())).findFirst().orElse(departments.isEmpty() ? null : departments.get(0));
@@ -315,7 +332,7 @@ public class PeopleService {
         Editing editing = current == null ? null : new Editing((String) current.get("code"), (String) current.get("full_name"),
                 new Last4((String) current.get("phone_last4"), (String) current.get("pan_last4"), (String) current.get("aadhaar_last4"), (String) current.get("uan_last4")),
                 current.get("address_enc") != null, current.get("reporting_manager_id") != null);
-        return new FormOptions(current != null ? (String) current.get("code") : nextCode(), departments, locked, managers,
+        return new FormOptions(codeSeriesMode(), current != null ? (String) current.get("code") : nextCode(), departments, locked, managers,
                 allowed.stream().map(r -> new RoleOption(r.id(), r.name(), r.perms())).toList(), defaults, editing);
     }
 
@@ -332,11 +349,14 @@ public class PeopleService {
 
     /** employeeInput (zod): trims, lower-cases email, upper-cases PAN; first failing field wins, in schema order. */
     static EmployeeInput parse(EmployeeInput input) {
-        return parse(input, true);
+        return parse(input, true, false);
     }
 
-    /** {@code isFatherNameRequired} is false for an HR-created onboarding: the employee gives it in the wizard. */
-    private static EmployeeInput parse(EmployeeInput input, boolean isFatherNameRequired) {
+    /**
+     * {@code isFatherNameRequired} is false for an HR-created onboarding: the employee gives it in the wizard. {@code isSlim} is the add-employee form:
+     * the father's name, designation, department, role, joining date and shift are optional (defaulted later); the payment type is required.
+     */
+    private static EmployeeInput parse(EmployeeInput input, boolean isFatherNameRequired, boolean isSlim) {
         java.util.function.BiFunction<String, String, String> trimOrEmpty = (v, f) -> v == null ? "" : v.trim();
         String first = trimOrEmpty.apply(input.firstName(), "firstName");
         if (first.isEmpty()) throw bad("First name is required");
@@ -345,7 +365,7 @@ public class PeopleService {
         if (last.isEmpty()) throw bad("Last name is required");
         for (String name : List.of(first, middle, last)) if (name.length() > 60) throw bad("Keep each name under 60 characters");
         String father = trimOrEmpty.apply(input.fatherName(), "fatherName");
-        if (father.length() < 2 && (isFatherNameRequired || !father.isEmpty())) throw bad("Father’s name is required");
+        if (father.length() < 2 && ((isFatherNameRequired && !isSlim) || !father.isEmpty())) throw bad("Father’s name is required");
         if (father.length() > 120) throw bad("Too big: expected string to have <=120 characters");
         String email = trimOrEmpty.apply(input.email(), "email").toLowerCase();
         if (email.length() > 200) throw bad("Too big: expected string to have <=200 characters");
@@ -369,16 +389,30 @@ public class PeopleService {
         String address = trimOrEmpty.apply(input.address(), "address");
         if (address.length() > 500) throw bad("Too big: expected string to have <=500 characters");
         String designation = trimOrEmpty.apply(input.designation(), "designation");
-        if (designation.length() < 2) throw bad("Designation is required");
+        if (designation.length() < 2 && !(isSlim && designation.isEmpty())) throw bad("Designation is required");
         if (designation.length() > 120) throw bad("Too big: expected string to have <=120 characters");
-        String departmentId = Check.uuid(input.departmentId(), "Pick a department").toString();
+        String departmentId = isSlim && (input.departmentId() == null || input.departmentId().isBlank()) ? "" : Check.uuid(input.departmentId(), "Pick a department").toString();
         String managerId = input.managerId() == null ? "" : input.managerId();
         if (!managerId.isEmpty() && !PeopleRules.UUID_RE.matcher(managerId).matches()) throw bad("Invalid input");
-        String dateOfJoining = Check.isoDate(input.dateOfJoining(), "Pick the date of joining");
+        String dateOfJoining = isSlim && (input.dateOfJoining() == null || input.dateOfJoining().isBlank()) ? Format.todayIn(IST).toString()
+                : Check.isoDate(input.dateOfJoining(), "Pick the date of joining");
         String shift = input.shift() == null || input.shift().isBlank() ? ("IN_IST".equals(location) ? "IN_NIGHT" : "US_DAY") : Check.oneOf(input.shift(), List.of("IN_NIGHT", "IN_DAY", "US_DAY"));
-        String roleId = Check.uuid(input.roleId(), "Pick a role").toString();
+        String roleId = isSlim && (input.roleId() == null || input.roleId().isBlank()) ? "" : Check.uuid(input.roleId(), "Pick a role").toString();
+        String employmentType = optionalChoice(input.employmentType(), PeopleRules.EMPLOYMENT_TYPES, "Choose the employment type");
+        String paymentType = optionalChoice(input.paymentType(), PeopleRules.PAYMENT_TYPES, "Choose how the employee is paid");
+        if (isSlim && paymentType.isEmpty()) throw bad("Choose how the employee is paid");
+        String gender = optionalChoice(input.gender(), PeopleRules.GENDERS, "Choose the gender");
+        String employeeCode = trimOrEmpty.apply(input.employeeCode(), "employeeCode").toUpperCase();
+        if (!employeeCode.isEmpty() && !EmployeeCodes.CUSTOM_CODE.matcher(employeeCode).matches()) throw bad("The employee code is capital letters followed by digits, like JSC07");
         return new EmployeeInput(first, middle, last, father, email, phoneCountry, phone, location, office, pan, aadhaar, uan, address, designation, departmentId,
-                managerId, dateOfJoining, shift, roleId, Boolean.TRUE.equals(input.isOnboardingRequired()));
+                managerId, dateOfJoining, shift, roleId, Boolean.TRUE.equals(input.isOnboardingRequired()), employmentType, paymentType, gender, employeeCode);
+    }
+
+    /** An optional choice from a fixed list: empty when not given, else one of {@code allowed} (400 otherwise). */
+    private static String optionalChoice(String value, List<String> allowed, String message) {
+        String trimmed = value == null ? "" : value.trim();
+        if (!trimmed.isEmpty() && !allowed.contains(trimmed)) throw bad(message);
+        return trimmed;
     }
 
     private static UserException bad(String message) {
@@ -388,16 +422,16 @@ public class PeopleService {
     public record Saved(String id, String code, String message) {}
 
     public Saved save(CurrentUser user, EmployeeInput input, String editIdRaw, String ipAddress) {
-        return save(user, input, editIdRaw, ipAddress, true, true);
+        return save(user, input, editIdRaw, ipAddress, true, true, editIdRaw == null || editIdRaw.isEmpty());
     }
 
     /** Creates the employee of an HR-started onboarding: the add-employee rules, except that the father's name is left to the employee. */
     public Saved createForOnboarding(CurrentUser user, EmployeeInput input, String ipAddress) {
-        return save(user, input, null, ipAddress, true, false);
+        return save(user, input, null, ipAddress, true, false, false);
     }
 
-    private Saved save(CurrentUser user, EmployeeInput input, String editIdRaw, String ipAddress, boolean access, boolean isFatherNameRequired) {
-        EmployeeInput employeeInput = parse(input, isFatherNameRequired);
+    private Saved save(CurrentUser user, EmployeeInput input, String editIdRaw, String ipAddress, boolean access, boolean isFatherNameRequired, boolean isSlim) {
+        EmployeeInput parsed = parse(input, isFatherNameRequired, isSlim);
         Actor actor = actors.actor(user);
         boolean editing = editIdRaw != null && !editIdRaw.isEmpty();
         Map<String, Object> current = null;
@@ -409,11 +443,20 @@ public class PeopleService {
             throw new UserException("You can't add employees.");
         }
         boolean hadManager = current != null && current.get("reporting_manager_id") != null;
-        for (int step = 1; step <= 3; step++) {
-            Map<String, String> errs = PeopleRules.stepErrors(step, employeeInput, editing, hadManager);
-            if (!isFatherNameRequired) errs.remove("fatherName");
+        for (int step = 1; step <= (isSlim ? 2 : 3); step++) {
+            Map<String, String> errs = PeopleRules.stepErrors(step, parsed, editing, hadManager);
+            if (!isFatherNameRequired || isSlim) errs.remove("fatherName");
             if (!errs.isEmpty()) throw new UserException(errs.values().iterator().next());
         }
+
+        // Slim add form: a role not chosen is the plain employee role; a department not chosen is the actor's own locked department, else none.
+        String defaultRoleId = parsed.roleId();
+        if (isSlim && defaultRoleId.isEmpty()) {
+            defaultRoleId = repo.findRoles().stream().filter(r -> "employee".equals(r.key())).findFirst().orElseThrow(() -> new UserException("Pick a role.")).id();
+        }
+        String lockedDepartment = PeopleRules.lockedDepartment(actor);
+        String defaultDepartmentId = isSlim && parsed.departmentId().isEmpty() && lockedDepartment != null ? lockedDepartment : parsed.departmentId();
+        final EmployeeInput employeeInput = withRoleAndDepartment(parsed, defaultRoleId, defaultDepartmentId);
 
         // Role: only from the creator's assignable list (or unchanged on edit).
         List<Map<String, Object>> roleRows = repo.findRole(employeeInput.roleId());
@@ -428,10 +471,12 @@ public class PeopleService {
         if (current != null && !employeeInput.roleId().equals(currentRole) && !PeopleRules.canManageStatusAndRole(actor)) throw new UserException("Only the admin or HR can change someone's role.");
 
         // Department: must exist; locked to the actor's own department where the rule applies.
-        List<Map<String, Object>> department = repo.findDepartmentArchivedAt(employeeInput.departmentId());
-        if (department.isEmpty() || department.get(0).get("archived_at") != null) throw new UserException("Pick a department.");
         String locked = PeopleRules.lockedDepartment(actor);
-        if (locked != null && !employeeInput.departmentId().equals(locked)) throw new UserException("You can add people to your own department only.");
+        if (!(isSlim && employeeInput.departmentId().isEmpty())) {
+            List<Map<String, Object>> department = repo.findDepartmentArchivedAt(employeeInput.departmentId());
+            if (department.isEmpty() || department.get(0).get("archived_at") != null) throw new UserException("Pick a department.");
+            if (locked != null && !employeeInput.departmentId().equals(locked)) throw new UserException("You can add people to your own department only.");
+        }
 
         // Manager: current employee, not themselves, no reporting loops.
         if (!employeeInput.managerId().isEmpty()) {
@@ -487,6 +532,7 @@ public class PeopleService {
         String managerId = employeeInput.managerId().isEmpty() ? null : employeeInput.managerId();
         LocalDate today = Format.todayIn(IST);
 
+        String departmentOrNull = employeeInput.departmentId().isEmpty() ? null : employeeInput.departmentId();
         if (current != null) {
             Map<String, Object> currentRow = current;
             UUID id = editId;
@@ -501,6 +547,9 @@ public class PeopleService {
             before.put("dateOfJoining", ((Date) currentRow.get("date_of_joining")).toLocalDate().toString());
             before.put("timeZone", currentRow.get("time_zone"));
             before.put("shiftId", textOrEmpty(currentRow.get("shift_id")));
+            before.put("employmentType", currentRow.get("employment_type"));
+            before.put("paymentType", currentRow.get("payment_type"));
+            before.put("gender", currentRow.get("gender"));
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("fullName", fullName);
             after.put("fatherName", employeeInput.fatherName());
@@ -512,6 +561,9 @@ public class PeopleService {
             after.put("dateOfJoining", employeeInput.dateOfJoining());
             after.put("timeZone", location.timeZone());
             after.put("shiftId", shiftId.toString());
+            after.put("employmentType", employeeInput.employmentType().isEmpty() ? currentRow.get("employment_type") : employeeInput.employmentType());
+            after.put("paymentType", employeeInput.paymentType().isEmpty() ? currentRow.get("payment_type") : employeeInput.paymentType());
+            after.put("gender", employeeInput.gender().isEmpty() ? currentRow.get("gender") : employeeInput.gender());
             after.put("piiChanged", changedPII);
             String status = (String) currentRow.get("status_s");
             String newStatus = "ONBOARDING".equals(status) || "PROBATION".equals(status)
@@ -521,6 +573,7 @@ public class PeopleService {
                         employeeInput.joiningOffice().isEmpty() ? null : employeeInput.joiningOffice(), employeeInput.fatherName(), email, employeeInput.designation(), employeeInput.departmentId(), managerId, employeeInput.roleId(), Date.valueOf(employeeInput.dateOfJoining()),
                         location.timeZone(), location.region(), shiftId, newStatus);
                 repo.updatePii(id, piiCols);
+                repo.updateAttributes(id, employeeInput.employmentType(), employeeInput.paymentType(), employeeInput.gender());
                 audit.log(user.id(), "employee.edit", "employee", id.toString(), before, after, ipAddress);
             rosterTrigger.rosterChanged(com.jurislpo.jurisone.tenancy.TenantContext.current());
             });
@@ -533,17 +586,22 @@ public class PeopleService {
             // serialise code allocation
             repo.lockCodeAllocation(); // one allocation at a time per business
             subscriptions.checkRoomForOneMore(); // the plan's employee limit (under the same lock, so two adds can't both slip past)
-            String code = nextCode();
+            String code = allocateCode(employeeInput.employeeCode());
             codeOut[0] = code;
             repo.insertEmployee(id, code, fullName, employeeInput.firstName(), employeeInput.middleName().isEmpty() ? null : employeeInput.middleName(), employeeInput.lastName(), employeeInput.joiningOffice().isEmpty() ? null : employeeInput.joiningOffice(),
-                    employeeInput.fatherName().isEmpty() ? null : employeeInput.fatherName(), email, employeeInput.designation(), employeeInput.departmentId(), managerId, employeeInput.roleId(), Date.valueOf(employeeInput.dateOfJoining()),
-                    location.timeZone(), location.region(), shiftId, PeopleRules.initialStatus(LocalDate.parse(employeeInput.dateOfJoining()), today).name(), access, user.id());
+                    employeeInput.fatherName().isEmpty() ? null : employeeInput.fatherName(), email, employeeInput.designation(), departmentOrNull, managerId, employeeInput.roleId(), Date.valueOf(employeeInput.dateOfJoining()),
+                    location.timeZone(), location.region(), shiftId, PeopleRules.initialStatus(LocalDate.parse(employeeInput.dateOfJoining()), today).name(), access, user.id(),
+                    blankToNull(employeeInput.employmentType()), blankToNull(employeeInput.paymentType()), blankToNull(employeeInput.gender()));
             repo.updatePii(id, piiCols);
             repo.insertUser(id);
             repo.insertOnboarding(UUID.randomUUID(), id, Boolean.TRUE.equals(employeeInput.isOnboardingRequired()));
             // the TS audit: { code, ...data without *Enc, piiProvided }
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("code", code);
+            after.put("codeSource", employeeInput.employeeCode().isEmpty() ? "AUTO" : "CUSTOM");
+            after.put("employmentType", blankToNull(employeeInput.employmentType()));
+            after.put("paymentType", blankToNull(employeeInput.paymentType()));
+            after.put("gender", blankToNull(employeeInput.gender()));
             after.put("fullName", fullName);
             after.put("fatherName", employeeInput.fatherName());
             after.put("email", email);
@@ -569,6 +627,33 @@ public class PeopleService {
         });
         return new Saved(id.toString(), codeOut[0], fullName + " added as " + codeOut[0] + " · " + role.get("name")
                 + (india ? " · salary structure pending with Finance" : "") + (access ? " · they sign in with the code emailed to their work email" : " · portal access is off until you turn it on"));
+    }
+
+    /**
+     * The code of a new employee, inside the business's allocation lock: the typed one (refused 409 when taken, and required when the business series is
+     * Manual) or the next number of the series.
+     */
+    private String allocateCode(String typedCode) {
+        if (typedCode.isEmpty()) {
+            if ("MANUAL".equals(codeSeriesMode())) throw bad("Type the employee code");
+            return nextCode();
+        }
+        if (repo.codeExists(typedCode)) throw new UserException(HttpStatus.CONFLICT, typedCode + " is already used by another employee.");
+        return typedCode;
+    }
+
+    private static EmployeeInput withRoleAndDepartment(EmployeeInput input, String roleId, String departmentId) {
+        return new EmployeeInput(input.firstName(), input.middleName(), input.lastName(), input.fatherName(), input.email(), input.phoneCountry(), input.phone(), input.location(),
+                input.joiningOffice(), input.pan(), input.aadhaar(), input.uan(), input.address(), input.designation(), departmentId, input.managerId(), input.dateOfJoining(),
+                input.shift(), roleId, input.isOnboardingRequired(), input.employmentType(), input.paymentType(), input.gender(), input.employeeCode());
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isEmpty() ? null : value;
+    }
+
+    private static String valueOrEmpty(Object value) {
+        return value == null ? "" : value.toString();
     }
 
     private static String textOrEmpty(Object value) {

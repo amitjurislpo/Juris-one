@@ -34,7 +34,7 @@ import org.springframework.stereotype.Service;
  *   Platform: shifts, leave types, FY 2026-27 tax tables and the super admin (jurisone.seed.super-admin-email). Businesses are created by the super admin.
  *   Demo (jurisone.seed.demo=true, development and tests only): a "Juris Consultants" business with the prototype's people,
  *             holidays, salary structures, declarations, punches, requests and closed Apr–Aug 2026 payroll. Its owner
- *             is JC-002. Everyone signs in with their email and an emailed code (fixed 000000 in dev).
+ *             is JC002. Everyone signs in with their email and an emailed code (fixed 000000 in dev).
  */
 @Service
 public class SeedService {
@@ -156,22 +156,22 @@ public class SeedService {
     }
 
     static final List<Person> PEOPLE = List.of(
-            new Person("JC-002", "Sana Kapoor", "Portal Administrator", null, null, "2021-04-12", "owner", "ACTIVE", null, "Asia/Kolkata", "Rajeev Kapoor"),
-            new Person("JC-004", "Arjun Mehta", "Finance Manager", "Finance", null, "2020-07-01", "fm", "ACTIVE", "IN_DAY", "Asia/Kolkata", "Suresh Mehta"),
-            new Person("JC-012", "Riya Malhotra", "HR Manager", "Human Resources", null, "2025-08-04", "hrm", "ACTIVE", "IN_DAY", "Asia/Kolkata", "Anil Malhotra"),
-            new Person("JC-015", "Pooja Nair", "HR Executive", "Human Resources", "JC-012", "2026-01-12", "hre", "ACTIVE", "IN_DAY", "Asia/Kolkata", "Mohan Nair"),
-            new Person("JC-018", "Rohan Gupta", "Finance Executive", "Finance", "JC-004", "2025-11-03", "fe", "ACTIVE", "IN_DAY", "Asia/Kolkata", "Vinod Gupta"),
-            new Person("JC-030", "Vikas Rao", "Legal Researcher", "Litigation Support", "JC-035", "2023-02-01", "employee", "EXITED", "IN_NIGHT", "Asia/Kolkata", "Prakash Rao",
+            new Person("JC002", "Sana Kapoor", "Portal Administrator", null, null, "2021-04-12", "owner", "ACTIVE", null, "Asia/Kolkata", "Rajeev Kapoor"),
+            new Person("JC004", "Arjun Mehta", "Finance Manager", "Finance", null, "2020-07-01", "fm", "ACTIVE", "IN_DAY", "Asia/Kolkata", "Suresh Mehta"),
+            new Person("JC012", "Riya Malhotra", "HR Manager", "Human Resources", null, "2025-08-04", "hrm", "ACTIVE", "IN_DAY", "Asia/Kolkata", "Anil Malhotra"),
+            new Person("JC015", "Pooja Nair", "HR Executive", "Human Resources", "JC012", "2026-01-12", "hre", "ACTIVE", "IN_DAY", "Asia/Kolkata", "Mohan Nair"),
+            new Person("JC018", "Rohan Gupta", "Finance Executive", "Finance", "JC004", "2025-11-03", "fe", "ACTIVE", "IN_DAY", "Asia/Kolkata", "Vinod Gupta"),
+            new Person("JC030", "Vikas Rao", "Legal Researcher", "Litigation Support", "JC035", "2023-02-01", "employee", "EXITED", "IN_NIGHT", "Asia/Kolkata", "Prakash Rao",
                     "2026-08-31", false, null),
-            new Person("JC-035", "Nazneen Khan", "Engineering Manager", "Technology", "JC-004", "2022-02-14", "employee", "ACTIVE", "IN_NIGHT", "Asia/Kolkata", "Imran Khan"),
-            new Person("JC-049", "Naman Tyagi", "Litigation Analyst", "Litigation Support", "JC-035", "2024-11-18", "employee", "ACTIVE", "IN_NIGHT", "Asia/Kolkata", "Rakesh Tyagi"),
-            new Person("JC-058", "Kavya Iyer", "Contract Analyst", "Contract Management", "JC-035", "2023-06-05", "employee", "ACTIVE", "IN_NIGHT", "Asia/Kolkata", "Ramesh Iyer"),
-            new Person("JC-072", "Siddharth Krishna", "Document Reviewer", "Document Review", "JC-035", "2025-01-20", "employee", "ACTIVE", "IN_NIGHT", "Asia/Kolkata", "Gopal Krishna"),
-            new Person("JC-074", "Amit Jaspal", "Tech Lead", "Technology", "JC-035", "2026-09-08", "employee", "PROBATION", "IN_NIGHT", "Asia/Kolkata", "Harish Jaspal"),
-            new Person("JC-081", "Farhan Siddiqui", "Paralegal", "Litigation Support", "JC-035", "2026-03-02", "employee", "PROBATION", "IN_NIGHT", "Asia/Kolkata", "Salim Siddiqui",
+            new Person("JC035", "Nazneen Khan", "Engineering Manager", "Technology", "JC004", "2022-02-14", "employee", "ACTIVE", "IN_NIGHT", "Asia/Kolkata", "Imran Khan"),
+            new Person("JC049", "Naman Tyagi", "Litigation Analyst", "Litigation Support", "JC035", "2024-11-18", "employee", "ACTIVE", "IN_NIGHT", "Asia/Kolkata", "Rakesh Tyagi"),
+            new Person("JC058", "Kavya Iyer", "Contract Analyst", "Contract Management", "JC035", "2023-06-05", "employee", "ACTIVE", "IN_NIGHT", "Asia/Kolkata", "Ramesh Iyer"),
+            new Person("JC072", "Siddharth Krishna", "Document Reviewer", "Document Review", "JC035", "2025-01-20", "employee", "ACTIVE", "IN_NIGHT", "Asia/Kolkata", "Gopal Krishna"),
+            new Person("JC074", "Amit Jaspal", "Tech Lead", "Technology", "JC035", "2026-09-08", "employee", "PROBATION", "IN_NIGHT", "Asia/Kolkata", "Harish Jaspal"),
+            new Person("JC081", "Farhan Siddiqui", "Paralegal", "Litigation Support", "JC035", "2026-03-02", "employee", "PROBATION", "IN_NIGHT", "Asia/Kolkata", "Salim Siddiqui",
                     null, false, null),
-            new Person("JC-091", "Daniel Brooks", "Client Services Lead", "Client Services", "JC-002", "2024-09-09", "employee", "ACTIVE", "US_DAY", "America/Los_Angeles", null),
-            new Person("JC-090", "Emily Carter", "Client Success Associate", "Client Services", "JC-091", "2025-05-19", "employee", "ACTIVE", "US_DAY", "America/New_York", null));
+            new Person("JC091", "Daniel Brooks", "Client Services Lead", "Client Services", "JC002", "2024-09-09", "employee", "ACTIVE", "US_DAY", "America/Los_Angeles", null),
+            new Person("JC090", "Emily Carter", "Client Success Associate", "Client Services", "JC091", "2025-05-19", "employee", "ACTIVE", "US_DAY", "America/New_York", null));
 
     String adminEmail() {
         String email = environment.getProperty("jurisone.seed.super-admin-email", "");
@@ -226,9 +226,9 @@ public class SeedService {
 
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ demo attendance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     /** Prototype absences (no punches that day) and late marks. */
-    static final Map<String, Set<String>> ABSENT = Map.of("JC-074", Set.of("2026-09-22"), "JC-049", Set.of("2026-08-19", "2026-09-10", "2026-09-11"),
-            "JC-012", Set.of("2026-09-25"), "JC-058", Set.of("2026-09-03", "2026-09-04", "2026-09-08"), "JC-090", Set.of("2026-09-16"));
-    static final Map<String, Set<String>> LATE = Map.of("JC-074", Set.of("2026-09-17"), "JC-072", Set.of("2026-09-09", "2026-09-23"), "JC-049", Set.of("2026-09-15"));
+    static final Map<String, Set<String>> ABSENT = Map.of("JC074", Set.of("2026-09-22"), "JC049", Set.of("2026-08-19", "2026-09-10", "2026-09-11"),
+            "JC012", Set.of("2026-09-25"), "JC058", Set.of("2026-09-03", "2026-09-04", "2026-09-08"), "JC090", Set.of("2026-09-16"));
+    static final Map<String, Set<String>> LATE = Map.of("JC074", Set.of("2026-09-17"), "JC072", Set.of("2026-09-09", "2026-09-23"), "JC049", Set.of("2026-09-15"));
 
     boolean jobRan(String key) {
         return repo.seedStepRan(key);
@@ -283,7 +283,7 @@ public class SeedService {
             List<String> statuses = repo.findPayrollRunStatus(yearMonth);
             if (!statuses.isEmpty() && "CLOSED".equals(statuses.get(0))) continue;
             String next = YearMonth.parse(yearMonth).plusMonths(1).atDay(1).toString();
-            int closedCount = payrollOperations.closeRun(yearMonth, codeToId.get("JC-004"), false, next);
+            int closedCount = payrollOperations.closeRun(yearMonth, codeToId.get("JC004"), false, next);
             log.info("Payroll {} closed — {} payslips", yearMonth, closedCount);
         }
     }
@@ -311,13 +311,13 @@ public class SeedService {
     /** Prototype leave requests and regularizations (once). Balances come from the accrual job. */
     void seedRequests(Map<String, UUID> codeToId) {
         if (jobRan("requests")) return;
-        UUID hrId = codeToId.get("JC-012");
+        UUID hrId = codeToId.get("JC012");
         String[][] leaves = {
-                {"JC-058", "EL", "2026-10-23", "2026-10-23", "Personal work", "PENDING", "2026-10-05"},
-                {"JC-074", "CL", "2026-11-02", "2026-11-02", "", "PENDING", "2026-10-04"},
-                {"JC-049", "CL", "2026-10-21", "2026-10-22", "Sister’s wedding", "PENDING", "2026-10-06"},
-                {"JC-058", "EL", "2026-10-06", "2026-10-06", "Family function", "APPROVED", "2026-09-30"},
-                {"JC-074", "LOP", "2026-09-22", "2026-09-22", "Unapplied absence", "APPROVED", "2026-10-01"}};
+                {"JC058", "EL", "2026-10-23", "2026-10-23", "Personal work", "PENDING", "2026-10-05"},
+                {"JC074", "CL", "2026-11-02", "2026-11-02", "", "PENDING", "2026-10-04"},
+                {"JC049", "CL", "2026-10-21", "2026-10-22", "Sister’s wedding", "PENDING", "2026-10-06"},
+                {"JC058", "EL", "2026-10-06", "2026-10-06", "Family function", "APPROVED", "2026-09-30"},
+                {"JC074", "LOP", "2026-09-22", "2026-09-22", "Unapplied absence", "APPROVED", "2026-10-01"}};
         for (String[] leaveRow : leaves) {
             String code = leaveRow[0], type = leaveRow[1], from = leaveRow[2], to = leaveRow[3], reason = leaveRow[4], status = leaveRow[5], applied = leaveRow[6];
             int days = from.equals(to) ? 1 : 2;
@@ -331,19 +331,19 @@ public class SeedService {
             }
         }
 
-        // JC-072 forgot to check out of the 1 Oct night shift (last activity 4:36 AM on 2 Oct)
+        // JC072 forgot to check out of the 1 Oct night shift (last activity 4:36 AM on 2 Oct)
         List<UUID> out = repo.findOutPunch(
-                codeToId.get("JC-072"), Timestamp.from(Instant.parse("2026-10-01T20:00:00Z")), Timestamp.from(Instant.parse("2026-10-02T03:00:00Z")));
+                codeToId.get("JC072"), Timestamp.from(Instant.parse("2026-10-01T20:00:00Z")), Timestamp.from(Instant.parse("2026-10-02T03:00:00Z")));
         if (!out.isEmpty()) repo.deletePunch(out.get(0));
         repo.insertMissedCheckout(
-                UUID.randomUUID(), codeToId.get("JC-072"), parseDate("2026-10-01"), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-02"), "04:36", "Asia/Kolkata")),
+                UUID.randomUUID(), codeToId.get("JC072"), parseDate("2026-10-01"), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-02"), "04:36", "Asia/Kolkata")),
                 "Laptop shut down on battery", Timestamp.from(Instant.parse("2026-10-02T06:00:00Z")));
-        // JC-049 worked 8h40m on Gandhi Jayanti → asks for a comp-off
+        // JC049 worked 8h40m on Gandhi Jayanti → asks for a comp-off
         repo.insertPunchPair(
-                UUID.randomUUID(), codeToId.get("JC-049"), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-02"), "19:30", "Asia/Kolkata")),
+                UUID.randomUUID(), codeToId.get("JC049"), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-02"), "19:30", "Asia/Kolkata")),
                 UUID.randomUUID(), Timestamp.from(AttendanceEngine.atLocal(LocalDate.parse("2026-10-03"), "04:10", "Asia/Kolkata")));
         repo.insertHolidayWork(
-                UUID.randomUUID(), codeToId.get("JC-049"), parseDate("2026-10-02"), "Client filing deadline", Timestamp.from(Instant.parse("2026-10-03T06:00:00Z")));
+                UUID.randomUUID(), codeToId.get("JC049"), parseDate("2026-10-02"), "Client filing deadline", Timestamp.from(Instant.parse("2026-10-03T06:00:00Z")));
         repo.insertRequestsRun(UUID.randomUUID());
         log.info("Demo leave requests and regularizations added");
     }
@@ -385,7 +385,7 @@ public class SeedService {
 
         long[] counts = {count("businesses"), count("employees"), count("roles"), count("departments"), count("holidays")};
         log.info("Seed complete — businesses {}, employees {}, roles {}, departments {}, holidays {}", counts[0], counts[1], counts[2], counts[3], counts[4]);
-        log.info("Super admin: {}{}", adminEmail(), demo ? " · demo business \"Juris Consultants\": owner JC-002" : "");
+        log.info("Super admin: {}{}", adminEmail(), demo ? " · demo business \"Juris Consultants\": owner JC002" : "");
     }
 
     /**
@@ -408,28 +408,28 @@ public class SeedService {
         departmentIds.putAll(repo.findDepartmentIds());
         Map<String, UUID> codeToId = new LinkedHashMap<>();
             // Sana (the owner) needs to exist before she can be "creator" of the departments in the demo story.
-            codeToId.put("JC-002", upsertEmployee(PEOPLE.get(0), roleIds, shiftIds, departmentIds, codeToId, superAdminId));
+            codeToId.put("JC002", upsertEmployee(PEOPLE.get(0), roleIds, shiftIds, departmentIds, codeToId, superAdminId));
             for (Person person : PEOPLE.subList(1, PEOPLE.size())) {
                 if (person.department() != null && !departmentIds.containsKey(person.department())) {
-                    UUID creator = codeToId.getOrDefault("JC-012", codeToId.get("JC-002"));
+                    UUID creator = codeToId.getOrDefault("JC012", codeToId.get("JC002"));
                     departmentIds.put(person.department(), upsertDepartment(person.department(), null, creator));
                 }
             }
             // two passes so managers resolve regardless of order
             for (int pass = 1; pass <= 2; pass++) {
                 for (Person person : PEOPLE.subList(1, PEOPLE.size())) {
-                    UUID creator = "fe".equals(person.role()) ? codeToId.get("JC-004")
-                            : Set.of("hrm", "fm").contains(person.role()) ? codeToId.get("JC-002") : codeToId.get("JC-012");
-                    codeToId.put(person.code(), upsertEmployee(person, roleIds, shiftIds, departmentIds, codeToId, creator != null ? creator : codeToId.get("JC-002")));
+                    UUID creator = "fe".equals(person.role()) ? codeToId.get("JC004")
+                            : Set.of("hrm", "fm").contains(person.role()) ? codeToId.get("JC002") : codeToId.get("JC012");
+                    codeToId.put(person.code(), upsertEmployee(person, roleIds, shiftIds, departmentIds, codeToId, creator != null ? creator : codeToId.get("JC002")));
                 }
                 if (pass == 1) {
                     // departments created by Riya once she exists
                     for (String name : List.of("Technology", "Litigation Support", "Contract Management", "Document Review", "Client Services")) {
-                        repo.updateDepartmentCreator(name, codeToId.get("JC-012"));
+                        repo.updateDepartmentCreator(name, codeToId.get("JC012"));
                     }
                 }
             }
-            String[][] heads = {{"Human Resources", "JC-012"}, {"Finance", "JC-004"}, {"Technology", "JC-035"}, {"Litigation Support", "JC-035"}, {"Client Services", "JC-091"}};
+            String[][] heads = {{"Human Resources", "JC012"}, {"Finance", "JC004"}, {"Technology", "JC035"}, {"Litigation Support", "JC035"}, {"Client Services", "JC091"}};
             for (String[] head : heads) repo.updateDepartmentHead(head[0], codeToId.get(head[1]));
 
             for (Person person : PEOPLE) ensureUser(codeToId.get(person.code()), false);
@@ -440,32 +440,32 @@ public class SeedService {
                     {"2026-11-24", "Guru Nanak Jayanti", "IN"}, {"2026-11-26", "Thanksgiving Day", "US"}, {"2026-12-25", "Christmas", "ALL"},
                     {"2026-01-01", "New Year's Day", "US"}, {"2026-05-25", "Memorial Day", "US"}, {"2026-07-03", "Independence Day (observed)", "US"}};
             for (String[] holiday : holidayRows) {
-                repo.insertHoliday(UUID.randomUUID(), parseDate(holiday[0]), holiday[1], holiday[2], codeToId.get("JC-012"));
+                repo.insertHoliday(UUID.randomUUID(), parseDate(holiday[0]), holiday[1], holiday[2], codeToId.get("JC012"));
             }
 
             // Salary structures (monthly, ₹ → paise). Effective-dated; history only grows.
             Object[][] structures = {
-                    {"JC-002", "2026-04-01", 55000, 22000, 5500, 27500, "APPRAISAL"},
-                    {"JC-004", "2025-04-01", 55000, 22000, 5500, 27500, "APPRAISAL"}, {"JC-004", "2026-04-01", 60000, 24000, 6000, 30000, "APPRAISAL"},
-                    {"JC-012", "2025-08-04", 47500, 19000, 4750, 23750, "JOINING"},
-                    {"JC-015", "2026-01-12", 26000, 10400, 2600, 13000, "JOINING"},
-                    {"JC-018", "2025-11-03", 30000, 12000, 3000, 15000, "JOINING"},
-                    {"JC-030", "2023-02-01", 28000, 11200, 2800, 14000, "JOINING"},
-                    {"JC-035", "2025-04-01", 82500, 33000, 8250, 41250, "APPRAISAL"}, {"JC-035", "2026-04-01", 92500, 37000, 9250, 46250, "APPRAISAL"},
-                    {"JC-049", "2024-11-18", 31000, 12400, 3100, 15500, "JOINING"},
-                    {"JC-058", "2023-06-05", 36000, 14400, 3600, 18000, "JOINING"},
-                    {"JC-072", "2025-01-20", 29000, 11600, 2900, 14500, "JOINING"},
-                    {"JC-074", "2026-09-08", 75000, 30000, 7500, 37500, "JOINING"},
-                    {"JC-081", "2026-03-02", 24000, 9600, 2400, 12000, "JOINING"}};
+                    {"JC002", "2026-04-01", 55000, 22000, 5500, 27500, "APPRAISAL"},
+                    {"JC004", "2025-04-01", 55000, 22000, 5500, 27500, "APPRAISAL"}, {"JC004", "2026-04-01", 60000, 24000, 6000, 30000, "APPRAISAL"},
+                    {"JC012", "2025-08-04", 47500, 19000, 4750, 23750, "JOINING"},
+                    {"JC015", "2026-01-12", 26000, 10400, 2600, 13000, "JOINING"},
+                    {"JC018", "2025-11-03", 30000, 12000, 3000, 15000, "JOINING"},
+                    {"JC030", "2023-02-01", 28000, 11200, 2800, 14000, "JOINING"},
+                    {"JC035", "2025-04-01", 82500, 33000, 8250, 41250, "APPRAISAL"}, {"JC035", "2026-04-01", 92500, 37000, 9250, 46250, "APPRAISAL"},
+                    {"JC049", "2024-11-18", 31000, 12400, 3100, 15500, "JOINING"},
+                    {"JC058", "2023-06-05", 36000, 14400, 3600, 18000, "JOINING"},
+                    {"JC072", "2025-01-20", 29000, 11600, 2900, 14500, "JOINING"},
+                    {"JC074", "2026-09-08", 75000, 30000, 7500, 37500, "JOINING"},
+                    {"JC081", "2026-03-02", 24000, 9600, 2400, 12000, "JOINING"}};
             for (Object[] structure : structures) {
                 repo.insertSalaryStructure(
                         UUID.randomUUID(), codeToId.get((String) structure[0]), parseDate((String) structure[1]), paise((Integer) structure[2]), paise((Integer) structure[3]), paise((Integer) structure[4]),
-                        paise((Integer) structure[5]), structure[6], codeToId.get("JC-004"));
+                        paise((Integer) structure[5]), structure[6], codeToId.get("JC004"));
             }
 
             // Tax profiles + old-regime declarations (prototype)
             String financialYear = "2026-27";
-            repo.insertTaxProfile(codeToId.get("JC-074"), financialYear, "NEW", paise(750000), paise(38000));
+            repo.insertTaxProfile(codeToId.get("JC074"), financialYear, "NEW", paise(750000), paise(38000));
             record DeclarationSeed(String code, Map<String, Object[]> items, String status) {}
             Map<String, Object[]> pendingDeclarationItems = new LinkedHashMap<>();
             pendingDeclarationItems.put("rent", new Object[] {"HRA", 180000});
@@ -476,14 +476,14 @@ public class SeedService {
             approvedDeclarationItems.put("rent", new Object[] {"HRA", 144000});
             approvedDeclarationItems.put("elss", new Object[] {"80C", 60000});
             approvedDeclarationItems.put("medParents", new Object[] {"80D_PARENTS", 30000});
-            for (DeclarationSeed declarationSeed : List.of(new DeclarationSeed("JC-058", pendingDeclarationItems, "PENDING"), new DeclarationSeed("JC-049", approvedDeclarationItems, "APPROVED"))) {
+            for (DeclarationSeed declarationSeed : List.of(new DeclarationSeed("JC058", pendingDeclarationItems, "PENDING"), new DeclarationSeed("JC049", approvedDeclarationItems, "APPROVED"))) {
                 UUID employeeId = codeToId.get(declarationSeed.code());
                 repo.insertTaxProfile(employeeId, financialYear, "OLD", 0, 0);
                 boolean approved = "APPROVED".equals(declarationSeed.status());
                 for (Map.Entry<String, Object[]> entry : declarationSeed.items().entrySet()) {
                     repo.insertDeclarationItem(
                             UUID.randomUUID(), employeeId, financialYear, entry.getValue()[0], entry.getKey(), paise((Integer) entry.getValue()[1]), entry.getKey() + "-proof.pdf", declarationSeed.status(),
-                            approved ? codeToId.get("JC-004") : null, approved ? Timestamp.from(Instant.now()) : null);
+                            approved ? codeToId.get("JC004") : null, approved ? Timestamp.from(Instant.now()) : null);
                 }
             }
 

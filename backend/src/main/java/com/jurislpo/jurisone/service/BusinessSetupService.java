@@ -163,8 +163,7 @@ public class BusinessSetupService {
         String timeZone = (String) currentBusiness.get("time_zone");
         UUID role = repo.findRoleId(OWNER);
         repo.lockCodeAllocation();
-        Integer count = repo.findMaxCodeNumber(prefix);
-        String code = prefix + "-" + String.format(Locale.ROOT, "%03d", (count == null ? 0 : count) + 1);
+        String code = com.jurislpo.jurisone.engine.EmployeeCodes.next(prefix, repo.findCodeDigits(), repo.findMaxCodeNumber(prefix));
         UUID id = UUID.randomUUID();
         repo.insertOwnerEmployee(id, code, newOwner.name(), newOwner.email().trim().toLowerCase(Locale.ROOT), newOwner.designation() == null ? "Owner" : newOwner.designation(), role,
                 LocalDate.now(ZoneId.of(timeZone)), timeZone, "Asia/Kolkata".equals(timeZone) ? "IN" : "US", createdBy);

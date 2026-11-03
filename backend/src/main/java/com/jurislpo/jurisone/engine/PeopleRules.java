@@ -115,6 +115,10 @@ public final class PeopleRules {
     // ─── locations ───
     public record Location(String value, String label, String timeZone, String region) {}
 
+    public static final List<String> EMPLOYMENT_TYPES = List.of("PROBATION", "PERMANENT", "CONTRACT", "INTERN", "CONSULTANT", "PART_TIME", "FIXED_TERM");
+    public static final List<String> PAYMENT_TYPES = List.of("BANK_TRANSFER", "CHEQUE", "CASH");
+    public static final List<String> GENDERS = List.of("FEMALE", "MALE", "OTHER");
+
     public static final List<Location> LOCATIONS = List.of(
             new Location("IN_IST", "India · IST", "Asia/Kolkata", "IN"),
             new Location("US_ET", "US East · ET", "America/New_York", "US"),
@@ -161,7 +165,15 @@ public final class PeopleRules {
     public record EmployeeInput(String firstName, String middleName, String lastName, String fatherName, String email, String phoneCountry, String phone,
                                 String location, String joiningOffice, String pan, String aadhaar, String uan, String address, String designation,
                                 String departmentId, String managerId, String dateOfJoining, String shift, String roleId,
-                                Boolean isOnboardingRequired) {
+                                Boolean isOnboardingRequired, String employmentType, String paymentType, String gender, String employeeCode) {
+
+        /** The record without the optional attributes of the slim add-employee form (employment type, payment type, gender, typed code). */
+        public EmployeeInput(String firstName, String middleName, String lastName, String fatherName, String email, String phoneCountry, String phone,
+                             String location, String joiningOffice, String pan, String aadhaar, String uan, String address, String designation,
+                             String departmentId, String managerId, String dateOfJoining, String shift, String roleId, Boolean isOnboardingRequired) {
+            this(firstName, middleName, lastName, fatherName, email, phoneCountry, phone, location, joiningOffice, pan, aadhaar, uan, address, designation,
+                    departmentId, managerId, dateOfJoining, shift, roleId, isOnboardingRequired, null, null, null, null);
+        }
 
         /** "First Middle Last". */
         public String fullName() {
