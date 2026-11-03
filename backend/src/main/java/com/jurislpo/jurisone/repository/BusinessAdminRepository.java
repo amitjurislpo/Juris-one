@@ -69,7 +69,7 @@ public class BusinessAdminRepository {
     /** The business's roles (system mode), oldest first, with how many people hold each. */
     public List<BusinessRole> findRoles(UUID businessId) {
         return jdbc.query("""
-            SELECT r.id::text, r.key, r.name, (SELECT count(*) FROM employees e WHERE e.role_id = r.id) AS employees
+            SELECT r.id::text, r.key, r.name, ((SELECT count(*) FROM employees e WHERE e.role_id = r.id) + (SELECT count(*) FROM employee_additional_roles a WHERE a.role_id = r.id)) AS employees
             FROM roles r WHERE r.business_id = ? ORDER BY r.created_at, r.name""",
                 (resultSet, i) -> new BusinessRole(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getLong(4)), businessId);
     }
@@ -115,6 +115,15 @@ public class BusinessAdminRepository {
     /** Whether the short name has been retired (it is in the history of some business). */
     public boolean isSlugRetired(String slug) {
         return Boolean.TRUE.equals(jdbc.queryForObject("SELECT jurisone_slug_retired(?)", Boolean.class, slug));
+    }
+
+    /** Which of the (valid, at most a few dozen) slugs are used by a business or retired, in one query with bound parameters. */
+    public java.util.Set<String> findUnavailableSlugs(java.util.List<String> slugs) {
+        if (slugs.isEmpty()) return java.util.Set.of();
+        String placeholders = String.join(",", java.util.Collections.nCopies(slugs.size(), "?"));
+        Object[] twice = java.util.stream.Stream.concat(slugs.stream(), slugs.stream()).toArray();
+        return new java.util.HashSet<>(jdbc.queryForList("SELECT code FROM businesses WHERE code IN (" + placeholders + ") UNION SELECT slug FROM business_slug_history WHERE slug IN ("
+                + placeholders + ")", String.class, twice));
     }
 
     public void retireSlug(String slug, UUID businessId, UUID releasedBy) {

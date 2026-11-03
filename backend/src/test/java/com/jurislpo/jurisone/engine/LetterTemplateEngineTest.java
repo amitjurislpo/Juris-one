@@ -17,7 +17,7 @@ class LetterTemplateEngineTest {
     static Map<String, String> values() {
         Map<String, String> fieldValues = new HashMap<>();
         fieldValues.put("employee.name", "Asha Rao");
-        fieldValues.put("employee.code", "JC-007");
+        fieldValues.put("employee.code", "JC007");
         fieldValues.put("designation", "Analyst");
         fieldValues.put("business.name", "Juris Consultants");
         return fieldValues;
@@ -27,7 +27,7 @@ class LetterTemplateEngineTest {
     @DisplayName("fills known fields, with or without spaces inside the braces")
     void fills() {
         assertThat(LetterTemplateEngine.render("Dear {{employee.name}}, ID {{ employee.code }} - {{designation}}", values(), Mode.TEXT))
-                .isEqualTo("Dear Asha Rao, ID JC-007 - Analyst");
+                .isEqualTo("Dear Asha Rao, ID JC007 - Analyst");
     }
 
     @Test

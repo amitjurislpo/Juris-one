@@ -26,6 +26,12 @@ public final class Permissions {
      */
     public static final String PLATFORM_MANAGE = "platform.manage";
 
+    /** Held by a JurisTrack manager: sees the Juris Track time of the people who report to them. Only for businesses that have the JurisTrack module. */
+    public static final String JURISTRACK_MANAGER = "juristrack.manager";
+
+    /** Permissions that exist only with a module: a role holding one is offered only to businesses whose plan (or grant) includes that module. */
+    public static final Map<String, String> MODULE_OF = Map.of(JURISTRACK_MANAGER, Nav.JURIS_TRACK);
+
     /** The business owner's (sub admin's) permission: subscription details and the employee export. Owner role only. */
     public static final String BUSINESS_MANAGE = "business.manage";
 
@@ -56,6 +62,7 @@ public final class Permissions {
         descriptions.put(ROLES_MANAGE, "Roles, permissions & policies");
         descriptions.put(TASKS_MANAGE, "Task settings & every project and task");
         descriptions.put(PROJECTS_CREATE, "Create task projects");
+        descriptions.put(JURISTRACK_MANAGER, "Juris Track manager: see the time of the people who report to you");
         LABELS = java.util.Collections.unmodifiableMap(descriptions);
     }
 
@@ -68,7 +75,8 @@ public final class Permissions {
             new Group("People operations", List.of(ATT_ALL, APPR_LEAVE, APPR_REG, PEOPLE_VIEW, PEOPLE_ADD, ACCESS_TOGGLE, DEPT_MANAGE, HOLIDAYS_MANAGE, LETTERS_MANAGE)),
             new Group("Finance", List.of(PAY_VIEW, PAY_CLOSE, STRUCT_MANAGE, TAX_VIEW, PROOFS_VERIFY)),
             new Group("Administration", List.of(POLICIES_MANAGE, ASSETS_MANAGE, ANNOUNCEMENTS_MANAGE, ROLES_MANAGE)),
-            new Group("Tasks", List.of(TASKS_MANAGE, PROJECTS_CREATE)));
+            new Group("Tasks", List.of(TASKS_MANAGE, PROJECTS_CREATE)),
+            new Group("Juris Track", List.of(JURISTRACK_MANAGER)));
 
     /** Permissions that expose salary / tax figures. HR roles must never hold these. */
     public static final Set<String> SALARY = Set.of(PAY_VIEW, PAY_CLOSE, STRUCT_MANAGE, TAX_VIEW, PROOFS_VERIFY);

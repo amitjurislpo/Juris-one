@@ -87,7 +87,7 @@ class FreshDatabaseSchemaTest {
         entityManager.persist(shift);
 
         Employee employee = new Employee();
-        employee.setCode("JC-001");
+        employee.setCode("JC001");
         employee.setFullName("Test Person");
         employee.setEmail("t@example.com");
         employee.setDesignation("Tester");

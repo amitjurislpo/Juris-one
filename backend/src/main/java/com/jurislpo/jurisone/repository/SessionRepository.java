@@ -41,7 +41,7 @@ public class SessionRepository {
      */
     public List<Map<String, Object>> findRefreshTokenForUpdate(String tokenHash) {
         return jdbc.queryForList("""
-            SELECT t.used_at, t.expires_at, s.id AS session_id, s.created_at, s.expires_at AS session_expires, s.revoked_at, s.employee_id,
+            SELECT t.used_at, t.expires_at, s.id AS session_id, s.created_at, s.expires_at AS session_expires, s.revoked_at, s.employee_id, e.business_id,
                    e.portal_access, e.status::text AS status, (SELECT u.employee_id FROM users u WHERE u.employee_id = e.id) AS user_id,
                    (SELECT b.status FROM businesses b WHERE b.id = e.business_id) AS business_status
             FROM refresh_tokens t JOIN sessions s ON s.id = t.session_id JOIN employees e ON e.id = s.employee_id
@@ -89,7 +89,10 @@ public class SessionRepository {
         jdbc.update("UPDATE sessions SET last_seen_at = now() WHERE id = ?", sessionId);
     }
 
-    public List<String> findPermissionKeys(UUID roleId) {
-        return jdbc.queryForList("SELECT permission_key FROM role_permissions WHERE role_id = ?", String.class, roleId);
+    /** The permissions of the main role plus those of every additional role of the employee. */
+    public List<String> findPermissionKeys(UUID roleId, UUID employeeId) {
+        return jdbc.queryForList("""
+                SELECT permission_key FROM role_permissions WHERE role_id = ?
+                UNION SELECT rp.permission_key FROM role_permissions rp JOIN employee_additional_roles a ON a.role_id = rp.role_id WHERE a.employee_id = ?""", String.class, roleId, employeeId);
     }
 }

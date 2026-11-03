@@ -94,7 +94,7 @@ class RoleTemplatesApiTest extends IntegrationTest {
             boolean mandatory = List.of("owner", "hrm", "fm", "employee").contains(template.get("key").asText());
             if (List.of("owner", "hrm", "hre", "fm", "fe", "employee").contains(template.get("key").asText())) assertThat(template.get("mandatory").asBoolean()).isEqualTo(mandatory);
         }
-        assertThat(data.get("groups").size()).isEqualTo(5);
+        assertThat(data.get("groups").size()).isEqualTo(6);
         assertThat(data.get("groups").toString()).contains("people.add").contains("Add & edit employees").doesNotContain("business.manage");
 
         // a business user can't reach it
@@ -204,7 +204,7 @@ class RoleTemplatesApiTest extends IntegrationTest {
         String leadId = body(mockMvc.perform(write(post("/api/v1/platform/businesses/" + businessId + "/roles")).cookie(admin).content("{\"templateKey\":\"" + lead + "\"}"))
                 .andExpect(status().isCreated())).at("/data/id").asText();
         jdbc.update("INSERT INTO employees (id, business_id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, updated_at) "
-                + "VALUES (gen_random_uuid(), ?::uuid, 'RC-900', 'Held Lead', ?, 'Lead', ?::uuid, current_date, 'ACTIVE', 'Asia/Kolkata', 'IN', now())", businessId, "held." + suffix + "@example.com", leadId);
+                + "VALUES (gen_random_uuid(), ?::uuid, 'RC900', 'Held Lead', ?, 'Lead', ?::uuid, current_date, 'ACTIVE', 'Asia/Kolkata', 'IN', now())", businessId, "held." + suffix + "@example.com", leadId);
         mockMvc.perform(write(delete("/api/v1/platform/businesses/" + businessId + "/roles/" + leadId)).cookie(admin)).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.startsWith("Move everyone")));
 

@@ -173,10 +173,24 @@ public class PeopleRepository {
         return jdbc.queryForObject("SELECT employee_prefix FROM businesses WHERE id = jurisone_tenant_id()", String.class);
     }
 
-    /** The highest number among codes shaped {@code <prefix>-<digits>} (null when none). */
+    /** The current business's code series: {@code code_series_mode} (AUTO or MANUAL) and {@code code_digits}. */
+    public Map<String, Object> findCodeSeries() {
+        return jdbc.queryForMap("SELECT code_series_mode, code_digits FROM businesses WHERE id = jurisone_tenant_id()");
+    }
+
+    public void updateCodeSeriesMode(String mode) {
+        jdbc.update("UPDATE businesses SET code_series_mode = ? WHERE id = jurisone_tenant_id()", mode);
+    }
+
+    /** Whether some employee of the current business (row-level security) already has this code. */
+    public boolean codeExists(String code) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM employees WHERE code = ?)", Boolean.class, code));
+    }
+
+    /** The highest number among codes shaped {@code <prefix><digits>} (null when none). */
     public Integer findMaxCodeNumber(String prefix) {
         return jdbc.queryForObject("SELECT max(substring(code from ?)::int) FROM employees WHERE code ~ ?", Integer.class,
-                prefix.length() + 2, "^" + prefix + "-[0-9]+$");
+                prefix.length() + 1, com.jurislpo.jurisone.engine.EmployeeCodes.seriesPattern(prefix));
     }
 
     /** The employee row being edited, with region_s and status_s. */
@@ -208,6 +222,11 @@ public class PeopleRepository {
     public List<RoleRow> findRoles() {
         return jdbc.query("SELECT r.id::text, r.key, r.name, (SELECT count(*) FROM role_permissions p WHERE p.role_id = r.id) FROM roles r ORDER BY r.created_at ASC",
                 (resultSet, i) -> new RoleRow(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getInt(4)));
+    }
+
+    /** The permission keys of a role (for the module check). */
+    public List<String> findRolePermissions(String roleId) {
+        return jdbc.queryForList("SELECT permission_key FROM role_permissions WHERE role_id = ?::uuid", String.class, roleId);
     }
 
     /** Shift id → code. */
@@ -270,6 +289,12 @@ public class PeopleRepository {
                 timeZone, region, shiftId, status, id);
     }
 
+    /** Sets the optional attributes that were given (an empty value keeps what is stored). */
+    public void updateAttributes(UUID id, String employmentType, String paymentType, String gender) {
+        jdbc.update("UPDATE employees SET employment_type = COALESCE(NULLIF(?, ''), employment_type), payment_type = COALESCE(NULLIF(?, ''), payment_type), "
+                + "gender = COALESCE(NULLIF(?, ''), gender) WHERE id = ?", employmentType, paymentType, gender, id);
+    }
+
     /** Waits for this business's employee-code allocation lock (held until the transaction ends). */
     public void lockCodeAllocation() {
         jdbc.execute("SELECT pg_advisory_xact_lock(74201, hashtext(jurisone_tenant_id()::text))");
@@ -277,13 +302,14 @@ public class PeopleRepository {
 
     public void insertEmployee(UUID id, String code, String fullName, String firstName, String middleName, String lastName, String joiningOffice,
                                String fatherName, String email, String designation, String departmentId, String managerId, String roleId, Date dateOfJoining,
-                               String timeZone, String region, UUID shiftId, String status, boolean access, UUID createdBy) {
+                               String timeZone, String region, UUID shiftId, String status, boolean access, UUID createdBy, String employmentType, String paymentType, String gender) {
         jdbc.update("""
             INSERT INTO employees (id, code, full_name, first_name, middle_name, last_name, joining_office, father_name, email, designation, department_id,
-              reporting_manager_id, role_id, date_of_joining, time_zone, region, shift_id, status, portal_access, created_by, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?::"Region", ?, ?::"EmployeeStatus", ?, ?, now(), now())""",
+              reporting_manager_id, role_id, date_of_joining, time_zone, region, shift_id, status, portal_access, created_by, employment_type, payment_type, gender,
+              created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?::"Region", ?, ?::"EmployeeStatus", ?, ?, ?, ?, ?, now(), now())""",
                 id, code, fullName, firstName, middleName, lastName, joiningOffice, fatherName, email, designation, departmentId, managerId, roleId, dateOfJoining,
-                timeZone, region, shiftId, status, access, createdBy);
+                timeZone, region, shiftId, status, access, createdBy, employmentType, paymentType, gender);
     }
 
     /** The new employee's user row. */
@@ -295,7 +321,7 @@ public class PeopleRepository {
     public List<UUID> findFinanceRecipients() {
         return jdbc.queryForList("""
             SELECT e.id FROM employees e WHERE e.status <> 'EXITED' AND e.portal_access
-              AND EXISTS (SELECT 1 FROM role_permissions p WHERE p.role_id = e.role_id AND p.permission_key = 'struct.manage')""", UUID.class);
+              AND jurisone_employee_has_permission(e.id, 'struct.manage')""", UUID.class);
     }
 
     public void insertStructuresNotification(UUID employeeId, String text) {
