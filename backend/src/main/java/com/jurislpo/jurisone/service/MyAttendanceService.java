@@ -9,7 +9,6 @@ import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.engine.AttendanceEngine.MonthSummary;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Punch;
 import com.jurislpo.jurisone.engine.Format;
-import com.jurislpo.jurisone.entity.DayStatus;
 import com.jurislpo.jurisone.repository.MyAttendanceRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.sql.Timestamp;
@@ -21,8 +20,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /** My attendance, regularization requests and check-in/out (REQUIREMENTS §5.4). self. */
@@ -111,61 +108,6 @@ public class MyAttendanceService {
 
     // ───────────────────────── regularization ─────────────────────────
 
-    public record RegularizationInput(String date, String kind, String proposedIn, String proposedOut, String reason) {}
-
-    public String requestRegularization(CurrentUser user, RegularizationInput input, String ipAddress) {
-        if (input.date() == null || !input.date().matches("^\\d{4}-\\d{2}-\\d{2}$")) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid string: must match pattern /^\\d{4}-\\d{2}-\\d{2}$/");
-        String kind = Check.oneOf(input.kind(), List.of("ABSENT", "LATE_CHECKIN", "MISSED_CHECKOUT", "HOLIDAY_WORK"));
-        String proposedInText = input.proposedIn() == null ? null : input.proposedIn(), proposedOutText = input.proposedOut() == null ? null : input.proposedOut();
-        for (String punchTime : new String[] {proposedInText, proposedOutText}) {
-            if (punchTime == null || (!punchTime.isEmpty() && !punchTime.matches("^\\d{2}:\\d{2}$"))) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input");
-        }
-        String reason = Check.requireString(input.reason()).trim();
-        if (reason.length() > 500) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the reason under 500 characters.");
-
-        AttendanceEmployee employee = me(user);
-        if (employee == null) throw new UserException(NOT_TRACKED);
-        AttendanceService.ResolvedAttendancePolicy policy = attendanceService.policy();
-        Instant now = Instant.now();
-        LocalDate date = LocalDate.parse(input.date());
-        if (date.isAfter(attendanceService.currentWorkDate(employee, now))) throw new UserException("You can't regularize a future day.");
-        if (attendanceService.isMonthLocked(input.date().substring(0, 7), policy, now)) throw new UserException("Attendance for this month is locked. Ask Finance to adjust LOP in payroll.");
-
-        DayView day = attendanceService.attendanceFor(List.of(employee), date, date, now).get(employee.id()).get(0);
-        boolean fits = switch (kind) {
-            case "ABSENT" -> day.dayResult.lopDays > 0 && day.dayResult.status != DayStatus.LEAVE;
-            case "LATE_CHECKIN" -> day.dayResult.late;
-            case "MISSED_CHECKOUT" -> day.dayResult.missedCheckout || (!day.punches.isEmpty() && !day.dayResult.live && day.dayResult.lastOut == null);
-            default -> day.dayResult.offDayWork;
-        };
-        if (!fits) {
-            throw new UserException(switch (kind) {
-                case "ABSENT" -> "This day isn't marked as loss of pay.";
-                case "LATE_CHECKIN" -> "There's no late mark on this day.";
-                case "MISSED_CHECKOUT" -> "There's no missing check-out on this day.";
-                default -> "You need 4h+ of work on a holiday or weekly off for a comp-off.";
-            });
-        }
-        List<String> duplicateStatuses = repo.openRegularizationStatus(user.id(), date, kind);
-        if (!duplicateStatuses.isEmpty()) throw new UserException("PENDING".equals(duplicateStatuses.get(0)) ? "You already have a pending request for this day." : "This day is already regularized.");
-
-        // Proposed times are local to the employee; a night-shift check-out rolls to the next day.
-        Instant proposedIn = proposedInText.isEmpty() ? null : toInstant(employee, date, proposedInText, null);
-        Instant after = proposedIn != null ? proposedIn : day.dayResult.firstIn;
-        Instant proposedOut = proposedOutText.isEmpty() ? null : toInstant(employee, date, proposedOutText, after);
-        if ("MISSED_CHECKOUT".equals(kind) && proposedOut == null) throw new UserException("Enter the time you actually checked out.");
-
-        UUID id = UUID.randomUUID();
-        repo.insertRegularization(id, user.id(), date, kind, proposedIn, proposedOut, reason.isEmpty() ? null : reason);
-        Map<String, Object> view = new LinkedHashMap<>();
-        view.put("date", input.date());
-        view.put("kind", kind);
-        view.put("proposedIn", proposedIn == null ? null : formatIsoInstant(proposedIn));
-        view.put("proposedOut", proposedOut == null ? null : formatIsoInstant(proposedOut));
-        audit.log(user.id(), "regularization.request", "regularization", id.toString(), null, view, ipAddress);
-        return "Regularization sent — HR, Finance or Admin can approve it";
-    }
-
     /** {@code JSON.stringify(Date)}: millisecond ISO with Z. */
     static String formatIsoInstant(Instant instant) {
         return java.time.format.DateTimeFormatter.ISO_INSTANT.format(instant.truncatedTo(java.time.temporal.ChronoUnit.MILLIS)).replaceAll("(\\d{2}:\\d{2}:\\d{2})Z$", "$1.000Z");
@@ -176,16 +118,6 @@ public class MyAttendanceService {
         if (after != null && !punchInstant.isAfter(after)) punchInstant = AttendanceEngine.atLocal(date.plusDays(1), time, employee.timeZone());
         else if (after == null && time.compareTo("12:00") < 0 && employee.shift().startLocal().compareTo("12:00") >= 0) punchInstant = AttendanceEngine.atLocal(date.plusDays(1), time, employee.timeZone());
         return punchInstant;
-    }
-
-    public String cancelRegularization(CurrentUser user, String idRaw) {
-        UUID id = Check.uuid(idRaw);
-        List<Map<String, Object>> rows = repo.findRegularization(id);
-        if (rows.isEmpty() || !user.id().equals(rows.get(0).get("employee_id"))) throw new UserException("Request not found.");
-        if (!"PENDING".equals(rows.get(0).get("status"))) throw new UserException("Only pending requests can be withdrawn.");
-        repo.cancelRegularization(id);
-        audit.log(user.id(), "regularization.cancel", "regularization", id.toString(), Map.of("status", "PENDING"), Map.of("status", "CANCELLED"), null);
-        return "Request withdrawn";
     }
 
     // ───────────────────────── check-in / check-out ─────────────────────────
