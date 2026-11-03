@@ -41,7 +41,7 @@ public class SessionRepository {
      */
     public List<Map<String, Object>> findRefreshTokenForUpdate(String tokenHash) {
         return jdbc.queryForList("""
-            SELECT t.used_at, t.expires_at, s.id AS session_id, s.created_at, s.expires_at AS session_expires, s.revoked_at, s.employee_id,
+            SELECT t.used_at, t.expires_at, s.id AS session_id, s.created_at, s.expires_at AS session_expires, s.revoked_at, s.employee_id, e.business_id,
                    e.portal_access, e.status::text AS status, (SELECT u.employee_id FROM users u WHERE u.employee_id = e.id) AS user_id,
                    (SELECT b.status FROM businesses b WHERE b.id = e.business_id) AS business_status
             FROM refresh_tokens t JOIN sessions s ON s.id = t.session_id JOIN employees e ON e.id = s.employee_id

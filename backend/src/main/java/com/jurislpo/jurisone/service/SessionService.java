@@ -3,7 +3,9 @@ package com.jurislpo.jurisone.service;
 import com.jurislpo.jurisone.common.RequestMeta;
 import com.jurislpo.jurisone.crypto.Tokens;
 import com.jurislpo.jurisone.repository.SessionRepository;
+import com.jurislpo.jurisone.security.HostBusiness;
 import com.jurislpo.jurisone.security.JwtService;
+import com.jurislpo.jurisone.security.TenantHostGuard;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -45,10 +47,13 @@ public class SessionService {
     private final int ttlDays;
     private final boolean secureCookie;
     private final Duration reuseGrace;
+    private final TenantHostGuard hostGuard;
 
     public SessionService(SessionRepository repo, JwtService jwtService, @Value("${jurisone.security.session-ttl-days:30}") int ttlDays,
                           @Value("${jurisone.security.cookie-secure:${jurisone.app-url:http://localhost:3005}}") String secure,
-                          @Value("${jurisone.refresh-reuse-grace-seconds:30}") long reuseGraceSeconds) {
+                          @Value("${jurisone.refresh-reuse-grace-seconds:30}") long reuseGraceSeconds,
+                          TenantHostGuard hostGuard) {
+        this.hostGuard = hostGuard;
         this.repo = repo;
         this.jwtService = jwtService;
         this.ttlDays = ttlDays;
@@ -59,27 +64,36 @@ public class SessionService {
 
     /** Starts a session for a successful sign-in and returns its cookies. */
     @Transactional
-    public Issued create(UUID employeeId, boolean remember, RequestMeta meta) {
+    public Issued create(UUID employeeId, UUID businessId, boolean remember, RequestMeta meta) {
         String sessionId = Tokens.randomToken(24);
         Duration sessionLifetime = remember ? Duration.ofDays(ttlDays) : Duration.ofHours(SHORT_SESSION_HOURS);
         Instant expiresAt = Instant.now().plus(sessionLifetime).truncatedTo(ChronoUnit.MILLIS);
         repo.insertSession(sessionId, employeeId, expiresAt, meta.ipAddress(), meta.userAgent());
         String refresh = newRefreshToken(sessionId, expiresAt, meta);
-        return new Issued(sessionId, cookies(employeeId, sessionId, refresh, remember ? sessionLifetime : null));
+        return new Issued(sessionId, cookies(employeeId, businessId, sessionId, refresh, remember ? sessionLifetime : null));
     }
 
     /**
      * Exchanges a refresh token for a new access token and a new refresh token. A token that was already used means
      * it was copied: the whole session is revoked — unless it was used only moments ago ({@code reuseGrace}), which
      * is the browser sending several requests at once when the access token ran out.
+     *
+     * <p>{@code host} is what the request's host names ({@code null} = per-business binding is off). A token presented on a host that does not
+     * fit the session's business is refused and audited, and left untouched: it is not used up, rotated or revoked, so a copy replayed on
+     * another host cannot end the owner's session, and gets nothing.
      */
     @Transactional(noRollbackFor = RefreshRefused.class) // a reused token must stay revoked even though the call fails
-    public Issued refresh(String refreshToken, RequestMeta meta) {
+    public Issued refresh(String refreshToken, HostBusiness host, RequestMeta meta) {
         if (refreshToken == null || refreshToken.isEmpty()) throw new RefreshRefused("missing");
         List<Map<String, Object>> rows = repo.findRefreshTokenForUpdate(Tokens.sha256(refreshToken));
         if (rows.isEmpty()) throw new RefreshRefused("unknown");
         Map<String, Object> row = rows.get(0);
         String sessionId = (String) row.get("session_id");
+        UUID businessId = (UUID) row.get("business_id");
+        if (!TenantHostGuard.permits(host, businessId)) {
+            hostGuard.refused((UUID) row.get("employee_id"), "refresh", "wrong_host", host, meta.ipAddress());
+            throw new RefreshRefused("wrong_host");
+        }
         Instant now = Instant.now();
         if (row.get("revoked_at") != null) throw new RefreshRefused("revoked");
         if (row.get("used_at") != null) {
@@ -101,7 +115,7 @@ public class SessionService {
         String next = newRefreshToken(sessionId, sessionExpires, meta);
         Instant created = ((Timestamp) row.get("created_at")).toInstant();
         boolean remember = Duration.between(created, sessionExpires).compareTo(Duration.ofHours(SHORT_SESSION_HOURS + 1)) > 0;
-        return new Issued(sessionId, cookies((UUID) row.get("employee_id"), sessionId, next, remember ? Duration.between(now, sessionExpires) : null));
+        return new Issued(sessionId, cookies((UUID) row.get("employee_id"), businessId, sessionId, next, remember ? Duration.between(now, sessionExpires) : null));
     }
 
     private String newRefreshToken(String sessionId, Instant expiresAt, RequestMeta meta) {
@@ -111,8 +125,8 @@ public class SessionService {
     }
 
     /** {@code maxAge} null = browser-session cookies (no "keep me signed in"). */
-    private List<ResponseCookie> cookies(UUID employeeId, String sessionId, String refresh, Duration maxAge) {
-        ResponseCookie.ResponseCookieBuilder accessCookie = base(ACCESS_COOKIE, jwtService.issue(employeeId, sessionId));
+    private List<ResponseCookie> cookies(UUID employeeId, UUID businessId, String sessionId, String refresh, Duration maxAge) {
+        ResponseCookie.ResponseCookieBuilder accessCookie = base(ACCESS_COOKIE, jwtService.issue(employeeId, sessionId, businessId));
         ResponseCookie.ResponseCookieBuilder responseCookieBuilder = base(REFRESH_COOKIE, refresh);
         if (maxAge != null) {
             accessCookie.maxAge(maxAge);
