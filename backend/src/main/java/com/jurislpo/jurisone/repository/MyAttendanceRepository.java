@@ -39,27 +39,6 @@ public class MyAttendanceRepository {
                 (resultSet, i) -> new HolidayView(resultSet.getString(1), resultSet.getDate(2).toLocalDate().toString(), resultSet.getString(3), resultSet.getString(4)), Date.valueOf(from), region, take);
     }
 
-    /** Status of a pending or approved request of this kind for the day (empty when none). */
-    public List<String> openRegularizationStatus(UUID employeeId, LocalDate date, String kind) {
-        return jdbc.queryForList("SELECT status::text FROM regularization_requests WHERE employee_id = ? AND work_date = ? AND kind = ?::\"RegularizationKind\" "
-                + "AND status IN ('PENDING', 'APPROVED') LIMIT 1", String.class, employeeId, Date.valueOf(date), kind);
-    }
-
-    public void insertRegularization(UUID id, UUID employeeId, LocalDate date, String kind, Instant proposedIn, Instant proposedOut, String reason) {
-        jdbc.update("INSERT INTO regularization_requests (id, employee_id, work_date, kind, proposed_in, proposed_out, reason, status, created_at) "
-                + "VALUES (?, ?, ?, ?::\"RegularizationKind\", ?, ?, ?, 'PENDING', now())",
-                id, employeeId, Date.valueOf(date), kind, ts(proposedIn), ts(proposedOut), reason);
-    }
-
-    /** employee_id and status of a regularization request (empty when not found). */
-    public List<Map<String, Object>> findRegularization(UUID id) {
-        return jdbc.queryForList("SELECT employee_id, status::text AS status FROM regularization_requests WHERE id = ?", id);
-    }
-
-    public void cancelRegularization(UUID id) {
-        jdbc.update("UPDATE regularization_requests SET status = 'CANCELLED' WHERE id = ?", id);
-    }
-
     /** The employee's latest punch (at, kind), if any. */
     public List<Map<String, Object>> lastPunch(UUID employeeId) {
         return jdbc.queryForList("SELECT at, kind::text AS kind FROM punches WHERE employee_id = ? ORDER BY at DESC LIMIT 1", employeeId);

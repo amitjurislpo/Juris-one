@@ -117,6 +117,15 @@ public class BusinessAdminRepository {
         return Boolean.TRUE.equals(jdbc.queryForObject("SELECT jurisone_slug_retired(?)", Boolean.class, slug));
     }
 
+    /** Which of the (valid, at most a few dozen) slugs are used by a business or retired, in one query with bound parameters. */
+    public java.util.Set<String> findUnavailableSlugs(java.util.List<String> slugs) {
+        if (slugs.isEmpty()) return java.util.Set.of();
+        String placeholders = String.join(",", java.util.Collections.nCopies(slugs.size(), "?"));
+        Object[] twice = java.util.stream.Stream.concat(slugs.stream(), slugs.stream()).toArray();
+        return new java.util.HashSet<>(jdbc.queryForList("SELECT code FROM businesses WHERE code IN (" + placeholders + ") UNION SELECT slug FROM business_slug_history WHERE slug IN ("
+                + placeholders + ")", String.class, twice));
+    }
+
     public void retireSlug(String slug, UUID businessId, UUID releasedBy) {
         jdbc.update("INSERT INTO business_slug_history (slug, business_id, released_by) VALUES (?, ?, ?)", slug, businessId, releasedBy);
     }

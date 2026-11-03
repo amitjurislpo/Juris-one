@@ -45,34 +45,44 @@ class BusinessSlugsTest {
 
     @Test
     void derivedNamesAreSafe() {
-        assertThat(BusinessSlugs.derive("Juris Consultants", taken -> false)).isEqualTo("juris-consultants");
-        assertThat(BusinessSlugs.derive("  Acme & Sons (P) Ltd. ", taken -> false)).isEqualTo("acme-sons-p-ltd");
-        assertThat(BusinessSlugs.derive("हिन्दी", taken -> false)).isEqualTo("business"); // nothing usable left
-        assertThat(BusinessSlugs.derive("!!!", taken -> false)).isEqualTo("business");
-        assertThat(BusinessSlugs.derive("Ab", taken -> false)).isEqualTo("ab-co"); // too short
-        assertThat(BusinessSlugs.derive("X", taken -> false)).isEqualTo("x-co");
-        assertThat(BusinessSlugs.derive("Admin", taken -> false)).isEqualTo("admin-co"); // reserved
-        assertThat(BusinessSlugs.derive("JurisOne", taken -> false)).isEqualTo("jurisone-co");
-        assertThat(BusinessSlugs.derive("Test", taken -> false)).isEqualTo("test-co");
-        assertThat(BusinessSlugs.derive("xn--foo", taken -> false)).isEqualTo("xn-foo");
-        String longName = BusinessSlugs.derive("a".repeat(30) + " " + "b".repeat(30), taken -> false);
+        assertThat(BusinessSlugs.derive("Juris Consultants")).isEqualTo("juris-consultants");
+        assertThat(BusinessSlugs.derive("  Acme & Sons (P) Ltd. ")).isEqualTo("acme-sons-p-ltd");
+        assertThat(BusinessSlugs.derive("हिन्दी")).isEqualTo("business"); // nothing usable left
+        assertThat(BusinessSlugs.derive("!!!")).isEqualTo("business");
+        assertThat(BusinessSlugs.derive("Ab")).isEqualTo("ab-co"); // too short
+        assertThat(BusinessSlugs.derive("X")).isEqualTo("x-co");
+        assertThat(BusinessSlugs.derive("Admin")).isEqualTo("admin-co"); // reserved
+        assertThat(BusinessSlugs.derive("JurisOne")).isEqualTo("jurisone-co");
+        assertThat(BusinessSlugs.derive("Test")).isEqualTo("test-co");
+        assertThat(BusinessSlugs.derive("xn--foo")).isEqualTo("xn-foo");
+        String longName = BusinessSlugs.derive("a".repeat(30) + " " + "b".repeat(30));
         assertThat(longName).hasSize(40).endsWith("b"); // cut at 40 characters: 30 a, a dash, 9 b
-        String cut = BusinessSlugs.derive("a".repeat(39) + " bcd", taken -> false);
+        String cut = BusinessSlugs.derive("a".repeat(39) + " bcd");
         assertThat(cut).isEqualTo("a".repeat(39)); // the cut would end on a dash: it is trimmed
     }
 
     @Test
-    void takenNamesGetANumber() {
-        Set<String> taken = Set.of("acme", "acme-2");
-        assertThat(BusinessSlugs.derive("Acme", taken::contains)).isEqualTo("acme-3");
-        String longTaken = "a".repeat(40);
-        assertThat(BusinessSlugs.derive(longTaken, longTaken::equals)).isEqualTo("a".repeat(38) + "-2").hasSize(40);
+    void deriveNeverNumbersAndNeverLooksAtWhatIsTaken() {
+        assertThat(BusinessSlugs.derive("Acme")).isEqualTo("acme");
+        assertThat(BusinessSlugs.derive("Acme")).isEqualTo(BusinessSlugs.derive("Acme"));
+    }
+
+    @Test
+    void suggestionsAreValidUniqueAndShort() {
+        for (String typed : new String[] {"juris consultants", "Juris-Consultants", "acme", "a".repeat(40), "x".repeat(500), "admin", "ab", "Acme & Sons (P) Ltd.", "a'; DROP TABLE businesses; --", "日本語"}) {
+            java.util.List<String> suggestions = BusinessSlugs.suggestionCandidates(typed);
+            assertThat(suggestions).as(typed.length() > 30 ? "long" : typed).doesNotHaveDuplicates().allSatisfy(slug -> assertThat(BusinessSlugs.problem(slug)).isNull());
+        }
+        assertThat(BusinessSlugs.suggestionCandidates("Juris Consultants Llp")).contains("juris-consultants-llp", "juris-consultants-llp-hr", "jcl", "jcl-co");
+        assertThat(BusinessSlugs.suggestionCandidates("acme")).startsWith("acme-2", "acme-hr").doesNotContain("acme");
+        assertThat(BusinessSlugs.suggestionCandidates("!!!")).isEmpty();
+        assertThat(BusinessSlugs.suggestionCandidates(null)).isEmpty();
     }
 
     @Test
     void everyDerivedNameIsAcceptable() {
         for (String name : new String[] {"Juris Consultants", "A", "", "  ", "Admin", "ééé", "x".repeat(300), "a-b-c", "--a--", "Test", "9", "1 2"}) {
-            String slug = BusinessSlugs.derive(name, taken -> false);
+            String slug = BusinessSlugs.derive(name);
             assertThat(BusinessSlugs.problem(slug)).as(name + " -> " + slug).isNull();
         }
     }

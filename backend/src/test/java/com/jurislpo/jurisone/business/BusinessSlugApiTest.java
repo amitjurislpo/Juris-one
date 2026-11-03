@@ -149,8 +149,9 @@ class BusinessSlugApiTest extends IntegrationTest {
     void aDerivedShortNameFallsBackAndNeverCollides() throws Exception {
         String name = "Derived Firm " + suffix;
         assertThat(codeOf(idOfCreated(name, null))).isEqualTo("derived-firm-" + suffix);
-        // the same name again: a numbered suffix instead of an error
-        assertThat(codeOf(idOfCreated(name, null))).isEqualTo("derived-firm-" + suffix + "-2");
+        // the same name again: refused with the taken short name, never a silent numbered one
+        create(name, null).andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value("Another business already uses the short name \"derived-firm-" + suffix + "\"."));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM businesses WHERE code LIKE ?", Integer.class, "derived-firm-" + suffix + "%")).isEqualTo(1);
         // a reserved, too short or unusable result gets a safe fallback
         assertThat(codeOf(idOfCreated("Platform", ""))).startsWith("platform-co");
         assertThat(codeOf(idOfCreated("Ab", null))).startsWith("ab-co");
