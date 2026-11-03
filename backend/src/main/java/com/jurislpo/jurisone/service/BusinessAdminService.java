@@ -121,15 +121,52 @@ public class BusinessAdminService {
         return code + " " + phone.substring(spaceIndex + 1).replaceAll("\\D", "");
     }
 
-    /** The short name (slug) of a new business: the one given (validated, 409 when taken) or one derived from the name (never taken). */
+    /**
+     * The short name (slug) of a new business: the one given, or one derived from the name when none is given. It is never
+     * numbered or changed to make it fit: a malformed or reserved one is 400, a taken or retired one is 409 and the super admin
+     * picks another (the live check offers available ones).
+     */
     private String newCode(String given, String name) {
-        if (given == null || given.isBlank()) return BusinessSlugs.derive(name, candidate -> !repo.findIdsByCode(candidate, null).isEmpty());
-        String code = given.trim().toLowerCase(Locale.ROOT);
+        String code = given == null || given.isBlank() ? BusinessSlugs.derive(name) : given.trim().toLowerCase(Locale.ROOT);
         String problem = BusinessSlugs.problem(code);
         if (problem != null) throw new UserException(HttpStatus.BAD_REQUEST, problem);
-        if (!repo.findIdsByCode(code, null).isEmpty()) throw new UserException(HttpStatus.CONFLICT, "Another business already uses the short name \"" + code + "\".");
+        if (!repo.findIdsByCode(code, null).isEmpty()) throw new UserException(HttpStatus.CONFLICT, taken(code));
         if (repo.isSlugRetired(code)) throw new UserException(HttpStatus.CONFLICT, RETIRED);
         return code;
+    }
+
+    private static String taken(String slug) {
+        return "Another business already uses the short name \"" + slug + "\".";
+    }
+
+    public record SlugAvailability(String slug, boolean available, String reason, String message, List<String> suggestions) {}
+
+    /**
+     * Whether a typed short name can be used for a new business, with the reason when not and up to five available alternatives
+     * (each valid, not reserved, not taken, not retired). The input is cut to {@link BusinessSlugs#MAX_INPUT_LENGTH} characters
+     * before anything else; the database sees only bound parameters of valid slugs. Always answers, never throws for bad input.
+     */
+    public SlugAvailability slugAvailability(String typed) {
+        String slug = typed == null ? "" : typed.substring(0, Math.min(typed.length(), BusinessSlugs.MAX_INPUT_LENGTH)).trim().toLowerCase(Locale.ROOT);
+        String problem = BusinessSlugs.problem(slug);
+        String reason = null, message = null;
+        if (problem != null) {
+            reason = BusinessSlugs.isReserved(slug) ? "RESERVED" : "INVALID";
+            message = problem;
+        }
+        List<String> candidates = BusinessSlugs.suggestionCandidates(slug);
+        // one query tells which of the typed slug and the candidates cannot be used
+        java.util.List<String> toCheck = new java.util.ArrayList<>(candidates);
+        if (problem == null) toCheck.add(0, slug);
+        java.util.Set<String> unavailable = repo.findUnavailableSlugs(toCheck);
+        if (problem == null && unavailable.contains(slug)) {
+            boolean isTaken = !repo.findIdsByCode(slug, null).isEmpty();
+            reason = isTaken ? "TAKEN" : "RETIRED";
+            message = isTaken ? taken(slug) : RETIRED;
+        }
+        if (reason == null) return new SlugAvailability(slug, true, null, "Available", List.of());
+        List<String> suggestions = candidates.stream().filter(candidate -> !unavailable.contains(candidate)).limit(BusinessSlugs.MAX_SUGGESTIONS).toList();
+        return new SlugAvailability(slug, false, reason, message, suggestions);
     }
 
     /** The short name never changes after creation (only a super admin's separate, audited rename may): blank or the same is fine, a different one is refused. */
@@ -171,8 +208,13 @@ public class BusinessAdminService {
     public Map<String, String> create(CurrentUser user, CreateInput input, String ipAddress) {
         ValidatedProfile validated = validate(input.business(), null);
         if (input.owner() != null) validateOwner(input.owner());
-        UUID id = setup.create(new BusinessSetupService.NewBusiness(validated.name(), validated.legalName(), validated.code(), validated.prefix(), validated.timeZone(), validated.contactEmail(), validated.contactPhone(),
-                validated.address(), validated.gstin()), user.id(), input.roles());
+        UUID id;
+        try {
+            id = setup.create(new BusinessSetupService.NewBusiness(validated.name(), validated.legalName(), validated.code(), validated.prefix(), validated.timeZone(), validated.contactEmail(),
+                    validated.contactPhone(), validated.address(), validated.gstin()), user.id(), input.roles());
+        } catch (DuplicateKeyException e) {
+            throw new UserException(HttpStatus.CONFLICT, "That short name was taken a moment ago. Choose another.");
+        }
         if (input.subscription() != null && input.subscription().planId() != null && !input.subscription().planId().isBlank()) {
             subscriptions.addSubscription(id, input.subscription(), user.id());
         }

@@ -43,7 +43,6 @@ class LeaveApiTest extends IntegrationTest {
         empRole = data.role("employee", "self", "dir");
         hrRole = data.role("hrm", "self", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "holidays.manage");
         finRole = data.role("fm", "self", "dir", "people.view", "struct.manage", "pay.view");
-        jdbc.update("INSERT INTO role_permissions (role_id, permission_key) VALUES (?, 'appr.reg') ON CONFLICT DO NOTHING", finRole);
         jdbc.update("""
             INSERT INTO leave_types (code, name, annual_quota, accrual_per_month, carry_forward_cap, max_stretch, paid, needs_balance, sort_order, active, expiry_days)
             VALUES ('CL', 'Casual leave', 12, 1, 0, 3, true, true, 1, true, NULL), ('EL', 'Earned leave', 18, 1.5, 30, NULL, true, true, 2, true, NULL),
@@ -134,9 +133,10 @@ class LeaveApiTest extends IntegrationTest {
     }
 
     @Test
-    void financeApprovesAMissedCheckoutAndHolidayWorkEarnsCompOff() throws Exception {
+    void hrApprovesAMissedCheckoutAndHolidayWorkEarnsCompOff() throws Exception {
         Person employee = person(empRole);
         Person finance = person(finRole);
+        Person hr = person(hrRole);
         LocalDate today = AttendanceEngine.localParts(Instant.now(), "Asia/Kolkata").date();
         LocalDate day = today.minusDays(1);
         while (AttendanceEngine.dowOf(day) == 0 || AttendanceEngine.dowOf(day) == 6) day = day.minusDays(1);
@@ -146,12 +146,14 @@ class LeaveApiTest extends IntegrationTest {
         UUID regularizationId = UUID.randomUUID();
         jdbc.update("INSERT INTO regularization_requests (id, employee_id, work_date, kind, proposed_out, status) VALUES (?, ?, ?, 'MISSED_CHECKOUT', ?, 'PENDING')",
                 regularizationId, employee.id(), Date.valueOf(day), Timestamp.from(AttendanceEngine.atLocal(day, "18:45", "Asia/Kolkata")));
-        mockMvc.perform(get("/api/v1/approvals?tab=regularizations").cookie(finance.cookie())).andExpect(jsonPath("$.data.regularizationCards[?(@.id == '" + regularizationId + "')].detail")
+        // Finance no longer approves regularizations (Admin and HR only)
+        mockMvc.perform(write(put("/api/v1/attendance/regularizations/" + regularizationId + "/decision")).cookie(finance.cookie()).content("{\"approve\":true}")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/approvals?tab=regularizations").cookie(hr.cookie())).andExpect(jsonPath("$.data.regularizationCards[?(@.id == '" + regularizationId + "')].detail")
                 .value(org.hamcrest.Matchers.hasItem("Checked in 9:30 AM · asks to set check-out to 6:45 PM")));
-        mockMvc.perform(write(put("/api/v1/attendance/regularizations/" + regularizationId + "/decision")).cookie(finance.cookie()).content("{\"approve\":true}"))
+        mockMvc.perform(write(put("/api/v1/attendance/regularizations/" + regularizationId + "/decision")).cookie(hr.cookie()).content("{\"approve\":true}"))
                 .andExpect(jsonPath("$.message").value("Approved Person " + employee.code() + "’s missed check-out regularization"));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM punches WHERE employee_id = ? AND source = 'REGULARIZATION' AND kind = 'OUT'", Integer.class, employee.id())).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT decided_role FROM regularization_requests WHERE id = ?", String.class, regularizationId)).isEqualTo("Fm");
+        assertThat(jdbc.queryForObject("SELECT decided_role FROM regularization_requests WHERE id = ?", String.class, regularizationId)).isEqualTo("Hrm");
 
         // weekend work of 5h → ½ day comp-off
         LocalDate saturday = today.minusDays(1);
@@ -162,7 +164,7 @@ class LeaveApiTest extends IntegrationTest {
                 UUID.randomUUID(), employee.id(), Timestamp.from(AttendanceEngine.atLocal(saturday, "15:00", "Asia/Kolkata")));
         UUID holidayId = UUID.randomUUID();
         jdbc.update("INSERT INTO regularization_requests (id, employee_id, work_date, kind, status) VALUES (?, ?, ?, 'HOLIDAY_WORK', 'PENDING')", holidayId, employee.id(), Date.valueOf(saturday));
-        mockMvc.perform(write(put("/api/v1/attendance/regularizations/" + holidayId + "/decision")).cookie(finance.cookie()).content("{\"approve\":true}"))
+        mockMvc.perform(write(put("/api/v1/attendance/regularizations/" + holidayId + "/decision")).cookie(hr.cookie()).content("{\"approve\":true}"))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.endsWith("comp-off request · 0.5 comp-off credited")));
         assertThat(jdbc.queryForObject("SELECT expires_on FROM leave_ledger WHERE ref_id = ?", Date.class, holidayId.toString()).toLocalDate()).isEqualTo(saturday.plusDays(60));
     }

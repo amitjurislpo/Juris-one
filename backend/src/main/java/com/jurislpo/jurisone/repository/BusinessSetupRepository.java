@@ -80,6 +80,16 @@ public class BusinessSetupRepository {
         jdbc.query("SELECT jurisone_seed_letter_templates(?)", resultSet -> {}, businessId);
     }
 
+    /** The default regularization reasons of the current business (nothing happens when it already has some). */
+    public void seedRegularizationReasons() {
+        jdbc.update("""
+            INSERT INTO regularization_reasons (id, label, requires_description, sort_order)
+            SELECT gen_random_uuid(), v.label, v.requires_description, v.sort_order
+            FROM (VALUES ('Forgot to check-in', false, 1), ('Forgot to check-out', false, 2), ('System / biometric issue', false, 3), ('Client visit', false, 4), ('Other', true, 5))
+                 AS v(label, requires_description, sort_order)
+            WHERE NOT EXISTS (SELECT 1 FROM regularization_reasons)""");
+    }
+
     public void insertDepartmentIfMissing(UUID id, String name, String description, UUID createdBy) {
         jdbc.update("INSERT INTO departments (id, name, description, created_by) VALUES (?, ?, ?, ?) ON CONFLICT (business_id, name) DO NOTHING",
                 id, name, description, createdBy);
