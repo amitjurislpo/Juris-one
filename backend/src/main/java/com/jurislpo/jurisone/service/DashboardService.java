@@ -164,7 +164,7 @@ public class DashboardService {
     /** Permission-driven cards on Home (REQUIREMENTS §5.12). Salary is never shown here. */
     public Map<String, Object> homeCards(CurrentUser user) {
         boolean finance = user.can("pay.view");
-        // Finance approves regularizations too, but sees them on its payroll card instead
+        // Finance does not approve regularizations any more (Admin and HR do); a finance user who also holds appr.reg sees them on the payroll card
         boolean approver = user.can("appr.leave") || (user.can("appr.reg") && !finance);
         boolean showMyLeave = !finance && !user.can("appr.reg") && !user.hasReports();
 
@@ -190,7 +190,7 @@ public class DashboardService {
             view.put("month", pay.month());
             view.put("status", pay.status());
             view.put("proofs", user.can("proofs.verify") ? pending.proofs() : null);
-            view.put("regularizations", pending.regularizations());
+            view.put("regularizations", user.can("appr.reg") ? pending.regularizations() : null); // only Admin / HR decide them
             out.put("payroll", view);
         } else out.put("payroll", null);
         if ("IN".equals(user.region()) && pay != null) {
