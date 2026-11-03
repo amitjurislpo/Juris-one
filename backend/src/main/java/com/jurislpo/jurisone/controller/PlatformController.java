@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -87,8 +88,18 @@ public class PlatformController {
     public ApiResult<Map<String, String>> create(@RequestBody BusinessAdminService.CreateInput body, HttpServletRequest request) {
         return asPlatform(() -> {
             Map<String, String> ids = businesses.create(admin(), body, RequestMeta.of(request).ipAddress());
+            businesses.ensureModuleRoles(com.jurislpo.jurisone.common.Check.uuid(ids.get("id")));
             rosterTrigger.rosterChanged(com.jurislpo.jurisone.common.Check.uuid(ids.get("id")));
             return ApiResult.success("Business created", ids);
+        });
+    }
+
+    /** Whether a short name can be used for a new business: {@code {slug, available, reason, message, suggestions}} (always 200; see the service). */
+    @GetMapping("/business-slug-availabilities")
+    public ApiResult<BusinessAdminService.SlugAvailability> slugAvailability(@RequestParam(required = false) String slug) {
+        return asPlatform(() -> {
+            admin();
+            return ApiResult.success(businesses.slugAvailability(slug));
         });
     }
 
@@ -235,7 +246,8 @@ public class PlatformController {
             CurrentUser user = admin();
             java.util.UUID business = com.jurislpo.jurisone.common.Check.uuid(id);
             String subscriptionId = subscriptions.addSubscription(business, body, user.id());
-            rosterTrigger.rosterChanged(business); // a plan with Juris Track: its roster goes now
+            businesses.ensureModuleRoles(business); // a plan with Juris Track: the JurisTrack manager role
+            rosterTrigger.rosterChanged(business); // and its roster goes now
             audit.log(user.id(), "subscription.add", "business_subscription", subscriptionId, null, Map.of("business", id, "plan", String.valueOf(body.planId())), RequestMeta.of(request).ipAddress());
             return ApiResult.success("Subscription added", Map.of("id", subscriptionId));
         });
@@ -246,7 +258,7 @@ public class PlatformController {
     public ApiResult<Void> updateSubscription(@PathVariable String id, @RequestBody SubscriptionService.SubscriptionUpdate body, HttpServletRequest request) {
         return asPlatform(() -> {
             CurrentUser user = admin();
-            subscriptions.updateSubscription(id, body);
+            businesses.ensureModuleRoles(subscriptions.updateSubscription(id, body));
             audit.log(user.id(), "subscription.update", "business_subscription", id, null, Map.of("status", String.valueOf(body.status())), RequestMeta.of(request).ipAddress());
             return ApiResult.message("CANCELLED".equals(body.status()) ? "Subscription cancelled" : "Subscription updated");
         });
@@ -268,6 +280,7 @@ public class PlatformController {
         return asPlatform(() -> {
             CurrentUser user = admin();
             String grantId = grants.grant(com.jurislpo.jurisone.common.Check.uuid(id), body, user.id());
+            businesses.ensureModuleRoles(com.jurislpo.jurisone.common.Check.uuid(id));
             rosterTrigger.rosterChanged(com.jurislpo.jurisone.common.Check.uuid(id));
             audit.log(user.id(), "module.grant", "business_module", grantId, null, Map.of("business", id, "source", String.valueOf(body.source())), RequestMeta.of(request).ipAddress());
             return ApiResult.success("Juris Track granted", Map.of("id", grantId));
@@ -278,7 +291,9 @@ public class PlatformController {
     public ApiResult<Void> updateModule(@PathVariable String id, @RequestBody ModuleGrantService.GrantInput body, HttpServletRequest request) {
         return asPlatform(() -> {
             CurrentUser user = admin();
-            rosterTrigger.rosterChanged(grants.update(id, body));
+            java.util.UUID grantBusiness = grants.update(id, body);
+            businesses.ensureModuleRoles(grantBusiness);
+            rosterTrigger.rosterChanged(grantBusiness);
             audit.log(user.id(), "module.update", "business_module", id, null, Map.of("source", String.valueOf(body.source())), RequestMeta.of(request).ipAddress());
             return ApiResult.message("Grant saved");
         });

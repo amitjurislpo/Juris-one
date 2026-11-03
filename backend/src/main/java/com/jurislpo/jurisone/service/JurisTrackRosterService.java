@@ -41,8 +41,9 @@ import org.springframework.stereotype.Service;
  * sees every report, a shift matches and a deactivation reaches JurisTrack. JurisOne has no per-date roster, so {@code schedule} is never sent.
  *
  * <p>Employees of every status go, so that a past employee arrives as {@code isActive:false}; people without a usable email are left out.
- * {@code isActive} is "not a past employee" (probation and onboarding people work and track time). {@code role} is MANAGER with at least one
- * direct report who is not a past employee (the user token's rule), else EMPLOYEE.
+ * {@code isActive} is "not a past employee" (probation and onboarding people work and track time). {@code role} is MANAGER only for a holder of the
+ * JurisTrack manager permission (the user token's rule; having reports alone is not enough), else EMPLOYEE. The roster never sends ADMIN: the owner's own
+ * token does (JurisTrack refuses to make anybody an owner through the roster).
  *
  * <p>Shifts: only those assigned to a sent employee, converted to the business time zone (see {@link JurisTrackShifts}). JurisOne's {@code grace_minutes}
  * is a late-arrival allowance, not a window around the shift, so no early/late minutes are sent and JurisTrack's default applies.
@@ -68,10 +69,12 @@ public class JurisTrackRosterService {
     private final JurisTrackTokenIssuer tokenIssuer;
     private final JurisTrackRosterRepository repo;
     private final SubscriptionService subscriptions;
+    private final AuditService audit;
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(TIMEOUT).followRedirects(HttpClient.Redirect.NEVER).build();
 
-    public JurisTrackRosterService(JurisTrackProperties properties, JurisTrackTokenIssuer tokenIssuer, JurisTrackRosterRepository repo, SubscriptionService subscriptions) {
+    public JurisTrackRosterService(JurisTrackProperties properties, JurisTrackTokenIssuer tokenIssuer, JurisTrackRosterRepository repo, SubscriptionService subscriptions, AuditService audit) {
+        this.audit = audit;
         this.properties = properties;
         this.tokenIssuer = tokenIssuer;
         this.repo = repo;
@@ -83,10 +86,20 @@ public class JurisTrackRosterService {
         return properties.enabled() && properties.baseUrl() != null && !properties.baseUrl().isBlank() && tokenIssuer.isEnabled();
     }
 
-    /** The gateway is on and the business (not the platform company) has the Juris Track module through its plan or a grant. */
+    /**
+     * The gateway is on and the business (not the platform company) has the Juris Track module through its plan or a grant, and is not suspended
+     * (a suspended business sends nothing to Juris Track). An ended subscription still syncs, so that deactivations arrive.
+     */
     public boolean isModuleActive(UUID businessId) {
         if (!isGatewayOn() || businessId == null) return false;
-        return TenantContext.call(null, () -> repo.findBusiness(businessId).isPresent() && subscriptions.activeModules(businessId).contains(Nav.JURIS_TRACK));
+        return TenantContext.call(null, () -> repo.findBusiness(businessId).isPresent() && !repo.isSuspended(businessId)
+                && subscriptions.activeModules(businessId).contains(Nav.JURIS_TRACK));
+    }
+
+    /** Every customer business that has the module whatever its status, suspended ones included (they still have to be told their status). */
+    public List<UUID> businessesWithModuleAnyStatus() {
+        return TenantContext.call(null, () -> repo.findCustomerBusinessIds().stream()
+                .filter(id -> isGatewayOn() && subscriptions.activeModules(id).contains(Nav.JURIS_TRACK)).toList());
     }
 
     /** Every customer business that has the module (for the startup and the scheduled full resync). */
@@ -123,7 +136,7 @@ public class JurisTrackRosterService {
             String firstName = hasNameParts ? employee.firstName().trim() : words[0];
             String lastName = hasNameParts ? (employee.lastName() == null ? "" : employee.lastName().trim()) : words.length > 1 ? words[words.length - 1] : "";
             people.add(new EmployeePayload(employee.id().toString(), employee.email().trim().toLowerCase(), firstName, lastName, employee.code(),
-                    employee.hasActiveReports() ? JurisTrackTokenIssuer.TrackRole.MANAGER.name() : JurisTrackTokenIssuer.TrackRole.EMPLOYEE.name(),
+                    JurisTrackTokenIssuer.TrackRole.of(false, employee.isJurisTrackManager()).name(),
                     employee.managerId() == null ? null : employee.managerId().toString(), !"EXITED".equals(employee.status()), shiftCode));
         }
         return new RosterPayload(List.copyOf(shifts.values()), people);
@@ -164,6 +177,46 @@ public class JurisTrackRosterService {
         }
         log.info("[juristrack] roster of business {} synced: {} shifts, {} employees sent (request {})", businessId, payload.shifts().size(), payload.employees().size(), requestId);
         return summaryOf(answer.body());
+    }
+
+    /**
+     * Tells JurisTrack whether the business is suspended, as it is now ({@code PUT /api/v1/integration/business/status}, a service token of its own
+     * scope, one per call). Idempotent on both sides. A 404 means JurisTrack does not know the business yet (nothing to do: it starts active when
+     * its first user arrives, and nobody of a suspended business can arrive). Throws 502 when JurisTrack is unreachable, too slow or refuses.
+     * Audited on both ends; never logs the token.
+     */
+    public void pushStatus(UUID businessId) {
+        BusinessRow business = TenantContext.call(null, () -> repo.findBusiness(businessId).orElse(null));
+        if (business == null || !isGatewayOn()) return;
+        boolean isSuspended = TenantContext.call(null, () -> repo.isSuspended(businessId));
+        String requestId = UUID.randomUUID().toString();
+        HttpResponse<byte[]> answer;
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(properties.baseUrl() + "/api/v1/integration/business/status")).timeout(TIMEOUT)
+                    .PUT(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(Map.of("isSuspended", isSuspended, "reason", "jurisone"))))
+                    .header("Authorization", "Bearer " + tokenIssuer.issueService(business.id(), business.name(), JurisTrackTokenIssuer.STATUS_SCOPE))
+                    .header("Content-Type", "application/json").header("Accept", "application/json").header(AuditTrail.REQUEST_ID_HEADER, requestId).build();
+            answer = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        } catch (HttpTimeoutException e) {
+            throw failedStatusPush(businessId, isSuspended, "timeout", requestId);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("could not write the status", e);
+        } catch (IOException e) {
+            throw failedStatusPush(businessId, isSuspended, "unreachable", requestId);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw failedStatusPush(businessId, isSuspended, "interrupted", requestId);
+        }
+        int code = answer.statusCode();
+        if (code / 100 != 2 && code != 404) throw failedStatusPush(businessId, isSuspended, "http_" + code, requestId);
+        log.info("[juristrack] status of business {} sent: {} (answer {}, request {})", businessId, isSuspended ? "suspended" : "active", code, requestId);
+        audit.log(null, "juristrack.status_synced", "business", businessId.toString(), null, Map.of("isSuspended", isSuspended, "answer", code, "requestId", requestId), null);
+    }
+
+    private ApiException failedStatusPush(UUID businessId, boolean isSuspended, String reason, String requestId) {
+        log.warn("[juristrack] status of business {} not delivered: {} (request {})", businessId, reason, requestId);
+        audit.log(null, "juristrack.status_sync_failed", "business", businessId.toString(), null, Map.of("isSuspended", isSuspended, "reason", reason, "requestId", requestId), null);
+        return new ApiException(HttpStatus.BAD_GATEWAY, "JURISTRACK_UNAVAILABLE", "Juris Track didn't take the business status (" + reason + ").");
     }
 
     @SuppressWarnings("unchecked")

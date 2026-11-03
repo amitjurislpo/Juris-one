@@ -144,11 +144,11 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         Cookie hrCookie = cookieForRole(hrmRole);
         String email = "new." + UUID.randomUUID().toString().substring(0, 6) + "@example.com";
         String body = """
-            {"firstName":"Meera","middleName":"","lastName":"Joshi","fatherName":"Prakash Joshi","email":"%s","phoneCountry":"+91","phone":"98765 43210","location":"IN_IST","pan":"abcde1234f",
+            {"firstName":"Meera","middleName":"","lastName":"Joshi","fatherName":"Prakash Joshi","email":"%s","phoneCountry":"+91","paymentType":"BANK_TRANSFER","phone":"98765 43210","location":"IN_IST","pan":"abcde1234f",
              "aadhaar":"2345 6789 0123","uan":"","address":"12 Lake Road, Pune","designation":"Associate","departmentId":"%s","managerId":"%s",
              "dateOfJoining":"2031-10-12","shift":"IN_DAY","roleId":"%s"}""".formatted(email.toUpperCase(), department, finance, empRole);
         JsonNode saved = json.readTree(mockMvc.perform(write(post("/api/v1/people")).cookie(hrCookie).content(body)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
-        assertThat(saved.at("/message").asText()).matches("Meera Joshi added as TE-\\d+ · Employee · salary structure pending with Finance · they sign in with the code emailed to their work email");
+        assertThat(saved.at("/message").asText()).matches("Meera Joshi added as TE\\d+ · Employee · salary structure pending with Finance · they sign in with the code emailed to their work email");
         String id = saved.at("/data/id").asText();
 
         assertThat(jdbc.queryForObject("SELECT status::text FROM employees WHERE id = ?::uuid", String.class, id)).isEqualTo("ONBOARDING");
@@ -211,7 +211,7 @@ class OrgAndPeopleApiTest extends IntegrationTest {
         UUID manager = data.employee(managerCode, managerCode.toLowerCase() + "@example.com", empRole);
         Cookie hrCookie = cookieForRole(hrmRole);
         String body = """
-            {"firstName":"Raj","lastName":"Verma","fatherName":"K Verma","email":"raj.%s@example.com","phoneCountry":"+1","phone":"555 000 1111","location":"US_ET","pan":"",
+            {"firstName":"Raj","lastName":"Verma","fatherName":"K Verma","email":"raj.%s@example.com","phoneCountry":"+1","paymentType":"BANK_TRANSFER","phone":"555 000 1111","location":"US_ET","pan":"",
              "aadhaar":"","uan":"","address":"","designation":"Analyst","departmentId":"%s","managerId":"%s","dateOfJoining":"2031-01-01","shift":"US_DAY","roleId":"%s"}"""
                 .formatted(UUID.randomUUID().toString().substring(0, 6), department, manager, finRole);
         mockMvc.perform(write(post("/api/v1/people")).cookie(hrCookie).content(body)).andExpect(status().isUnprocessableEntity())

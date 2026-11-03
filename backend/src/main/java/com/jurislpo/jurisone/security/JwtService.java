@@ -21,7 +21,9 @@ import org.springframework.stereotype.Service;
 
 /**
  * Short-lived access tokens (HS256, {@code JWT_SECRET}). Claims: {@code sub} = employee id, {@code sid} = session id
- * (the refresh-token family), {@code iat}, {@code exp}, {@code jti}. The token proves who the caller is; the request
+ * (the refresh-token family), {@code bid} = the business the token was issued for (its id; {@code platform} for a platform
+ * user), {@code iat}, {@code exp}, {@code jti}. With per-business addresses on, the request filter refuses a token whose {@code bid} does not
+ * fit the host. The token proves who the caller is; the request
  * filter still checks the session and the employee on every request, so revocation is immediate.
  */
 @Service
@@ -32,7 +34,8 @@ public class JwtService {
     /** Access token lifetime: 5 minutes (renewed silently while the user is active). */
     public static final Duration ACCESS_TTL = Duration.ofMinutes(5);
 
-    public record AccessClaims(UUID employeeId, String sessionId) {}
+    /** @param businessBinding the {@code bid} claim; null for a token issued before the claim existed */
+    public record AccessClaims(UUID employeeId, String sessionId, String businessBinding) {}
 
     /** Thrown for a token that was valid but has run out (the caller should refresh). */
     public static class ExpiredException extends RuntimeException {
@@ -55,16 +58,17 @@ public class JwtService {
         this.decoder.setJwtValidator(new org.springframework.security.oauth2.jwt.JwtTimestampValidator(Duration.ZERO));
     }
 
-    public String issue(UUID employeeId, String sessionId) {
-        return issue(employeeId, sessionId, Instant.now());
+    public String issue(UUID employeeId, String sessionId, UUID businessId) {
+        return issue(employeeId, sessionId, businessId, Instant.now());
     }
 
     /** For tests: a token issued at {@code now}. */
-    public String issue(UUID employeeId, String sessionId, Instant now) {
+    public String issue(UUID employeeId, String sessionId, UUID businessId, Instant now) {
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(ISSUER)
                 .subject(employeeId.toString())
                 .claim("sid", sessionId)
+                .claim("bid", TenantHostGuard.bindingClaim(businessId))
                 .id(UUID.randomUUID().toString())
                 .issuedAt(now)
                 .expiresAt(now.plus(ACCESS_TTL))
@@ -88,6 +92,6 @@ public class JwtService {
         if (!ISSUER.equals(decodedJwt.getClaimAsString("iss"))) throw new JwtException("wrong issuer");
         String sessionId = decodedJwt.getClaimAsString("sid");
         if (sessionId == null || decodedJwt.getSubject() == null) throw new JwtException("missing claims");
-        return new AccessClaims(UUID.fromString(decodedJwt.getSubject()), sessionId);
+        return new AccessClaims(UUID.fromString(decodedJwt.getSubject()), sessionId, decodedJwt.getClaimAsString("bid"));
     }
 }

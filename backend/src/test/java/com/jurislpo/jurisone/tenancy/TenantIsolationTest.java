@@ -110,7 +110,7 @@ class TenantIsolationTest extends IntegrationTest {
         UUID deptA = UUID.randomUUID();
         jdbc.update("INSERT INTO departments (id, name, business_id) VALUES (?, ?, ?)", deptA, "Ops " + deptA.toString().substring(0, 6), alphaData.business());
         String body = """
-            {"firstName":"Copy","lastName":"Cat","fatherName":"Someone","email":"%s","phoneCountry":"+91","phone":"98765 43210","location":"IN_IST","pan":"abcde1234f",
+            {"firstName":"Copy","lastName":"Cat","fatherName":"Someone","email":"%s","phoneCountry":"+91","paymentType":"BANK_TRANSFER","phone":"98765 43210","location":"IN_IST","pan":"abcde1234f",
              "aadhaar":"2345 6789 0123","uan":"","address":"12 Lake Road, Pune","designation":"Associate","departmentId":"%s","managerId":"%s",
              "dateOfJoining":"2031-10-12","shift":"IN_DAY","roleId":"%s"}""".formatted(betaEmp.email(), deptA, alphaHr.id(), alphaEmployeeId);
         mockMvc.perform(write(post("/api/v1/people")).cookie(alphaHr.cookie()).content(body))

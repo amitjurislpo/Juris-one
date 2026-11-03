@@ -141,7 +141,7 @@ class JurisTrackRosterApiTest extends IntegrationTest {
 
     String personBody(Hr hr, String email, String firstName) {
         return """
-            {"firstName":"%s","middleName":"","lastName":"Joshi","fatherName":"Prakash Joshi","email":"%s","phoneCountry":"+91","phone":"98765 43210","location":"IN_IST","pan":"","aadhaar":"","uan":"",
+            {"firstName":"%s","middleName":"","lastName":"Joshi","fatherName":"Prakash Joshi","email":"%s","phoneCountry":"+91","paymentType":"BANK_TRANSFER","phone":"98765 43210","location":"IN_IST","pan":"","aadhaar":"","uan":"",
              "address":"","designation":"Associate","departmentId":"%s","managerId":"%s","dateOfJoining":"2026-10-01","shift":"IN_DAY","roleId":"%s"}""".formatted(firstName, email, hr.department(), hr.id(), hr.employeeRole());
     }
 
@@ -193,14 +193,14 @@ class JurisTrackRosterApiTest extends IntegrationTest {
         assertThat(person(body, badEmail)).isNull();
         JsonNode bossJson = person(body, boss), leadJson = person(body, lead), americanJson = person(body, american), goneJson = person(body, gone), noShiftJson = person(body, noShift);
         assertThat(bossJson.fieldNames()).toIterable().containsExactlyInAnyOrder("employeeId", "email", "firstName", "lastName", "employeeCode", "role", "managerEmployeeId", "isActive", "shiftCode");
-        assertThat(bossJson.get("role").asText()).isEqualTo("MANAGER");
+        assertThat(bossJson.get("role").asText()).isEqualTo("EMPLOYEE"); // reports alone make no JurisTrack manager
         assertThat(bossJson.get("managerEmployeeId").isNull()).isTrue();
         assertThat(bossJson.get("shiftCode").asText()).isEqualTo("IN_NIGHT");
         assertThat(bossJson.get("isActive").asBoolean()).isTrue();
         assertThat(bossJson.get("firstName").asText()).isEqualTo("Person");
         assertThat(bossJson.get("employeeCode").asText()).startsWith("RS-");
         assertThat(bossJson.get("email").asText()).endsWith("@example.com");
-        assertThat(leadJson.get("role").asText()).isEqualTo("MANAGER"); // has a report of their own
+        assertThat(leadJson.get("role").asText()).isEqualTo("EMPLOYEE"); // has a report of their own, but not the role
         assertThat(leadJson.get("managerEmployeeId").asText()).isEqualTo(boss.toString());
         assertThat(americanJson.get("role").asText()).isEqualTo("EMPLOYEE");
         assertThat(americanJson.get("isActive").asBoolean()).isTrue(); // probation people work
@@ -211,13 +211,37 @@ class JurisTrackRosterApiTest extends IntegrationTest {
     }
 
     @Test
-    void aManagerWhoseOnlyReportHasLeftIsAnEmployeeAgain() throws Exception {
+    void havingReportsNeverMakesAManagerOnItsOwn() throws Exception {
         TestData data = business("Asia/Kolkata", true);
         UUID boss = employee(data, "IN_DAY", "Asia/Kolkata", "ACTIVE", null);
-        UUID report = employee(data, "IN_DAY", "Asia/Kolkata", "ACTIVE", boss);
-        assertThat(person(json.valueToTree(roster.buildPayload(data.business())), boss).get("role").asText()).isEqualTo("MANAGER");
-        jdbc.update("UPDATE employees SET status = 'EXITED' WHERE id = ?", report);
+        employee(data, "IN_DAY", "Asia/Kolkata", "ACTIVE", boss);
         assertThat(person(json.valueToTree(roster.buildPayload(data.business())), boss).get("role").asText()).isEqualTo("EMPLOYEE");
+    }
+
+    @Test
+    void aJurisTrackManagerRoleMakesAManagerWithoutReportsWhetherMainOrAdditional() throws Exception {
+        TestData data = business("Asia/Kolkata", true);
+        UUID managerRole = data.role("juristrack_manager", "self", "juristrack.manager");
+        UUID byMainRole = employee(data, "IN_DAY", "Asia/Kolkata", "ACTIVE", null);
+        jdbc.update("UPDATE employees SET role_id = ? WHERE id = ?", managerRole, byMainRole);
+        UUID byAdditionalRole = employee(data, "IN_DAY", "Asia/Kolkata", "ACTIVE", null);
+        UUID plain = employee(data, "IN_DAY", "Asia/Kolkata", "ACTIVE", null);
+        jdbc.update("INSERT INTO employee_additional_roles (employee_id, role_id) VALUES (?, ?)", byAdditionalRole, managerRole);
+        com.fasterxml.jackson.databind.JsonNode payload = json.valueToTree(roster.buildPayload(data.business()));
+        assertThat(person(payload, byMainRole).get("role").asText()).isEqualTo("MANAGER");
+        assertThat(person(payload, byAdditionalRole).get("role").asText()).isEqualTo("MANAGER");
+        assertThat(person(payload, plain).get("role").asText()).isEqualTo("EMPLOYEE");
+    }
+
+    @Test
+    void aSuspendedBusinessIsNotPushedAndNotInTheFullResync() throws Exception {
+        TestData data = business("Asia/Kolkata", true);
+        employee(data, "IN_DAY", "Asia/Kolkata", "ACTIVE", null);
+        assertThat(roster.isModuleActive(data.business())).isTrue();
+        jdbc.update("UPDATE businesses SET status = 'SUSPENDED' WHERE id = ?", data.business());
+        assertThat(roster.isModuleActive(data.business())).isFalse();
+        assertThat(roster.businessesWithModule()).doesNotContain(data.business());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> roster.syncBusiness(data.business())).hasMessageContaining("doesn't have Juris Track");
     }
 
     @Test
@@ -291,7 +315,7 @@ class JurisTrackRosterApiTest extends IntegrationTest {
         assertThat(added.get("firstName").asText()).isEqualTo("Meera");
         assertThat(added.get("managerEmployeeId").asText()).isEqualTo(hr.id().toString());
         assertThat(added.get("shiftCode").asText()).isEqualTo("IN_DAY");
-        assertThat(person(afterAdd, hr.id()).get("role").asText()).isEqualTo("MANAGER"); // the new report makes the HR manager a manager
+        assertThat(person(afterAdd, hr.id()).get("role").asText()).isEqualTo("EMPLOYEE"); // a new report does not make the HR a JurisTrack manager
 
         mockMvc.perform(write(put("/api/v1/people/" + id)).cookie(hr.cookie()).content(personBody(hr, email, "Meeraa"))).andExpect(status().isOk());
         JsonNode afterEdit = json.readTree(awaitPushes(data.business(), 2).get(1).body());
@@ -373,6 +397,119 @@ class JurisTrackRosterApiTest extends IntegrationTest {
                 id, "SA-" + id.toString().substring(0, 6), email, role, Date.valueOf(LocalDate.of(2025, 1, 1)));
         jdbc.update("INSERT INTO users (employee_id, is_super_admin) VALUES (?, true)", id);
         return signIn(email);
+    }
+
+    // ───────────────────────── suspension reaches JurisTrack ─────────────────────────
+
+    List<Received> statusPushesOf(UUID business) {
+        return JurisTrackStub.received().stream().filter(received -> "PUT".equals(received.method()) && "/api/v1/integration/business/status".equals(received.pathAndQuery())).filter(received -> {
+            try {
+                return business.toString().equals(claimsOf(received).getStringClaim("businessId"));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }).toList();
+    }
+
+    List<Received> awaitStatusPushes(UUID business, int count) throws Exception {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (statusPushesOf(business).size() < count && System.currentTimeMillis() < deadline) Thread.sleep(50);
+        Thread.sleep(500);
+        assertThat(statusPushesOf(business)).hasSize(count);
+        return statusPushesOf(business);
+    }
+
+    void setBusinessStatus(Cookie admin, UUID business, String status) throws Exception {
+        mockMvc.perform(write(put("/api/v1/platform/businesses/" + business + "/status")).cookie(admin).content("{\"status\":\"" + status + "\"}")).andExpect(status().isOk());
+    }
+
+    @Test
+    void suspendingAndReactivatingTellsJurisTrackWithATokenOfItsOwnScope() throws Exception {
+        TestData data = business("Asia/Kolkata", true);
+        Cookie admin = superAdmin();
+
+        setBusinessStatus(admin, data.business(), "SUSPENDED");
+        Received suspended = awaitStatusPushes(data.business(), 1).get(0);
+        assertThat(json.readTree(suspended.body()).get("isSuspended").asBoolean()).isTrue();
+        JWTClaimsSet claims = claimsOf(suspended);
+        assertThat(claims.getStringClaim("scope")).isEqualTo("business:status"); // not the roster scope, and no person in it
+        assertThat(claims.getSubject()).isNull();
+        assertThat(claims.getClaim("email")).isNull();
+        assertThat(suspended.headers().get("x-request-id")).isNotBlank();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'juristrack.status_synced' AND entity_id = ?", Integer.class, data.business().toString())).isEqualTo(1);
+
+        setBusinessStatus(admin, data.business(), "ACTIVE");
+        List<Received> both = awaitStatusPushes(data.business(), 2);
+        assertThat(json.readTree(both.get(1).body()).get("isSuspended").asBoolean()).isFalse();
+        assertThat(claimsOf(both.get(0)).getJWTID()).isNotEqualTo(claimsOf(both.get(1)).getJWTID()); // a fresh single-use token each time
+    }
+
+    @Test
+    void aJurisTrackThatIsDownNeverFailsTheSuspensionAndIsAuditedAndHealedByTheFullResync() throws Exception {
+        TestData data = business("Asia/Kolkata", true);
+        Cookie admin = superAdmin();
+        JurisTrackStub.hangUp(true);
+        setBusinessStatus(admin, data.business(), "SUSPENDED"); // still 200
+        assertThat(jdbc.queryForObject("SELECT status FROM businesses WHERE id = ?", String.class, data.business())).isEqualTo("SUSPENDED");
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'juristrack.status_sync_failed' AND entity_id = ?", Integer.class, data.business().toString()) == 0
+                && System.currentTimeMillis() < deadline) Thread.sleep(100);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'juristrack.status_sync_failed' AND entity_id = ?", Integer.class, data.business().toString())).isPositive();
+
+        // JurisTrack is back: the full resync tells the suspended business too (the roster of a suspended business is not sent)
+        JurisTrackStub.hangUp(false);
+        int before = statusPushesOf(data.business()).size(); // the failed attempt reached the stub, which hung up
+        trigger.syncAllBusinesses();
+        assertThat(statusPushesOf(data.business())).hasSize(before + 1);
+        assertThat(json.readTree(statusPushesOf(data.business()).get(before).body()).get("isSuspended").asBoolean()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'juristrack.status_synced' AND entity_id = ?", Integer.class, data.business().toString())).isEqualTo(1);
+        assertThat(pushesOf(data.business())).isEmpty();
+    }
+
+    @Test
+    void jurisTrackNotKnowingTheBusinessYetIsFineAndABusinessWithoutTheModuleIsNeverTold() throws Exception {
+        TestData data = business("Asia/Kolkata", true);
+        TestData plain = business("Asia/Kolkata", false);
+        Cookie admin = superAdmin();
+        JurisTrackStub.answerWith(404, "application/problem+json", "{\"status\":404}");
+        setBusinessStatus(admin, data.business(), "SUSPENDED");
+        awaitStatusPushes(data.business(), 1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'juristrack.status_synced' AND entity_id = ?", Integer.class, data.business().toString())).isEqualTo(1);
+
+        setBusinessStatus(admin, plain.business(), "SUSPENDED");
+        Thread.sleep(1500);
+        assertThat(statusPushesOf(plain.business())).isEmpty();
+    }
+
+    @Test
+    void onlyTheSuperAdminSuspendsAndAnOutsiderChangesNothingAtJurisTrack() throws Exception {
+        TestData data = business("Asia/Kolkata", true);
+        Hr hr = hr(data);
+        mockMvc.perform(write(put("/api/v1/platform/businesses/" + data.business() + "/status")).cookie(hr.cookie()).content("{\"status\":\"SUSPENDED\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(write(put("/api/v1/platform/businesses/" + data.business() + "/status")).content("{\"status\":\"SUSPENDED\"}")).andExpect(status().isUnauthorized());
+        mockMvc.perform(write(put("/api/v1/platform/businesses/" + data.business() + "/status")).cookie(superAdmin()).content("{\"status\":\"DROP TABLE\"}")).andExpect(status().is4xxClientError());
+        Thread.sleep(1000);
+        assertThat(statusPushesOf(data.business())).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT status FROM businesses WHERE id = ?", String.class, data.business())).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void aBusinessThatGetsTheModuleGetsTheJurisTrackManagerRoleOnceAndOnlyThen() throws Exception {
+        TestData data = business("Asia/Kolkata", false);
+        jdbc.update("INSERT INTO role_templates (key, name, permissions, sort_order) SELECT 'juristrack_manager', 'JurisTrack manager', ARRAY['self','dir','juristrack.manager'], 7 WHERE NOT EXISTS (SELECT 1 FROM role_templates WHERE key = 'juristrack_manager')");
+        Cookie admin = superAdmin();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM roles WHERE business_id = ? AND key = 'juristrack_manager'", Integer.class, data.business())).isZero();
+
+        mockMvc.perform(write(post("/api/v1/platform/businesses/" + data.business() + "/modules")).cookie(admin).content("{\"source\":\"COMPLIMENTARY\"}")).andExpect(status().isCreated());
+        assertThat(jdbc.queryForList("SELECT permission_key FROM role_permissions WHERE role_id = (SELECT id FROM roles WHERE business_id = ? AND key = 'juristrack_manager') ORDER BY 1",
+                String.class, data.business())).containsExactly("dir", "juristrack.manager", "self");
+        // granting again (or changing the grant) does not duplicate the role
+        String grantId = jdbc.queryForObject("SELECT id::text FROM business_modules WHERE business_id = ?", String.class, data.business());
+        mockMvc.perform(write(put("/api/v1/platform/modules/" + grantId)).cookie(admin).content("{\"source\":\"COMPLIMENTARY\",\"notes\":\"again\"}")).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM roles WHERE business_id = ? AND key = 'juristrack_manager'", Integer.class, data.business())).isEqualTo(1);
+        // another business without the module is untouched
+        TestData other = business("Asia/Kolkata", false);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM roles WHERE business_id = ? AND key = 'juristrack_manager'", Integer.class, other.business())).isZero();
     }
 
     @Test

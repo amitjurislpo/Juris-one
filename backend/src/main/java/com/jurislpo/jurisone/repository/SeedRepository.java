@@ -99,11 +99,11 @@ public class SeedRepository {
         return jdbc.queryForList("SELECT id FROM employees WHERE email = ?", UUID.class, email);
     }
 
-    /** Inserts the super admin employee (no business, code SA-001). */
+    /** Inserts the super admin employee (no business, code SA001). */
     public void insertSuperAdminEmployee(UUID id, String email, UUID roleId, Date joined) {
         jdbc.update("""
             INSERT INTO employees (id, business_id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, updated_at)
-            VALUES (?, NULL, 'SA-001', 'JurisOne Administrator', ?, 'Super Administrator', ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, now())""",
+            VALUES (?, NULL, 'SA001', 'JurisOne Administrator', ?, 'Super Administrator', ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, now())""",
                 id, email, roleId, joined);
     }
 

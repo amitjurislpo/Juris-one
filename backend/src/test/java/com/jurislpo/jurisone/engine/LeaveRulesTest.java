@@ -71,7 +71,7 @@ class LeaveRulesTest {
         @DisplayName("full month after joining, pro-rata in the joining month, none before")
         void accrual() {
             assertThat(accrualFor(YearMonth.of(2026, 10), parseDate("2026-09-08"), 1)).isEqualTo(1);
-            assertThat(accrualFor(YearMonth.of(2026, 9), parseDate("2026-09-08"), 1)).isEqualTo(0.77); // 23 of 30 days — prototype JC-074
+            assertThat(accrualFor(YearMonth.of(2026, 9), parseDate("2026-09-08"), 1)).isEqualTo(0.77); // 23 of 30 days — prototype JC074
             assertThat(accrualFor(YearMonth.of(2026, 9), parseDate("2026-09-08"), 1.5)).isEqualTo(1.15);
             assertThat(accrualFor(YearMonth.of(2026, 8), parseDate("2026-09-08"), 1)).isZero();
         }

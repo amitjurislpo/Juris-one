@@ -1,4 +1,4 @@
--- Reverses V29__encrypted_employee_data.sql (run with psql, then delete version 29 from flyway_schema_history).
+-- Reverses V31__encrypted_employee_data.sql (run with psql, then delete version 31 from flyway_schema_history).
 -- Refuses while any value exists only in encrypted form: SQL cannot decrypt, so first run the application's decrypt path
 -- (there is none yet: restore the pre-backfill dump instead) - see the open questions in the encryption notes.
 DO $$

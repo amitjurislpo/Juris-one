@@ -54,50 +54,50 @@ public class TaskSeedService {
         statuses.insertDefaultSetIfMissing(WorkflowRules.DEFAULT_STATUSES);
 
         // People operations: company-wide, Riya owns it, Pooja works in it
-        UUID people = project("PEO", "People operations", TaskAccess.BUSINESS, "purple", "JC-012", List.of("JC-015"));
-        UUID onboarding = task(people, "JC-012", new Seed("Onboarding paperwork for the November joiners", "In progress", "JC-015", "JC-012", -3, null, "HIGH"));
+        UUID people = project("PEO", "People operations", TaskAccess.BUSINESS, "purple", "JC012", List.of("JC015"));
+        UUID onboarding = task(people, "JC012", new Seed("Onboarding paperwork for the November joiners", "In progress", "JC015", "JC012", -3, null, "HIGH"));
         for (String item : List.of("Offer letters signed", "Bank details collected", "Laptop requests raised")) tasks.insertChecklistItem(UUID.randomUUID(), onboarding, item);
-        comment(onboarding, "JC-015", "Two joiners still have to send their bank details. @{" + id("JC-012") + "} can you nudge them?");
-        comment(onboarding, "JC-012", "Done, they will send them today.");
-        task(people, "JC-012", new Seed("Refresh the leave policy", "To do", "JC-015", "JC-012", 5, null, "MEDIUM"));
-        task(people, "JC-012", new Seed("Holiday calendar 2027", "To do", "JC-012", null, 20, null, "MEDIUM"));
-        task(people, "JC-012", new Seed("Probation review reminders", "To do", "JC-015", null, -1, null, "HIGH"));
-        task(people, "JC-012", new Seed("Training calendar for the next quarter", "In progress", "JC-015", "JC-004", 2, null, "MEDIUM"));
-        task(people, "JC-012", new Seed("Update the employee handbook", "In review", "JC-012", null, 7, null, "LOW"));
-        task(people, "JC-012", new Seed("Choose a background verification vendor", "Done", "JC-015", "JC-012", -10, null, "MEDIUM"));
-        task(people, "JC-012", new Seed("Attendance policy FAQ", "To do", null, null, null, null, "NONE"));
+        comment(onboarding, "JC015", "Two joiners still have to send their bank details. @{" + id("JC012") + "} can you nudge them?");
+        comment(onboarding, "JC012", "Done, they will send them today.");
+        task(people, "JC012", new Seed("Refresh the leave policy", "To do", "JC015", "JC012", 5, null, "MEDIUM"));
+        task(people, "JC012", new Seed("Holiday calendar 2027", "To do", "JC012", null, 20, null, "MEDIUM"));
+        task(people, "JC012", new Seed("Probation review reminders", "To do", "JC015", null, -1, null, "HIGH"));
+        task(people, "JC012", new Seed("Training calendar for the next quarter", "In progress", "JC015", "JC004", 2, null, "MEDIUM"));
+        task(people, "JC012", new Seed("Update the employee handbook", "In review", "JC012", null, 7, null, "LOW"));
+        task(people, "JC012", new Seed("Choose a background verification vendor", "Done", "JC015", "JC012", -10, null, "MEDIUM"));
+        task(people, "JC012", new Seed("Attendance policy FAQ", "To do", null, null, null, null, "NONE"));
 
         // Website relaunch: private, Nazneen and her reports
-        UUID web = project("WEB", "Website relaunch", TaskAccess.PRIVATE, "blue", "JC-035", List.of("JC-049", "JC-058", "JC-072", "JC-074"));
+        UUID web = project("WEB", "Website relaunch", TaskAccess.PRIVATE, "blue", "JC035", List.of("JC049", "JC058", "JC072", "JC074"));
         UUID frontend = label(web, "frontend", "blue"), content = label(web, "content", "green");
-        UUID design = task(web, "JC-035", new Seed("New home page design", "In progress", "JC-074", "JC-035", 4, null, "HIGH"));
+        UUID design = task(web, "JC035", new Seed("New home page design", "In progress", "JC074", "JC035", 4, null, "HIGH"));
         tasks.setLabels(design, List.of(frontend));
-        UUID hero = task(web, "JC-035", new Seed("Hero section copy", "To do", "JC-058", "JC-035", 3, null, "MEDIUM"), design);
+        UUID hero = task(web, "JC035", new Seed("Hero section copy", "To do", "JC058", "JC035", 3, null, "MEDIUM"), design);
         tasks.setLabels(hero, List.of(content));
-        task(web, "JC-035", new Seed("Mobile navigation", "To do", "JC-074", null, 6, null, "MEDIUM"), design);
-        UUID launch = task(web, "JC-035", new Seed("Launch checklist review", "In review", "JC-072", "JC-035", 0, "17:00", "URGENT"));
-        comment(launch, "JC-072", "Checklist is ready, waiting for the content sign-off.");
-        comment(launch, "JC-035", "Thanks. @{" + id("JC-058") + "} please confirm the copy by 4 pm.");
-        comment(launch, "JC-058", "Confirmed, all pages are final.");
-        task(web, "JC-035", new Seed("Fix the contact form", "In progress", "JC-049", "JC-035", -1, "11:00", "HIGH"));
-        UUID blog = task(web, "JC-035", new Seed("Migrate the blog posts", "To do", "JC-058", null, 12, null, "LOW"));
+        task(web, "JC035", new Seed("Mobile navigation", "To do", "JC074", null, 6, null, "MEDIUM"), design);
+        UUID launch = task(web, "JC035", new Seed("Launch checklist review", "In review", "JC072", "JC035", 0, "17:00", "URGENT"));
+        comment(launch, "JC072", "Checklist is ready, waiting for the content sign-off.");
+        comment(launch, "JC035", "Thanks. @{" + id("JC058") + "} please confirm the copy by 4 pm.");
+        comment(launch, "JC058", "Confirmed, all pages are final.");
+        task(web, "JC035", new Seed("Fix the contact form", "In progress", "JC049", "JC035", -1, "11:00", "HIGH"));
+        UUID blog = task(web, "JC035", new Seed("Migrate the blog posts", "To do", "JC058", null, 12, null, "LOW"));
         tasks.setLabels(blog, List.of(content));
-        task(web, "JC-035", new Seed("Set up analytics", "To do", "JC-049", null, null, null, "NONE"));
-        task(web, "JC-035", new Seed("Domain and SSL renewal", "Done", "JC-074", "JC-035", -5, null, "MEDIUM"));
-        task(web, "JC-035", new Seed("Old site redirects", "Cancelled", "JC-049", null, null, null, "LOW"));
-        UUID speed = task(web, "JC-035", new Seed("Page speed audit", "In review", "JC-074", null, 1, null, "MEDIUM"));
+        task(web, "JC035", new Seed("Set up analytics", "To do", "JC049", null, null, null, "NONE"));
+        task(web, "JC035", new Seed("Domain and SSL renewal", "Done", "JC074", "JC035", -5, null, "MEDIUM"));
+        task(web, "JC035", new Seed("Old site redirects", "Cancelled", "JC049", null, null, null, "LOW"));
+        UUID speed = task(web, "JC035", new Seed("Page speed audit", "In review", "JC074", null, 1, null, "MEDIUM"));
         tasks.setLabels(speed, List.of(frontend));
 
         // Payroll October: private to Finance (HR must not see it; the Owner can)
-        UUID payroll = project("PAY", "Payroll October", TaskAccess.PRIVATE, "green", "JC-004", List.of("JC-018"));
-        task(payroll, "JC-004", new Seed("Collect attendance for October", "Done", "JC-018", "JC-004", -8, null, "HIGH"));
-        task(payroll, "JC-004", new Seed("Check new joiners' salary structures", "In progress", "JC-018", "JC-004", 1, null, "HIGH"));
-        task(payroll, "JC-004", new Seed("Bonus approvals", "To do", "JC-004", null, 4, null, "MEDIUM"));
-        task(payroll, "JC-004", new Seed("Publish payslips", "To do", "JC-004", null, 9, null, "URGENT"));
+        UUID payroll = project("PAY", "Payroll October", TaskAccess.PRIVATE, "green", "JC004", List.of("JC018"));
+        task(payroll, "JC004", new Seed("Collect attendance for October", "Done", "JC018", "JC004", -8, null, "HIGH"));
+        task(payroll, "JC004", new Seed("Check new joiners' salary structures", "In progress", "JC018", "JC004", 1, null, "HIGH"));
+        task(payroll, "JC004", new Seed("Bonus approvals", "To do", "JC004", null, 4, null, "MEDIUM"));
+        task(payroll, "JC004", new Seed("Publish payslips", "To do", "JC004", null, 9, null, "URGENT"));
 
         // two personal tasks of Siddharth
-        task(null, "JC-072", new Seed("Renew my parking pass", "To do", "JC-072", null, 2, null, "LOW"));
-        task(null, "JC-072", new Seed("Read the new review guidelines", "In progress", "JC-072", null, null, null, "NONE"));
+        task(null, "JC072", new Seed("Renew my parking pass", "To do", "JC072", null, 2, null, "LOW"));
+        task(null, "JC072", new Seed("Read the new review guidelines", "In progress", "JC072", null, null, null, "NONE"));
     }
 
     private UUID id(String code) {

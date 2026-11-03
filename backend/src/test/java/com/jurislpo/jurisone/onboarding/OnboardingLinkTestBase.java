@@ -41,7 +41,7 @@ abstract class OnboardingLinkTestBase extends IntegrationTest {
         jdbc.update("INSERT INTO departments (id, name, business_id) VALUES (?, ?, ?)", departmentId, "Legal " + suffix, data.business());
         UUID managerId = data.employee("MG-" + suffix, "mg." + suffix + "@example.com", employeeRoleId);
         data.employee("HR-" + suffix, "hr." + suffix + "@example.com", hrRoleId);
-        String set = SignIn.session(mockMvc, "hr." + suffix + "@example.com").andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
+        String set = SignIn.session(mockMvc, "hr." + suffix + "@example.com", businessCode + ".localhost:3005").andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher matcher = Pattern.compile("jo_at=([^;]+)").matcher(set);
         assertThat(matcher.find()).isTrue();
         Cookie hr = new Cookie("jo_at", matcher.group(1));
@@ -50,7 +50,7 @@ abstract class OnboardingLinkTestBase extends IntegrationTest {
         String body = """
             {"firstName":"Meera","lastName":"Joshi","workEmail":"%s","phoneCountry":"+91","phone":"98765 43210","location":"IN_IST","designation":"Associate",
              "departmentId":"%s","managerId":"%s","dateOfJoining":"2031-10-12","roleId":"%s"}""".formatted(email, departmentId, managerId, employeeRoleId);
-        mockMvc.perform(post("/api/v1/onboardings").cookie(hr).header("origin", "http://localhost:3005").header("host", "localhost:3005").contentType(MediaType.APPLICATION_JSON).content(body))
+        mockMvc.perform(post("/api/v1/onboardings").cookie(hr).header("origin", "http://localhost:3005").header("host", businessCode + ".localhost:3005").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated());
 
         String text = jdbc.queryForObject("SELECT text FROM email_outbox WHERE \"to\" = ?", String.class, email);

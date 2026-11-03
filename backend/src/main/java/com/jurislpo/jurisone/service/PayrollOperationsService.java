@@ -401,8 +401,10 @@ public class PayrollOperationsService {
     public record PdfFile(String filename, byte[] bytes) {}
 
     /** Payslip PDF of a closed month: your own (`self`), or anyone's with `pay.view`; 404 when there is none. */
-    public PdfFile payslipPdf(CurrentUser user, String month, String code) {
-        if (!month.matches("^\\d{4}-\\d{2}$") || !code.matches("^JC-\\d+$")) return null;
+    public PdfFile payslipPdf(CurrentUser user, String month, String requestedCode) {
+        // codes are letters then digits (JC074); the older hyphenated form (JC-074) in bookmarks and emailed links still finds the same person
+        if (!month.matches("^\\d{4}-\\d{2}$") || !requestedCode.matches("^[A-Z]{1,10}-?[0-9]{1,9}$")) return null;
+        String code = requestedCode.replace("-", "");
         boolean own = code.equals(user.code()) && user.can("self");
         if (!own && !user.can("pay.view")) throw new ForbiddenException();
         List<Map<String, Object>> rows = repo.closedPayslipFile(month, code);

@@ -9,7 +9,10 @@ import com.jurislpo.jurisone.entity.LoginHistory;
 import com.jurislpo.jurisone.entity.User;
 import com.jurislpo.jurisone.repository.AuthRepository;
 import com.jurislpo.jurisone.service.SettingsService.AuthPolicy;
+import com.jurislpo.jurisone.exception.Problems;
 import com.jurislpo.jurisone.security.CurrentUser;
+import com.jurislpo.jurisone.security.HostBusiness;
+import com.jurislpo.jurisone.security.TenantHostGuard;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
@@ -45,12 +48,14 @@ public class AuthService {
     private final int otpPerIp, otpPerEmail;
     private final MailService mail;
     private final SubscriptionService subscriptions;
+    private final TenantHostGuard hostGuard;
 
     public AuthService(AuthRepository repo, TransactionTemplate transactionTemplate, RateLimiter limiter, SessionService sessions,
                        SettingsService settings, AuditService audit, OtpService otps,
                        @org.springframework.beans.factory.annotation.Value("${jurisone.otp.requests-per-ip:10}") int otpPerIp,
                        @org.springframework.beans.factory.annotation.Value("${jurisone.otp.requests-per-email:5}") int otpPerEmail, MailService mail,
-                       SubscriptionService subscriptions) {
+                       SubscriptionService subscriptions, TenantHostGuard hostGuard) {
+        this.hostGuard = hostGuard;
         this.subscriptions = subscriptions;
         this.otpPerIp = otpPerIp;
         this.otpPerEmail = otpPerEmail;
@@ -147,14 +152,14 @@ public class AuthService {
             user.setFailedAttempts(0);
             user.setLockedUntil(null);
             user.setLastLoginAt(Instant.now().truncatedTo(ChronoUnit.MILLIS));
-            return sessions.create(employee.getId(), remember, meta);
+            return sessions.create(employee.getId(), employee.getBusinessId(), remember, meta);
         });
         history(employee, identifier, true, "ok", meta);
         Map<String, Object> after = new java.util.HashMap<>();
         after.put("userAgent", meta.userAgent());
         audit.log(employee.getId(), "auth.login", "session", employee.getId().toString(), null, after, meta.ipAddress());
 
-        Set<String> perms = new HashSet<>(repo.findPermissionKeys(employee.getRoleId()));
+        Set<String> perms = new HashSet<>(repo.findPermissionKeys(employee.getRoleId(), employee.getId()));
         String target = next != null && next.startsWith("/") && !next.startsWith("//") ? next : Nav.landingFor(perms);
         return new LoginResult(target, issued.cookies());
     }
@@ -165,8 +170,27 @@ public class AuthService {
                 && !(employee.getBusinessId() != null && "SUSPENDED".equals(jdbcStatus(employee.getBusinessId())));
     }
 
-    /** Emails a sign-in code. Always the same answer, so it doesn't reveal who has an account. */
-    public String requestOtp(String emailRaw, RequestMeta meta) {
+    /** The neutral answer for a host that names no business: the same for every step, saying nothing about which businesses exist. */
+    private ApiException unknownHost(HostBusiness host, String step, RequestMeta meta) {
+        hostGuard.refused(null, step, "unknown_host", host, meta.ipAddress());
+        return new ApiException(HttpStatus.NOT_FOUND, Problems.NOT_FOUND, "Not found.");
+    }
+
+    /**
+     * The account for the email, or null when there is none or (with per-business addresses on) when it does not belong to the business
+     * this host names. A wrong host is therefore handled exactly like an unknown email: no code, no mail, same answer, same limits, and no
+     * failed-attempt count against the real account (so nobody can lock another business's person out from the wrong host). The refusal
+     * itself is audited.
+     */
+    private Employee findOnHost(String email, HostBusiness host, String step, RequestMeta meta) {
+        Employee employee = findByIdentifier(email);
+        if (employee == null || TenantHostGuard.permits(host, employee.getBusinessId())) return employee;
+        hostGuard.refused(employee.getId(), step, "wrong_host", host, meta.ipAddress());
+        return null;
+    }
+
+    /** Emails a sign-in code. Always the same answer, so it doesn't reveal who has an account. {@code host} null = per-business binding is off. */
+    public String requestOtp(String emailRaw, HostBusiness host, RequestMeta meta) {
         String email = emailRaw == null ? "" : emailRaw.trim().toLowerCase();
         if (email.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter your email.");
         if (email.length() > 200 || !email.contains("@")) throw new UserException(HttpStatus.BAD_REQUEST, "Enter a valid email.");
@@ -176,7 +200,8 @@ public class AuthService {
         if (byIp.limited() || byMail.limited()) {
             throw new UserException(HttpStatus.TOO_MANY_REQUESTS, "Too many code requests. Try again in " + minutes(Math.max(byIp.retryInMs(), byMail.retryInMs())) + " minute(s).");
         }
-        Employee employee = findByIdentifier(email);
+        if (host != null && host.kind() == HostBusiness.Kind.UNKNOWN) throw unknownHost(host, "otp_request", meta); // after the limits: a scanner still pays
+        Employee employee = findOnHost(email, host, "otp_request", meta);
         if (canReceiveOtp(employee)) {
             otps.issue(email, employee.getFullName(), meta.ipAddress());
             audit.log(employee.getId(), "auth.otp_requested", "session", employee.getId().toString(), null,
@@ -191,7 +216,7 @@ public class AuthService {
     }
 
     /** Sign in with the emailed code (blocks, lockout, history and audit). */
-    public LoginResult loginWithOtp(String emailRaw, String code, boolean remember, String next, RequestMeta meta) {
+    public LoginResult loginWithOtp(String emailRaw, String code, boolean remember, String next, HostBusiness host, RequestMeta meta) {
         String email = emailRaw == null ? "" : emailRaw.trim().toLowerCase();
         if (email.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Enter your email.");
         if (code == null || !code.trim().matches("[0-9]{6}")) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the 6-digit code.");
@@ -201,7 +226,11 @@ public class AuthService {
         if (result.limited()) {
             throw new UserException(HttpStatus.TOO_MANY_REQUESTS, "Too many failed sign-in attempts. Try again in " + minutes(result.retryInMs()) + " minute(s).");
         }
-        Employee employee = findByIdentifier(email);
+        if (host != null && host.kind() == HostBusiness.Kind.UNKNOWN) {
+            limiter.hit(ipKey, policy.ipWindowMinutes() * 60_000L);
+            throw unknownHost(host, "sign_in", meta);
+        }
+        Employee employee = findOnHost(email, host, "sign_in", meta);
         User user = employee == null ? null : repo.findUser(employee.getId());
         if (user != null && user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
             history(employee, email, false, "locked", meta);

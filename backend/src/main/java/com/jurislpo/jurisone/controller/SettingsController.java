@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.controller;
 
+import com.jurislpo.jurisone.service.PeopleService;
 import com.jurislpo.jurisone.service.PoliciesService;
 import com.jurislpo.jurisone.service.SettingsService;
 import com.jurislpo.jurisone.common.ApiResult;
@@ -23,8 +24,10 @@ public class SettingsController {
     private final Auth auth;
     private final PoliciesService policies;
     private final SettingsService settings;
+    private final PeopleService people;
 
-    public SettingsController(Auth auth, PoliciesService policies, SettingsService settings) {
+    public SettingsController(Auth auth, PoliciesService policies, SettingsService settings, PeopleService people) {
+        this.people = people;
         this.auth = auth;
         this.policies = policies;
         this.settings = settings;
@@ -52,6 +55,19 @@ public class SettingsController {
     public ApiResult<Map<String, Object>> attendance() {
         auth.requirePage("settings");
         return ApiResult.success(policies.attendance());
+    }
+
+    /** The employee-code series of the business: AUTO (the next number) or MANUAL (HR types every code). */
+    @GetMapping("/employee-code-series")
+    public ApiResult<Map<String, String>> employeeCodeSeries() {
+        auth.requirePage("settings");
+        return ApiResult.success(Map.of("mode", people.codeSeriesMode()));
+    }
+
+    @PutMapping("/employee-code-series")
+    public ApiResult<Void> updateEmployeeCodeSeries(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        people.setCodeSeriesMode(auth.assertPerm("roles.manage"), body.get("mode"), RequestMeta.of(request).ipAddress());
+        return ApiResult.message("Employee code series saved");
     }
 
     @PutMapping("/attendance")
