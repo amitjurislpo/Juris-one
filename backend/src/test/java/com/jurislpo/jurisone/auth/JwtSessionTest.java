@@ -86,7 +86,7 @@ class JwtSessionTest extends IntegrationTest {
     void anExpiredOrForgedTokenIsRejectedWithProblemJson() throws Exception {
         Signed signed = signIn();
         String sessionId = jdbc.queryForObject("SELECT id FROM sessions WHERE employee_id = ?", String.class, signed.id());
-        String expiredToken = jwtService.issue(signed.id(), sessionId, Instant.now().minusSeconds(6 * 60));
+        String expiredToken = jwtService.issue(signed.id(), sessionId, null, Instant.now().minusSeconds(6 * 60));
         mockMvc.perform(get("/api/v1/me").cookie(new Cookie("jo_at", expiredToken))).andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(jsonPath("$.code").value("TOKEN_EXPIRED"))
