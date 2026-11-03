@@ -142,7 +142,7 @@ public class PeopleService {
         List<String> reports = repo.findCurrentReportNames(id);
         String shift = row.get("shift_code") == null ? "—" : Shifts.label((String) row.get("shift_code"), (String) row.get("start_local"), (String) row.get("end_local"));
         Date exit = (Date) row.get("exit_date");
-        return new Profile(id.toString(), (String) row.get("code"), (String) row.get("full_name"), row.get("father_name") == null ? "—" : (String) row.get("father_name"),
+        return new Profile(id.toString(), (String) row.get("code"), (String) row.get("full_name"), row.get("father_name") == null ? "—" : piiCrypto.decryptOrLegacy((String) row.get("father_name")),
                 (String) row.get("email"), Masks.phone((String) row.get("phone_last4")), maskAddress(piiCrypto.decrypt((String) row.get("address_enc"))),
                 india ? Masks.pan((String) row.get("pan_last4")) : "—", india ? Masks.aadhaar((String) row.get("aadhaar_last4")) : "—",
                 india ? Masks.uan((String) row.get("uan_last4")) : "—", (String) row.get("designation"), row.get("department_name") == null ? "—" : (String) row.get("department_name"),
@@ -295,7 +295,7 @@ public class PeopleService {
             Object shiftId = current.get("shift_id");
             String shift = shiftId != null && shiftCodes.containsKey(shiftId.toString()) ? shiftCodes.get(shiftId.toString()) : ("US".equals(current.get("region_s")) ? "US_DAY" : "IN_NIGHT");
             String[] names = names(current);
-            defaults = new EmployeeInput(names[0], names[1], names[2], current.get("father_name") == null ? "" : (String) current.get("father_name"),
+            defaults = new EmployeeInput(names[0], names[1], names[2], current.get("father_name") == null ? "" : piiCrypto.decryptOrLegacy((String) current.get("father_name")),
                     (String) current.get("email"), current.get("phone_country") == null ? "+91" : (String) current.get("phone_country"), "",
                     PeopleRules.locationOfTimeZone((String) current.get("time_zone")).value(), current.get("joining_office") == null ? "" : (String) current.get("joining_office"),
                     "", "", "", "", (String) current.get("designation"), current.get("department_id") == null ? "" : current.get("department_id").toString(),
@@ -486,7 +486,7 @@ public class PeopleService {
             UUID id = editId;
             Map<String, Object> before = new LinkedHashMap<>();
             before.put("fullName", currentRow.get("full_name"));
-            before.put("fatherName", currentRow.get("father_name"));
+            before.put("fatherNameSet", currentRow.get("father_name") != null);
             before.put("email", currentRow.get("email"));
             before.put("designation", currentRow.get("designation"));
             before.put("departmentId", textOrEmpty(currentRow.get("department_id")));
@@ -497,7 +497,7 @@ public class PeopleService {
             before.put("shiftId", textOrEmpty(currentRow.get("shift_id")));
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("fullName", fullName);
-            after.put("fatherName", employeeInput.fatherName());
+            after.put("fatherNameSet", !employeeInput.fatherName().isEmpty());
             after.put("email", email);
             after.put("designation", employeeInput.designation());
             after.put("departmentId", employeeInput.departmentId());
@@ -512,7 +512,7 @@ public class PeopleService {
                     ? PeopleRules.initialStatus(LocalDate.parse(employeeInput.dateOfJoining()), today).name() : status;
             transactionTemplate.executeWithoutResult(transactionStatus -> {
                 repo.updateEmployee(id, fullName, employeeInput.firstName(), employeeInput.middleName().isEmpty() ? null : employeeInput.middleName(), employeeInput.lastName(),
-                        employeeInput.joiningOffice().isEmpty() ? null : employeeInput.joiningOffice(), employeeInput.fatherName(), email, employeeInput.designation(), employeeInput.departmentId(), managerId, employeeInput.roleId(), Date.valueOf(employeeInput.dateOfJoining()),
+                        employeeInput.joiningOffice().isEmpty() ? null : employeeInput.joiningOffice(), piiCrypto.encrypt(employeeInput.fatherName()), email, employeeInput.designation(), employeeInput.departmentId(), managerId, employeeInput.roleId(), Date.valueOf(employeeInput.dateOfJoining()),
                         location.timeZone(), location.region(), shiftId, newStatus);
                 repo.updatePii(id, piiCols);
                 audit.log(user.id(), "employee.edit", "employee", id.toString(), before, after, ipAddress);
@@ -530,7 +530,7 @@ public class PeopleService {
             String code = nextCode();
             codeOut[0] = code;
             repo.insertEmployee(id, code, fullName, employeeInput.firstName(), employeeInput.middleName().isEmpty() ? null : employeeInput.middleName(), employeeInput.lastName(), employeeInput.joiningOffice().isEmpty() ? null : employeeInput.joiningOffice(),
-                    employeeInput.fatherName().isEmpty() ? null : employeeInput.fatherName(), email, employeeInput.designation(), employeeInput.departmentId(), managerId, employeeInput.roleId(), Date.valueOf(employeeInput.dateOfJoining()),
+                    piiCrypto.encrypt(employeeInput.fatherName()), email, employeeInput.designation(), employeeInput.departmentId(), managerId, employeeInput.roleId(), Date.valueOf(employeeInput.dateOfJoining()),
                     location.timeZone(), location.region(), shiftId, PeopleRules.initialStatus(LocalDate.parse(employeeInput.dateOfJoining()), today).name(), access, user.id());
             repo.updatePii(id, piiCols);
             repo.insertUser(id);
@@ -539,7 +539,7 @@ public class PeopleService {
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("code", code);
             after.put("fullName", fullName);
-            after.put("fatherName", employeeInput.fatherName());
+            after.put("fatherNameSet", !employeeInput.fatherName().isEmpty());
             after.put("email", email);
             after.put("designation", employeeInput.designation());
             after.put("departmentId", employeeInput.departmentId());

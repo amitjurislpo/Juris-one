@@ -34,8 +34,11 @@ public class SeedRepository {
 
     private final JdbcTemplate jdbc;
 
-    public SeedRepository(JdbcTemplate jdbc) {
+    private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
+
+    public SeedRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts) {
         this.jdbc = jdbc;
+        this.salaryAmounts = salaryAmounts;
     }
 
     // ── platform role ──
@@ -294,9 +297,9 @@ public class SeedRepository {
 
     public void insertSalaryStructure(UUID id, UUID employeeId, Date effectiveFrom, long basic, long hra, long lta, long special, Object reason, UUID createdBy) {
         jdbc.update("""
-            INSERT INTO salary_structures (id, employee_id, effective_from, basic, hra, lta, special, reason, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?::"StructureReason", ?) ON CONFLICT (employee_id, effective_from) DO NOTHING""",
-                id, employeeId, effectiveFrom, basic, hra, lta, special, reason, createdBy);
+            INSERT INTO salary_structures (id, employee_id, effective_from, amounts_enc, reason, created_by)
+            VALUES (?, ?, ?, ?, ?::"StructureReason", ?) ON CONFLICT (employee_id, effective_from) DO NOTHING""",
+                id, employeeId, effectiveFrom, salaryAmounts.encode(basic, hra, lta, special), reason, createdBy);
     }
 
     /** Inserts a tax profile unless it exists (metro, not senior parents). */

@@ -209,12 +209,12 @@ public class SeedService {
         }
         UUID id = UUID.randomUUID();
         repo.insertEmployee(
-                id, person.code(), person.name(), person.fatherName(), email, person.title(), roleIds.get(person.role()), person.department() == null ? null : departmentIds.get(person.department()), manager, parseDate(person.dateOfJoining()),
+                id, person.code(), person.name(), piiCrypto.encrypt(person.fatherName()), email, person.title(), roleIds.get(person.role()), person.department() == null ? null : departmentIds.get(person.department()), manager, parseDate(person.dateOfJoining()),
                 person.exitDate() == null ? null : parseDate(person.exitDate()), person.status(), person.timeZone(), region(person.timeZone()), person.shift() == null ? null : shiftIds.get(person.shift()),
                 !"EXITED".equals(person.status()) && !Boolean.FALSE.equals(person.access()), createdBy,
                 piiCrypto.encrypt(ids.phone()), PiiCrypto.last4(ids.phone()), piiCrypto.encrypt(ids.address()), piiCrypto.encrypt(ids.pan()), PiiCrypto.last4(ids.pan()),
                 piiCrypto.encrypt(ids.aadhaar()), PiiCrypto.last4(ids.aadhaar()), piiCrypto.encrypt(ids.uan()), PiiCrypto.last4(ids.uan()), piiCrypto.encrypt(ids.bank()),
-                PiiCrypto.last4(ids.bank()), india ? "HDFC Bank" : null, india ? "HDFC0001234" : null);
+                PiiCrypto.last4(ids.bank()), india ? piiCrypto.encrypt("HDFC Bank") : null, india ? piiCrypto.encrypt("HDFC0001234") : null);
         return id;
     }
 

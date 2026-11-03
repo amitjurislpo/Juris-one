@@ -75,6 +75,25 @@ public class PiiCrypto {
         }
     }
 
+    /** True when the value is in this class's stored format (so it was written by {@link #encrypt}). */
+    public static boolean isEncrypted(String stored) {
+        return stored != null && stored.startsWith("v1.") && stored.chars().filter(c -> c == '.').count() == 3;
+    }
+
+    /**
+     * Reads a column that is being moved from plaintext to encrypted: a value in the stored format is decrypted, anything
+     * else is an old plaintext row and is returned as it is. The backfill ({@code EncryptExistingColumns}) encrypts those rows.
+     */
+    public String decryptOrLegacy(String stored) {
+        if (stored == null || stored.isEmpty()) return null;
+        return isEncrypted(stored) ? decrypt(stored) : stored;
+    }
+
+    /** Encrypts a value unless it already is encrypted (never encrypt twice). */
+    public String encryptOnce(String plain) {
+        return isEncrypted(plain) ? plain : encrypt(plain);
+    }
+
     /** Last four significant characters (digits/letters), for masked display. */
     public static String last4(String value) {
         if (value == null || value.isEmpty()) return null;
