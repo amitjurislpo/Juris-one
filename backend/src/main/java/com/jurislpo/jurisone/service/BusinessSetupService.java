@@ -38,11 +38,6 @@ public class BusinessSetupService {
         this.templates = templates;
     }
 
-    /** A safe URL slug from a name (see {@link BusinessSlugs#derive}), without checking whether it is taken. */
-    public static String slug(String name) {
-        return BusinessSlugs.derive(name, candidate -> false);
-    }
-
     /** A default employee ID prefix: initials of the name ("Juris Consultants" → "JC"), 2–5 letters. */
     public static String defaultPrefix(String name) {
         StringBuilder builder = new StringBuilder();
@@ -130,6 +125,12 @@ public class BusinessSetupService {
             if (other != null && other.assignable().contains(template.key())) repo.addAssignableRole((UUID) roleKey.get("id"), id);
         }
         return id;
+    }
+
+    /** Like {@link #addRole}, but does nothing when the current business already has the role. */
+    public void addRoleIfMissing(RoleTemplateRepository.Template template) {
+        requireBusiness();
+        if (repo.findRoleIds(template.key()).isEmpty()) addRole(template);
     }
 
     /** Replaces the role's permissions and assignable roles with the template's current ones. */

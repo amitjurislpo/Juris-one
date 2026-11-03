@@ -9,6 +9,7 @@ import com.jurislpo.jurisone.security.PolicyGateFilter;
 import com.jurislpo.jurisone.security.SubscriptionGateFilter;
 import com.jurislpo.jurisone.security.JwtAuthFilter;
 import com.jurislpo.jurisone.security.TenantHostFilter;
+import com.jurislpo.jurisone.security.TenantOrigins;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -26,7 +27,6 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 import org.springframework.security.web.util.matcher.AnyRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
  * Stateless: no JSESSIONID. Authentication comes from the {@code jo_at} JWT access-token cookie (JwtAuthFilter), renewed
@@ -68,8 +68,8 @@ public class SecurityConfig {
             .logout(l -> l.disable())
             .requestCache(r -> r.disable())
             .addFilterAfter(origin, SecurityContextHolderFilter.class)
+            .addFilterBefore(tenantHost, OriginCheckFilter.class) // resolves the host first: an unknown host gets the neutral 404 before any Origin or login check
             .addFilterBefore(sessions, AnonymousAuthenticationFilter.class)
-            .addFilterBefore(tenantHost, JwtAuthFilter.class) // observe only: which business the host names (flag jurisone.tenant-host.enabled)
             .addFilterAfter(subscription, JwtAuthFilter.class) // needs the business the JWT filter set
             .addFilterAfter(onboardingGate, SubscriptionGateFilter.class) // 402 before 403: a paused business can't finish anything
             .addFilterAfter(policyGate, OnboardingGateFilter.class) // an unfinished onboarding comes before the policies
@@ -125,16 +125,27 @@ public class SecurityConfig {
         return registration;
     }
 
-    /** CORS: only the web app's origin, with credentials (the browser normally reaches us through the app's /api proxy). */
+    /**
+     * CORS: the web app's configured origin, with credentials (the browser normally reaches us through the app's /api proxy). With per-business
+     * addresses on, the Origin of a business or admin address is allowed too, but only that one exact origin and only when it is this request's own
+     * Host ({@link TenantOrigins}); never a wildcard, and any other origin gets the configuration that allows only the web app's origin (so it is refused).
+     */
     @Bean
-    CorsConfigurationSource corsConfigurationSource(JurisOneProperties props) {
+    CorsConfigurationSource corsConfigurationSource(JurisOneProperties props, TenantOrigins tenantOrigins) {
+        CorsConfiguration fixed = corsConfiguration(props.frontendOrigin());
+        return request -> {
+            String origin = request.getHeader("Origin");
+            if (origin != null && tenantOrigins.isAllowed(request, origin)) return corsConfiguration(origin);
+            return request.getRequestURI().startsWith(PREFIX + "/") ? fixed : null;
+        };
+    }
+
+    private static CorsConfiguration corsConfiguration(String allowedOrigin) {
         CorsConfiguration corsConfiguration = new CorsConfiguration();
-        corsConfiguration.setAllowedOrigins(List.of(props.frontendOrigin()));
+        corsConfiguration.setAllowedOrigins(List.of(allowedOrigin));
         corsConfiguration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE"));
         corsConfiguration.setAllowedHeaders(List.of("Content-Type", "Accept"));
         corsConfiguration.setAllowCredentials(true);
-        UrlBasedCorsConfigurationSource corsConfigurationSource = new UrlBasedCorsConfigurationSource();
-        corsConfigurationSource.registerCorsConfiguration(PREFIX + "/**", corsConfiguration);
-        return corsConfigurationSource;
+        return corsConfiguration;
     }
 }

@@ -81,7 +81,7 @@ public class EmployeeOnboardingRepository {
     public List<UUID> findReviewers() {
         return jdbc.queryForList("""
             SELECT e.id FROM employees e WHERE e.status <> 'EXITED' AND e.portal_access
-              AND EXISTS (SELECT 1 FROM role_permissions p WHERE p.role_id = e.role_id AND p.permission_key = 'people.add')""", UUID.class);
+              AND jurisone_employee_has_permission(e.id, 'people.add')""", UUID.class);
     }
 
     /** The onboarding and the employee facts needed to initiate onboarding for these employees (row-level security hides other businesses). */

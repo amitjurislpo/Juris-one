@@ -1,6 +1,14 @@
 package com.jurislpo.jurisone.security;
 
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
 import static com.jurislpo.jurisone.config.ApiPaths.PREFIX_SLASH;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jurislpo.jurisone.common.RequestMeta;
+import com.jurislpo.jurisone.exception.Problems;
+import java.util.Set;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 
 import com.jurislpo.jurisone.config.JurisOneProperties;
 import jakarta.servlet.FilterChain;
@@ -14,11 +22,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Per-business addresses, step 4 (OBSERVE only). With {@code jurisone.tenant-host.enabled=false} it does nothing. With it on it resolves the
- * request's host into a {@link HostBusiness} (request attribute {@link HostBusiness#REQUEST_ATTRIBUTE}) before {@link JwtAuthFilter}, lets the
- * request run exactly as before, and when the chain is done compares the host's business with the signed-in user's
- * ({@link TenantHostMismatchReporter}: counter and rate-limited WARN). It never blocks, rewrites or answers a request, never touches sign-in,
- * cookies, CORS or Origin handling, and any error of its own is logged at DEBUG and swallowed. Enforcement is a later step.
+ * Per-business addresses, steps 4 and 6. With {@code jurisone.tenant-host.enabled=false} it does nothing. With it on it resolves the
+ * request's host into a {@link HostBusiness} (request attribute {@link HostBusiness#REQUEST_ATTRIBUTE}) before {@link OriginCheckFilter} and
+ * {@link JwtAuthFilter}, and when the chain is done compares the host's business with the signed-in user's ({@link TenantHostMismatchReporter}:
+ * counter and rate-limited WARN).
+ *
+ * <p>Step 6: a request for any {@code /api/v1} endpoint whose real Host names no business and is not the admin address (unknown or retired
+ * slug, bare domain, IP address, other domain, unresolvable) gets the same neutral 404 as sign-in does, before the Origin check and before
+ * authentication, and is audited ({@code auth.host_refused}, step {@code request}). The three sign-in endpoints answer that themselves
+ * (with their own audit step), so they pass through here. Health checks are not under {@code /api/v1} and stay reachable. Any lookup
+ * failure of this filter fails closed on {@code /api/v1} (404) while binding is on.
  *
  * <p>The comparison runs after the chain so that it also sees requests that a later filter refused (402, 403); the signed-in user is read
  * from the request attribute {@link AuditTrail#USER_ATTR} that {@link JwtAuthFilter} sets.
@@ -26,13 +39,20 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class TenantHostFilter extends OncePerRequestFilter {
 
+    /** The sign-in endpoints refuse an unknown host themselves (own audit step), with the same neutral 404. */
+    private static final Set<String> SIGN_IN_PATHS = Set.of(PREFIX + "/auth/session", PREFIX + "/auth/session-refreshes", PREFIX + "/auth/otp-requests");
+
     private static final Logger log = LoggerFactory.getLogger(TenantHostFilter.class);
 
     private final boolean isEnabled;
     private final TenantHostResolver resolver;
     private final TenantHostMismatchReporter reporter;
+    private final TenantHostGuard guard;
+    private final ObjectMapper json;
 
-    public TenantHostFilter(JurisOneProperties props, TenantHostResolver resolver, TenantHostMismatchReporter reporter) {
+    public TenantHostFilter(JurisOneProperties props, TenantHostResolver resolver, TenantHostMismatchReporter reporter, TenantHostGuard guard, ObjectMapper json) {
+        this.guard = guard;
+        this.json = json;
         this.isEnabled = props.tenantHost().enabled();
         this.resolver = resolver;
         this.reporter = reporter;
@@ -51,6 +71,15 @@ public class TenantHostFilter extends OncePerRequestFilter {
             request.setAttribute(HostBusiness.REQUEST_ATTRIBUTE, host);
         } catch (RuntimeException e) {
             log.debug("tenant host lookup failed; the request goes on", e);
+        }
+        if (request.getRequestURI().startsWith(PREFIX_SLASH) && !SIGN_IN_PATHS.contains(request.getRequestURI())
+                && (host == null || host.kind() == HostBusiness.Kind.UNKNOWN)) {
+            guard.refused(null, "request", "unknown_host", HostBusiness.UNKNOWN, RequestMeta.of(request).ipAddress());
+            response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+            json.writeValue(response.getOutputStream(), Problems.of(HttpStatus.NOT_FOUND, Problems.NOT_FOUND, "Not found.", request.getRequestURI()));
+            observe(request, host);
+            return;
         }
         try {
             chain.doFilter(request, response);
