@@ -25,6 +25,7 @@ abstract class TenantHostObserveTestBase extends IntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired MeterRegistry meters;
+    @Autowired com.jurislpo.jurisone.config.JurisOneProperties props;
 
     String alphaSlug, betaSlug;
     UUID alphaId, betaId;
@@ -40,7 +41,7 @@ abstract class TenantHostObserveTestBase extends IntegrationTest {
         UUID role = alpha.role("observer", "self", "dir", "people.view");
         String email = "observer." + TestData.letters(8) + "@example.test";
         alpha.employee("OB" + TestData.letters(5).toUpperCase(), email, role);
-        String setCookie = SignIn.session(mockMvc, email, alphaSlug + ".localhost:3005").andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
+        String setCookie = SignIn.session(mockMvc, email, alphaSlug + ".localhost:3005", props.tenantHost().enabled() ? "http://" + alphaSlug + ".localhost:3005" : "http://localhost:3005").andExpect(status().isCreated()).andReturn().getResponse().getHeader("Set-Cookie");
         Matcher matcher = Pattern.compile("jo_at=([^;]+)").matcher(setCookie);
         assertThat(matcher.find()).isTrue();
         alphaUser = new Cookie("jo_at", matcher.group(1));

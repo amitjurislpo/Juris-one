@@ -33,6 +33,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * (with their own audit step), so they pass through here. Health checks are not under {@code /api/v1} and stay reachable. Any lookup
  * failure of this filter fails closed on {@code /api/v1} (404) while binding is on.
  *
+ * <p>Step 7: that refusal applies only with {@code jurisone.tenant-host.enforce=true} (required by the {@code EnvironmentGuard} in sqe, uat and prd).
+ * With enforce off the unknown host is audited ({@code unknown_host_not_enforced}) and the request goes on unchanged.
+ *
  * <p>The comparison runs after the chain so that it also sees requests that a later filter refused (402, 403); the signed-in user is read
  * from the request attribute {@link AuditTrail#USER_ATTR} that {@link JwtAuthFilter} sets.
  */
@@ -45,6 +48,7 @@ public class TenantHostFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(TenantHostFilter.class);
 
     private final boolean isEnabled;
+    private final boolean isEnforced;
     private final TenantHostResolver resolver;
     private final TenantHostMismatchReporter reporter;
     private final TenantHostGuard guard;
@@ -54,6 +58,7 @@ public class TenantHostFilter extends OncePerRequestFilter {
         this.guard = guard;
         this.json = json;
         this.isEnabled = props.tenantHost().enabled();
+        this.isEnforced = props.tenantHost().enforce();
         this.resolver = resolver;
         this.reporter = reporter;
     }
@@ -74,7 +79,15 @@ public class TenantHostFilter extends OncePerRequestFilter {
         }
         if (request.getRequestURI().startsWith(PREFIX_SLASH) && !SIGN_IN_PATHS.contains(request.getRequestURI())
                 && (host == null || host.kind() == HostBusiness.Kind.UNKNOWN)) {
-            guard.refused(null, "request", "unknown_host", HostBusiness.UNKNOWN, RequestMeta.of(request).ipAddress());
+            guard.refused(null, "request", isEnforced ? "unknown_host" : "unknown_host_not_enforced", HostBusiness.UNKNOWN, RequestMeta.of(request).ipAddress());
+            if (!isEnforced) { // observe only: audited above, the request goes on as before
+                try {
+                    chain.doFilter(request, response);
+                } finally {
+                    observe(request, host);
+                }
+                return;
+            }
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
             response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
             json.writeValue(response.getOutputStream(), Problems.of(HttpStatus.NOT_FOUND, Problems.NOT_FOUND, "Not found.", request.getRequestURI()));

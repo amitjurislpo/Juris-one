@@ -128,11 +128,11 @@ public class SecurityConfig {
     /**
      * CORS: the web app's configured origin, with credentials (the browser normally reaches us through the app's /api proxy). With per-business
      * addresses on, the Origin of a business or admin address is allowed too, but only that one exact origin and only when it is this request's own
-     * Host ({@link TenantOrigins}); never a wildcard, and any other origin gets the configuration that allows only the web app's origin (so it is refused).
+     * Host ({@link TenantOrigins}); never a wildcard, and any other origin is refused (flag off: it gets the configuration that allows only the web app's origin; flag on: one that allows no origin, so the apex web origin no longer passes).
      */
     @Bean
     CorsConfigurationSource corsConfigurationSource(JurisOneProperties props, TenantOrigins tenantOrigins) {
-        CorsConfiguration fixed = corsConfiguration(props.frontendOrigin());
+        CorsConfiguration fixed = tenantOrigins.isEnabled() ? new CorsConfiguration() : corsConfiguration(props.frontendOrigin()); // flag on: no apex origin, nothing else matches
         return request -> {
             String origin = request.getHeader("Origin");
             if (origin != null && tenantOrigins.isAllowed(request, origin)) return corsConfiguration(origin);

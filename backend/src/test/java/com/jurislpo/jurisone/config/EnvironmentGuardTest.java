@@ -113,6 +113,7 @@ class EnvironmentGuardTest {
         for (String environmentName : List.of("sqe", "uat", "prd")) {
             Map<String, String> environment = good(environmentName);
             environment.put("jurisone.tenant-host.enabled", "true");
+            environment.put("jurisone.tenant-host.enforce", "true");
             assertThat(problems(environment)).as(environmentName + " unset").singleElement().asString().contains("base-domain must be set");
             environment.put("jurisone.tenant-host.base-domain", "people.example.com");
             assertThat(problems(environment)).as(environmentName).isEmpty();
@@ -124,9 +125,33 @@ class EnvironmentGuardTest {
     }
 
     @Test
+    void perBusinessAddressesMustEnforceOutsideDevWhenSwitchedOn() {
+        for (String environmentName : List.of("sqe", "uat", "prd")) {
+            Map<String, String> environment = good(environmentName);
+            environment.put("jurisone.tenant-host.enabled", "true");
+            environment.put("jurisone.tenant-host.base-domain", "people.example.com");
+            for (String missing : new String[] {null, "false", "", "no"}) {
+                if (missing == null) environment.remove("jurisone.tenant-host.enforce"); else environment.put("jurisone.tenant-host.enforce", missing);
+                assertThat(problems(environment)).as(environmentName + " enforce=" + missing).singleElement().asString().contains("jurisone.tenant-host.enforce must be true");
+            }
+            environment.put("jurisone.tenant-host.enforce", "true");
+            assertThat(problems(environment)).as(environmentName).isEmpty();
+            environment.put("jurisone.tenant-host.enabled", "false"); // not switched on: enforce is not asked for
+            environment.put("jurisone.tenant-host.enforce", "false");
+            assertThat(problems(environment)).as(environmentName + " off").isEmpty();
+        }
+        Map<String, String> dev = new HashMap<>();
+        dev.put("jurisone.env", "dev");
+        dev.put("jurisone.tenant-host.enabled", "true");
+        dev.put("jurisone.tenant-host.enforce", "false");
+        assertThat(problems(dev)).isEmpty(); // dev may run without enforce
+    }
+
+    @Test
     void perBusinessAddressesNeedAValidAdminLabelAndHttpsInUatAndPrd() {
         Map<String, String> environment = good("prd");
         environment.put("jurisone.tenant-host.enabled", "true");
+        environment.put("jurisone.tenant-host.enforce", "true");
         environment.put("jurisone.tenant-host.base-domain", "example.com");
         environment.put("jurisone.tenant-host.admin-label", "admin.x");
         assertThat(problems(environment)).singleElement().asString().contains("admin-label");
@@ -140,6 +165,7 @@ class EnvironmentGuardTest {
         Map<String, String> environment = good("sqe");
         environment.put("jurisone.app-url", "http://sqe.example.com:3015");
         environment.put("jurisone.tenant-host.enabled", "true");
+        environment.put("jurisone.tenant-host.enforce", "true");
         environment.put("jurisone.tenant-host.base-domain", "sqe.example.com");
         assertThat(problems(environment)).isEmpty();
         environment.put("jurisone.tenant-host.enabled", "false");

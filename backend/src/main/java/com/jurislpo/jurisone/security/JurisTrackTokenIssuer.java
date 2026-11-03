@@ -21,7 +21,9 @@ import org.springframework.stereotype.Component;
 /**
  * Signs the token JurisTrack verifies ({@code IntegrationTokenVerifier} there): RS256, {@code iss}, {@code aud}, {@code sub} = the
  * JurisOne employee id, {@code email}, {@code name}, {@code businessId}, {@code businessName}, optional {@code managerId},
- * optional {@code shiftCode} (the employee's JurisOne shift, applied by JurisTrack only to a user it creates from that token), {@code trackRole} (MANAGER or EMPLOYEE), {@code iat}, {@code exp} and a unique {@code jti}. One token per forwarded request:
+ * optional {@code shiftCode} (the employee's JurisOne shift, applied by JurisTrack only to a user it creates from that token), optional {@code bid}
+ * (per-business addresses on: the business whose address the browser used, already checked against the signed-in person; JurisTrack refuses a
+ * {@code bid} that is not {@code businessId}), {@code trackRole} (MANAGER or EMPLOYEE), {@code iat}, {@code exp} and a unique {@code jti}. One token per forwarded request:
  * JurisTrack accepts a {@code jti} once. A token is never logged or stored.
  */
 @Component
@@ -63,8 +65,13 @@ public class JurisTrackTokenIssuer {
         return signer != null;
     }
 
-    /** A fresh, signed token for one request. */
+    /** A fresh, signed token for one request (no host binding: per-business addresses are off). */
     public String issue(Subject subject) {
+        return issue(subject, false);
+    }
+
+    /** A fresh, signed token for one request; {@code isHostBound} adds the {@code bid} claim (the subject's business, the one whose address the request came in on). */
+    public String issue(Subject subject, boolean isHostBound) {
         if (signer == null) throw new IllegalStateException("the JurisTrack gateway is disabled");
         Instant now = Instant.now();
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
@@ -75,6 +82,7 @@ public class JurisTrackTokenIssuer {
                 .issueTime(Date.from(now)).expirationTime(Date.from(now.plus(lifetime))).jwtID(UUID.randomUUID().toString());
         if (subject.managerEmployeeId() != null) claims.claim("managerId", subject.managerEmployeeId().toString());
         if (subject.shiftCode() != null) claims.claim("shiftCode", subject.shiftCode());
+        if (isHostBound) claims.claim("bid", subject.businessId().toString());
         return sign(claims.build());
     }
 

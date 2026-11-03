@@ -22,7 +22,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * Per-business addresses, step 6, flag on: Origin check, CORS and the neutral 404 for hosts that name no business. The web app's configured
  * origin is http://localhost:3005, so tenant origins must be http, port 3005, exactly {@code <slug>.localhost} / {@code admin.localhost}.
  */
-@TestPropertySource(properties = {"jurisone.tenant-host.enabled=true", "jurisone.tenant-host.base-domain=localhost"})
+@TestPropertySource(properties = {"jurisone.tenant-host.enabled=true", "jurisone.tenant-host.base-domain=localhost", "jurisone.tenant-host.enforce=true"})
 class TenantHostOriginTest extends IntegrationTest {
 
     @Autowired MockMvc mockMvc;
@@ -66,7 +66,15 @@ class TenantHostOriginTest extends IntegrationTest {
         assertThat(isOriginBlocked(write(host, "http://" + host))).isFalse();
         assertThat(status(write(host, "http://" + host))).isEqualTo(401); // past the Origin check, then not signed in
         assertThat(isOriginBlocked(write("admin.localhost:3005", "http://admin.localhost:3005"))).isFalse();
-        assertThat(isOriginBlocked(write("localhost:3005", "http://localhost:3005"))).isFalse(); // the configured web origin keeps working
+    }
+
+    /** Step 7: with the flag on, the apex web origin is no longer accepted for writes (it names no business). */
+    @Test
+    void theApexWebOriginIsNoLongerAcceptedForWrites() throws Exception {
+        String host = slug + ".localhost:3005";
+        assertThat(isOriginBlocked(write(host, "http://localhost:3005"))).isTrue(); // the apex origin on a business host
+        assertThat(isOriginBlocked(write("admin.localhost:3005", "http://localhost:3005"))).isTrue();
+        assertThat(status(write("localhost:3005", "http://localhost:3005"))).isEqualTo(404); // and an apex Host is an unknown host (enforce on)
     }
 
     @Test
@@ -144,10 +152,11 @@ class TenantHostOriginTest extends IntegrationTest {
 
         for (String origin : List.of("http://evil.com", "http://" + otherSlug + ".localhost:3005", "https://" + host, "null", "http://evil-" + host, "http://" + host + ".evil.com")) {
             var foreign = cors.getCorsConfiguration(request(host, origin));
-            assertThat(foreign.getAllowedOrigins()).as(origin).containsExactly("http://localhost:3005"); // only the web app's own origin, never *, never the foreign one
+            assertThat(foreign.getAllowedOrigins()).as(origin).isNullOrEmpty(); // flag on: no origin at all, never *, never the foreign one, not even the apex
             assertThat(foreign.checkOrigin(origin)).as(origin).isNull();
         }
         assertThat(cors.getCorsConfiguration(request(host, "http://" + host)).getAllowedOrigins()).doesNotContain("*");
+        assertThat(cors.getCorsConfiguration(request(host, "http://localhost:3005")).checkOrigin("http://localhost:3005")).isNull(); // the apex origin is refused too
     }
 
     private static org.springframework.mock.web.MockHttpServletRequest request(String host, String origin) {

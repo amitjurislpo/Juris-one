@@ -11,7 +11,9 @@ import com.jurislpo.jurisone.engine.Nav;
 import com.jurislpo.jurisone.exception.ApiException;
 import com.jurislpo.jurisone.security.AuditTrail;
 import com.jurislpo.jurisone.security.CurrentUser;
+import com.jurislpo.jurisone.security.HostBusiness;
 import com.jurislpo.jurisone.security.JurisTrackTokenIssuer;
+import com.jurislpo.jurisone.security.TenantHostGuard;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -54,12 +56,14 @@ public class JurisTrackGatewayService {
     private final JurisTrackProperties properties;
     private final JurisTrackTokenIssuer tokenIssuer;
     private final JdbcTemplate jdbc;
+    private final TenantHostGuard hostGuard;
     private final SubscriptionService subscriptions;
     private final MyAttendanceService attendance;
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NEVER).build();
 
-    public JurisTrackGatewayService(JurisTrackProperties properties, JurisTrackTokenIssuer tokenIssuer, JdbcTemplate jdbc, SubscriptionService subscriptions, MyAttendanceService attendance) {
+    public JurisTrackGatewayService(JurisTrackProperties properties, JurisTrackTokenIssuer tokenIssuer, JdbcTemplate jdbc, TenantHostGuard hostGuard, SubscriptionService subscriptions, MyAttendanceService attendance) {
+        this.hostGuard = hostGuard;
         this.properties = properties;
         this.subscriptions = subscriptions;
         this.attendance = attendance;
@@ -73,6 +77,7 @@ public class JurisTrackGatewayService {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "JURISTRACK_DISABLED", "Juris Track isn't available right now.");
         }
         String path = targetPath(request.getRequestURI());
+        boolean isHostBound = isOnOwnBusinessHost(user, request);
         String query = request.getQueryString();
         URI target = URI.create(properties.baseUrl() + "/api/v1/" + path + (query == null || query.isEmpty() ? "" : "?" + query));
         String requestId = response.getHeader(REQUEST_ID_HEADER);
@@ -86,7 +91,7 @@ public class JurisTrackGatewayService {
         if (body.length > MAXIMUM_BODY_BYTES) throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "That request is too large.");
         HttpRequest.Builder outgoing = HttpRequest.newBuilder(target).timeout(Duration.ofSeconds(30))
                 .method(request.getMethod(), body.length == 0 ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofByteArray(body))
-                .header("Authorization", "Bearer " + tokenIssuer.issue(subjectOf(user)))
+                .header("Authorization", "Bearer " + tokenIssuer.issue(subjectOf(user), isHostBound))
                 .header(REQUEST_ID_HEADER, requestId)
                 .header("X-Forwarded-For", forwardedFor(request));
         for (String name : FORWARDED_REQUEST_HEADERS) {
@@ -116,6 +121,18 @@ public class JurisTrackGatewayService {
         for (String name : RETURNED_RESPONSE_HEADERS) answer.headers().firstValue(name).ifPresent(value -> response.setHeader(name, value));
         if (!"HEAD".equals(request.getMethod())) response.getOutputStream().write(answer.body());
         if (answer.statusCode() / 100 == 2 && "POST".equals(request.getMethod()) && TIME_EVENTS_PATH.equals(path)) mirrorTimeEventAsPunch(user, body, RequestMeta.of(request).ipAddress());
+    }
+
+    /**
+     * Per-business addresses: JurisTrack is reached at {@code <business address>/juris-track/}, so the request's real Host must name the signed-in person's
+     * own business (the access token's {@code bid} was checked against it already; this is the second, independent check next to the gateway). Another
+     * host answers the same neutral 404 as an unknown host. Returns whether the token gets the {@code bid} claim (false when the feature is off).
+     */
+    private boolean isOnOwnBusinessHost(CurrentUser user, HttpServletRequest request) {
+        HostBusiness host = hostGuard.bindingOf(request);
+        if (host == null) return false;
+        if (host.kind() != HostBusiness.Kind.BUSINESS || !TenantHostGuard.permits(host, user.businessId())) throw new ApiException(HttpStatus.NOT_FOUND, "Not found.");
+        return true;
     }
 
     /**
@@ -162,7 +179,7 @@ public class JurisTrackGatewayService {
     private HttpResponse<byte[]> sendTimeEvent(CurrentUser user, String type, String ipAddress) throws IOException, InterruptedException {
         HttpRequest.Builder outgoing = HttpRequest.newBuilder(URI.create(properties.baseUrl() + "/api/v1/" + TIME_EVENTS_PATH)).timeout(SYNC_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString("{\"type\":\"" + type + "\"}"))
-                .header("Authorization", "Bearer " + tokenIssuer.issue(subjectOf(user)))
+                .header("Authorization", "Bearer " + tokenIssuer.issue(subjectOf(user), hostGuard.isEnabled())) // the Home request that caused it was checked against its host already
                 .header("Content-Type", "application/json")
                 .header(REQUEST_ID_HEADER, UUID.randomUUID().toString());
         if (ipAddress != null) outgoing.header("X-Forwarded-For", ipAddress);

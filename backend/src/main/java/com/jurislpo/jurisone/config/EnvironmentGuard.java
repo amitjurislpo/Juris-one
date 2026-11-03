@@ -53,7 +53,10 @@ public class EnvironmentGuard {
             if (blankTo(get.apply("jurisone.juristrack.base-url"), "").isBlank()) out.add("jurisone.juristrack.base-url must be set when the JurisTrack gateway is enabled (JURISTRACK_BASE_URL)");
             if (blankTo(get.apply("jurisone.juristrack.private-key"), "").isBlank()) out.add("jurisone.juristrack.private-key must be set when the JurisTrack gateway is enabled (JURISTRACK_PRIVATE_KEY)");
         }
-        if ("true".equalsIgnoreCase(blankTo(get.apply("jurisone.tenant-host.enabled"), "false"))) out.addAll(tenantHostProblems(get));
+        if ("true".equalsIgnoreCase(blankTo(get.apply("jurisone.tenant-host.enabled"), "false"))) {
+            out.addAll(tenantHostProblems(get));
+            if (!"true".equalsIgnoreCase(blankTo(get.apply("jurisone.tenant-host.enforce"), "false"))) out.add("jurisone.tenant-host.enforce must be true when jurisone.tenant-host.enabled=true outside dev (TENANT_HOST_ENFORCE)");
+        }
         if (!STRICT.contains(name)) return out;
         if ("true".equalsIgnoreCase(blankTo(get.apply("jurisone.seed.demo"), "false"))) out.add("jurisone.seed.demo must be false (no demo data outside dev and sqe)");
         if (!blankTo(get.apply("jurisone.app-url"), "").startsWith("https://")) out.add("jurisone.app-url must be an https:// URL");
