@@ -141,7 +141,7 @@ class JurisTrackRosterApiTest extends IntegrationTest {
 
     String personBody(Hr hr, String email, String firstName) {
         return """
-            {"firstName":"%s","middleName":"","lastName":"Joshi","fatherName":"Prakash Joshi","email":"%s","phoneCountry":"+91","phone":"98765 43210","location":"IN_IST","pan":"","aadhaar":"","uan":"",
+            {"firstName":"%s","middleName":"","lastName":"Joshi","fatherName":"Prakash Joshi","email":"%s","phoneCountry":"+91","paymentType":"BANK_TRANSFER","phone":"98765 43210","location":"IN_IST","pan":"","aadhaar":"","uan":"",
              "address":"","designation":"Associate","departmentId":"%s","managerId":"%s","dateOfJoining":"2026-10-01","shift":"IN_DAY","roleId":"%s"}""".formatted(firstName, email, hr.department(), hr.id(), hr.employeeRole());
     }
 

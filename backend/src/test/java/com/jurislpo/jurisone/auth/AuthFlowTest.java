@@ -190,6 +190,6 @@ class AuthFlowTest extends IntegrationTest {
     void signedOutGets401ButTheOriginalFileRoutesKeepTheir403() throws Exception {
         mockMvc.perform(get("/api/v1/me")).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.detail").value("Your session has ended. Please sign in again."));
         mockMvc.perform(get("/api/v1/people/export")).andExpect(status().isForbidden()).andExpect(jsonPath("$.detail").value("Your session has ended. Please sign in again."));
-        mockMvc.perform(get("/api/v1/payslips/2026-08/JC-049")).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/payslips/2026-08/JC049")).andExpect(status().isForbidden());
     }
 }
