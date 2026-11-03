@@ -47,10 +47,10 @@ class TenantHostFlagOnTest extends TenantHostObserveTestBase {
         call("admin.localhost", false); // not signed in on the platform host: fine
         assertThat(countAll()).isEqualTo(total);
 
-        // the signed-in person on another business's, the platform's or an unknown host is signed out (401), not just counted
+        // the signed-in person on another business's or the platform's host is signed out (401); an unknown host answers the neutral 404 (step 6)
         assertThat(call(betaSlug + ".localhost", true).getResponse().getStatus()).isEqualTo(401);
         assertThat(call("admin.localhost", true).getResponse().getStatus()).isEqualTo(401);
-        assertThat(call("nobody-" + TestData.letters(8) + ".localhost", true).getResponse().getStatus()).isEqualTo(401);
+        assertThat(call("nobody-" + TestData.letters(8) + ".localhost", true).getResponse().getStatus()).isEqualTo(404);
         call("localhost:3005", false, "X-Forwarded-Host", alphaSlug + ".localhost"); // a forged header does not make it a known host
         assertThat(count("anonymous_on_unknown_host")).isEqualTo(anonymous + 2); // the refused unknown-host token counts as anonymous, plus this call
     }
@@ -62,7 +62,7 @@ class TenantHostFlagOnTest extends TenantHostObserveTestBase {
         double total = countAll();
         MvcResult failed = call(failingSlug + ".localhost", true);
         MvcResult plain = call("localhost:3005", true);
-        assertThat(failed.getResponse().getStatus()).isEqualTo(401); // no resolved host: the guard refuses the token, it does not crash
+        assertThat(failed.getResponse().getStatus()).isEqualTo(404); // no resolved host: fails closed with the neutral 404, it does not crash
         assertThat(body(failed)).isEqualTo(body(plain));
         assertThat(hostOf(failed)).isNull();
         assertThat(countAll()).isEqualTo(total + 1); // only the plain call (unknown host, now signed out) counted

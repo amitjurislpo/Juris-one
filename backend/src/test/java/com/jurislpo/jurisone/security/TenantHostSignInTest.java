@@ -271,7 +271,7 @@ class TenantHostSignInTest extends IntegrationTest {
         assertThat(codesFor(emailA)).isZero();
 
         Cookies cookies = signIn(hostA, emailA);
-        assertThat(status(me("localhost:3005", cookies.access(), spoof))).isEqualTo(401);
+        assertThat(status(me("localhost:3005", cookies.access(), spoof))).isEqualTo(404);
         assertThat(status(refresh("localhost:3005", cookies.refresh(), spoof))).isEqualTo(404);
         assertThat(status(me(hostB, cookies.access(), "X-Forwarded-Host", hostA))).isEqualTo(401); // B's real host wins over the claimed A
         int codes = codesFor(emailA);
@@ -288,8 +288,8 @@ class TenantHostSignInTest extends IntegrationTest {
         assertThat(status(me(hostB, cookies.access()))).isEqualTo(401);
         assertThat(refusals(personA, "access_token", "wrong_host")).isEqualTo(1);
         List<String> hosts = unknownHosts();
-        for (String host : hosts) assertThat(status(me(host, cookies.access()))).as(host).isEqualTo(401);
-        assertThat(refusals(personA, "access_token", "unknown_host")).isEqualTo(hosts.size());
+        for (String host : hosts) assertThat(status(me(host, cookies.access()))).as(host).isEqualTo(404); // step 6: neutral 404 before the cookie is read
+        assertThat(anonymousRefusals("request", "unknown_host")).isGreaterThanOrEqualTo(1);
         assertThat(status(me(hostA, cookies.access()))).isEqualTo(200);
     }
 
