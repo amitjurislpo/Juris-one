@@ -186,6 +186,37 @@ class TenantHostSignInTest extends IntegrationTest {
         assertThat(refusals(admin, "sign_in", "wrong_host")).isEqualTo(1);
     }
 
+    /** In the running system the super admins sit in the platform company (a business flagged is_platform): they still count as platform users. */
+    @Test
+    void aSuperAdminPlacedInThePlatformCompanyStillSignsInOnlyOnTheAdminHost() throws Exception {
+        // the one platform company: the running system has it; a bare test database gets one here
+        if (jdbc.queryForObject("SELECT count(*) FROM businesses WHERE is_platform", Integer.class) == 0) {
+            UUID created = new TestData(jdbc).inBusiness("pc-" + TestData.letters(8)).business();
+            jdbc.update("UPDATE businesses SET is_platform = true WHERE id = ?", created);
+        }
+        UUID platformBusiness = jdbc.queryForObject("SELECT id FROM businesses WHERE is_platform", UUID.class);
+        String platformSlug = jdbc.queryForObject("SELECT code FROM businesses WHERE id = ?", String.class, platformBusiness);
+        String email = "root." + TestData.letters(8) + "@example.test";
+        UUID admin = platformAdmin(email);
+        jdbc.update("UPDATE employees SET business_id = ? WHERE id = ?", platformBusiness, admin);
+        String platformHost = platformSlug + ".localhost:3005";
+        try {
+            Cookies cookies = signIn("admin.localhost:3005", email);
+            String payload = new String(java.util.Base64.getUrlDecoder().decode(cookies.access().getValue().split("[.]")[1]));
+            assertThat(payload).contains("\"bid\":\"platform\"");
+            assertThat(status(me("admin.localhost:3005", cookies.access()))).isEqualTo(200);
+            assertThat(status(refresh("admin.localhost:3005", cookies.refresh()))).isEqualTo(201);
+            assertThat(status(me(hostA, cookies.access()))).isEqualTo(401);
+            assertThat(status(me(platformHost, cookies.access()))).isEqualTo(401); // not even on the platform company's own business address
+            int before = codesFor(email);
+            assertThat(status(otp(hostA, email))).isEqualTo(201);
+            assertThat(status(otp(platformHost, email))).isEqualTo(201);
+            assertThat(codesFor(email)).isEqualTo(before); // neutral answer, no code
+        } finally {
+            jdbc.update("UPDATE employees SET business_id = NULL WHERE id = ?", admin); // keep the platform company free of test people
+        }
+    }
+
     @Test
     void aBusinessPersonIsRefusedOnTheAdminHost() throws Exception {
         Cookies cookies = signIn(hostA, emailA);

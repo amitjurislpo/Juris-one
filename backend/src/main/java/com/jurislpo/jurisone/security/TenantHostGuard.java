@@ -6,7 +6,10 @@ import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import com.jurislpo.jurisone.repository.PlatformCompanyRepository;
+import com.jurislpo.jurisone.tenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -35,10 +38,36 @@ public class TenantHostGuard {
     private final AuditService audit;
     private final MeterRegistry meters;
 
-    public TenantHostGuard(JurisOneProperties props, AuditService audit, MeterRegistry meters) {
+    private static final long PLATFORM_IDS_TTL_MILLIS = 60_000L;
+
+    private final PlatformCompanyRepository platformCompanies;
+    private volatile Set<UUID> platformBusinessIds = Set.of();
+    private volatile long platformBusinessIdsReadAt;
+
+    public TenantHostGuard(JurisOneProperties props, AuditService audit, MeterRegistry meters, PlatformCompanyRepository platformCompanies) {
         this.isEnabled = props.tenantHost().enabled();
         this.audit = audit;
         this.meters = meters;
+        this.platformCompanies = platformCompanies;
+    }
+
+    /**
+     * The business a person counts as for host binding: {@code null} (a platform user, admitted on the admin host only) when {@code businessId} is the
+     * platform company, where the super admins are placed; otherwise {@code businessId} itself. Binding off: always {@code businessId}.
+     * A failing lookup keeps the last known answer (the platform company never changes after it is created).
+     */
+    public UUID bindingBusiness(UUID businessId) {
+        if (!isEnabled || businessId == null) return businessId;
+        long now = System.currentTimeMillis();
+        if (now - platformBusinessIdsReadAt > PLATFORM_IDS_TTL_MILLIS) {
+            try {
+                platformBusinessIds = Set.copyOf(TenantContext.call(null, platformCompanies::findPlatformIds));
+                platformBusinessIdsReadAt = now;
+            } catch (RuntimeException e) {
+                log.warn("could not read the platform company for host binding", e);
+            }
+        }
+        return platformBusinessIds.contains(businessId) ? null : businessId;
     }
 
     public boolean isEnabled() {
