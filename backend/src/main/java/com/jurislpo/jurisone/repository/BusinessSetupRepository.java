@@ -110,10 +110,16 @@ public class BusinessSetupRepository {
         jdbc.execute("SELECT pg_advisory_xact_lock(74201, hashtext(jurisone_tenant_id()::text))");
     }
 
-    /** The highest number among employee codes {@code <prefix>-<n>}, or null when there is none. */
+    /** How many digits the current business pads its employee codes to. */
+    public int findCodeDigits() {
+        Integer digits = jdbc.queryForObject("SELECT code_digits FROM businesses WHERE id = jurisone_tenant_id()", Integer.class);
+        return digits == null ? 2 : digits;
+    }
+
+    /** The highest number among employee codes {@code <prefix><n>}, or null when there is none. */
     public Integer findMaxCodeNumber(String prefix) {
         return jdbc.queryForObject("SELECT max(substring(code from ?)::int) FROM employees WHERE code ~ ?", Integer.class,
-                prefix.length() + 2, "^" + prefix + "-[0-9]+$");
+                prefix.length() + 1, com.jurislpo.jurisone.engine.EmployeeCodes.seriesPattern(prefix));
     }
 
     /** Inserts an ACTIVE employee with portal access. */

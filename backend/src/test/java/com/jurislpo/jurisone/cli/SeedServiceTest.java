@@ -10,7 +10,7 @@ class SeedServiceTest {
 
     @Test
     void fakeIdsMatchTheOriginalSeed() {
-        SeedService.FakeIds indianIds = SeedService.fakeIds("JC-074", true);
+        SeedService.FakeIds indianIds = SeedService.fakeIds("JC074", true);
         assertThat(indianIds.phone()).isEqualTo("+91 98006 49946");
         assertThat(indianIds.pan()).isEqualTo("VAFPL1094R");
         assertThat(indianIds.aadhaar()).isEqualTo("725445186074");
@@ -18,7 +18,7 @@ class SeedServiceTest {
         assertThat(indianIds.bank()).isEqualTo("501005755498");
         assertThat(indianIds.address()).isEqualTo("84, Sector 15, Noida, Uttar Pradesh 201301");
 
-        SeedService.FakeIds americanIds = SeedService.fakeIds("JC-090", false);
+        SeedService.FakeIds americanIds = SeedService.fakeIds("JC090", false);
         assertThat(americanIds.phone()).isEqualTo("+1 (212) 555-3330");
         assertThat(americanIds.pan()).isNull();
         assertThat(americanIds.aadhaar()).isNull();
