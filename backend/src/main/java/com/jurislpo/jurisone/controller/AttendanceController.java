@@ -11,9 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -42,17 +40,6 @@ public class AttendanceController {
     @GetMapping("/api/v1/attendance/mine")
     public ApiResult<MyAttendanceService.Page> me(@RequestParam Map<String, String> queryParams) {
         return ApiResult.success(mine.page(auth.requirePage("attendance"), queryParams));
-    }
-
-    @PostMapping("/api/v1/attendance/regularizations")
-    @ResponseStatus(HttpStatus.CREATED)
-    public ApiResult<Void> requestRegularization(@RequestBody MyAttendanceService.RegularizationInput body, HttpServletRequest request) {
-        return ApiResult.message(mine.requestRegularization(auth.assertPerm("self"), body, RequestMeta.of(request).ipAddress()));
-    }
-
-    @DeleteMapping("/api/v1/attendance/regularizations/{id}")
-    public ApiResult<Void> cancelRegularization(@PathVariable String id) {
-        return ApiResult.message(mine.cancelRegularization(auth.assertPerm("self"), id));
     }
 
     /** Check in / check out ({@code {"expect": "IN" | "OUT"}} — the button the user saw). */

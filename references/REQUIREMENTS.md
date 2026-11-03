@@ -85,8 +85,8 @@ The super admin keeps a catalogue of **role templates** (Platform → role templ
 | **Admin** | Everything **except `self`**: no attendance, leave or payslip of their own | All roles |
 | **HR Manager** | self, dir, att.all, appr.leave, appr.reg, people.view, people.add, access.toggle, dept.manage, holidays.manage, projects.create | HR Executive, Employee |
 | **HR Executive** | self, dir, att.all, appr.leave, appr.reg, people.view | none |
-| **Finance Manager** | self, dir, appr.reg, people.view, people.add, access.toggle, dept.manage, pay.view, pay.close, struct.manage, tax.view, proofs.verify | Finance Executive (into **Finance dept only**) |
-| **Finance Executive** | self, dir, appr.reg, pay.view, tax.view, proofs.verify (**cannot close payroll**) | none |
+| **Finance Manager** | self, dir, people.view, people.add, access.toggle, dept.manage, pay.view, pay.close, struct.manage, tax.view, proofs.verify | Finance Executive (into **Finance dept only**) |
+| **Finance Executive** | self, dir, pay.view, tax.view, proofs.verify (**cannot close payroll**) | none |
 | **Employee** | self, dir | none |
 
 `tasks.manage` is on the Owner (Admin) template only; `projects.create` on the Owner and HR Manager templates (Finance Manager and the other roles do not create projects, but anyone can be made a project owner).
@@ -224,14 +224,19 @@ When a new India employee is added, Finance is notified: "salary structure pendi
 
 **Regularization:**
 
-- **Request types:** absent, late check-in, missed check-out, holiday work (credits a comp-off).
-- **Fields:** date, type, proposed times, reason (optional).
-- **Routing:** the request goes to **HR, Finance and Admin together**. Anyone with `appr.reg` can decide, and **the first decision is final**. Store who decided and when.
+- **Request types:** absent, late check-in, missed check-out, holiday work (credits a comp-off). The employee chooses the type; the server checks it fits the day.
+- **Fields:** date, type, **check-in and check-out** (local date-time; absent needs both, late check-in the check-in, missed check-out the check-out; check-out after check-in, at most 24 h apart, night shifts may end the next morning, nothing in the future), **reason** from the business's list (Forgot to check-in, Forgot to check-out, System / biometric issue, Client visit, Other; editable by Admin / HR), description (max 500; mandatory for reasons that require it, e.g. Other), optional attachment (pdf, xls(x), doc(x), jpg, png; max 5 MB; mandatory when the setting says so).
+- **Old and New:** the server stores what was recorded (check-in, check-out, hours, status) and what the day would be once approved; the browser's numbers are never trusted.
+- **Rules (settings `attendance.regularization`, edited by Admin / HR):** back-date limit (default 30 days), requests per month (default 30, withdrawn ones do not count), attachment mandatory (default no). Holidays and weekends are **not** blocked.
+- **One pending request per employee per day** (409 `REGULARIZATION_ALREADY_PENDING`; a database unique index backs it).
+- **Routing:** the request goes to **Admin and HR together** (`appr.reg`; Finance does not approve). The first decision is final (409 `REGULARIZATION_ALREADY_DECIDED` when two decide at once). A rejection needs remarks. Several requests can be decided at once. Store who decided, when and the remarks. Nobody decides their own request. Approvers get a bell notification when a request arrives.
+- **Visibility:** an employee sees their own requests; Admin / HR see the whole business; anybody else, or another business, gets 404.
 - **Effect of approval:**
-  - an absent day becomes paid, which removes the LOP from payroll
+  - an absent day becomes paid, which removes the LOP from payroll (and the asked-for punches are recorded when the day has none)
   - a late mark is removed
+  - a missed check-out gets its check-out punch
   - holiday work adds a comp-off balance
-- Requests are only allowed before that month's attendance lock.
+- Requests are only allowed before that month's attendance lock. Every write is in the audit log.
 
 **Attendance register** (`att.all`: HR, Admin):
 
