@@ -46,11 +46,11 @@ public class ProfileRepository {
     }
 
     /** Saves the self-service fields (addresses already encrypted). */
-    public void updateSelfService(UUID id, String fatherName, Date dateOfBirth, String addressEnc, String permanentAddressEnc, String emergencyName,
+    public void updateSelfService(UUID id, String fatherName, String dateOfBirthEnc, String addressEnc, String permanentAddressEnc, String emergencyName,
                                   String emergencyRelation, String emergencyPhone) {
         jdbc.update("""
-            UPDATE employees SET father_name = ?, date_of_birth = ?, address_enc = ?, permanent_address_enc = ?, emergency_name = ?, emergency_relation = ?,
+            UPDATE employees SET father_name = ?, date_of_birth = NULL, date_of_birth_enc = ?, address_enc = ?, permanent_address_enc = ?, emergency_name = ?, emergency_relation = ?,
               emergency_phone = ?, updated_at = now() WHERE id = ?""",
-                fatherName, dateOfBirth, addressEnc, permanentAddressEnc, emergencyName, emergencyRelation, emergencyPhone, id);
+                fatherName, dateOfBirthEnc, addressEnc, permanentAddressEnc, emergencyName, emergencyRelation, emergencyPhone, id);
     }
 }

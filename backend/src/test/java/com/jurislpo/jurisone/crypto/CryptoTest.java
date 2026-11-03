@@ -70,4 +70,17 @@ class CryptoTest {
     void nodeCompat() {
         assertThat(crypto.decrypt(NODE_CIPHERTEXT)).isEqualTo("2345 6789 1234");
     }
+
+    @Test
+    @DisplayName("reads old plaintext values, decrypts new ones and never encrypts twice")
+    void legacyTolerantReadAndEncryptOnce() {
+        assertThat(crypto.decryptOrLegacy("Plain Name")).isEqualTo("Plain Name");
+        assertThat(crypto.decryptOrLegacy(null)).isNull();
+        String encrypted = crypto.encrypt("Plain Name");
+        assertThat(PiiCrypto.isEncrypted(encrypted)).isTrue();
+        assertThat(PiiCrypto.isEncrypted("v1.only.three")).isFalse();
+        assertThat(crypto.decryptOrLegacy(encrypted)).isEqualTo("Plain Name");
+        assertThat(crypto.encryptOnce(encrypted)).isEqualTo(encrypted);
+        assertThat(crypto.decrypt(crypto.encryptOnce("Plain Name"))).isEqualTo("Plain Name");
+    }
 }

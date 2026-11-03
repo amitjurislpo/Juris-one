@@ -39,7 +39,7 @@ public class ProfileService {
     public Map<String, Object> mine(CurrentUser user) {
         Map<String, Object> row = repo.findProfile(user.id());
         String[] names = PeopleService.names(row);
-        String[] emergency = splitPhone((String) row.get("emergency_phone"));
+        String[] emergency = splitPhone(piiCrypto.decryptOrLegacy((String) row.get("emergency_phone")));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("code", row.get("code"));
         out.put("photo", PhotoService.version(row.get("photo_updated_at")));
@@ -59,14 +59,14 @@ public class ProfileService {
         out.put("shift", row.get("shift_name"));
         out.put("pan", row.get("pan_last4") == null ? null : Masks.pan((String) row.get("pan_last4")));
         out.put("aadhaar", row.get("aadhaar_last4") == null ? null : Masks.aadhaar((String) row.get("aadhaar_last4")));
-        out.put("bank", row.get("bank_account_last4") == null ? null : emptyIfNull(row.get("bank_name")) + " · " + Masks.bank((String) row.get("bank_account_last4")));
+        out.put("bank", row.get("bank_account_last4") == null ? null : emptyIfNull(piiCrypto.decryptOrLegacy((String) row.get("bank_name"))) + " · " + Masks.bank((String) row.get("bank_account_last4")));
         // editable by the employee
-        out.put("fatherName", emptyIfNull(row.get("father_name")));
-        out.put("dateOfBirth", row.get("date_of_birth") == null ? "" : row.get("date_of_birth").toString());
+        out.put("fatherName", emptyIfNull(piiCrypto.decryptOrLegacy((String) row.get("father_name"))));
+        out.put("dateOfBirth", row.get("date_of_birth_enc") != null ? piiCrypto.decrypt((String) row.get("date_of_birth_enc")) : row.get("date_of_birth") == null ? "" : row.get("date_of_birth").toString());
         out.put("currentAddress", row.get("address_enc") == null ? "" : piiCrypto.decrypt((String) row.get("address_enc")));
         out.put("permanentAddress", row.get("permanent_address_enc") == null ? "" : piiCrypto.decrypt((String) row.get("permanent_address_enc")));
-        out.put("emergencyName", emptyIfNull(row.get("emergency_name")));
-        out.put("emergencyRelation", emptyIfNull(row.get("emergency_relation")));
+        out.put("emergencyName", emptyIfNull(piiCrypto.decryptOrLegacy((String) row.get("emergency_name"))));
+        out.put("emergencyRelation", emptyIfNull(piiCrypto.decryptOrLegacy((String) row.get("emergency_relation"))));
         out.put("emergencyPhoneCountry", emergency[0]);
         out.put("emergencyPhone", emergency[1]);
         return out;
@@ -120,8 +120,8 @@ public class ProfileService {
         }
         if (!ePhone.isEmpty() && eName.length() < 2) throw bad("Enter your emergency contact's name.");
         repo.updateSelfService(user.id(),
-                father, birth == null ? null : Date.valueOf(birth), current.isEmpty() ? null : piiCrypto.encrypt(current), permanent.isEmpty() ? null : piiCrypto.encrypt(permanent),
-                eName.isEmpty() ? null : eName, eRel.isEmpty() ? null : eRel, ePhone.isEmpty() ? null : (eCode.isEmpty() ? "+91" : eCode) + " " + ePhone);
+                piiCrypto.encrypt(father), birth == null ? null : piiCrypto.encrypt(birth.toString()), current.isEmpty() ? null : piiCrypto.encrypt(current), permanent.isEmpty() ? null : piiCrypto.encrypt(permanent),
+                piiCrypto.encrypt(eName), piiCrypto.encrypt(eRel), piiCrypto.encrypt(ePhone.isEmpty() ? null : (eCode.isEmpty() ? "+91" : eCode) + " " + ePhone));
         audit.log(user.id(), "profile.self_update", "employee", user.id().toString(), null,
                 Map.of("fields", List.of("fatherName", "dateOfBirth", "address", "permanentAddress", "emergencyContact")), ipAddress);
         return "Your profile was saved";
