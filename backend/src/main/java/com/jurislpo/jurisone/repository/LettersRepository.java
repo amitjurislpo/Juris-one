@@ -14,8 +14,11 @@ public class LettersRepository {
 
     private final JdbcTemplate jdbc;
 
-    public LettersRepository(JdbcTemplate jdbc) {
+    private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
+
+    public LettersRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts) {
         this.jdbc = jdbc;
+        this.salaryAmounts = salaryAmounts;
     }
 
     // ───────────────────────── templates ─────────────────────────
@@ -59,8 +62,8 @@ public class LettersRepository {
 
     /** Monthly Basic + HRA + LTA + Special (paise) of the structure in force on the date; empty when none yet. */
     public List<Long> monthlyGrossOn(UUID employeeId, LocalDate date) {
-        return jdbc.query("SELECT (basic + hra + lta + special)::bigint FROM salary_structures WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1",
-                (resultSet, i) -> resultSet.getLong(1), employeeId, Date.valueOf(date));
+        return jdbc.query("SELECT amounts_enc, basic, hra, lta, special FROM salary_structures WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1",
+                (resultSet, i) -> salaryAmounts.gross(resultSet.getString(1), (Number) resultSet.getObject(2), (Number) resultSet.getObject(3), (Number) resultSet.getObject(4), (Number) resultSet.getObject(5)), employeeId, Date.valueOf(date));
     }
 
     // ───────────────────────── issued letters ─────────────────────────

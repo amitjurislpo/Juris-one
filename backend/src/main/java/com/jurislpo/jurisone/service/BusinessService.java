@@ -89,7 +89,7 @@ public class BusinessService {
                 List<String> values = new ArrayList<>();
                 values.add(textOrEmpty(employee.get("code")));
                 values.add(textOrEmpty(employee.get("full_name")));
-                values.add(textOrEmpty(employee.get("father_name")));
+                values.add(textOrEmpty(piiCrypto.decryptOrLegacy((String) employee.get("father_name"))));
                 values.add(textOrEmpty(employee.get("email")));
                 values.add(full ? orDash(piiCrypto.decrypt((String) employee.get("phone_enc"))) : Masks.phone((String) employee.get("phone_last4")));
                 values.add(textOrEmpty(employee.get("designation")));
@@ -106,9 +106,9 @@ public class BusinessService {
                 values.add(full ? orDash(piiCrypto.decrypt((String) employee.get("pan_enc"))) : Masks.pan((String) employee.get("pan_last4")));
                 values.add(full ? orDash(piiCrypto.decrypt((String) employee.get("aadhaar_enc"))) : Masks.aadhaar((String) employee.get("aadhaar_last4")));
                 values.add(full ? orDash(piiCrypto.decrypt((String) employee.get("uan_enc"))) : Masks.uan((String) employee.get("uan_last4")));
-                values.add(orDash((String) employee.get("bank_name")));
+                values.add(orDash(piiCrypto.decryptOrLegacy((String) employee.get("bank_name"))));
                 values.add(full ? orDash(piiCrypto.decrypt((String) employee.get("bank_account_enc"))) : Masks.bank((String) employee.get("bank_account_last4")));
-                values.add(orDash((String) employee.get("bank_ifsc")));
+                values.add(orDash(piiCrypto.decryptOrLegacy((String) employee.get("bank_ifsc"))));
                 values.add(full ? orDash(piiCrypto.decrypt((String) employee.get("address_enc"))) : (employee.get("address_enc") == null ? "—" : "(hidden)"));
                 Row row = sheet.createRow(count++);
                 for (int i = 0; i < values.size(); i++) row.createCell(i).setCellValue(values.get(i));

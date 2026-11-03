@@ -28,8 +28,11 @@ public class PeopleRepository {
 
     private final JdbcTemplate jdbc;
 
-    public PeopleRepository(JdbcTemplate jdbc) {
+    private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
+
+    public PeopleRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts) {
         this.jdbc = jdbc;
+        this.salaryAmounts = salaryAmounts;
     }
 
     // ── list ──
@@ -120,8 +123,8 @@ public class PeopleRepository {
 
     /** Monthly gross of the salary structure in force on {@code on} (empty when none). */
     public List<Long> findGross(UUID employeeId, Date date) {
-        return jdbc.queryForList("SELECT basic + hra + lta + special FROM salary_structures WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1",
-                Long.class, employeeId, date);
+        return jdbc.query("SELECT amounts_enc, basic, hra, lta, special FROM salary_structures WHERE employee_id = ? AND effective_from <= ? ORDER BY effective_from DESC LIMIT 1",
+                (resultSet, i) -> salaryAmounts.gross(resultSet.getString(1), (Number) resultSet.getObject(2), (Number) resultSet.getObject(3), (Number) resultSet.getObject(4), (Number) resultSet.getObject(5)), employeeId, date);
     }
 
     /** Names of the manager's current direct reports. */

@@ -18,8 +18,13 @@ public class PayrollOperationsRepository {
 
     private final JdbcTemplate jdbc;
 
-    public PayrollOperationsRepository(JdbcTemplate jdbc) {
+    private final com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots;
+    private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
+
+    public PayrollOperationsRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots) {
         this.jdbc = jdbc;
+        this.salaryAmounts = salaryAmounts;
+        this.snapshots = snapshots;
     }
 
     // ── runs ──
@@ -97,7 +102,7 @@ public class PayrollOperationsRepository {
     }
 
     public void insertPayslip(UUID runId, UUID employeeId, String snapshot, String pdfPath) {
-        jdbc.update("INSERT INTO payslips (run_id, employee_id, snapshot, pdf_path, published_at) VALUES (?, ?, ?::jsonb, ?, now())", runId, employeeId, snapshot, pdfPath);
+        jdbc.update("INSERT INTO payslips (run_id, employee_id, snapshot_enc, pdf_path, published_at) VALUES (?, ?, ?, ?, now())", runId, employeeId, snapshots.encode(snapshot), pdfPath);
     }
 
     /** A notification linking to the Payslips page. */
@@ -108,16 +113,16 @@ public class PayrollOperationsRepository {
 
     /** month, pay_date and snapshot of the employee's closed payslips, newest first. */
     public List<Map<String, Object>> closedPayslips(UUID employeeId) {
-        return jdbc.queryForList("""
-            SELECT r.month, r.pay_date, p.snapshot::text AS snapshot FROM payslips p JOIN payroll_runs r ON r.id = p.run_id
-            WHERE p.employee_id = ? AND r.status = 'CLOSED' ORDER BY r.month DESC""", employeeId);
+        return snapshots.withSnapshots(jdbc.queryForList("""
+            SELECT r.month, r.pay_date, p.snapshot::text AS snapshot, p.snapshot_enc FROM payslips p JOIN payroll_runs r ON r.id = p.run_id
+            WHERE p.employee_id = ? AND r.status = 'CLOSED' ORDER BY r.month DESC""", employeeId));
     }
 
     /** pdf_path and snapshot of an employee's closed payslip for a month (empty when none). */
     public List<Map<String, Object>> closedPayslipFile(String month, String code) {
-        return jdbc.queryForList("""
-            SELECT p.pdf_path, p.snapshot::text AS snapshot FROM payslips p JOIN payroll_runs r ON r.id = p.run_id JOIN employees e ON e.id = p.employee_id
-            WHERE r.month = ? AND r.status = 'CLOSED' AND e.code = ? LIMIT 1""", month, code);
+        return snapshots.withSnapshots(jdbc.queryForList("""
+            SELECT p.pdf_path, p.snapshot::text AS snapshot, p.snapshot_enc FROM payslips p JOIN payroll_runs r ON r.id = p.run_id JOIN employees e ON e.id = p.employee_id
+            WHERE r.month = ? AND r.status = 'CLOSED' AND e.code = ? LIMIT 1""", month, code));
     }
 
     /** Encrypted bank / UAN / PAN details for the payroll exports. */
@@ -136,8 +141,11 @@ public class PayrollOperationsRepository {
 
     /** An employee's salary revisions, newest first. */
     public List<SalaryRevision> revisions(Object employeeId) {
-        return jdbc.query("SELECT effective_from, basic, hra, lta, special, reason::text FROM salary_structures WHERE employee_id = ? ORDER BY effective_from DESC",
-                (resultSet, i) -> new SalaryRevision(resultSet.getDate(1).toLocalDate().toString(), resultSet.getLong(2), resultSet.getLong(3), resultSet.getLong(4), resultSet.getLong(5), resultSet.getString(6)), employeeId);
+        return jdbc.query("SELECT effective_from, basic, hra, lta, special, reason::text, amounts_enc FROM salary_structures WHERE employee_id = ? ORDER BY effective_from DESC",
+                (resultSet, i) -> {
+                    long[] amounts = salaryAmounts.amounts(resultSet.getString(7), (Number) resultSet.getObject(2), (Number) resultSet.getObject(3), (Number) resultSet.getObject(4), (Number) resultSet.getObject(5));
+                    return new SalaryRevision(resultSet.getDate(1).toLocalDate().toString(), amounts[0], amounts[1], amounts[2], amounts[3], resultSet.getString(6));
+                }, employeeId);
     }
 
     public List<Map<String, Object>> activeDepartments() {
@@ -155,14 +163,14 @@ public class PayrollOperationsRepository {
 
     /** The revision in force just before {@code effectiveFrom} (empty when none). */
     public List<Map<String, Object>> previousStructure(UUID employeeId, String effectiveFrom) {
-        return jdbc.queryForList("SELECT effective_from, basic, hra, lta, special FROM salary_structures WHERE employee_id = ? AND effective_from < ? ORDER BY effective_from DESC LIMIT 1",
-                employeeId, Date.valueOf(effectiveFrom));
+        return jdbc.queryForList("SELECT effective_from, amounts_enc, basic, hra, lta, special FROM salary_structures WHERE employee_id = ? AND effective_from < ? ORDER BY effective_from DESC LIMIT 1",
+                employeeId, Date.valueOf(effectiveFrom)).stream().map(salaryAmounts::withAmounts).toList();
     }
 
     /** Amounts in paise. */
     public void insertStructure(UUID id, UUID employeeId, String effectiveFrom, long basic, long hra, long lta, long special, String reason, UUID createdBy) {
-        jdbc.update("INSERT INTO salary_structures (id, employee_id, effective_from, basic, hra, lta, special, reason, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?::\"StructureReason\", ?, now())",
-                id, employeeId, Date.valueOf(effectiveFrom), basic, hra, lta, special, reason, createdBy);
+        jdbc.update("INSERT INTO salary_structures (id, employee_id, effective_from, amounts_enc, reason, created_by, created_at) VALUES (?, ?, ?, ?, ?::\"StructureReason\", ?, now())",
+                id, employeeId, Date.valueOf(effectiveFrom), salaryAmounts.encode(basic, hra, lta, special), reason, createdBy);
     }
 
     /** Marks the unread "salary structure pending" reminders whose text starts like {@code textPrefixLike} as read. */
