@@ -238,7 +238,7 @@ class LettersApiTest extends IntegrationTest {
 
     @Test
     void previewsEscapeHtmlAndSaveNothing() throws Exception {
-        jdbc.update("UPDATE employees SET full_name = ? WHERE id = ?", "<b>Raj</b> & O'Neil", e1);
+        jdbc.update("UPDATE employees SET full_name = ?, full_name_enc = ? WHERE id = ?", "<b>Raj</b> & O'Neil", TestData.PII_CRYPTO.encrypt("<b>Raj</b> & O'Neil"), e1);
         String url = "/api/v1/letters/previews?templateId=" + templateId("EMPLOYMENT_VERIFICATION") + "&employeeId=" + e1;
         mockMvc.perform(get(url).cookie(hrCookie)).andExpect(status().isOk()).andExpect(jsonPath("$.data.text").value(Matchers.containsString("<b>Raj</b> & O'Neil")))
                 .andExpect(jsonPath("$.data.html").value(Matchers.containsString("&lt;b&gt;Raj&lt;/b&gt; &amp; O&#39;Neil")))

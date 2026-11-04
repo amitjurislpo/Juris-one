@@ -188,7 +188,7 @@ class EncryptedNamesStage1Test extends IntegrationTest {
     @Test
     void theBackfillFillsOldRowsOnceVerifiesThemAndRepairsMismatches() {
         UUID oldRow = data.employee("OL" + suffix, "old." + suffix + "@example.com", employeeRoleId); // written by a helper that knows nothing of the copies
-        jdbc.update("UPDATE employees SET first_name = 'Old', last_name = 'Timer' WHERE id = ?", oldRow);
+        jdbc.update("UPDATE employees SET first_name = 'Old', last_name = 'Timer', full_name_enc = NULL, designation_enc = NULL WHERE id = ?", oldRow); // as the rows were before the copies existed
         assertThat(row(oldRow).get("full_name_enc")).isNull();
 
         // a dry run counts but writes nothing
