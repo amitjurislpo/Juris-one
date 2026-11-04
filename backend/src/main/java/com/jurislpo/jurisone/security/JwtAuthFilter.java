@@ -88,9 +88,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         HostBusiness host = hostGuard.bindingOf(request);
         if (host == null) return true;
         String reason = null;
+        UUID bindingBusiness = hostGuard.bindingBusiness(user.businessId()); // the platform company's people (super admins) count as platform users
         if (host.kind() == HostBusiness.Kind.UNKNOWN) reason = "unknown_host";
-        else if (!TenantHostGuard.permits(host, user.businessId())) reason = "wrong_host";
-        else if (!TenantHostGuard.permitsClaim(host, claims.businessBinding()) || !TenantHostGuard.bindingClaim(user.businessId()).equals(claims.businessBinding())) reason = "token_not_for_host";
+        else if (!TenantHostGuard.permits(host, bindingBusiness)) reason = "wrong_host";
+        else if (!TenantHostGuard.permitsClaim(host, claims.businessBinding()) || !TenantHostGuard.bindingClaim(bindingBusiness).equals(claims.businessBinding())) reason = "token_not_for_host";
         if (reason == null) return true;
         hostGuard.refused(user.id(), "access_token", reason, host, com.jurislpo.jurisone.common.RequestMeta.of(request).ipAddress());
         return false;

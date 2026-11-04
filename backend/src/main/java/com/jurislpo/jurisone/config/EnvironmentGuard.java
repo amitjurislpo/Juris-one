@@ -53,7 +53,10 @@ public class EnvironmentGuard {
             if (blankTo(get.apply("jurisone.juristrack.base-url"), "").isBlank()) out.add("jurisone.juristrack.base-url must be set when the JurisTrack gateway is enabled (JURISTRACK_BASE_URL)");
             if (blankTo(get.apply("jurisone.juristrack.private-key"), "").isBlank()) out.add("jurisone.juristrack.private-key must be set when the JurisTrack gateway is enabled (JURISTRACK_PRIVATE_KEY)");
         }
-        if ("true".equalsIgnoreCase(blankTo(get.apply("jurisone.tenant-host.enabled"), "false"))) out.addAll(tenantHostProblems(get));
+        if ("true".equalsIgnoreCase(blankTo(get.apply("jurisone.tenant-host.enabled"), "false"))) {
+            out.addAll(tenantHostProblems(get));
+            if (!"true".equalsIgnoreCase(blankTo(get.apply("jurisone.tenant-host.enforce"), "false"))) out.add("jurisone.tenant-host.enforce must be true when jurisone.tenant-host.enabled=true outside dev (TENANT_HOST_ENFORCE)");
+        }
         // the key that encrypts employee data: required (and valid) in every shared environment; only dev may use the key written in application-dev.properties
         String piiKey = blankTo(get.apply("jurisone.security.pii-encryption-key"), "");
         if (piiKey.isBlank() || piiKey.contains("<")) out.add("jurisone.security.pii-encryption-key is not set (PII_ENCRYPTION_KEY: 32 random bytes, base64)");

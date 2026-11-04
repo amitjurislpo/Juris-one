@@ -37,7 +37,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * person's own business (platform users: the admin host). Everything else is refused, audited, and looks like an unknown email (a wrong
  * business host) or a neutral 404 (a host that names no business).
  */
-@TestPropertySource(properties = {"jurisone.tenant-host.enabled=true", "jurisone.tenant-host.base-domain=localhost",
+@TestPropertySource(properties = {"jurisone.tenant-host.enabled=true", "jurisone.tenant-host.base-domain=localhost", "jurisone.tenant-host.enforce=true",
         "jurisone.otp.requests-per-ip=6", "jurisone.otp.requests-per-email=3"})
 class TenantHostSignInTest extends IntegrationTest {
 
@@ -70,7 +70,7 @@ class TenantHostSignInTest extends IntegrationTest {
     // ── helpers ──
 
     static MockHttpServletRequestBuilder json(MockHttpServletRequestBuilder request, String host, String body, String... headers) {
-        request.header("origin", "http://localhost:3005").header("host", host).contentType(MediaType.APPLICATION_JSON).content(body);
+        request.header("origin", "http://" + host).header("host", host).contentType(MediaType.APPLICATION_JSON).content(body);
         for (int i = 0; i < headers.length; i += 2) request.header(headers[i], headers[i + 1]);
         return request;
     }
@@ -104,7 +104,7 @@ class TenantHostSignInTest extends IntegrationTest {
     }
 
     Cookies signIn(String host, String email) throws Exception {
-        MvcResult issued = SignIn.session(mockMvc, email, host).andReturn();
+        MvcResult issued = SignIn.session(mockMvc, email, host, "http://" + host).andReturn();
         assertThat(issued.getResponse().getStatus()).isEqualTo(201);
         return new Cookies(new Cookie("jo_at", cookieValue(issued, "jo_at")), new Cookie("jo_rt", cookieValue(issued, "jo_rt")));
     }
@@ -186,6 +186,37 @@ class TenantHostSignInTest extends IntegrationTest {
         assertThat(refusals(admin, "sign_in", "wrong_host")).isEqualTo(1);
     }
 
+    /** In the running system the super admins sit in the platform company (a business flagged is_platform): they still count as platform users. */
+    @Test
+    void aSuperAdminPlacedInThePlatformCompanyStillSignsInOnlyOnTheAdminHost() throws Exception {
+        // the one platform company: the running system has it; a bare test database gets one here
+        if (jdbc.queryForObject("SELECT count(*) FROM businesses WHERE is_platform", Integer.class) == 0) {
+            UUID created = new TestData(jdbc).inBusiness("pc-" + TestData.letters(8)).business();
+            jdbc.update("UPDATE businesses SET is_platform = true WHERE id = ?", created);
+        }
+        UUID platformBusiness = jdbc.queryForObject("SELECT id FROM businesses WHERE is_platform", UUID.class);
+        String platformSlug = jdbc.queryForObject("SELECT code FROM businesses WHERE id = ?", String.class, platformBusiness);
+        String email = "root." + TestData.letters(8) + "@example.test";
+        UUID admin = platformAdmin(email);
+        jdbc.update("UPDATE employees SET business_id = ? WHERE id = ?", platformBusiness, admin);
+        String platformHost = platformSlug + ".localhost:3005";
+        try {
+            Cookies cookies = signIn("admin.localhost:3005", email);
+            String payload = new String(java.util.Base64.getUrlDecoder().decode(cookies.access().getValue().split("[.]")[1]));
+            assertThat(payload).contains("\"bid\":\"platform\"");
+            assertThat(status(me("admin.localhost:3005", cookies.access()))).isEqualTo(200);
+            assertThat(status(refresh("admin.localhost:3005", cookies.refresh()))).isEqualTo(201);
+            assertThat(status(me(hostA, cookies.access()))).isEqualTo(401);
+            assertThat(status(me(platformHost, cookies.access()))).isEqualTo(401); // not even on the platform company's own business address
+            int before = codesFor(email);
+            assertThat(status(otp(hostA, email))).isEqualTo(201);
+            assertThat(status(otp(platformHost, email))).isEqualTo(201);
+            assertThat(codesFor(email)).isEqualTo(before); // neutral answer, no code
+        } finally {
+            jdbc.update("UPDATE employees SET business_id = NULL WHERE id = ?", admin); // keep the platform company free of test people
+        }
+    }
+
     @Test
     void aBusinessPersonIsRefusedOnTheAdminHost() throws Exception {
         Cookies cookies = signIn(hostA, emailA);
@@ -234,7 +265,7 @@ class TenantHostSignInTest extends IntegrationTest {
         assertThat(jdbc.queryForObject("SELECT failed_attempts FROM users WHERE employee_id = ?", Integer.class, personA)).isZero();
         assertThat(jdbc.queryForObject("SELECT locked_until IS NULL FROM users WHERE employee_id = ?", Boolean.class, personA)).isTrue();
         limiter.clear();
-        assertThat(status(SignIn.session(mockMvc, emailA, hostA).andReturn())).isEqualTo(201);
+        assertThat(status(SignIn.session(mockMvc, emailA, hostA, "http://" + hostA).andReturn())).isEqualTo(201);
     }
 
     // ── hosts that name no business ──
@@ -244,10 +275,19 @@ class TenantHostSignInTest extends IntegrationTest {
         List<String> hosts = unknownHosts();
         String firstOtp = null, firstLogin = null, firstRefresh = null;
         int before = anonymousRefusals("otp_request", "unknown_host");
+        int notReachingTheHandler = 0;
         for (String host : hosts) {
             limiter.clear();
             MvcResult otpResult = otp(host, emailA), loginResult = login(host, emailA, SignIn.CODE);
             MvcResult refreshResult = refresh(host, new Cookie("jo_rt", "anything"));
+            if (host.contains("#")) { // not a Host a real server accepts; its Origin is not the same origin, so CORS refuses it before the sign-in handler (403): nothing is done either way
+                for (MvcResult result : List.of(otpResult, loginResult, refreshResult)) {
+                    assertThat(status(result)).as(host).isEqualTo(403);
+                    assertThat(result.getResponse().getHeaders("Set-Cookie")).isEmpty();
+                }
+                notReachingTheHandler++;
+                continue;
+            }
             for (MvcResult result : List.of(otpResult, loginResult, refreshResult)) {
                 assertThat(status(result)).as(host).isEqualTo(404);
                 assertThat(body(result)).doesNotContain(slugA).doesNotContain(slugB).doesNotContain(emailA);
@@ -258,7 +298,7 @@ class TenantHostSignInTest extends IntegrationTest {
             assertThat(body(loginResult)).as(host).isEqualTo(firstLogin);
             assertThat(body(refreshResult)).as(host).isEqualTo(firstRefresh);
         }
-        assertThat(anonymousRefusals("otp_request", "unknown_host")).isEqualTo(before + hosts.size());
+        assertThat(anonymousRefusals("otp_request", "unknown_host")).isEqualTo(before + hosts.size() - notReachingTheHandler);
         assertThat(codesFor(emailA)).isZero();
         verify(mail, never()).send(eq(emailA), any(MailTemplates.Content.class));
     }

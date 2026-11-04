@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.security;
 
+import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
 import static com.jurislpo.jurisone.config.ApiPaths.PREFIX_SLASH;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,8 +28,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * CSRF guard (assertSameOrigin): a mutating /api request must carry an Origin whose host equals
- * the configured web origin ({@code jurisone.frontend-origin}). With {@code jurisone.tenant-host.enabled=true} the Origin of a business address
- * ({@code <slug>.<base-domain>}) or of the admin address is accepted too, but only when it is also this request's real Host ({@link TenantOrigins}).
+ * the configured web origin ({@code jurisone.frontend-origin}). With {@code jurisone.tenant-host.enabled=true} (step 7) that apex origin is no
+ * longer accepted: only the Origin of a business address ({@code <slug>.<base-domain>}) or of the admin address, and only when it is also this
+ * request's real Host ({@link TenantOrigins}).
  * Forwarding headers such as {@code X-Forwarded-Host} are never read. Every refusal is counted and audited (one audit entry per caller per
  * 10 seconds). Together with SameSite=Lax session cookies this is the app's CSRF defence.
  */
@@ -38,6 +40,7 @@ public class OriginCheckFilter extends OncePerRequestFilter {
     static final String MESSAGE = "Cross-site request blocked.";
     public static final String AUDIT_ACTION = "origin.refused";
     public static final String COUNTER_NAME = "jurisone.origin.refused";
+    private static final Set<String> SIGN_IN_PATHS = Set.of(PREFIX + "/auth/session", PREFIX + "/auth/session-refreshes", PREFIX + "/auth/otp-requests");
     private static final Set<String> SAFE = Set.of("GET", "HEAD", "OPTIONS");
     private static final Logger log = LoggerFactory.getLogger(OriginCheckFilter.class);
     private static final long AUDIT_INTERVAL_MILLIS = 10_000L;
@@ -66,7 +69,11 @@ public class OriginCheckFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         String origin = request.getHeader("origin");
-        if (origin == null || !(allowedHost.equalsIgnoreCase(hostOf(origin)) || tenantOrigins.isAllowed(request, origin))) {
+        if (isSignInOnUnknownHost(request)) { // nothing is done there: the sign-in endpoint answers the same neutral 404 as for any unknown host
+            chain.doFilter(request, response);
+            return;
+        }
+        if (origin == null || !isOriginAllowed(request, origin)) {
             recordRefusal(request, origin);
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
@@ -74,6 +81,18 @@ public class OriginCheckFilter extends OncePerRequestFilter {
             return;
         }
         chain.doFilter(request, response);
+    }
+
+    /** The three sign-in endpoints refuse a host that names no business themselves (404, audited); no Origin is needed to refuse. */
+    private boolean isSignInOnUnknownHost(HttpServletRequest request) {
+        return tenantOrigins.isEnabled() && SIGN_IN_PATHS.contains(request.getRequestURI())
+                && (!(request.getAttribute(HostBusiness.REQUEST_ATTRIBUTE) instanceof HostBusiness host) || host.kind() == HostBusiness.Kind.UNKNOWN);
+    }
+
+    /** With per-business addresses on only a business or admin address that is the request's own Host passes; the apex web origin no longer does. */
+    private boolean isOriginAllowed(HttpServletRequest request, String origin) {
+        if (tenantOrigins.isEnabled()) return tenantOrigins.isAllowed(request, origin);
+        return allowedHost.equalsIgnoreCase(hostOf(origin));
     }
 
     private void recordRefusal(HttpServletRequest request, String origin) {

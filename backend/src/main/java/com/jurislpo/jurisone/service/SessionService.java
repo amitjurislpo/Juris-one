@@ -90,7 +90,7 @@ public class SessionService {
         Map<String, Object> row = rows.get(0);
         String sessionId = (String) row.get("session_id");
         UUID businessId = (UUID) row.get("business_id");
-        if (!TenantHostGuard.permits(host, businessId)) {
+        if (!TenantHostGuard.permits(host, hostGuard.bindingBusiness(businessId))) {
             hostGuard.refused((UUID) row.get("employee_id"), "refresh", "wrong_host", host, meta.ipAddress());
             throw new RefreshRefused("wrong_host");
         }
@@ -126,7 +126,7 @@ public class SessionService {
 
     /** {@code maxAge} null = browser-session cookies (no "keep me signed in"). */
     private List<ResponseCookie> cookies(UUID employeeId, UUID businessId, String sessionId, String refresh, Duration maxAge) {
-        ResponseCookie.ResponseCookieBuilder accessCookie = base(ACCESS_COOKIE, jwtService.issue(employeeId, sessionId, businessId));
+        ResponseCookie.ResponseCookieBuilder accessCookie = base(ACCESS_COOKIE, jwtService.issue(employeeId, sessionId, hostGuard.bindingBusiness(businessId)));
         ResponseCookie.ResponseCookieBuilder responseCookieBuilder = base(REFRESH_COOKIE, refresh);
         if (maxAge != null) {
             accessCookie.maxAge(maxAge);

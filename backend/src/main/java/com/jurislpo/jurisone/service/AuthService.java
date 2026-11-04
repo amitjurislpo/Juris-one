@@ -184,7 +184,7 @@ public class AuthService {
      */
     private Employee findOnHost(String email, HostBusiness host, String step, RequestMeta meta) {
         Employee employee = findByIdentifier(email);
-        if (employee == null || TenantHostGuard.permits(host, employee.getBusinessId())) return employee;
+        if (employee == null || TenantHostGuard.permits(host, hostGuard.bindingBusiness(employee.getBusinessId()))) return employee;
         hostGuard.refused(employee.getId(), step, "wrong_host", host, meta.ipAddress());
         return null;
     }

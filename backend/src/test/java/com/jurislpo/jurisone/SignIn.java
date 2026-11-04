@@ -21,9 +21,14 @@ public final class SignIn {
 
     /** The same, sent to the given {@code Host} (a business address when per-business addresses are on); the Origin stays the web app's. */
     public static ResultActions session(MockMvc mockMvc, String email, String host) throws Exception {
-        mockMvc.perform(post("/api/v1/auth/otp-requests").header("origin", "http://localhost:3005").header("host", host)
+        return session(mockMvc, email, host, "http://localhost:3005");
+    }
+
+    /** The same, with the given browser {@code Origin} (with per-business addresses on it is the address of the {@code host}). */
+    public static ResultActions session(MockMvc mockMvc, String email, String host, String origin) throws Exception {
+        mockMvc.perform(post("/api/v1/auth/otp-requests").header("origin", origin).header("host", host)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"" + email + "\"}")).andExpect(status().isCreated());
-        return mockMvc.perform(post("/api/v1/auth/session").header("origin", "http://localhost:3005").header("host", host)
+        return mockMvc.perform(post("/api/v1/auth/session").header("origin", origin).header("host", host)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"identifier\":\"" + email + "\",\"otp\":\"" + CODE + "\"}"));
     }
 }
