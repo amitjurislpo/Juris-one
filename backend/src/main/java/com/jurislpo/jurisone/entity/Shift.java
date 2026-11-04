@@ -15,7 +15,10 @@ public class Shift {
     @Column(name = "id", nullable = false)
     private UUID id;
 
-    @Column(name = "code", nullable = false, unique = true)
+    @Column(name = "business_id")
+    private UUID businessId;  // null = a platform default, read-only for businesses
+
+    @Column(name = "code", nullable = false)
     private String code;  // IN_NIGHT · IN_DAY · US_DAY
 
     @Column(name = "name", nullable = false)
@@ -45,6 +48,8 @@ public class Shift {
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
+    public UUID getBusinessId() { return businessId; }
+    public void setBusinessId(UUID businessId) { this.businessId = businessId; }
     public String getCode() { return code; }
     public void setCode(String code) { this.code = code; }
     public String getName() { return name; }

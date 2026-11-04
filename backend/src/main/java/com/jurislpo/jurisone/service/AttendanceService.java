@@ -44,11 +44,45 @@ public class AttendanceService {
 
     /** A tracked employee (role has `self`). */
     public record AttendanceEmployee(UUID id, String code, String name, String designation, String department, UUID departmentId, String timeZone, String region,
-                              LocalDate dateOfJoining, LocalDate exitDate, Shift shift) {}
+                              LocalDate dateOfJoining, LocalDate exitDate, Shift shift, List<ShiftPeriod> shiftPeriods) {
+
+        /** The shift worked on a calendar date: the roster assignment that covers it, else the employee's own (fallback) shift. */
+        public Shift shiftOn(LocalDate date) {
+            for (ShiftPeriod period : shiftPeriods) {
+                if (!date.isBefore(period.from()) && (period.to() == null || !date.isAfter(period.to()))) return period.shift();
+            }
+            return shift;
+        }
+
+        /** The shift that applies at an instant: the one of the calendar date it falls on in the employee's own zone. */
+        public Shift shiftAt(Instant instant) {
+            return shiftOn(instant.atZone(ZoneId.of(timeZone)).toLocalDate());
+        }
+
+        /**
+         * The work date an instant belongs to. With a roster, a punch soon after the end of the previous day's night shift (up to
+         * {@code AFTER_SHIFT_MINUTES}) still belongs to that shift's date, even when today's shift starts earlier than the night shift ended.
+         */
+        public LocalDate workDateAt(Instant instant) {
+            if (!shiftPeriods.isEmpty()) {
+                LocalDate yesterday = instant.atZone(ZoneId.of(timeZone)).toLocalDate().minusDays(1);
+                Shift previous = shiftOn(yesterday);
+                if (previous.endLocal().compareTo(previous.startLocal()) <= 0
+                        && instant.isBefore(AttendanceEngine.shiftWindow(yesterday, previous.shiftDefinition(), timeZone).end().plusSeconds(AFTER_SHIFT_MINUTES * 60L))) return yesterday;
+            }
+            return AttendanceEngine.workDateOf(instant, shiftAt(instant).shiftDefinition(), timeZone);
+        }
+    }
+
+    /** A roster assignment: {@code shift} from {@code from} to {@code to} (inclusive; null = open ended). */
+    public record ShiftPeriod(LocalDate from, LocalDate to, Shift shift) {}
 
     public record Shift(String code, String name, String startLocal, String endLocal, int graceMinutes) {
         public ShiftDef shiftDefinition() { return new ShiftDef(startLocal, endLocal, graceMinutes); }
     }
+
+    /** How long after a night shift ends a punch still counts for it (the same 120 minutes after which an absence is marked). */
+    static final int AFTER_SHIFT_MINUTES = 120;
 
     static final Shift DEFAULT_SHIFT = new Shift("IN_DAY", "India Day", "09:30", "18:30", 15);
 
@@ -98,7 +132,7 @@ public class AttendanceService {
     }
 
     public LocalDate currentWorkDate(AttendanceEmployee employee, Instant now) {
-        return AttendanceEngine.workDateOf(now, employee.shift().shiftDefinition(), employee.timeZone());
+        return employee.workDateAt(now);
     }
 
     /** Day-by-day attendance for each employee over [from, to] (inclusive, work dates). */
@@ -128,7 +162,7 @@ public class AttendanceService {
         for (AttendanceEmployee employee : employees) byEmployee.put(employee.id(), new HashMap<>());
         for (PunchRow punchRow : punches) {
             AttendanceEmployee employee = byId.get(punchRow.employeeId());
-            LocalDate workDate = AttendanceEngine.workDateOf(punchRow.punchedAt(), employee.shift().shiftDefinition(), employee.timeZone());
+            LocalDate workDate = employee.workDateAt(punchRow.punchedAt());
             byEmployee.get(employee.id()).computeIfAbsent(workDate, k -> new ArrayList<>()).add(new Punch(punchRow.punchedAt(), punchRow.kind(), punchRow.source()));
         }
 
@@ -180,7 +214,7 @@ public class AttendanceService {
                 }
                 Regularization regularization = new Regularization(regularizationRows.stream().anyMatch(x -> x.kind().equals("ABSENT") || x.kind().equals("MISSED_CHECKOUT")),
                         regularizationRows.stream().anyMatch(x -> x.kind().equals("LATE_CHECKIN")));
-                DayResult dayResult = AttendanceEngine.computeDay(new DayInput(date, now, employee.timeZone(), employee.shift().shiftDefinition(), policy.engine(), employee.dateOfJoining(), employee.exitDate(),
+                DayResult dayResult = AttendanceEngine.computeDay(new DayInput(date, now, employee.timeZone(), employee.shiftOn(date).shiftDefinition(), policy.engine(), employee.dateOfJoining(), employee.exitDate(),
                         policy.trackingStart(), holiday, leave, dayPunches, regularization));
                 days.add(new DayView(dayResult, dayPunches));
             }

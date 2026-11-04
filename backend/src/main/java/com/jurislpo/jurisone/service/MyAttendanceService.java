@@ -116,7 +116,7 @@ public class MyAttendanceService {
     static Instant toInstant(AttendanceEmployee employee, LocalDate date, String time, Instant after) {
         Instant punchInstant = AttendanceEngine.atLocal(date, time, employee.timeZone());
         if (after != null && !punchInstant.isAfter(after)) punchInstant = AttendanceEngine.atLocal(date.plusDays(1), time, employee.timeZone());
-        else if (after == null && time.compareTo("12:00") < 0 && employee.shift().startLocal().compareTo("12:00") >= 0) punchInstant = AttendanceEngine.atLocal(date.plusDays(1), time, employee.timeZone());
+        else if (after == null && time.compareTo("12:00") < 0 && employee.shiftOn(date).startLocal().compareTo("12:00") >= 0) punchInstant = AttendanceEngine.atLocal(date.plusDays(1), time, employee.timeZone());
         return punchInstant;
     }
 
@@ -149,9 +149,9 @@ public class MyAttendanceService {
         audit.log(user.id(), "attendance.punch", "punch", user.id().toString(), null, Map.of("kind", expect, "punchedAt", now.toString()), ipAddress);
         if ("IN".equals(expect)) return new PunchResult("Checked in. Have a productive shift.", "IN");
 
-        LocalDate workDate = AttendanceEngine.workDateOf(now, employee.shift().shiftDefinition(), employee.timeZone());
+        LocalDate workDate = employee.workDateAt(now);
         List<Punch> punches = repo.punchesSince(user.id(), now.minus(Duration.ofHours(40)))
-                .stream().filter(p -> AttendanceEngine.workDateOf(p.punchedAt(), employee.shift().shiftDefinition(), employee.timeZone()).equals(workDate)).toList();
+                .stream().filter(p -> employee.workDateAt(p.punchedAt()).equals(workDate)).toList();
         return new PunchResult("Checked out — " + Format.formatHours(AttendanceEngine.workedMinutes(punches).minutes() / 60.0) + " recorded today", "OUT");
     }
 

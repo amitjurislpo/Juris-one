@@ -236,13 +236,14 @@ public class DashboardService {
         sorted.sort(Comparator.comparing(Punch::punchedAt));
         int closed = AttendanceEngine.workedMinutes(today.punches).minutes();
         boolean isPunchedIn = !sorted.isEmpty() && sorted.get(sorted.size() - 1).kind() == PunchKind.IN;
-        String start = employee.shift().startLocal(), end = employee.shift().endLocal();
+        AttendanceService.Shift todayShift = employee.shiftOn(workDate);
+        String start = todayShift.startLocal(), end = todayShift.endLocal();
         long startMillis = AttendanceEngine.atLocal(workDate, start, timeZone).toEpochMilli();
         long endMillis = AttendanceEngine.atLocal(end.compareTo(start) <= 0 ? workDate.plusDays(1) : workDate, end, timeZone).toEpochMilli();
         List<String> ticks = new ArrayList<>();
         for (int i = 0; i < 4; i++) ticks.add(AttendanceService.formatTime(Instant.ofEpochMilli(startMillis + (long) Math.floor((endMillis - startMillis) * (double) i / 3)), timeZone));
         String abbr = timeZoneAbbreviation(timeZone, now);
-        String shiftText = ("IN_NIGHT".equals(employee.shift().code()) ? "Night" : "Day") + " shift · " + AttendanceService.formatTime(AttendanceEngine.atLocal(workDate, start, timeZone), timeZone)
+        String shiftText = ("IN_NIGHT".equals(todayShift.code()) ? "Night" : "Day") + " shift · " + AttendanceService.formatTime(AttendanceEngine.atLocal(workDate, start, timeZone), timeZone)
                 + " – " + AttendanceService.formatTime(AttendanceEngine.atLocal(workDate, end, timeZone), timeZone) + " " + abbr;
         List<PunchLogLine> log = sorted.stream().map(punch -> new PunchLogLine(AttendanceService.formatTime(punch.punchedAt(), timeZone), punch.kind() == PunchKind.IN ? "Checked in" : "Checked out",
                 "WEB".equals(punch.source()) ? "Web" : "MOBILE".equals(punch.source()) ? "Mobile" : "JURISTRACK".equals(punch.source()) ? "Juris Track" : "Regularization")).toList();
