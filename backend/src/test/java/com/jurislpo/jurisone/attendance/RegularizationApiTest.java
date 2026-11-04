@@ -431,4 +431,66 @@ class RegularizationApiTest extends IntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM role_templates WHERE key IN ('fm', 'fe') AND 'appr.reg' = ANY(permissions)", Integer.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM role_templates WHERE key IN ('owner', 'hrm', 'hre') AND 'appr.reg' = ANY(permissions)", Integer.class)).isEqualTo(3);
     }
+
+    int mailsTo(Person person, String subject) {
+        return jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ? AND subject = ?", Integer.class, person.code().toLowerCase() + "@example.com", subject);
+    }
+
+    @Test
+    void approversGetOneEmailForANewRequestAndTheEmployeeGetsTheDecisionEmail() throws Exception {
+        Person employee = person(employeeRole), hr = person(hrRole);
+        LocalDate day = workday(2);
+        punchIn(employee, day, "09:30");
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(employee.cookie()).content(missedCheckOut(day, "19:00", forgotCheckOut, ""))).andExpect(status().isCreated());
+        assertThat(mailsTo(hr, "Regularization request waiting for your decision")).isEqualTo(1);
+        assertThat(mailsTo(employee, "Regularization request waiting for your decision")).isZero(); // the employee is not an approver
+        assertThat(jdbc.queryForObject("SELECT text FROM email_outbox WHERE \"to\" = ? AND subject LIKE 'Regularization request waiting%'", String.class, hr.code().toLowerCase() + "@example.com"))
+                .contains("asked to regularize attendance");
+        // a refused request sends no mail
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(employee.cookie()).content(missedCheckOut(day, "19:30", forgotCheckOut, ""))).andExpect(status().isConflict());
+        assertThat(mailsTo(hr, "Regularization request waiting for your decision")).isEqualTo(1);
+        mockMvc.perform(write(put("/api/v1/attendance/regularizations/" + idOf(employee, day) + "/decision")).cookie(hr.cookie()).content("{\"approve\":true}")).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM email_outbox WHERE \"to\" = ? AND subject LIKE '%approved'", Integer.class, employee.code().toLowerCase() + "@example.com")).isEqualTo(1);
+    }
+
+    @Test
+    void aRangeSendsTheApproversOneEmailNotOnePerDay() throws Exception {
+        Person employee = person(employeeRole), hr = person(hrRole);
+        LocalDate first = workday(12), last = first.plusDays(2);
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(employee.cookie()).content(absentBody(first, last, null))).andExpect(status().isCreated());
+        assertThat(mailsTo(hr, "Regularization request waiting for your decision")).isEqualTo(1);
+    }
+
+    @Test
+    void autoApproveIsOffByDefaultAndOnlyApprovesRequestsAnApproverRaisedForAnEmployee() throws Exception {
+        Person employee = person(employeeRole), hr = person(hrRole), secondHr = person(hrRole);
+        LocalDate day = workday(2), otherDay = workday(3);
+        if (day.equals(otherDay)) otherDay = workday(4);
+        punchIn(employee, day, "09:30");
+        punchIn(employee, otherDay, "09:30");
+        mockMvc.perform(get("/api/v1/attendance/regularization-rules").cookie(hr.cookie())).andExpect(jsonPath("$.data.autoApprove").value(false));
+        // off: an on-behalf request waits for a decision
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(hr.cookie()).content(withEmployee(missedCheckOut(day, "19:00", forgotCheckOut, ""), employee.id().toString()))).andExpect(status().isCreated());
+        assertThat(jdbc.queryForObject("SELECT status::text FROM regularization_requests WHERE id = ?::uuid", String.class, idOf(employee, day))).isEqualTo("PENDING");
+        // only an approver can turn it on
+        mockMvc.perform(write(put("/api/v1/attendance/regularization-rules")).cookie(employee.cookie()).content("{\"backDateLimitDays\":30,\"monthlyLimit\":30,\"attachmentMandatory\":false,\"autoApprove\":true}")).andExpect(status().isForbidden());
+        mockMvc.perform(write(put("/api/v1/attendance/regularization-rules")).cookie(hr.cookie()).content("{\"backDateLimitDays\":30,\"monthlyLimit\":30,\"attachmentMandatory\":false,\"autoApprove\":true}")).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'regularization.settings' AND after->>'autoApprove' = 'true'", Integer.class)).isGreaterThanOrEqualTo(1);
+        // on: the employee's own request still waits (the approval must be a second person's decision)
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(employee.cookie()).content(missedCheckOut(otherDay, "19:00", forgotCheckOut, ""))).andExpect(status().isCreated());
+        assertThat(jdbc.queryForObject("SELECT status::text FROM regularization_requests WHERE id = ?::uuid", String.class, idOf(employee, otherDay))).isEqualTo("PENDING");
+        // on: HR raising one for the employee approves it at once, with the audit trail and the decision mail
+        LocalDate thirdDay = workday(5);
+        while (thirdDay.equals(day) || thirdDay.equals(otherDay)) thirdDay = thirdDay.minusDays(1);
+        while (AttendanceEngine.dowOf(thirdDay) == 0 || AttendanceEngine.dowOf(thirdDay) == 6) thirdDay = thirdDay.minusDays(1);
+        punchIn(employee, thirdDay, "09:30");
+        mockMvc.perform(write(post("/api/v1/attendance/regularizations")).cookie(secondHr.cookie()).content(withEmployee(missedCheckOut(thirdDay, "19:00", forgotCheckOut, ""), employee.id().toString()))).andExpect(status().isCreated());
+        String id = idOf(employee, thirdDay);
+        assertThat(jdbc.queryForObject("SELECT status::text FROM regularization_requests WHERE id = ?::uuid", String.class, id)).isEqualTo("APPROVED");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM punches WHERE employee_id = ? AND source = 'REGULARIZATION' AND kind = 'OUT'", Integer.class, employee.id())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT after->>'autoApproved' FROM audit_log WHERE action = 'regularization.approve' AND entity_id = ?", String.class, id)).isEqualTo("true");
+        assertThat(jdbc.queryForObject("SELECT actor_id FROM audit_log WHERE action = 'regularization.approve' AND entity_id = ?", UUID.class, id)).isEqualTo(secondHr.id());
+        // the approver gets no "waiting" mail for a request that was approved at once
+        assertThat(mailsTo(hr, "Regularization request waiting for your decision")).isEqualTo(1); // only for the employee's own request; none for the auto-approved one
+    }
 }
