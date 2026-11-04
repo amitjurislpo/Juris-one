@@ -112,13 +112,21 @@ public class ApprovalsService {
      * Approval effects: absent → paid day (and the asked-for punches when the day has none); late → mark removed; missed check-out → punch added; holiday work → comp-off credit.
      */
     public String decideRegularization(CurrentUser user, Decision decision, String ipAddress) {
+        return decideRegularization(user, decision, ipAddress, false);
+    }
+
+    /**
+     * {@code autoApproved}: the business turned on auto-approve and an approver raised the request for an employee, so the request is
+     * approved at once. The approver who raised it may do that (the "own request" rule still stops anyone deciding their own attendance).
+     */
+    public String decideRegularization(CurrentUser user, Decision decision, String ipAddress, boolean autoApproved) {
         Parsed parsed = parse(decision);
         if (!parsed.approve() && (parsed.note() == null || parsed.note().isEmpty())) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the remarks for rejecting this request.");
         List<Map<String, Object>> rows = repo.findRegularizationForDecision(parsed.id());
         if (rows.isEmpty()) throw new UserException("Request not found.");
         Map<String, Object> row = rows.get(0);
         UUID employeeId = (UUID) row.get("employee_id");
-        if (employeeId.equals(user.id()) || user.id().equals(row.get("created_by"))) throw new UserException("You can't decide your own request.");
+        if (employeeId.equals(user.id()) || (!autoApproved && user.id().equals(row.get("created_by")))) throw new UserException("You can't decide your own request.");
         if (!"PENDING".equals(row.get("status"))) throw new UserException("This request was already decided.");
         LocalDate date = ((Date) row.get("work_date")).toLocalDate();
         String kind = (String) row.get("kind");
@@ -167,6 +175,7 @@ public class ApprovalsService {
             after.put("compOff", compOffDays);
             if (parsed.note() != null) after.put("note", parsed.note());
             after.put("role", user.roleName());
+            if (autoApproved) after.put("autoApproved", true);
             audit.log(user.id(), parsed.approve() ? "regularization.approve" : "regularization.decline", "regularization", parsed.id().toString(), Map.of("status", "PENDING"), after, ipAddress);
         });
         notify.notifyDecision(employeeId, KIND.get(kind) + " for " + Format.formatDayMonth(date), parsed.approve(), user.name() + " (" + user.roleName() + ")",

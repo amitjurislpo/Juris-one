@@ -55,4 +55,11 @@ public class NotificationService {
         notify(employeeId, what + " " + (approved ? "approved" : "declined") + " by " + by, link);
         mail.send(employee.getEmail(), MailTemplates.decision(employee.getFullName(), what, approved, by, note));
     }
+
+    /** An email (no bell) to one employee's address; the content is built from the employee's name. Nothing is sent if the employee is gone. */
+    public void emailEmployee(UUID employeeId, java.util.function.Function<String, MailTemplates.Content> content) {
+        Employee employee = repo.findEmployee(employeeId);
+        if (employee == null) return;
+        mail.send(employee.getEmail(), content.apply(employee.getFullName()));
+    }
 }
