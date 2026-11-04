@@ -29,10 +29,12 @@ public class PeopleRepository {
     private final JdbcTemplate jdbc;
 
     private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption;
 
-    public PeopleRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts) {
+    public PeopleRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption) {
         this.jdbc = jdbc;
         this.salaryAmounts = salaryAmounts;
+        this.nameEncryption = nameEncryption;
     }
 
     // ── list ──
@@ -286,10 +288,12 @@ public class PeopleRepository {
                                String region, UUID shiftId, String status) {
         jdbc.update("""
             UPDATE employees SET full_name = ?, first_name = ?, middle_name = ?, last_name = ?, joining_office = ?, father_name = ?, email = ?, designation = ?,
+              full_name_enc = ?, first_name_enc = ?, last_name_enc = ?, designation_enc = ?,
               department_id = ?::uuid, reporting_manager_id = ?::uuid,
               role_id = ?::uuid, date_of_joining = ?, time_zone = ?, region = ?::"Region", shift_id = ?, status = ?::"EmployeeStatus", updated_at = now()
-            WHERE id = ?""", fullName, firstName, middleName, lastName, joiningOffice, fatherName, email, designation, departmentId, managerId, roleId, dateOfJoining,
-                timeZone, region, shiftId, status, id);
+            WHERE id = ?""", fullName, firstName, middleName, lastName, joiningOffice, fatherName, email, designation,
+                nameEncryption.encrypt(fullName), nameEncryption.encrypt(firstName), nameEncryption.encrypt(lastName), nameEncryption.encrypt(designation),
+                departmentId, managerId, roleId, dateOfJoining, timeZone, region, shiftId, status, id);
     }
 
     /** Sets the optional attributes that were given (an empty value keeps what is stored). */
@@ -309,10 +313,11 @@ public class PeopleRepository {
         jdbc.update("""
             INSERT INTO employees (id, code, full_name, first_name, middle_name, last_name, joining_office, father_name, email, designation, department_id,
               reporting_manager_id, role_id, date_of_joining, time_zone, region, shift_id, status, portal_access, created_by, employment_type, payment_type, gender,
-              created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?::"Region", ?, ?::"EmployeeStatus", ?, ?, ?, ?, ?, now(), now())""",
+              full_name_enc, first_name_enc, last_name_enc, designation_enc, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?::"Region", ?, ?::"EmployeeStatus", ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())""",
                 id, code, fullName, firstName, middleName, lastName, joiningOffice, fatherName, email, designation, departmentId, managerId, roleId, dateOfJoining,
-                timeZone, region, shiftId, status, access, createdBy, employmentType, paymentType, gender);
+                timeZone, region, shiftId, status, access, createdBy, employmentType, paymentType, gender,
+                nameEncryption.encrypt(fullName), nameEncryption.encrypt(firstName), nameEncryption.encrypt(lastName), nameEncryption.encrypt(designation));
     }
 
     /** The new employee's user row. */

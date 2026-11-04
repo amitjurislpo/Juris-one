@@ -14,7 +14,10 @@ public class BusinessSetupRepository {
 
     private final JdbcTemplate jdbc;
 
-    public BusinessSetupRepository(JdbcTemplate jdbc) {
+    private final com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption;
+
+    public BusinessSetupRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption) {
+        this.nameEncryption = nameEncryption;
         this.jdbc = jdbc;
     }
 
@@ -126,9 +129,11 @@ public class BusinessSetupRepository {
     public void insertOwnerEmployee(UUID id, String code, String fullName, String email, String designation, UUID roleId, LocalDate joined, String timeZone,
                                     String region, UUID createdBy) {
         jdbc.update("""
-            INSERT INTO employees (id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, created_by, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?::"Region", true, ?, now())""",
-                id, code, fullName, email, designation, roleId, Date.valueOf(joined), timeZone, region, createdBy);
+            INSERT INTO employees (id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, created_by,
+              full_name_enc, designation_enc, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?::"Region", true, ?, ?, ?, now())""",
+                id, code, fullName, email, designation, roleId, Date.valueOf(joined), timeZone, region, createdBy,
+                nameEncryption.encrypt(fullName), nameEncryption.encrypt(designation));
     }
 
     /** Inserts a (non super admin) user. */

@@ -70,7 +70,7 @@ public class PiiCrypto {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, initializationVector));
             return new String(cipher.doFinal(cipherWithTag), StandardCharsets.UTF_8);
-        } catch (GeneralSecurityException e) {
+        } catch (GeneralSecurityException | RuntimeException e) { // RuntimeException: the JDK throws ProviderException for a ciphertext of the wrong size
             throw new IllegalArgumentException("PII ciphertext failed authentication", e);
         }
     }
