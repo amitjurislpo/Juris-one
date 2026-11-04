@@ -4,6 +4,7 @@ import com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto;
 import com.jurislpo.jurisone.crypto.PiiCrypto;
 import com.jurislpo.jurisone.crypto.SalaryAmountsCrypto;
 import com.jurislpo.jurisone.repository.EncryptExistingColumnsRepository;
+import com.jurislpo.jurisone.repository.EncryptExistingColumnsRepository.CopiedColumn;
 import com.jurislpo.jurisone.repository.EncryptExistingColumnsRepository.DateColumn;
 import com.jurislpo.jurisone.repository.EncryptExistingColumnsRepository.TextColumn;
 import com.jurislpo.jurisone.tenancy.TenantContext;
@@ -47,6 +48,7 @@ public class EncryptExistingColumnsService {
         Map<String, Integer> changed = new LinkedHashMap<>();
         for (TextColumn target : EncryptExistingColumnsRepository.TEXT_COLUMNS) record(changed, target.label(), () -> encryptText(target));
         for (DateColumn target : EncryptExistingColumnsRepository.DATE_COLUMNS) record(changed, target.label(), () -> encryptDate(target));
+        for (CopiedColumn target : EncryptExistingColumnsRepository.NAME_COLUMNS) record(changed, target.label(), () -> encryptCopy(target));
         record(changed, "salary_structures.amounts", this::encryptSalaryStructures);
         record(changed, "payslips.snapshot", this::encryptPayslips);
         return changed;
@@ -73,6 +75,30 @@ public class EncryptExistingColumnsService {
             count += isDryRun ? 1 : repo.replaceIfUnchanged(target, row.get("id"), stored, encrypted);
         }
         return count;
+    }
+
+    /**
+     * Fills (or repairs) the encrypted copy of a plaintext column that stays in place. A copy that already decrypts to the plain value is skipped;
+     * a missing copy, or one that does not match (a row edited while the dual-write switch was off), is written again.
+     */
+    private int encryptCopy(CopiedColumn target) {
+        int count = 0;
+        for (Map<String, Object> row : repo.findCopies(target)) {
+            String plain = (String) row.get("plain"), stored = (String) row.get("stored");
+            if (stored != null && PiiCrypto.isEncrypted(stored) && plain.equals(readable(stored))) continue;
+            String encrypted = checked(target.label(), plain);
+            count += isDryRun ? 1 : repo.replaceCopyIfUnchanged(target, row.get("id"), plain, stored, encrypted);
+        }
+        return count;
+    }
+
+    /** The decrypted copy, or null when it cannot be read (so it is treated as needing a rewrite). */
+    private String readable(String stored) {
+        try {
+            return piiCrypto.decrypt(stored);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private int encryptDate(DateColumn target) {

@@ -36,7 +36,10 @@ public class SeedRepository {
 
     private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
 
-    public SeedRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts) {
+    private final com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption;
+
+    public SeedRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption) {
+        this.nameEncryption = nameEncryption;
         this.jdbc = jdbc;
         this.salaryAmounts = salaryAmounts;
     }
@@ -102,9 +105,9 @@ public class SeedRepository {
     /** Inserts the super admin employee (no business, code SA001). */
     public void insertSuperAdminEmployee(UUID id, String email, UUID roleId, Date joined) {
         jdbc.update("""
-            INSERT INTO employees (id, business_id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, updated_at)
-            VALUES (?, NULL, 'SA001', 'JurisOne Administrator', ?, 'Super Administrator', ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, now())""",
-                id, email, roleId, joined);
+            INSERT INTO employees (id, business_id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, full_name_enc, designation_enc, updated_at)
+            VALUES (?, NULL, 'SA001', 'JurisOne Administrator', ?, 'Super Administrator', ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, ?, ?, now())""",
+                id, email, roleId, joined, nameEncryption.encrypt("JurisOne Administrator"), nameEncryption.encrypt("Super Administrator"));
     }
 
     /** Moves an existing employee onto the platform role (no business, department or manager; access on). */
@@ -130,14 +133,14 @@ public class SeedRepository {
         jdbc.update("""
             INSERT INTO employees (id, code, full_name, father_name, email, designation, role_id, department_id, reporting_manager_id, date_of_joining, exit_date,
               status, time_zone, region, shift_id, portal_access, created_by, phone_enc, phone_last4, address_enc, pan_enc, pan_last4, aadhaar_enc, aadhaar_last4,
-              uan_enc, uan_last4, bank_account_enc, bank_account_last4, bank_name, bank_ifsc, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::"EmployeeStatus", ?, ?::"Region", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())""",
+              uan_enc, uan_last4, bank_account_enc, bank_account_last4, bank_name, bank_ifsc, full_name_enc, designation_enc, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::"EmployeeStatus", ?, ?::"Region", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())""",
                 id, code, name, father, email, title, roleId, departmentId, managerId, dateOfJoining,
                 exit, status, timeZone, region, shiftId,
                 portalAccess, createdBy,
                 phoneEnc, phoneLast4, addressEnc, panEnc, panLast4,
                 aadhaarEnc, aadhaarLast4, uanEnc, uanLast4, bankEnc,
-                bankLast4, bankName, bankIfsc);
+                bankLast4, bankName, bankIfsc, nameEncryption.encrypt(name), nameEncryption.encrypt(title));
     }
 
     /** is_super_admin of the employee's user (zero or one row). */
