@@ -2,6 +2,7 @@ package com.jurislpo.jurisone.security;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.function.LongSupplier;
 import org.slf4j.Logger;
@@ -59,15 +60,16 @@ public class TenantHostMismatchReporter {
      * host; a signed-in person on an unknown host is {@code HOST_UNKNOWN}. A platform user is one without a business (the super admin).
      */
     static Optional<Mismatch> classify(HostBusiness host, CurrentUser user) {
+        UUID businessId = user == null || user.isSuperAdmin() ? null : user.businessId(); // super admins sit in the platform company but count as platform users
         if (user == null) return host.kind() == HostBusiness.Kind.UNKNOWN ? Optional.of(Mismatch.ANONYMOUS_ON_UNKNOWN_HOST) : Optional.empty();
         switch (host.kind()) {
             case UNKNOWN:
                 return Optional.of(Mismatch.HOST_UNKNOWN);
             case PLATFORM:
-                return user.businessId() == null ? Optional.empty() : Optional.of(Mismatch.BUSINESS_USER_ON_PLATFORM_HOST);
+                return businessId == null ? Optional.empty() : Optional.of(Mismatch.BUSINESS_USER_ON_PLATFORM_HOST);
             default:
-                if (user.businessId() == null) return Optional.of(Mismatch.PLATFORM_USER_ON_BUSINESS_HOST);
-                return user.businessId().equals(host.businessId()) ? Optional.empty() : Optional.of(Mismatch.BUSINESS_USER_ON_OTHER_BUSINESS_HOST);
+                if (businessId == null) return Optional.of(Mismatch.PLATFORM_USER_ON_BUSINESS_HOST);
+                return businessId.equals(host.businessId()) ? Optional.empty() : Optional.of(Mismatch.BUSINESS_USER_ON_OTHER_BUSINESS_HOST);
         }
     }
 

@@ -33,7 +33,7 @@ class JurisTrackGatewayServiceTest {
     @Test
     void aSwitchedOffGatewayAnswers503() {
         JurisTrackProperties properties = new JurisTrackProperties(false, "", "", null, 0, "");
-        JurisTrackGatewayService gateway = new JurisTrackGatewayService(properties, new JurisTrackTokenIssuer(properties), null, null, null);
+        JurisTrackGatewayService gateway = new JurisTrackGatewayService(properties, new JurisTrackTokenIssuer(properties), null, null, null, null);
         assertThatThrownBy(() -> gateway.forward(null, new MockHttpServletRequest("GET", "/api/v1/juris-track/me"), new MockHttpServletResponse()))
                 .isInstanceOfSatisfying(ApiException.class, e -> {
                     assertThat(e.status()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);

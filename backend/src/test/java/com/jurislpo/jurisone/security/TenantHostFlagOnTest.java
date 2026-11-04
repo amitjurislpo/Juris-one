@@ -12,7 +12,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MvcResult;
 
 /** With the flag on (base domain localhost) the host is resolved and mismatches are counted; tokens bound to another host are refused (step 5). */
-@TestPropertySource(properties = {"jurisone.tenant-host.enabled=true", "jurisone.tenant-host.base-domain=localhost"})
+@TestPropertySource(properties = {"jurisone.tenant-host.enabled=true", "jurisone.tenant-host.base-domain=localhost", "jurisone.tenant-host.enforce=true"})
 class TenantHostFlagOnTest extends TenantHostObserveTestBase {
 
     @MockitoSpyBean @Autowired BusinessRepository businessRepository;
