@@ -196,7 +196,7 @@ public class PeopleService {
 
     public String markExited(CurrentUser user, String idRaw, String exitDate, String ipAddress) {
         UUID id = Check.uuid(idRaw);
-        if (exitDate == null || !exitDate.matches("^\\d{4}-\\d{2}-\\d{2}$")) throw new UserException("Pick the last working day.");
+        if (exitDate == null || !Check.isIsoDate(exitDate)) throw new UserException("Pick the last working day.");
         Target target = actors.target(id);
         if (target == null || !PeopleRules.canEditEmployee(actors.actor(user), target)) throw new UserException("You can't change this person's record.");
         return finalizeExit(user.id(), id, exitDate, ipAddress);
@@ -505,6 +505,7 @@ public class PeopleService {
         boolean india = "IN".equals(location.region());
         String shiftCode = india ? ("US_DAY".equals(employeeInput.shift()) ? "IN_NIGHT" : employeeInput.shift()) : "US_DAY";
         UUID shiftId = repo.findShiftId(shiftCode);
+        if (shiftId == null) throw new UserException(HttpStatus.BAD_REQUEST, "Pick a valid shift.");
 
         // PII: on edit, blank means keep; switching to the US clears the Indian IDs. Insertion order = the TS object.
         Map<String, String> piiCols = new LinkedHashMap<>();

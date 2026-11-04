@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class PeopleController {
 
-    public record AccessChange(boolean enabled) {}
+    public record AccessChange(Boolean enabled) {}
 
     public record StatusChange(String status, String exitDate) {}
 
@@ -92,6 +92,7 @@ public class PeopleController {
 
     @PutMapping("/api/v1/people/{id}/access")
     public ApiResult<Void> access(@PathVariable String id, @RequestBody AccessChange body, HttpServletRequest request) {
+        if (body.enabled() == null) throw new com.jurislpo.jurisone.exception.UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean, received undefined");
         return ApiResult.message(people.toggleAccess(auth.assertPerm("access.toggle"), id, body.enabled(), RequestMeta.of(request).ipAddress()));
     }
 

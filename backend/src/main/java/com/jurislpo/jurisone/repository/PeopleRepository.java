@@ -277,7 +277,7 @@ public class PeopleRepository {
     }
 
     public UUID findShiftId(String code) {
-        return jdbc.queryForObject("SELECT id FROM shifts WHERE code = ?", UUID.class, code);
+        return jdbc.queryForList("SELECT id FROM shifts WHERE code = ?", UUID.class, code).stream().findFirst().orElse(null);
     }
 
     /** Saves the edited (non-PII) employee fields. */
