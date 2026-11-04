@@ -145,8 +145,10 @@ public class TaxOperationsRepository {
                         resultSet.getLong(6), resultSet.getInt(7), resultSet.getInt(8)), financialYear, financialYear, financialYear, financialYear, financialYear);
     }
 
+    /** The employee's name and code, or null when there is no such employee in this business. */
     public Map<String, Object> employeeNameCode(UUID employeeId) {
-        return jdbc.queryForMap("SELECT full_name, code FROM employees WHERE id = ?", employeeId);
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT full_name, code FROM employees WHERE id = ?", employeeId);
+        return rows.isEmpty() ? null : rows.get(0);
     }
 
     /** Items with an amount or a proof, by section. */

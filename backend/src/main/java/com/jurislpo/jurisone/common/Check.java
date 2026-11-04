@@ -43,8 +43,24 @@ public final class Check {
         return text;
     }
 
+    /** A real calendar day written YYYY-MM-DD (not just the right shape: 2041-13-45 and 2041-02-30 are not days). */
+    public static boolean isIsoDate(String value) {
+        if (value == null || !value.matches("^\\d{4}-\\d{2}-\\d{2}$")) return false;
+        try {
+            java.time.LocalDate.parse(value);
+            return true;
+        } catch (java.time.format.DateTimeParseException e) {
+            return false;
+        }
+    }
+
     public static String isoDate(String value, String message) {
         if (value == null || !value.matches("^\\d{4}-\\d{2}-\\d{2}$")) throw new UserException(HttpStatus.BAD_REQUEST, message);
+        try {
+            java.time.LocalDate.parse(value); // right shape: also refuse a day that does not exist (2041-13-45, 2041-02-30) here, not as a database error later
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new UserException(HttpStatus.BAD_REQUEST, message);
+        }
         return value;
     }
 }
