@@ -88,6 +88,10 @@ public class ApiExceptionHandler {
         if (e.getMostSpecificCause() instanceof SQLException sql && "23505".equals(sql.getSQLState())) {
             return respond(Problems.of(HttpStatus.CONFLICT, DUPLICATE, request.getRequestURI()));
         }
+        // SQLState class 22 = the database refused the value itself (a NUL character, a malformed number or date, a value out of range): the caller's input, not our fault
+        if (e.getMostSpecificCause() instanceof SQLException sql && sql.getSQLState() != null && sql.getSQLState().startsWith("22")) {
+            return respond(Problems.of(HttpStatus.BAD_REQUEST, INVALID, request.getRequestURI()));
+        }
         log.error("[api] data integrity {}", request.getRequestURI(), e);
         return respond(Problems.of(HttpStatus.INTERNAL_SERVER_ERROR, GENERIC, request.getRequestURI()));
     }

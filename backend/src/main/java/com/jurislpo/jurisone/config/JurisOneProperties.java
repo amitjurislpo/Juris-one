@@ -20,8 +20,12 @@ public record JurisOneProperties(String storageDir, String frontendOrigin, boole
      * @param enabled    links use {@code <business code>.<baseDomain>}; false = every link is the single {@code jurisone.app-url}
      * @param baseDomain the domain below which each business gets its own host (dev: {@code localhost}; sqe/uat/prd: {@code TENANT_BASE_DOMAIN})
      * @param adminLabel the first label of the platform (super admin) host: {@code <adminLabel>.<baseDomain>}
+     * @param enforce    only meaningful with {@code enabled}: a request for any API endpoint whose Host names no business is refused with the neutral 404
+     *                   (false = it is let through and only counted / audited, so a rollout can be watched first). Off by default in dev; the
+     *                   {@code EnvironmentGuard} requires it in sqe, uat and prd when {@code enabled} is on
      */
-    public record TenantHost(@DefaultValue("false") boolean enabled, @DefaultValue("") String baseDomain, @DefaultValue("admin") String adminLabel) {}
+    public record TenantHost(@DefaultValue("false") boolean enabled, @DefaultValue("") String baseDomain, @DefaultValue("admin") String adminLabel,
+                             @DefaultValue("false") boolean enforce) {}
 
     /** Without an explicit {@code jurisone.storage-dir} the files go to the user's Documents/JurisOne folder. */
     public JurisOneProperties {

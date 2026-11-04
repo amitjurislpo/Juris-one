@@ -57,7 +57,7 @@ public class RegisterService {
         LocalDate today = Format.todayIn("Asia/Kolkata");
         String view = ListParams.pick(queryParams, "view", List.of("day", "month"), "day");
         String dayText = ListParams.text(queryParams, "date", today.toString());
-        LocalDate day = dayText.matches("^\\d{4}-\\d{2}-\\d{2}$") && dayText.compareTo(today.toString()) <= 0 ? LocalDate.parse(dayText) : today;
+        LocalDate day = com.jurislpo.jurisone.common.Check.isIsoDate(dayText) && dayText.compareTo(today.toString()) <= 0 ? LocalDate.parse(dayText) : today;
         String yearMonth = ListParams.text(queryParams, "month", today.toString().substring(0, 7));
         if (!yearMonth.matches("^\\d{4}-\\d{2}$") || yearMonth.compareTo(today.toString().substring(0, 7)) > 0) yearMonth = today.toString().substring(0, 7);
         List<String> zones = ZONES.stream().map(ZoneOption::value).toList();

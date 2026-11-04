@@ -22,7 +22,7 @@ class BusinessUrlsTest {
                 return Map.of(ACME_ID, "acme-legal").get(businessId);
             }
         };
-        return new BusinessUrls(new JurisOneProperties(null, appUrl, false, new JurisOneProperties.TenantHost(isEnabled, baseDomain, "admin")), repository);
+        return new BusinessUrls(new JurisOneProperties(null, appUrl, false, new JurisOneProperties.TenantHost(isEnabled, baseDomain, "admin", false)), repository);
     }
 
     @Test

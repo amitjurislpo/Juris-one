@@ -304,6 +304,7 @@ public class TaxOperationsService {
         UUID employeeId = Check.uuid(employeeIdRaw);
         String financialYear = settings.tax().financialYear();
         Map<String, Object> employee = repo.employeeNameCode(employeeId);
+        if (employee == null) throw new UserException(HttpStatus.NOT_FOUND, "Employee not found.");
         List<Map<String, Object>> prof = repo.proofProfile(employeeId, financialYear);
         List<ProofItem> items = repo.proofItems(employeeId, financialYear);
         TaxPositions.Positions employeePositions = positions.taxPositions(List.of(employeeId));
@@ -402,6 +403,7 @@ public class TaxOperationsService {
     public String overrideRegime(CurrentUser user, String employeeIdRaw, String regimeRaw, String ipAddress) {
         UUID employeeId = Check.uuid(employeeIdRaw);
         String regime = Check.oneOf(regimeRaw, List.of("NEW", "OLD"));
+        if (repo.employeeNameCode(employeeId) == null) throw new UserException(HttpStatus.NOT_FOUND, "Employee not found.");
         String financialYear = settings.tax().financialYear();
         List<String> before = repo.regimeOf(employeeId, financialYear);
         String previous = before.isEmpty() ? "NEW" : before.get(0);
@@ -429,6 +431,7 @@ public class TaxOperationsService {
         UUID employeeId = Check.uuid(input.employeeId());
         long income = rupees(input.income()), tds = rupees(input.tds());
         if (tds > income) throw new UserException("TDS can't be more than the income.");
+        if (repo.employeeNameCode(employeeId) == null) throw new UserException(HttpStatus.NOT_FOUND, "Employee not found.");
         String financialYear = settings.tax().financialYear();
         List<Map<String, Object>> before = repo.previousEmployer(employeeId, financialYear);
         repo.upsertPreviousEmployer(employeeId, financialYear, income * 100, tds * 100);

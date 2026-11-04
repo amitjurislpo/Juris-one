@@ -49,6 +49,15 @@ class JurisTrackTokenIssuerTest {
     }
 
     @Test
+    void theHostBindingClaimIsTheSubjectsBusinessAndOnlyWhenAsked() throws Exception {
+        JurisTrackTokenIssuer issuer = issuer(true, JurisTrackStub.privateKey(), 300);
+        Subject subject = new Subject(EMPLOYEE, "a@b.test", "Asha Rao", BUSINESS, "Nimbus Legal", null, TrackRole.EMPLOYEE);
+        assertThat(parse(issuer.issue(subject)).getJWTClaimsSet().getClaims()).doesNotContainKey("bid");
+        assertThat(parse(issuer.issue(subject, false)).getJWTClaimsSet().getClaims()).doesNotContainKey("bid");
+        assertThat(parse(issuer.issue(subject, true)).getJWTClaimsSet().getStringClaim("bid")).isEqualTo(BUSINESS.toString());
+    }
+
+    @Test
     void withoutAManagerThereIsNoManagerClaim() throws Exception {
         String token = issuer(true, JurisTrackStub.privateKey(), 300).issue(new Subject(EMPLOYEE, "a@b.test", "Asha Rao", BUSINESS, "Nimbus Legal", null, TrackRole.EMPLOYEE));
         JWTClaimsSet claims = parse(token).getJWTClaimsSet();
