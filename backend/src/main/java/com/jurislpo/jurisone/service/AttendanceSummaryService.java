@@ -54,7 +54,7 @@ public class AttendanceSummaryService {
 
     public record SummaryDay(String date, String weekday, String status, String label, String shiftName, String firstIn, String lastOut, double hours,
                              int lateMinutes, int earlyMinutes, boolean late, boolean missedCheckout, boolean today, boolean future, boolean live,
-                             boolean regularized, String regularizationStatus) {}
+                             boolean regularized, String regularizationStatus, String checkOutNote) {}
 
     /** Footer counters. Days are fractions (a half day counts 0.5); {@code hours} is the same list in hours. */
     public record Counters(double payableDays, double present, double onDuty, double paidLeave, double holidays, double weekends, double unpaidLeave,
@@ -182,7 +182,7 @@ public class AttendanceSummaryService {
         return new SummaryDay(day.date.toString(), day.date.getDayOfWeek().name(), day.status.name(), day.label, employee.shift().name(),
                 day.firstIn == null ? null : AttendanceService.formatTime(day.firstIn, employee.timeZone()),
                 day.lastOut == null ? null : AttendanceService.formatTime(day.lastOut, employee.timeZone()),
-                day.workedMinutes / 60.0, lateMinutes, earlyMinutes, day.late, missedCheckout, day.date.equals(workDate), day.future, day.live, day.regularized, regularizationStatus);
+                day.workedMinutes / 60.0, lateMinutes, earlyMinutes, day.late, missedCheckout, day.date.equals(workDate), day.future, day.live, day.regularized, regularizationStatus, view.checkOutNote());
     }
 
     // ───────────────────────── export ─────────────────────────
