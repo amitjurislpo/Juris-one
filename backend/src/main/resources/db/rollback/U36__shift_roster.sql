@@ -1,4 +1,4 @@
--- Reverses V35__shift_roster.sql (run with psql, then delete version 35 from flyway_schema_history).
+-- Reverses V36__shift_roster.sql (run with psql, then delete version 36 from flyway_schema_history).
 -- Business-made shifts are removed (employees keep their employees.shift_id, which never points at one).
 DELETE FROM "role_permissions" WHERE "permission_key" = 'shifts.manage';
 UPDATE "role_templates" SET "permissions" = array_remove("permissions", 'shifts.manage');
