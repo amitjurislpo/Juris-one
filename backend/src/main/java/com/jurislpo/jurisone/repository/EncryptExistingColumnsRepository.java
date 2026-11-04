@@ -26,6 +26,20 @@ public class EncryptExistingColumnsRepository {
         }
     }
 
+    /**
+     * A plaintext column that keeps its value (stage 1: the encrypted copy is written beside it, reads still use the plain column).
+     * The encrypted copy is empty or stale until the backfill fills it.
+     */
+    public record CopiedColumn(String table, String idColumn, String plainColumn, String encryptedColumn) {
+        public String label() {
+            return table + "." + encryptedColumn;
+        }
+    }
+
+    public static final List<CopiedColumn> NAME_COLUMNS = List.of(
+            new CopiedColumn("employees", "id", "full_name", "full_name_enc"), new CopiedColumn("employees", "id", "first_name", "first_name_enc"),
+            new CopiedColumn("employees", "id", "last_name", "last_name_enc"), new CopiedColumn("employees", "id", "designation", "designation_enc"));
+
     public static final List<TextColumn> TEXT_COLUMNS = List.of(
             new TextColumn("employees", "id", "father_name"), new TextColumn("employees", "id", "emergency_name"),
             new TextColumn("employees", "id", "emergency_relation"), new TextColumn("employees", "id", "emergency_phone"),
@@ -51,6 +65,27 @@ public class EncryptExistingColumnsRepository {
     private static DateColumn allowed(DateColumn target) {
         if (!DATE_COLUMNS.contains(target)) throw new IllegalArgumentException("Not an encrypted column: " + target);
         return target;
+    }
+
+    private static CopiedColumn allowed(CopiedColumn target) {
+        if (!NAME_COLUMNS.contains(target)) throw new IllegalArgumentException("Not an encrypted column: " + target);
+        return target;
+    }
+
+    // ── plaintext kept, encrypted copy beside it ──
+
+    /** Id, plain value and stored encrypted copy of the rows that have a plain value. */
+    public List<Map<String, Object>> findCopies(CopiedColumn target) {
+        allowed(target);
+        return jdbc.queryForList("SELECT " + target.idColumn() + " AS id, " + target.plainColumn() + " AS plain, " + target.encryptedColumn() + " AS stored FROM " + target.table()
+                + " WHERE " + target.plainColumn() + " IS NOT NULL AND " + target.plainColumn() + " <> ''");
+    }
+
+    /** Sets the encrypted copy only if the row still has the plain value and the copy that were read. Returns rows changed. */
+    public int replaceCopyIfUnchanged(CopiedColumn target, Object id, String expectedPlain, String expectedStored, String newStored) {
+        allowed(target);
+        return jdbc.update("UPDATE " + target.table() + " SET " + target.encryptedColumn() + " = ? WHERE " + target.idColumn() + " = ? AND " + target.plainColumn() + " = ? AND "
+                + target.encryptedColumn() + " IS NOT DISTINCT FROM ?", newStored, id, expectedPlain, expectedStored);
     }
 
     // ── text columns ──
