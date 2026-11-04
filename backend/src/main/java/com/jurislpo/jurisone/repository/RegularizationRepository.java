@@ -18,8 +18,12 @@ import org.springframework.stereotype.Repository;
 public class RegularizationRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
+    private final com.jurislpo.jurisone.service.EmployeeNameDirectory nameDirectory;
 
-    public RegularizationRepository(JdbcTemplate jdbc) {
+    public RegularizationRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader, com.jurislpo.jurisone.service.EmployeeNameDirectory nameDirectory) {
+        this.nameReader = nameReader;
+        this.nameDirectory = nameDirectory;
         this.jdbc = jdbc;
     }
 
@@ -41,28 +45,29 @@ public class RegularizationRepository {
     private static final String SELECT = """
         SELECT r.id::text, r.employee_id::text, e.code, e.full_name, d.name AS department, r.work_date, r.kind::text, r.status::text, r.proposed_in, r.proposed_out,
                r.old_check_in, r.old_check_out, r.old_minutes, r.new_minutes, r.old_status, r.new_status, r.reason_id::text, r.reason, r.description,
-               dd.full_name AS decided_by, r.decided_at, r.decision_note, (r.attachment_path IS NOT NULL) AS has_attachment, r.attachment_name, r.created_at
+               dd.full_name AS decided_by, r.decided_at, r.decision_note, (r.attachment_path IS NOT NULL) AS has_attachment, r.attachment_name, r.created_at,
+               e.full_name_enc, dd.full_name_enc AS decided_by_enc
         FROM regularization_requests r JOIN employees e ON e.id = r.employee_id LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees dd ON dd.id = r.decided_by""";
 
-    private static Item item(ResultSet resultSet, int i) throws SQLException {
-        return new Item(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4), resultSet.getString(5), resultSet.getDate(6).toLocalDate().toString(),
+    private Item item(ResultSet resultSet, int i) throws SQLException {
+        return new Item(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), nameReader.read(resultSet.getString(4), resultSet.getString(26)), resultSet.getString(5), resultSet.getDate(6).toLocalDate().toString(),
                 resultSet.getString(7), resultSet.getString(8), iso(resultSet.getTimestamp(9)), iso(resultSet.getTimestamp(10)), iso(resultSet.getTimestamp(11)), iso(resultSet.getTimestamp(12)),
                 (Integer) resultSet.getObject(13), (Integer) resultSet.getObject(14), resultSet.getString(15), resultSet.getString(16), resultSet.getString(17), resultSet.getString(18),
-                resultSet.getString(19), resultSet.getString(20), iso(resultSet.getTimestamp(21)), resultSet.getString(22), resultSet.getBoolean(23), resultSet.getString(24), iso(resultSet.getTimestamp(25)));
+                resultSet.getString(19), nameReader.read(resultSet.getString(20), resultSet.getString(27)), iso(resultSet.getTimestamp(21)), resultSet.getString(22), resultSet.getBoolean(23), resultSet.getString(24), iso(resultSet.getTimestamp(25)));
     }
 
     private static String iso(Timestamp timestamp) {
         return timestamp == null ? null : timestamp.toInstant().toString();
     }
 
-    private static String where(Filter filter, List<Object> args) {
+    private String where(Filter filter, List<Object> args) {
         StringBuilder where = new StringBuilder(" WHERE true");
         if (filter.employeeId() != null) { where.append(" AND r.employee_id = ?"); args.add(filter.employeeId()); }
         if (filter.status() != null) { where.append(" AND r.status = ?::\"RequestStatus\""); args.add(filter.status()); }
         if (filter.from() != null) { where.append(" AND r.work_date >= ?"); args.add(Date.valueOf(filter.from())); }
         if (filter.to() != null) { where.append(" AND r.work_date <= ?"); args.add(Date.valueOf(filter.to())); }
         if (filter.departmentId() != null) { where.append(" AND e.department_id = ?"); args.add(filter.departmentId()); }
-        if (filter.search() != null && !filter.search().isEmpty()) { where.append(" AND e.full_name ILIKE ?"); args.add(PeopleQuery.like(filter.search())); }
+        if (filter.search() != null && !filter.search().isEmpty()) { where.append(" AND " + nameDirectory.contains(com.jurislpo.jurisone.service.EmployeeNameDirectory.Field.FULL_NAME, "e.id", "e.full_name", filter.search(), args)); }
         return where.toString();
     }
 
@@ -72,7 +77,7 @@ public class RegularizationRepository {
         String where = where(filter, args);
         args.add(take);
         args.add(skip);
-        return jdbc.query(SELECT + where + " ORDER BY r.work_date DESC, r.created_at DESC LIMIT ? OFFSET ?", RegularizationRepository::item, args.toArray());
+        return jdbc.query(SELECT + where + " ORDER BY r.work_date DESC, r.created_at DESC LIMIT ? OFFSET ?", this::item, args.toArray());
     }
 
     public int count(Filter filter) {
@@ -83,7 +88,7 @@ public class RegularizationRepository {
     }
 
     public Item find(UUID id) {
-        List<Item> items = jdbc.query(SELECT + " WHERE r.id = ?", RegularizationRepository::item, id);
+        List<Item> items = jdbc.query(SELECT + " WHERE r.id = ?", this::item, id);
         return items.isEmpty() ? null : items.get(0);
     }
 

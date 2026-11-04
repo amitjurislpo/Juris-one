@@ -15,27 +15,30 @@ import org.springframework.stereotype.Repository;
 public class DepartmentsRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public DepartmentsRepository(JdbcTemplate jdbc) {
+    public DepartmentsRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
     /** Every non-archived department with its head, creator and current headcount; "createdOn" is the creation date in {@code timeZone}. */
     public List<Row> findActive(String timeZone) {
         return jdbc.query("""
-            SELECT d.id, d.name, d.description, h.full_name AS head, c.full_name AS by, d.created_at,
+            SELECT d.id, d.name, d.description, h.full_name AS head, h.full_name_enc AS head_enc, c.full_name AS by, c.full_name_enc AS by_enc, d.created_at,
                    (SELECT count(*) FROM employees e WHERE e.department_id = d.id AND e.status <> 'EXITED') AS employee_count
             FROM departments d LEFT JOIN employees h ON h.id = d.head_employee_id LEFT JOIN employees c ON c.id = d.created_by
             WHERE d.archived_at IS NULL""",
                 (resultSet, i) -> new Row(resultSet.getString("id"), resultSet.getString("name"), resultSet.getString("description") == null ? "" : resultSet.getString("description"),
-                        resultSet.getString("head") == null ? "" : resultSet.getString("head"), resultSet.getInt("employee_count"), resultSet.getString("by") == null ? "—" : resultSet.getString("by"),
+                        headText(nameReader.read(resultSet, "head")), resultSet.getInt("employee_count"), dash(nameReader.read(resultSet, "by")),
                         Format.isoInZone(resultSet.getTimestamp("created_at").toInstant(), timeZone).toString()));
     }
 
     /** Current employees who can be picked as head, by name. */
     public List<Person> findHeadCandidates() {
-        return jdbc.query("SELECT id, full_name, designation FROM employees WHERE status <> 'EXITED' ORDER BY full_name ASC",
-                (resultSet, i) -> new Person(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3)));
+        return jdbc.query("SELECT id, full_name, full_name_enc, designation, designation_enc FROM employees WHERE status <> 'EXITED'",
+                (resultSet, i) -> new Person(resultSet.getString("id"), nameReader.read(resultSet, "full_name"), nameReader.read(resultSet, "designation"))).stream()
+                .sorted(java.util.Comparator.comparing(Person::name, com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
     }
 
     /** id and archived_at of the department with this name, ignoring case (at most one). */
@@ -80,5 +83,13 @@ public class DepartmentsRepository {
 
     public void delete(UUID id) {
         jdbc.update("DELETE FROM departments WHERE id = ?", id);
+    }
+
+    private static String headText(String name) {
+        return name == null ? "" : name;
+    }
+
+    private static String dash(String name) {
+        return name == null ? "—" : name;
     }
 }

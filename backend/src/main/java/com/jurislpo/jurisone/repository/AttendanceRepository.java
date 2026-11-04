@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.repository;
 
+import com.jurislpo.jurisone.crypto.EmployeeNameReader;
 import com.jurislpo.jurisone.engine.AttendanceEngine.DayResult;
 import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.entity.PunchKind;
@@ -10,6 +11,7 @@ import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -35,8 +37,10 @@ public class AttendanceRepository {
     static final String TRACKED = "EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = e.role_id AND rp.permission_key = 'self')";
 
     private final JdbcTemplate jdbc;
+    private final EmployeeNameReader nameReader;
 
-    public AttendanceRepository(JdbcTemplate jdbc) {
+    public AttendanceRepository(JdbcTemplate jdbc, EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -46,17 +50,19 @@ public class AttendanceRepository {
      */
     public List<AttendanceEmployee> findAttendanceEmployees(String where, Shift defaultShift, int grace, Object... args) {
         String sql = """
-            SELECT e.id, e.code, e.full_name, e.designation, d.name AS department_name, e.department_id, e.time_zone, e.region::text AS region,
+            SELECT e.id, e.code, e.full_name, e.full_name_enc, e.designation, e.designation_enc, d.name AS department_name, e.department_id, e.time_zone, e.region::text AS region,
                    e.date_of_joining, e.exit_date, s.code AS shift_code, s.name AS shift_name, s.start_local, s.end_local, s.grace_minutes
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN shifts s ON s.id = e.shift_id
-            WHERE""" + " " + TRACKED + (where == null || where.isBlank() ? "" : " AND (" + where + ")") + " ORDER BY e.full_name ASC";
-        return jdbc.query(sql, (resultSet, i) -> new AttendanceEmployee(
-                (UUID) resultSet.getObject("id"), resultSet.getString("code"), resultSet.getString("full_name"), resultSet.getString("designation"),
+            WHERE""" + " " + TRACKED + (where == null || where.isBlank() ? "" : " AND (" + where + ")");
+        List<AttendanceEmployee> employees = jdbc.query(sql, (resultSet, i) -> new AttendanceEmployee(
+                (UUID) resultSet.getObject("id"), resultSet.getString("code"), nameReader.read(resultSet, "full_name"), nameReader.read(resultSet, "designation"),
                 resultSet.getString("department_name") == null ? "—" : resultSet.getString("department_name"), (UUID) resultSet.getObject("department_id"), resultSet.getString("time_zone"),
                 resultSet.getString("region"), resultSet.getDate("date_of_joining").toLocalDate(), resultSet.getDate("exit_date") == null ? null : resultSet.getDate("exit_date").toLocalDate(),
                 resultSet.getString("shift_code") == null ? new Shift(defaultShift.code(), defaultShift.name(), defaultShift.startLocal(), defaultShift.endLocal(), grace)
                         : new Shift(resultSet.getString("shift_code"), resultSet.getString("shift_name"), resultSet.getString("start_local"), resultSet.getString("end_local"), grace)),
                 args);
+        employees.sort(Comparator.comparing(AttendanceEmployee::name, EmployeeNameReader.NAME_ORDER));
+        return employees;
     }
 
     /** Approved leaves of these employees overlapping [from, to]. */

@@ -19,17 +19,19 @@ import org.springframework.stereotype.Repository;
 public class MyAttendanceRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public MyAttendanceRepository(JdbcTemplate jdbc) {
+    public MyAttendanceRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
     /** An employee's regularization requests for work dates in [first, last], newest first. */
     public List<RegularizationView> regularizations(UUID employeeId, LocalDate first, LocalDate last) {
         return jdbc.query("""
-            SELECT r.id::text, r.work_date, r.kind::text, r.status::text, d.full_name AS by, r.reason FROM regularization_requests r
+            SELECT r.id::text AS id, r.work_date, r.kind::text AS kind, r.status::text AS status, d.full_name AS by, d.full_name_enc AS by_enc, r.reason FROM regularization_requests r
             LEFT JOIN employees d ON d.id = r.decided_by WHERE r.employee_id = ? AND r.work_date >= ? AND r.work_date <= ? ORDER BY r.created_at DESC""",
-                (resultSet, i) -> new RegularizationView(resultSet.getString(1), resultSet.getDate(2).toLocalDate().toString(), resultSet.getString(3), resultSet.getString(4), resultSet.getString(5), resultSet.getString(6)),
+                (resultSet, i) -> new RegularizationView(resultSet.getString("id"), resultSet.getDate("work_date").toLocalDate().toString(), resultSet.getString("kind"), resultSet.getString("status"), nameReader.read(resultSet, "by"), resultSet.getString("reason")),
                 employeeId, Date.valueOf(first), Date.valueOf(last));
     }
 

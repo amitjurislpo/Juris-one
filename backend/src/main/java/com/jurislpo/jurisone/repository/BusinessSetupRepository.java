@@ -15,8 +15,10 @@ public class BusinessSetupRepository {
     private final JdbcTemplate jdbc;
 
     private final com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption;
+    private final com.jurislpo.jurisone.service.EmployeeNameDirectory nameDirectory;
 
-    public BusinessSetupRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption) {
+    public BusinessSetupRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption, com.jurislpo.jurisone.service.EmployeeNameDirectory nameDirectory) {
+        this.nameDirectory = nameDirectory;
         this.nameEncryption = nameEncryption;
         this.jdbc = jdbc;
     }
@@ -134,6 +136,7 @@ public class BusinessSetupRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?::"Region", true, ?, ?, ?, now())""",
                 id, code, fullName, email, designation, roleId, Date.valueOf(joined), timeZone, region, createdBy,
                 nameEncryption.encrypt(fullName), nameEncryption.encrypt(designation));
+        nameDirectory.invalidate();
     }
 
     /** Inserts a (non super admin) user. */

@@ -13,18 +13,23 @@ import org.springframework.stereotype.Repository;
 public class HolidaysRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public HolidaysRepository(JdbcTemplate jdbc) {
+    public HolidaysRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
     /** Every holiday with its creator, by date. */
     public List<Item> findAll() {
         return jdbc.query("""
-            SELECT h.id, h.date, h.name, h.region::text AS region, c.full_name AS by
+            SELECT h.id, h.date, h.name, h.region::text AS region, c.full_name AS by, c.full_name_enc AS by_enc
             FROM holidays h LEFT JOIN employees c ON c.id = h.created_by ORDER BY h.date ASC""",
-                (resultSet, i) -> new Item(resultSet.getString("id"), resultSet.getDate("date").toLocalDate().toString(), resultSet.getString("name"), resultSet.getString("region"),
-                        resultSet.getString("by") == null ? "—" : resultSet.getString("by")));
+                (resultSet, i) -> {
+                    String addedBy = nameReader.read(resultSet, "by");
+                    return new Item(resultSet.getString("id"), resultSet.getDate("date").toLocalDate().toString(), resultSet.getString("name"), resultSet.getString("region"),
+                            addedBy == null ? "—" : addedBy);
+                });
     }
 
     /** The name of a holiday already on this date for one of the three regions (at most one). */

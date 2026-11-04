@@ -37,8 +37,11 @@ public class SeedRepository {
     private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
 
     private final com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption;
+    private final com.jurislpo.jurisone.service.EmployeeNameDirectory nameDirectory;
 
-    public SeedRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption) {
+    public SeedRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption,
+                          com.jurislpo.jurisone.service.EmployeeNameDirectory nameDirectory) {
+        this.nameDirectory = nameDirectory;
         this.nameEncryption = nameEncryption;
         this.jdbc = jdbc;
         this.salaryAmounts = salaryAmounts;
@@ -108,6 +111,7 @@ public class SeedRepository {
             INSERT INTO employees (id, business_id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, full_name_enc, designation_enc, updated_at)
             VALUES (?, NULL, 'SA001', 'JurisOne Administrator', ?, 'Super Administrator', ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, ?, ?, now())""",
                 id, email, roleId, joined, nameEncryption.encrypt("JurisOne Administrator"), nameEncryption.encrypt("Super Administrator"));
+        nameDirectory.invalidate();
     }
 
     /** Moves an existing employee onto the platform role (no business, department or manager; access on). */
@@ -141,6 +145,7 @@ public class SeedRepository {
                 phoneEnc, phoneLast4, addressEnc, panEnc, panLast4,
                 aadhaarEnc, aadhaarLast4, uanEnc, uanLast4, bankEnc,
                 bankLast4, bankName, bankIfsc, nameEncryption.encrypt(name), nameEncryption.encrypt(title));
+        nameDirectory.invalidate();
     }
 
     /** is_super_admin of the employee's user (zero or one row). */

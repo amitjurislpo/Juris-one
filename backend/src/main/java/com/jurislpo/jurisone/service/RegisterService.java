@@ -46,8 +46,10 @@ public class RegisterService {
     private final AttendanceService attendanceService;
     private final RegisterRepository repo;
     private final AuditService audit;
+    private final EmployeeNameDirectory nameDirectory;
 
-    public RegisterService(AttendanceService attendance, RegisterRepository repo, AuditService audit) {
+    public RegisterService(AttendanceService attendance, RegisterRepository repo, AuditService audit, EmployeeNameDirectory nameDirectory) {
+        this.nameDirectory = nameDirectory;
         this.attendanceService = attendance;
         this.repo = repo;
         this.audit = audit;
@@ -79,8 +81,11 @@ public class RegisterService {
             args.add(registerParams.department());
         }
         if (!registerParams.listParams().search().isEmpty()) {
-            conditions.add("(e.full_name ILIKE ? OR e.code ILIKE ? OR e.designation ILIKE ?)");
-            for (int i = 0; i < 3; i++) args.add(PeopleQuery.like(registerParams.listParams().search()));
+            String search = registerParams.listParams().search();
+            String nameMatch = nameDirectory.contains(EmployeeNameDirectory.Field.FULL_NAME, "e.id", "e.full_name", search, args);
+            args.add(PeopleQuery.like(search));
+            String designationMatch = nameDirectory.contains(EmployeeNameDirectory.Field.DESIGNATION, "e.id", "e.designation", search, args);
+            conditions.add("(" + nameMatch + " OR e.code ILIKE ? OR " + designationMatch + ")");
         }
         return attendanceService.loadAttendanceEmployees(String.join(" AND ", conditions), args.toArray());
     }

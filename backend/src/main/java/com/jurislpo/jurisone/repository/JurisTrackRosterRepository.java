@@ -19,8 +19,10 @@ public class JurisTrackRosterRepository {
                               String timeZone, String shiftCode, String shiftName, String shiftStart, String shiftEnd, String shiftRegion) {}
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public JurisTrackRosterRepository(JdbcTemplate jdbc) {
+    public JurisTrackRosterRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -43,13 +45,13 @@ public class JurisTrackRosterRepository {
     /** Every employee of the business, whatever the status (past employees go as deactivated), oldest first. */
     public List<EmployeeRow> findEmployees(UUID businessId) {
         return jdbc.query("""
-                SELECT e.id, e.email, e.full_name, e.first_name, e.last_name, e.code, e.status::text, e.reporting_manager_id,
+                SELECT e.id, e.email, e.full_name, e.full_name_enc, e.first_name, e.first_name_enc, e.last_name, e.last_name_enc, e.code, e.status::text, e.reporting_manager_id,
                        jurisone_employee_has_permission(e.id, 'juristrack.manager') AS is_juristrack_manager,
-                       e.time_zone, s.code, s.name, s.start_local, s.end_local, s.region::text
+                       e.time_zone, s.code AS shift_code, s.name AS shift_name, s.start_local, s.end_local, s.region::text AS shift_region
                 FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id
                 WHERE e.business_id = ? ORDER BY e.created_at, e.code""",
-                (resultSet, i) -> new EmployeeRow((UUID) resultSet.getObject(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4), resultSet.getString(5),
-                        resultSet.getString(6), resultSet.getString(7), (UUID) resultSet.getObject(8), resultSet.getBoolean(9), resultSet.getString(10),
-                        resultSet.getString(11), resultSet.getString(12), resultSet.getString(13), resultSet.getString(14), resultSet.getString(15)), businessId);
+                (resultSet, i) -> new EmployeeRow((UUID) resultSet.getObject("id"), resultSet.getString("email"), nameReader.read(resultSet, "full_name"), nameReader.read(resultSet, "first_name"), nameReader.read(resultSet, "last_name"),
+                        resultSet.getString("code"), resultSet.getString("status"), (UUID) resultSet.getObject("reporting_manager_id"), resultSet.getBoolean("is_juristrack_manager"), resultSet.getString("time_zone"),
+                        resultSet.getString("shift_code"), resultSet.getString("shift_name"), resultSet.getString("start_local"), resultSet.getString("end_local"), resultSet.getString("shift_region")), businessId);
     }
 }

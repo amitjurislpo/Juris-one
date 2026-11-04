@@ -12,8 +12,10 @@ import org.springframework.stereotype.Repository;
 public class RolesRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public RolesRepository(JdbcTemplate jdbc) {
+    public RolesRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -37,8 +39,9 @@ public class RolesRepository {
 
     /** Current (not exited) employees with the role, by name. */
     public List<Member> findCurrentMembers(UUID roleId) {
-        return jdbc.query("SELECT id, full_name FROM employees WHERE status <> 'EXITED' AND (role_id = ? OR id IN (SELECT employee_id FROM employee_additional_roles WHERE role_id = ?)) ORDER BY full_name ASC",
-                (resultSet, i) -> new Member(resultSet.getString(1), resultSet.getString(2)), roleId, roleId);
+        return jdbc.query("SELECT id, full_name, full_name_enc FROM employees WHERE status <> 'EXITED' AND (role_id = ? OR id IN (SELECT employee_id FROM employee_additional_roles WHERE role_id = ?))",
+                (resultSet, i) -> new Member(resultSet.getString("id"), nameReader.read(resultSet, "full_name")), roleId, roleId).stream()
+                .sorted(java.util.Comparator.comparing(Member::name, com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
     }
 
     /** Employees ever given the role, past ones included. */

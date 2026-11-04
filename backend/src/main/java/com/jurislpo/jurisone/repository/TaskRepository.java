@@ -58,8 +58,10 @@ public class TaskRepository {
         WHERE t.id = ? AND t.deleted_at IS NULL AND (p.id IS NULL OR p.deleted_at IS NULL)""".formatted(TEAM_OF);
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public TaskRepository(JdbcTemplate jdbc) {
+    public TaskRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -224,18 +226,19 @@ public class TaskRepository {
     }
 
     public List<Map<String, Object>> findWatchers(UUID taskId) {
-        return jdbc.queryForList("""
-            SELECT w.employee_id::text AS "employeeId", e.full_name AS "name", (extract(epoch FROM e.photo_updated_at) * 1000)::bigint AS "photo"
-            FROM task_watchers w JOIN employees e ON e.id = w.employee_id WHERE w.task_id = ? ORDER BY e.full_name""", taskId);
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT w.employee_id::text AS "employeeId", e.full_name AS "name", e.full_name_enc AS "name_enc", (extract(epoch FROM e.photo_updated_at) * 1000)::bigint AS "photo"
+            FROM task_watchers w JOIN employees e ON e.id = w.employee_id WHERE w.task_id = ? """, taskId), "name").stream()
+                .sorted(java.util.Comparator.comparing(row -> (String) row.get("name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
     }
 
     // ── checklist ──
 
     public List<Map<String, Object>> findChecklist(UUID taskId) {
-        return jdbc.queryForList("""
-            SELECT c.id::text AS "id", c.text AS "text", c.is_done AS "isDone", c.position AS "position", d.full_name AS "doneByName", %s AS "doneAt"
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT c.id::text AS "id", c.text AS "text", c.is_done AS "isDone", c.position AS "position", d.full_name AS "doneByName", d.full_name_enc AS "doneByName_enc", %s AS "doneAt"
             FROM task_checklist_items c LEFT JOIN employees d ON d.id = c.done_by WHERE c.task_id = ? ORDER BY c.position, c.created_at""".formatted(TaskQuery.iso("c.done_at")),
-                taskId);
+                taskId), "doneByName");
     }
 
     public int countChecklistItems(UUID taskId) {
@@ -348,14 +351,14 @@ public class TaskRepository {
     public List<Map<String, Object>> findNames(List<UUID> employeeIds) {
         if (employeeIds.isEmpty()) return List.of();
         String marks = String.join(", ", employeeIds.stream().map(id -> "?").toList());
-        return jdbc.queryForList("SELECT id::text AS \"id\", full_name AS \"name\" FROM employees WHERE id IN (" + marks + ")", employeeIds.toArray());
+        return nameReader.resolveAll(jdbc.queryForList("SELECT id::text AS \"id\", full_name AS \"name\", full_name_enc AS \"name_enc\" FROM employees WHERE id IN (" + marks + ")", employeeIds.toArray()), "name");
     }
 
     /** Details for the task panel: description, version, reporter photo, completed-by name, previous keys. */
     public Map<String, Object> findDetailExtras(UUID taskId) {
-        return JdbcRows.normalize(jdbc.queryForList("""
+        return nameReader.resolve(JdbcRows.normalize(jdbc.queryForList("""
             SELECT t.description AS "description", t.version AS "version", (extract(epoch FROM r.photo_updated_at) * 1000)::bigint AS "reporterPhoto",
-                   c.full_name AS "completedByName", t.previous_keys AS "previousKeys"
-            FROM tasks t JOIN employees r ON r.id = t.reporter_id LEFT JOIN employees c ON c.id = t.completed_by WHERE t.id = ?""", taskId)).get(0);
+                   c.full_name AS "completedByName", c.full_name_enc AS "completedByName_enc", t.previous_keys AS "previousKeys"
+            FROM tasks t JOIN employees r ON r.id = t.reporter_id LEFT JOIN employees c ON c.id = t.completed_by WHERE t.id = ?""", taskId)).get(0), "completedByName");
     }
 }

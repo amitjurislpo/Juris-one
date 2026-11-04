@@ -54,8 +54,10 @@ public class AuditViewService {
 
     private final AuditViewRepository repo;
     private final ObjectMapper json;
+    private final EmployeeNameDirectory nameDirectory;
 
-    public AuditViewService(AuditViewRepository repo, ObjectMapper json) {
+    public AuditViewService(AuditViewRepository repo, ObjectMapper json, EmployeeNameDirectory nameDirectory) {
+        this.nameDirectory = nameDirectory;
         this.repo = repo;
         this.json = json;
     }
@@ -75,7 +77,7 @@ public class AuditViewService {
         return query(user, queryParams, true);
     }
 
-    private record AuditQuery(String fromWhere, String order, List<Object> args, ListParams listParams) {}
+    private record AuditQuery(String fromWhere, String order, List<Object> args, List<Object> orderArgs, ListParams listParams) {}
 
     private AuditQuery build(Map<String, String> queryParams, boolean platform, int pageSize) {
         ListParams listParams = ListParams.of(queryParams, SORTS, "occurredAt", pageSize, "desc");
@@ -112,18 +114,22 @@ public class AuditViewService {
         }
         if (!listParams.search().isEmpty()) {
             String likePattern = like(listParams.search());
-            conditions.add("(a.action ILIKE ? OR a.entity ILIKE ? OR a.entity_id ILIKE ? OR a.path ILIKE ? OR e.full_name ILIKE ? OR e.code ILIKE ?" + (platform ? " OR b.name ILIKE ?)" : ")"));
-            for (int i = 0; i < (platform ? 7 : 6); i++) args.add(likePattern);
+            for (int i = 0; i < 4; i++) args.add(likePattern);
+            String actorNameMatch = nameDirectory.contains(EmployeeNameDirectory.Field.FULL_NAME, "e.id", "e.full_name", listParams.search(), args);
+            args.add(likePattern);
+            if (platform) args.add(likePattern);
+            conditions.add("(a.action ILIKE ? OR a.entity ILIKE ? OR a.entity_id ILIKE ? OR a.path ILIKE ? OR " + actorNameMatch + " OR e.code ILIKE ?" + (platform ? " OR b.name ILIKE ?)" : ")"));
         }
         String where = conditions.isEmpty() ? "" : " WHERE " + String.join(" AND ", conditions);
         String dir = listParams.asc() ? "ASC" : "DESC";
+        List<Object> orderArgs = new ArrayList<>();
         String order = switch (listParams.sort()) {
-            case "actor" -> "e.full_name " + dir + ", a.at DESC";
+            case "actor" -> nameDirectory.orderBy(EmployeeNameDirectory.Field.FULL_NAME, "e.id", "e.full_name", listParams.asc(), orderArgs) + ", a.at DESC";
             case "action" -> "a.action " + dir + ", a.at DESC";
             default -> "a.at " + dir;
         };
         String from = " FROM audit_log a LEFT JOIN employees e ON e.id = a.actor_id" + (platform ? " LEFT JOIN businesses b ON b.id = a.business_id" : "");
-        return new AuditQuery(from + where, order, args, listParams);
+        return new AuditQuery(from + where, order, args, orderArgs, listParams);
     }
 
     private List<Row> rowsOf(CurrentUser user, List<LogRow> logs, boolean platform) {
@@ -144,6 +150,7 @@ public class AuditViewService {
     private Map<String, Object> query(CurrentUser user, Map<String, String> queryParams, boolean platform) {
         AuditQuery query = build(queryParams, platform, 50);
         List<Object> pageArgs = new ArrayList<>(query.args());
+        pageArgs.addAll(query.orderArgs());
         pageArgs.add(query.listParams().skip());
         pageArgs.add(query.listParams().take());
         List<LogRow> logs = repo.findPage(query.fromWhere(), query.order(), pageArgs.toArray());
@@ -165,6 +172,7 @@ public class AuditViewService {
     public String exportCsv(CurrentUser user, Map<String, String> queryParams, boolean platform) {
         AuditQuery query = build(queryParams, platform, EXPORT_MAX);
         List<Object> args = new ArrayList<>(query.args());
+        args.addAll(query.orderArgs());
         args.add(0);
         args.add(EXPORT_MAX);
         List<Row> rows = rowsOf(user, repo.findPage(query.fromWhere(), query.order(), args.toArray()), platform);

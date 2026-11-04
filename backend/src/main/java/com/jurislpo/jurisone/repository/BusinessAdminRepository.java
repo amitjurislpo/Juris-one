@@ -4,6 +4,7 @@ import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.service.BusinessAdminService.BusinessRow;
 import com.jurislpo.jurisone.service.BusinessAdminService.Owner;
 import com.jurislpo.jurisone.service.SubscriptionService;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -16,8 +17,10 @@ import org.springframework.stereotype.Repository;
 public class BusinessAdminRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public BusinessAdminRepository(JdbcTemplate jdbc) {
+    public BusinessAdminRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -42,10 +45,11 @@ public class BusinessAdminRepository {
     /** The business's owners by name. */
     public List<Owner> findOwners(UUID businessId) {
         return jdbc.query("""
-            SELECT e.id::text, e.code, e.full_name, e.email, e.portal_access, e.status::text
+            SELECT e.id::text AS id, e.code, e.full_name, e.full_name_enc, e.email, e.portal_access, e.status::text AS status
             FROM employees e JOIN roles r ON r.id = e.role_id
-            WHERE e.business_id = ? AND r.key = 'owner' ORDER BY e.full_name""",
-                (resultSet, i) -> new Owner(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4), resultSet.getBoolean(5), resultSet.getString(6)), businessId);
+            WHERE e.business_id = ? AND r.key = 'owner'""",
+                (resultSet, i) -> new Owner(resultSet.getString("id"), resultSet.getString("code"), nameReader.read(resultSet, "full_name"), resultSet.getString("email"), resultSet.getBoolean("portal_access"),
+                        resultSet.getString("status")), businessId).stream().sorted(Comparator.comparing(Owner::name, com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
     }
 
     /** Ids of businesses (other than {@code editing}, when given) using the code. */
