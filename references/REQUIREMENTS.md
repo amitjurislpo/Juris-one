@@ -228,6 +228,8 @@ When a new India employee is added, Finance is notified: "salary structure pendi
 - a "Request regularization" button on absent or late days
 - an **Upcoming holidays** section for the employee's region
 
+**Attendance summary (List / Tabular / Calendar views):** `GET /api/v1/attendance/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&view=list|tabular|calendar&status=` returns the signed-in employee's days for the period (default: the current week, the current month for `calendar`; at most 62 days; never an `employeeId`) and the footer counters: payable days (present + paid leave + holidays + weekends), present (half day = 0.5), on duty (0 until On Duty requests exist), paid leave, holidays, weekends, unpaid leave, absent (loss-of-pay days), late count, each also in hours (days times the shift target hours; present uses the hours really worked). Each day has the shift, first check-in, last check-out, hours, late by and early by (minutes; only on present and half days, late after the grace period) and the latest regularization status. `GET /api/v1/attendance/summary/export?format=csv|pdf` is the same rows as a file (CSV is formula-safe). Invalid input answers 400.
+
 **Regularization:**
 
 - **Request types:** absent, late check-in, missed check-out, holiday work (credits a comp-off). The employee chooses the type; the server checks it fits the day.
