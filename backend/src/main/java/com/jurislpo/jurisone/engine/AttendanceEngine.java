@@ -31,8 +31,9 @@ public final class AttendanceEngine {
     /** {@code weeklyOffs}: 0 = Sunday … 6 = Saturday (JS getUTCDay numbering). */
     public record Policy(double fullDayHours, double halfDayHours, Set<Integer> weeklyOffs, int absenceJobBufferMinutes, int lateMarksPerHalfDayLop) {}
 
-    public record Punch(Instant punchedAt, PunchKind kind, String source) {
-        public Punch(Instant instant, PunchKind kind) { this(instant, kind, null); }
+    public record Punch(Instant punchedAt, PunchKind kind, String source, String note) {
+        public Punch(Instant instant, PunchKind kind, String source) { this(instant, kind, source, null); }
+        public Punch(Instant instant, PunchKind kind) { this(instant, kind, null, null); }
     }
 
     public enum LeavePart { FULL, FIRST_HALF, SECOND_HALF }

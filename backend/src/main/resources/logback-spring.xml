@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Console logging as Spring Boot does it, except that the message and the stack trace go through LogMasking (emails, PAN, Aadhaar,
+     bank and phone numbers, tokens, database error details). Log levels still come from application-*.properties. -->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <conversionRule conversionWord="maskedMessage" converterClass="com.jurislpo.jurisone.security.MaskedMessageConverter"/>
+    <conversionRule conversionWord="maskedException" converterClass="com.jurislpo.jurisone.security.MaskedThrowableConverter"/>
+
+    <property name="MASKED_CONSOLE_PATTERN"
+              value="%clr(%d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd'T'HH:mm:ss.SSSXXX}}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %maskedMessage%n%maskedException"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${MASKED_CONSOLE_PATTERN}</pattern>
+            <charset>${CONSOLE_LOG_CHARSET:-UTF-8}</charset>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
