@@ -28,6 +28,9 @@ public class AttendanceRepository {
 
     public record RegularizationRow(UUID employeeId, LocalDate date, String kind) {}
 
+    /** An approved remote work request: the employee works remotely from {@code from} to {@code to}, both included. */
+    public record RemoteWorkRow(UUID employeeId, LocalDate from, LocalDate to) {}
+
     public record PunchRow(UUID employeeId, Instant punchedAt, PunchKind kind, String source) {}
 
     public record HolidayRow(LocalDate date, String name, String region) {}
@@ -77,6 +80,14 @@ public class AttendanceRepository {
             SELECT employee_id, work_date, kind::text AS kind FROM regularization_requests
             WHERE employee_id = ANY (?) AND status = 'APPROVED' AND work_date >= ? AND work_date <= ?""",
                 (resultSet, i) -> new RegularizationRow((UUID) resultSet.getObject(1), resultSet.getDate(2).toLocalDate(), resultSet.getString(3)), idArr, Date.valueOf(from), Date.valueOf(to));
+    }
+
+    /** Approved remote work requests of these employees that touch [from, to]. */
+    public List<RemoteWorkRow> approvedRemoteWork(UUID[] idArr, LocalDate from, LocalDate to) {
+        return jdbc.query("""
+            SELECT employee_id, from_date, to_date FROM remote_work_requests
+            WHERE employee_id = ANY (?) AND status = 'APPROVED' AND from_date <= ? AND to_date >= ?""",
+                (resultSet, i) -> new RemoteWorkRow((UUID) resultSet.getObject(1), resultSet.getDate(2).toLocalDate(), resultSet.getDate(3).toLocalDate()), idArr, Date.valueOf(to), Date.valueOf(from));
     }
 
     /** Punches of these employees in [fromAt, toAt), oldest first. */
