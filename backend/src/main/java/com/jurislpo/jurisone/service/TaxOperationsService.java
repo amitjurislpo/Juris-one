@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.jurislpo.jurisone.crypto.FileCrypto;
 import com.jurislpo.jurisone.common.Check;
 import com.jurislpo.jurisone.exception.ForbiddenException;
 import com.jurislpo.jurisone.common.ListParams;
@@ -39,9 +40,10 @@ public class TaxOperationsService {
     private final AuditService audit;
     private final NotificationService notify;
     private final Path storageDir;
+    private final FileCrypto fileCrypto;
 
     public TaxOperationsService(TaxOperationsRepository repo, TransactionTemplate transactionTemplate, TaxPositions positions, SettingsService settings, AuditService audit, NotificationService notify,
-                         JurisOneProperties props) {
+                         JurisOneProperties props, FileCrypto fileCrypto) {
         this.repo = repo;
         this.transactionTemplate = transactionTemplate;
         this.positions = positions;
@@ -49,6 +51,7 @@ public class TaxOperationsService {
         this.audit = audit;
         this.notify = notify;
         this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
+        this.fileCrypto = fileCrypto;
     }
 
     static LocalDate today() {
@@ -226,7 +229,7 @@ public class TaxOperationsService {
         Path absolutePath = directory.resolve(UUID.randomUUID() + "." + kind.extension());
         try {
             Files.createDirectories(directory);
-            Files.write(absolutePath, bytes);
+            fileCrypto.write(absolutePath, bytes);
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
@@ -270,7 +273,7 @@ public class TaxOperationsService {
         if (!absolutePath.startsWith(storageDir)) return null;
         byte[] bytes;
         try {
-            bytes = Files.readAllBytes(absolutePath);
+            bytes = fileCrypto.read(absolutePath);
         } catch (IOException e) {
             return new ProofFile(null, null, null); // "The file is missing."
         }

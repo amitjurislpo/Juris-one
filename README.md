@@ -60,6 +60,8 @@ Run these in `backend/` with the Maven Wrapper (`./mvnw`, or `.\mvnw.cmd` on Win
 | `./mvnw spring-boot:run -Dspring-boot.run.arguments=seed` | Idempotent seed: shared tables (shifts, leave types, tax) and the super admin. `jurisone.seed.demo=true` also creates the demo business. |
 | `./mvnw spring-boot:run -Dspring-boot.run.arguments=reset` | **Development only:** empties the database, migrates, seeds and clears stored payslips / proofs. Refuses unless `jurisone.app-url` is localhost or `jurisone.allow-db-reset=true`. |
 | `./mvnw spring-boot:run -Dspring-boot.run.arguments=jobs` | Run the scheduled jobs once (for cron; with a jar: `java -jar ... jobs`) |
+| `... -Dspring-boot.run.arguments=encrypt-files` | Count (or, with `--jurisone.encrypt.apply=true`, do) the encryption of stored files and their move to the newest key (runbook under Security) |
+| `... -Dspring-boot.run.arguments=rotate-keys` | The same for every encrypted database column and file after a key rotation |
 | `docker compose up -d db` / `docker compose up -d --build backend` | Postgres / the API in Docker |
 | `scripts/backup.sh` / `scripts/restore.sh` | Postgres backup (keeps 14 days) / restore — see *Deploying* |
 
@@ -208,6 +210,16 @@ backend/                           Spring Boot API (Maven)
 - PAN, Aadhaar, UAN, phone, address and bank account are encrypted at rest with `jurisone.security.pii-encryption-key`.
 - Only the last 4 characters are stored in clear, for masked display.
 - **Back the key up. Losing it makes that data unrecoverable.**
+- Files on disk (payslips, proofs, onboarding documents, task attachments, policies, regularization attachments) are encrypted the same way (AES-256-GCM, header `JOEF`). See the runbook below.
+
+**Runbook: encrypting files and rotating the key** (the two commands only count unless you add `--jurisone.encrypt.apply=true`; both are safe to repeat and to stop halfway; neither logs file names or values)
+1. Before anything: `pg_dump` the database, copy the storage directory (`jurisone.storage-dir`), and store both together with the current `PII_ENCRYPTION_KEY` in the password manager. A backup without its key is useless. Take a backup of every old key as long as any backup still needs it.
+2. Rehearse on a copy (restore the dump and the storage copy on sqe or a scratch machine with the same key) and run the dry run first.
+3. Turn on file encryption: deploy this version (new files are written encrypted, old plaintext files still open), then run `java -jar jurisone.jar encrypt-files` (dry run: read the counts), then `java -jar jurisone.jar encrypt-files --jurisone.encrypt.apply=true`. Run it again: `encrypted` and `rotated` must be 0 and `failed` must be 0. `failed` means a file that does not open (damaged, or encrypted with a key that is not in the keyring): look at it before going on; the command leaves it untouched. `leftoverTemporary` files come from an interrupted run and are removed when applying.
+4. Rotate the key: generate the new key (`openssl rand -base64 32`), put it in `PII_ENCRYPTION_KEY` and the old one in `PII_ENCRYPTION_PREVIOUS_KEYS` (comma-separated when there are several), restart. Everything old still reads; new writes use the new key. Then run `rotate-keys` (dry run), then `rotate-keys --jurisone.encrypt.apply=true`; it moves every encrypted database column and every stored file to the newest key. Run it again and check that every count is 0 and no `failed:` entry appears.
+5. Only when the second run is all zeros, and no backup that is still needed uses the old key, may the old key be removed from `PII_ENCRYPTION_PREVIOUS_KEYS`. Until then keep it.
+6. Rolling back: put the old key back as `PII_ENCRYPTION_KEY` and the new key in `PII_ENCRYPTION_PREVIOUS_KEYS`, then run `rotate-keys --jurisone.encrypt.apply=true` again. Do not delete the pre-change `pg_dump` and storage copy before you are sure.
+- Not covered yet: employee photos and issued letters are stored in the database (`employee_photos.data`, `issued_letters.pdf`), not as files. The database itself and its backups should be on an encrypted disk.
 
 **CSRF and CORS:** every API write must come from `jurisone.app-url` (Origin check), and CORS allows only that origin.
 
