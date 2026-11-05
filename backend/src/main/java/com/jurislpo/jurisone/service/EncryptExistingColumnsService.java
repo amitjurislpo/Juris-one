@@ -33,6 +33,7 @@ public class EncryptExistingColumnsService {
     private final SalaryAmountsCrypto salaryAmounts;
     private final PayslipSnapshotCrypto snapshots;
     private final boolean isDryRun;
+    private EmployeeEmailBackfill emailBackfill;
 
     public EncryptExistingColumnsService(EncryptExistingColumnsRepository repo, PiiCrypto piiCrypto, SalaryAmountsCrypto salaryAmounts, PayslipSnapshotCrypto snapshots,
                                          @Value("${jurisone.encrypt.dry-run:false}") boolean isDryRun) {
@@ -43,12 +44,24 @@ public class EncryptExistingColumnsService {
         this.isDryRun = isDryRun;
     }
 
+    /** The email step (set by Spring; absent when the service is built by hand, e.g. in older tests). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setEmailBackfill(EmployeeEmailBackfill emailBackfill) {
+        this.emailBackfill = emailBackfill;
+    }
+
     /** Per column ("table.column"): how many rows were (or, in a dry run, would be) encrypted. */
     public Map<String, Integer> run() {
         Map<String, Integer> changed = new LinkedHashMap<>();
         for (TextColumn target : EncryptExistingColumnsRepository.TEXT_COLUMNS) record(changed, target.label(), () -> encryptText(target));
         for (DateColumn target : EncryptExistingColumnsRepository.DATE_COLUMNS) record(changed, target.label(), () -> encryptDate(target));
         for (CopiedColumn target : EncryptExistingColumnsRepository.NAME_COLUMNS) record(changed, target.label(), () -> encryptCopy(target));
+        if (emailBackfill != null) {
+            TenantContext.call(null, () -> {
+                changed.putAll(emailBackfill.run());
+                return null;
+            });
+        }
         record(changed, "salary_structures.amounts", this::encryptSalaryStructures);
         record(changed, "payslips.snapshot", this::encryptPayslips);
         return changed;

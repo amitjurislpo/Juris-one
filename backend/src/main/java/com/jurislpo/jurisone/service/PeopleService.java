@@ -43,9 +43,11 @@ public class PeopleService {
     private final SessionService sessions;
     private final com.jurislpo.jurisone.service.SubscriptionService subscriptions;
     private final JurisTrackRosterTrigger rosterTrigger;
+    private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
 
     public PeopleService(PeopleRepository repo, TransactionTemplate transactionTemplate, ActorService actors, AuditService audit, PiiCrypto piiCrypto, SessionService sessions,
-                         com.jurislpo.jurisone.service.SubscriptionService subscriptions, JurisTrackRosterTrigger rosterTrigger) {
+                         com.jurislpo.jurisone.service.SubscriptionService subscriptions, JurisTrackRosterTrigger rosterTrigger, com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption) {
+        this.emailEncryption = emailEncryption;
         this.rosterTrigger = rosterTrigger;
         this.subscriptions = subscriptions;
         this.repo = repo;
@@ -144,7 +146,7 @@ public class PeopleService {
         String shift = row.get("shift_code") == null ? "—" : Shifts.label((String) row.get("shift_code"), (String) row.get("start_local"), (String) row.get("end_local"));
         Date exit = (Date) row.get("exit_date");
         return new Profile(id.toString(), (String) row.get("code"), (String) row.get("full_name"), row.get("father_name") == null ? "—" : piiCrypto.decryptOrLegacy((String) row.get("father_name")),
-                (String) row.get("email"), Masks.phone((String) row.get("phone_last4")), maskAddress(piiCrypto.decrypt((String) row.get("address_enc"))),
+                emailEncryption.read((String) row.get("email"), (String) row.get("email_enc")), Masks.phone((String) row.get("phone_last4")), maskAddress(piiCrypto.decrypt((String) row.get("address_enc"))),
                 india ? Masks.pan((String) row.get("pan_last4")) : "—", india ? Masks.aadhaar((String) row.get("aadhaar_last4")) : "—",
                 india ? Masks.uan((String) row.get("uan_last4")) : "—", (String) row.get("designation"), row.get("department_name") == null ? "—" : (String) row.get("department_name"),
                 row.get("manager") == null ? "—" : (String) row.get("manager"), reports, ((Date) row.get("date_of_joining")).toLocalDate().toString(),
