@@ -9,6 +9,7 @@ import com.jurislpo.jurisone.engine.Csv;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.PeopleRules;
 import com.jurislpo.jurisone.entity.DayStatus;
+import com.jurislpo.jurisone.exception.ForbiddenException;
 import com.jurislpo.jurisone.repository.PeopleQuery;
 import com.jurislpo.jurisone.repository.RegisterRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
@@ -41,7 +42,7 @@ public class RegisterService {
     static final List<String> MONTH_SORTS = List.of("name", "present", "absent", "leave");
 
     /** registerParams. */
-    public record RegisterParams(String view, LocalDate day, String month, String timeZone, LocalDate today, String region, String department, String status, ListParams listParams) {}
+    public record RegisterParams(String view, LocalDate day, String month, String timeZone, LocalDate today, String region, String department, String status, ListParams listParams, UUID reportsOf) {}
 
     private final AttendanceService attendanceService;
     private final RegisterRepository repo;
@@ -64,7 +65,7 @@ public class RegisterService {
         String timeZone = ListParams.pick(queryParams, "timeZone", zones, zones.contains(viewerTimeZone) ? viewerTimeZone : "Asia/Kolkata");
         ListParams listParams = "day".equals(view) ? ListParams.of(queryParams, DAY_SORTS, "name", 50, "asc") : ListParams.of(queryParams, MONTH_SORTS, "name", 50, "asc");
         return new RegisterParams(view, day, yearMonth, timeZone, today, ListParams.pick(queryParams, "region", List.of("All", "IN", "US"), "All"), ListParams.text(queryParams, "departmentId", "All"),
-                ListParams.pick(queryParams, "status", DAY_STATUSES, "All"), listParams);
+                ListParams.pick(queryParams, "status", DAY_STATUSES, "All"), listParams, null);
     }
 
     private List<AttendanceEmployee> employees(RegisterParams registerParams, LocalDate from, LocalDate to) {
@@ -77,6 +78,10 @@ public class RegisterService {
         if (!"All".equals(registerParams.department()) && registerParams.department().matches("^[0-9a-f-]{36}$")) {
             conditions.add("e.department_id = ?::uuid");
             args.add(registerParams.department());
+        }
+        if (registerParams.reportsOf() != null) {
+            conditions.add("e.reporting_manager_id = ?");
+            args.add(registerParams.reportsOf());
         }
         if (!registerParams.listParams().search().isEmpty()) {
             conditions.add("(e.full_name ILIKE ? OR e.code ILIKE ? OR e.designation ILIKE ?)");
@@ -204,7 +209,22 @@ public class RegisterService {
     public record DepartmentSummary(String id, String name) {}
 
     public Map<String, Object> page(CurrentUser user, Map<String, String> queryParams) {
+        return page(params(queryParams, user.timeZone()));
+    }
+
+    /**
+     * The Team view of the Attendance page: everyone for a user with {@code att.all} (Admin / HR), otherwise the direct reports of a manager.
+     * Anyone else is refused. A manager's scope comes from the signed-in user, never from a parameter.
+     */
+    public Map<String, Object> teamPage(CurrentUser user, Map<String, String> queryParams) {
         RegisterParams registerParams = params(queryParams, user.timeZone());
+        if (user.can("att.all")) return page(registerParams);
+        if (!user.hasReports()) throw new ForbiddenException();
+        return page(new RegisterParams(registerParams.view(), registerParams.day(), registerParams.month(), registerParams.timeZone(), registerParams.today(), registerParams.region(),
+                registerParams.department(), registerParams.status(), registerParams.listParams(), user.id()));
+    }
+
+    private Map<String, Object> page(RegisterParams registerParams) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("view", registerParams.view());
         out.put("date", registerParams.day().toString());

@@ -81,6 +81,15 @@ public class AttendanceController {
         return ApiResult.success(register.page(auth.requirePage("register"), queryParams));
     }
 
+    /**
+     * The Team view of the Attendance page, same data and filters as the register: everyone for Admin / HR ({@code att.all}), a manager's direct reports for a
+     * manager, a refusal for anyone else.
+     */
+    @GetMapping("/api/v1/attendance/team-register")
+    public ApiResult<Map<String, Object>> teamRegisterPage(@RequestParam Map<String, String> queryParams) {
+        return ApiResult.success(register.teamPage(auth.requirePage("attendance"), queryParams));
+    }
+
     /** CSV (att.all) — same filters as the page. */
     @GetMapping("/api/v1/attendance/register/export")
     public ResponseEntity<byte[]> export(@RequestParam Map<String, String> queryParams) {
