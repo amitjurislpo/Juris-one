@@ -45,9 +45,20 @@ public final class AttendanceEngine {
         public static final Regularization NONE = new Regularization(false, false);
     }
 
+    /**
+     * {@code onDutyPart}: the approved On Duty request of the day (FULL = the whole day, a half = that half), or null. An On Duty day is a
+     * present, payable day; it never overrides a holiday, a weekly off or leave.
+     */
     public record DayInput(
             LocalDate date, Instant now, String timeZone, ShiftDef shift, Policy policy, LocalDate dateOfJoining, LocalDate exitDate,
-            LocalDate trackingStart, String holiday, Leave leave, List<Punch> punches, Regularization regularization) {}
+            LocalDate trackingStart, String holiday, Leave leave, List<Punch> punches, Regularization regularization, LeavePart onDutyPart) {
+
+        /** A day without On Duty. */
+        public DayInput(LocalDate date, Instant now, String timeZone, ShiftDef shift, Policy policy, LocalDate dateOfJoining, LocalDate exitDate,
+                        LocalDate trackingStart, String holiday, Leave leave, List<Punch> punches, Regularization regularization) {
+            this(date, now, timeZone, shift, policy, dateOfJoining, exitDate, trackingStart, holiday, leave, punches, regularization, null);
+        }
+    }
 
     /** Mutable result, copied the way the TS code spreads objects. */
     public static final class DayResult {
@@ -70,13 +81,15 @@ public final class AttendanceEngine {
         public boolean future;
         /** Worked on a holiday / weekly off (comp-off candidate). */
         public boolean offDayWork;
+        /** The part of the day spent On Duty (approved request): 1, 0.5 or 0. It is inside the present days, not on top of them. */
+        public double onDutyDays;
 
         DayResult copy() {
             DayResult dayResult = new DayResult();
             dayResult.date = date; dayResult.status = status; dayResult.label = label; dayResult.firstIn = firstIn; dayResult.lastOut = lastOut;
             dayResult.workedMinutes = workedMinutes; dayResult.openSince = openSince; dayResult.late = late; dayResult.lateWaived = lateWaived;
             dayResult.missedCheckout = missedCheckout; dayResult.regularized = regularized; dayResult.lopDays = lopDays; dayResult.leaveDays = leaveDays;
-            dayResult.live = live; dayResult.future = future; dayResult.offDayWork = offDayWork;
+            dayResult.live = live; dayResult.future = future; dayResult.offDayWork = offDayWork; dayResult.onDutyDays = onDutyDays;
             return dayResult;
         }
 
@@ -226,6 +239,11 @@ public final class AttendanceEngine {
                 Leave leave = dayInput.leave();
                 return withLeave(base.with(DayStatus.LEAVE, leave.part() == LeavePart.FULL ? leave.name() : leave.name() + " · half day"), leave);
             }
+            if (dayInput.onDutyPart() != null) {
+                DayResult dayResult = base.with(DayStatus.PENDING, onDutyLabel(dayInput.onDutyPart()));
+                dayResult.onDutyDays = onDutyDays(dayInput.onDutyPart());
+                return dayResult;
+            }
             return base.with(DayStatus.PENDING, "");
         }
 
@@ -249,6 +267,8 @@ public final class AttendanceEngine {
             dayResult.lopDays = split[1] + (shortDay && !regularized ? 0.5 : 0);
             return dayResult;
         }
+
+        if (dayInput.onDutyPart() != null) return onDutyDay(dayInput, facts, worked.minutes(), dayOver, half);
 
         if (sorted.isEmpty()) {
             if (dayInput.regularization().absent()) {
@@ -286,6 +306,44 @@ public final class AttendanceEngine {
         return dayResult;
     }
 
+    private static double onDutyDays(LeavePart part) {
+        return part == LeavePart.FULL ? 1 : 0.5;
+    }
+
+    private static String onDutyLabel(LeavePart part) {
+        return part == LeavePart.FULL ? "On duty" : "On duty · half day";
+    }
+
+    /**
+     * A working day with an approved On Duty request (no leave on it). Full day: present, whatever the punches say, and no late mark. Half day:
+     * the other half needs half-day hours, like the other half of a half-day leave; short of that it is a half day with 0.5 loss of pay
+     * (or paid in full when an absence regularization is approved).
+     */
+    private static DayResult onDutyDay(DayInput dayInput, DayResult facts, int workedMinutes, boolean dayOver, double halfMinutes) {
+        LeavePart part = dayInput.onDutyPart();
+        String label = onDutyLabel(part);
+        DayResult dayResult;
+        if (part == LeavePart.FULL) {
+            dayResult = facts.with(DayStatus.PRESENT, label);
+            dayResult.late = false;
+            dayResult.lateWaived = false;
+            dayResult.missedCheckout = false;
+            dayResult.live = false;
+        } else if (workedMinutes >= halfMinutes) {
+            dayResult = facts.with(DayStatus.PRESENT, label);
+        } else if (!dayOver) {
+            dayResult = facts.with(DayStatus.PENDING, label);
+        } else if (dayInput.regularization().absent()) {
+            dayResult = facts.with(DayStatus.PRESENT, label);
+            dayResult.regularized = true;
+        } else {
+            dayResult = facts.with(DayStatus.HALF_DAY, label);
+            dayResult.lopDays = 0.5;
+        }
+        dayResult.onDutyDays = onDutyDays(part);
+        return dayResult;
+    }
+
     // ───────────────────────── month summary ─────────────────────────
 
     public static final class MonthSummary {
@@ -297,6 +355,8 @@ public final class AttendanceEngine {
         public long workedMinutes;
         public int lateMarks;
         public double lateLopDays;
+        /** Days spent On Duty (already counted in {@code present}). */
+        public double onDuty;
         public double lopDays; // absent + late-mark LOP
     }
 
@@ -309,6 +369,7 @@ public final class AttendanceEngine {
             if (dayResult.status == DayStatus.HOLIDAY) summary.holidays += 1;
             if (dayResult.status == DayStatus.WEEKLY_OFF) summary.weeklyOffs += 1;
             summary.leave += dayResult.leaveDays;
+            summary.onDuty += dayResult.onDutyDays;
             summary.absent += dayResult.lopDays;
             summary.workedMinutes += dayResult.workedMinutes;
             if (dayResult.late) summary.lateMarks += 1;
