@@ -3,6 +3,7 @@ package com.jurislpo.jurisone.service;
 import com.jurislpo.jurisone.entity.EmailOutbox;
 import com.jurislpo.jurisone.entity.EmailStatus;
 import com.jurislpo.jurisone.repository.MailRepository;
+import com.jurislpo.jurisone.security.LogMasking;
 import jakarta.mail.internet.MimeMessage;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -87,7 +88,7 @@ public class MailService {
             sender.send(mimeMessage);
             repo.markDone(id, EmailStatus.SENT, java.sql.Timestamp.from(Instant.now().truncatedTo(ChronoUnit.MICROS)));
         } catch (Exception failure) {
-            String message = String.valueOf(failure);
+            String message = LogMasking.mask(String.valueOf(failure)); // a mail server's refusal often repeats the recipient's address
             repo.markFailed(id, EmailStatus.FAILED, message.substring(0, Math.min(1000, message.length())));
             log.error("[email] send failed", failure);
         }

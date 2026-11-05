@@ -31,7 +31,7 @@ public class AttendanceRepository {
     /** An approved On Duty request: the day and which part of it (FULL, FIRST_HALF, SECOND_HALF). */
     public record OnDutyRow(UUID employeeId, LocalDate date, String part) {}
 
-    public record PunchRow(UUID employeeId, Instant punchedAt, PunchKind kind, String source) {}
+    public record PunchRow(UUID employeeId, Instant punchedAt, PunchKind kind, String source, String note) {}
 
     public record HolidayRow(LocalDate date, String name, String region) {}
 
@@ -93,9 +93,9 @@ public class AttendanceRepository {
     /** Punches of these employees in [fromAt, toAt), oldest first. */
     public List<PunchRow> punches(UUID[] idArr, Instant fromAt, Instant toAt) {
         return jdbc.query("""
-            SELECT employee_id, at, kind::text AS kind, source::text AS source FROM punches
+            SELECT employee_id, at, kind::text AS kind, source::text AS source, note FROM punches
             WHERE employee_id = ANY (?) AND at >= ? AND at < ? ORDER BY at ASC""",
-                (resultSet, i) -> new PunchRow((UUID) resultSet.getObject(1), resultSet.getTimestamp(2).toInstant(), PunchKind.valueOf(resultSet.getString(3)), resultSet.getString(4)),
+                (resultSet, i) -> new PunchRow((UUID) resultSet.getObject(1), resultSet.getTimestamp(2).toInstant(), PunchKind.valueOf(resultSet.getString(3)), resultSet.getString(4), resultSet.getString(5)),
                 idArr, Timestamp.from(fromAt), Timestamp.from(toAt));
     }
 

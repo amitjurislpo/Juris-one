@@ -206,6 +206,7 @@ When a new India employee is added, Finance is notified: "salary structure pendi
 - one big button on Home
 - live timer, progress against a 9-hour shift, and a punch log for the day (time, action, source)
 - multiple check-in/out pairs per day are allowed; worked hours = sum of the pairs
+- optional **check-out note** (single line, max 500 characters): `POST /api/v1/attendance/punches` body `{expect, note}`; `note` only with `expect: OUT` (400 otherwise); control characters are removed, a blank note is stored as none; kept in `punches.note`; shown to the employee in the day detail (`checkOutNote` on `/attendance/mine` and `/attendance/summary`) and to `att.all` in the register; the audit entry records only `hasNote`
 
 **Day status** (computed per employee per day, in the employee's own time zone):
 

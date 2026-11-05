@@ -59,6 +59,13 @@ public class AttendanceService {
         public final DayResult dayResult;
         public final List<Punch> punches;
 
+        /** The note written at the day's last check-out that has one, or null. */
+        public String checkOutNote() {
+            String note = null;
+            for (Punch punch : punches) if (punch.kind() == com.jurislpo.jurisone.entity.PunchKind.OUT && punch.note() != null) note = punch.note();
+            return note;
+        }
+
         DayView(DayResult dayResult, List<Punch> punches) {
             this.dayResult = dayResult;
             this.punches = punches;
@@ -132,7 +139,7 @@ public class AttendanceService {
         for (PunchRow punchRow : punches) {
             AttendanceEmployee employee = byId.get(punchRow.employeeId());
             LocalDate workDate = AttendanceEngine.workDateOf(punchRow.punchedAt(), employee.shift().shiftDefinition(), employee.timeZone());
-            byEmployee.get(employee.id()).computeIfAbsent(workDate, k -> new ArrayList<>()).add(new Punch(punchRow.punchedAt(), punchRow.kind(), punchRow.source()));
+            byEmployee.get(employee.id()).computeIfAbsent(workDate, k -> new ArrayList<>()).add(new Punch(punchRow.punchedAt(), punchRow.kind(), punchRow.source(), punchRow.note()));
         }
 
         Map<UUID, Map<LocalDate, Double>> fractions = new HashMap<>(); // leave id → date → paid fraction

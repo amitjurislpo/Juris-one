@@ -123,7 +123,7 @@ public class RegisterService {
     }
 
     public record DailyRow(String id, String code, String name, String department, String region, String timeZone, String location, String shiftName, String status,
-                           boolean late, Clock checkIn, Clock checkOut, double hours, Instant firstIn, Instant lastOut) {}
+                           boolean late, Clock checkIn, Clock checkOut, double hours, Instant firstIn, Instant lastOut, String checkOutNote) {}
 
     public record DailySummary(int total, int present, int notCheckedIn, int onLeave, int absent) {}
 
@@ -137,7 +137,7 @@ public class RegisterService {
             DayView dayView = all.get(employee.id()).get(0);
             rows.add(new DailyRow(employee.id().toString(), employee.code(), employee.name(), employee.department(), employee.region(), employee.timeZone(), PeopleRules.locationOfTimeZone(employee.timeZone()).label(),
                     employee.shift().name(), dayStatusLabel(dayView), dayView.dayResult.late, clock(dayView.dayResult.firstIn, registerParams.timeZone(), employee, registerParams.day()), clock(dayView.dayResult.lastOut, registerParams.timeZone(), employee, registerParams.day()),
-                    dayView.dayResult.workedMinutes / 60.0, dayView.dayResult.firstIn, dayView.dayResult.lastOut));
+                    dayView.dayResult.workedMinutes / 60.0, dayView.dayResult.firstIn, dayView.dayResult.lastOut, dayView.checkOutNote()));
         }
         DailySummary sum = new DailySummary(rows.size(), (int) rows.stream().filter(r -> List.of("Present", "Working", "Half day").contains(r.status())).count(),
                 (int) rows.stream().filter(r -> r.status().equals("Not checked in")).count(), (int) rows.stream().filter(r -> r.status().equals("On leave")).count(),

@@ -34,6 +34,9 @@ public class Punch {
     @Column(name = "ip")
     private String ipAddress;
 
+    @Column(name = "note")
+    private String note;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -59,6 +62,8 @@ public class Punch {
     public void setSource(PunchSource source) { this.source = source; }
     public String getIpAddress() { return ipAddress; }
     public void setIpAddress(String ipAddress) { this.ipAddress = ipAddress; }
+    public String getNote() { return note; }
+    public void setNote(String note) { this.note = note; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     /** Read-only navigation; set employeeId to change it. */
