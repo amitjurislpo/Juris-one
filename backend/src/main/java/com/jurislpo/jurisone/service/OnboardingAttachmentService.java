@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.jurislpo.jurisone.crypto.FileCrypto;
 import com.jurislpo.jurisone.common.Check;
 import com.jurislpo.jurisone.config.JurisOneProperties;
 import com.jurislpo.jurisone.crypto.PiiCrypto;
@@ -56,13 +57,15 @@ public class OnboardingAttachmentService {
     private final PiiCrypto piiCrypto;
     private final AuditService audit;
     private final Path storageDir;
+    private final FileCrypto fileCrypto;
 
-    public OnboardingAttachmentService(OnboardingAttachmentRepository repo, OwnOnboardingSource onboardings, PiiCrypto piiCrypto, AuditService audit, JurisOneProperties properties) {
+    public OnboardingAttachmentService(OnboardingAttachmentRepository repo, OwnOnboardingSource onboardings, PiiCrypto piiCrypto, AuditService audit, JurisOneProperties properties, FileCrypto fileCrypto) {
         this.repo = repo;
         this.onboardings = onboardings;
         this.piiCrypto = piiCrypto;
         this.audit = audit;
         this.storageDir = Path.of(properties.storageDir()).toAbsolutePath().normalize();
+        this.fileCrypto = fileCrypto;
     }
 
     private OwnOnboarding own(CurrentUser user) {
@@ -105,7 +108,7 @@ public class OnboardingAttachmentService {
         if (!absolutePath.startsWith(storageDir)) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid file name.");
         try {
             Files.createDirectories(directory);
-            Files.write(absolutePath, bytes);
+            fileCrypto.write(absolutePath, bytes);
         } catch (IOException e) {
             throw new IllegalStateException("Could not store the attachment", e);
         }
@@ -140,7 +143,7 @@ public class OnboardingAttachmentService {
         Path absolutePath = storageDir.resolve((String) row.get("storage_path")).normalize();
         if (!absolutePath.startsWith(storageDir) || !Files.isRegularFile(absolutePath)) throw new UserException(HttpStatus.NOT_FOUND, "File not found.");
         try {
-            return new FileOut((String) row.get("file_name"), (String) row.get("mime"), Files.readAllBytes(absolutePath));
+            return new FileOut((String) row.get("file_name"), (String) row.get("mime"), fileCrypto.read(absolutePath));
         } catch (IOException e) {
             throw new UserException(HttpStatus.NOT_FOUND, "File not found.");
         }

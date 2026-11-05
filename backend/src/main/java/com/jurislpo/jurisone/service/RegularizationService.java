@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.jurislpo.jurisone.crypto.FileCrypto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.common.Check;
@@ -88,9 +89,10 @@ public class RegularizationService {
     private final ApprovalsService approvals;
     private final ObjectMapper json;
     private final Path storageDir;
+    private final FileCrypto fileCrypto;
 
     public RegularizationService(AttendanceService attendanceService, RegularizationRepository repo, SettingsService settings, AuditService audit, NotificationService notifications,
-                                 ApprovalsService approvals, ObjectMapper json, JurisOneProperties properties) {
+                                 ApprovalsService approvals, ObjectMapper json, JurisOneProperties properties, FileCrypto fileCrypto) {
         this.attendanceService = attendanceService;
         this.repo = repo;
         this.settings = settings;
@@ -99,6 +101,7 @@ public class RegularizationService {
         this.approvals = approvals;
         this.json = json;
         this.storageDir = Path.of(properties.storageDir()).toAbsolutePath().normalize();
+        this.fileCrypto = fileCrypto;
     }
 
     private AttendanceEmployee employeeOf(CurrentUser user) {
@@ -554,7 +557,7 @@ public class RegularizationService {
         Path absolutePath = storageDir.resolve((String) rows.get(0).get("attachment_path")).normalize();
         if (!absolutePath.startsWith(storageDir) || !Files.isRegularFile(absolutePath)) throw new UserException(HttpStatus.NOT_FOUND, "File not found.");
         try {
-            return new FileOut((String) rows.get(0).get("attachment_name"), (String) rows.get(0).get("attachment_mime"), Files.readAllBytes(absolutePath));
+            return new FileOut((String) rows.get(0).get("attachment_name"), (String) rows.get(0).get("attachment_mime"), fileCrypto.read(absolutePath));
         } catch (IOException e) {
             throw new UserException(HttpStatus.NOT_FOUND, "File not found.");
         }
@@ -593,7 +596,7 @@ public class RegularizationService {
         if (!absolutePath.startsWith(storageDir)) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid file name.");
         try {
             Files.createDirectories(directory);
-            Files.write(absolutePath, bytes);
+            fileCrypto.write(absolutePath, bytes);
         } catch (IOException e) {
             throw new IllegalStateException("Could not store the attachment", e);
         }
