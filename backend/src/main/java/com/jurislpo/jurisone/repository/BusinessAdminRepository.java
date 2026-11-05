@@ -17,8 +17,11 @@ public class BusinessAdminRepository {
 
     private final JdbcTemplate jdbc;
 
-    public BusinessAdminRepository(JdbcTemplate jdbc) {
+    private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
+
+    public BusinessAdminRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption) {
         this.jdbc = jdbc;
+        this.emailEncryption = emailEncryption;
     }
 
     /** Every customer business by name; {@code subscription} gives each row's current subscription (called while mapping). */
@@ -141,6 +144,9 @@ public class BusinessAdminRepository {
 
     /** Whether the email is used by any account. */
     public Boolean emailInUse(String email) {
+        if (!emailEncryption.isLookupByBlindIndex()) return jdbc.queryForObject("SELECT jurisone_email_in_use(?, NULL)", Boolean.class, email);
+        Boolean isUsedByBlindIndex = jdbc.queryForObject("SELECT jurisone_email_blind_index_in_use(?, NULL)", Boolean.class, emailEncryption.blindIndex(email));
+        if (Boolean.TRUE.equals(isUsedByBlindIndex) || !emailEncryption.isPlaintextFallback()) return isUsedByBlindIndex;
         return jdbc.queryForObject("SELECT jurisone_email_in_use(?, NULL)", Boolean.class, email);
     }
 

@@ -44,8 +44,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private final SessionRepository sessions;
     private final JwtService jwtService;
     private final TenantHostGuard hostGuard;
+    private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
 
-    public JwtAuthFilter(SessionRepository sessions, JwtService jwtService, TenantHostGuard hostGuard) {
+    public JwtAuthFilter(SessionRepository sessions, JwtService jwtService, TenantHostGuard hostGuard, com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption) {
+        this.emailEncryption = emailEncryption;
         this.hostGuard = hostGuard;
         this.sessions = sessions;
         this.jwtService = jwtService;
@@ -125,7 +127,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         UUID roleId = (UUID) row.get("role_id");
         List<String> perms = sessions.findPermissionKeys(roleId, (UUID) row.get("id"));
         return new CurrentUser(
-                (UUID) row.get("id"), (String) row.get("code"), (String) row.get("full_name"), (String) row.get("email"), (String) row.get("designation"),
+                (UUID) row.get("id"), (String) row.get("code"), (String) row.get("full_name"), emailEncryption.read((String) row.get("email"), (String) row.get("email_enc")), (String) row.get("designation"),
                 roleId, (String) row.get("role_key"), (String) row.get("role_name"), java.util.Set.copyOf(new HashSet<>(perms)),
                 Boolean.TRUE.equals(row.get("is_super_admin")), (String) row.get("region"), (String) row.get("time_zone"),
                 Boolean.TRUE.equals(row.get("has_reports")), claims.sessionId(), (UUID) row.get("business_id"),
