@@ -365,7 +365,7 @@ class OnDutyApiTest extends IntegrationTest {
         assertThat(statusOf(ids[1])).isEqualTo("APPROVED");
         assertThat(statusOf(own)).isEqualTo("PENDING");
         mockMvc.perform(write(put(URL + "/" + own + "/decision")).cookie(hr.cookie()).content(decision(true, null))).andExpect(status().isUnprocessableEntity());
-        String ids51 = "[" + "\"" + UUID.randomUUID() + "\",".repeat(51) + "\"" + UUID.randomUUID() + "\"]";
+        String ids51 = "[" + java.util.stream.IntStream.range(0, 51).mapToObj(n -> "\"" + UUID.randomUUID() + "\"").collect(java.util.stream.Collectors.joining(",")) + "]";
         mockMvc.perform(write(post("/api/v1/attendance/on-duty-decisions")).cookie(hr.cookie()).content("{\"ids\":" + ids51 + ",\"approve\":true}")).andExpect(status().isBadRequest());
     }
 

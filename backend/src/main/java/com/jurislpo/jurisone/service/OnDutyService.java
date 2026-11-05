@@ -259,6 +259,7 @@ public class OnDutyService {
     public List<DecisionResult> decideMany(CurrentUser user, List<String> ids, Boolean approve, String note, String ipAddress) {
         if (ids == null || ids.isEmpty() || ids.size() > MAX_BULK) throw new UserException(HttpStatus.BAD_REQUEST, "Choose between 1 and " + MAX_BULK + " requests.");
         if (approve == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean, received undefined");
+        if (!approve && isBlank(note)) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the remarks for rejecting this request.");
         List<DecisionResult> results = new ArrayList<>();
         for (String id : ids.stream().distinct().toList()) {
             try {
