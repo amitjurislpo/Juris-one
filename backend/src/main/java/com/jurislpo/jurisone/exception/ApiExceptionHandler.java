@@ -92,7 +92,9 @@ public class ApiExceptionHandler {
         if (e.getMostSpecificCause() instanceof SQLException sql && sql.getSQLState() != null && sql.getSQLState().startsWith("22")) {
             return respond(Problems.of(HttpStatus.BAD_REQUEST, INVALID, request.getRequestURI()));
         }
-        log.error("[api] data integrity {}", request.getRequestURI(), e);
+        // The database's own message carries the offending row (every column value): only its code and type are logged, never the message or the cause.
+        String sqlState = e.getMostSpecificCause() instanceof SQLException sql ? sql.getSQLState() : null;
+        log.error("[api] data integrity {} (sqlState {}, {})", request.getRequestURI(), sqlState, e.getMostSpecificCause().getClass().getSimpleName());
         return respond(Problems.of(HttpStatus.INTERNAL_SERVER_ERROR, GENERIC, request.getRequestURI()));
     }
 
