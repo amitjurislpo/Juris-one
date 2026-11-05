@@ -62,6 +62,7 @@ Access is **permission-based**, not hard-coded by role name. Every API endpoint 
 | `att.all` | View everyone's attendance (attendance register, time-zone toggle) |
 | `appr.leave` | Approve or decline leave |
 | `appr.reg` | Approve or decline attendance regularization |
+| `shifts.manage` | Create shifts and assign them on the shift roster (Owner, HR Manager) |
 | `people.view` | View employee records |
 | `people.add` | Add and edit employees |
 | `access.toggle` | Enable or disable an employee's portal access |
@@ -228,6 +229,8 @@ When a new India employee is added, Finance is notified: "salary structure pendi
 - day detail showing first check-in, last check-out (in the employee's time zone), worked hours and "counts as"
 - a "Request regularization" button on absent or late days
 - an **Upcoming holidays** section for the employee's region
+
+**Shift roster (Attendance page, tab Shift):** shifts are per business (`shifts.business_id`; NULL = a built-in default that businesses can read but not change, row-level security enforces it) and `shift_assignments` holds date ranges per employee (migration V36). The shift of an employee on a date is the assignment covering it, else `employees.shift_id` (fallback, never copied or deleted). Endpoints: `GET|POST /api/v1/attendance/shifts`, `PATCH /api/v1/attendance/shifts/{id}`, `GET /api/v1/attendance/shift-roster?from=&to=&scope=mine|all`, `POST /api/v1/attendance/shift-assignments`, `DELETE /api/v1/attendance/shift-assignments/{id}`. Writes need `shifts.manage` and are audited; ranges of one employee never overlap (checked under a lock on the employee row); assignments start today or later, so computed and locked days are never rewritten. Weekly offs stay with the attendance policy; there are no rotations. The JurisTrack roster sync is unchanged: it sends only each employee's own shift (`employees.shift_id`), never the dated assignments, so JurisTrack keeps the employee's default shift while JurisOne's attendance uses the rostered shift of each date (open question: pushing the dated roster as JurisTrack `schedule` entries).
 
 **Attendance summary (List / Tabular / Calendar views):** `GET /api/v1/attendance/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&view=list|tabular|calendar&status=` returns the signed-in employee's days for the period (default: the current week, the current month for `calendar`; at most 62 days; never an `employeeId`) and the footer counters: payable days (present + paid leave + holidays + weekends), present (half day = 0.5), on duty (0 until On Duty requests exist), paid leave, holidays, weekends, unpaid leave, absent (loss-of-pay days), late count, each also in hours (days times the shift target hours; present uses the hours really worked). Each day has the shift, first check-in, last check-out, hours, late by and early by (minutes; only on present and half days, late after the grace period) and the latest regularization status. `GET /api/v1/attendance/summary/export?format=csv|pdf` is the same rows as a file (CSV is formula-safe). Invalid input answers 400.
 

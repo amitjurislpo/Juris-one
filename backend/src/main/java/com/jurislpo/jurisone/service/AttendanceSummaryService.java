@@ -154,7 +154,7 @@ public class AttendanceSummaryService {
         boolean isMonth = period.view().equals("calendar");
         String previousFrom = isMonth ? period.from().minusMonths(1).withDayOfMonth(1).toString() : period.from().minusDays(span).toString();
         String nextFrom = isMonth ? period.from().plusMonths(1).withDayOfMonth(1).toString() : period.from().plusDays(span).toString();
-        AttendanceService.Shift shift = employee.shift();
+        AttendanceService.Shift shift = employee.shiftOn(workDate);
         return new Summary(true, period.view(), period.from().toString(), period.to().toString(), previousFrom, nextFrom, workDate.toString(),
                 new ShiftCard(shift.name(), shift.startLocal(), shift.endLocal()), counters, days);
     }
@@ -174,12 +174,12 @@ public class AttendanceSummaryService {
     private SummaryDay row(AttendanceEmployee employee, AttendanceEngine.DayResult day, DayView view, LocalDate workDate, String regularizationStatus) {
         int lateMinutes = 0, earlyMinutes = 0;
         if (day.status == DayStatus.PRESENT || day.status == DayStatus.HALF_DAY) {
-            ShiftWindow window = AttendanceEngine.shiftWindow(day.date, employee.shift().shiftDefinition(), employee.timeZone());
+            ShiftWindow window = AttendanceEngine.shiftWindow(day.date, employee.shiftOn(day.date).shiftDefinition(), employee.timeZone());
             if (day.firstIn != null && day.firstIn.isAfter(window.graceUntil())) lateMinutes = (int) Duration.between(window.start(), day.firstIn).toMinutes();
             if (day.lastOut != null && !day.live && day.lastOut.isBefore(window.end())) earlyMinutes = (int) Duration.between(day.lastOut, window.end()).toMinutes();
         }
         boolean missedCheckout = day.missedCheckout || (!view.punches.isEmpty() && !day.live && day.lastOut == null);
-        return new SummaryDay(day.date.toString(), day.date.getDayOfWeek().name(), day.status.name(), day.label, employee.shift().name(),
+        return new SummaryDay(day.date.toString(), day.date.getDayOfWeek().name(), day.status.name(), day.label, employee.shiftOn(day.date).name(),
                 day.firstIn == null ? null : AttendanceService.formatTime(day.firstIn, employee.timeZone()),
                 day.lastOut == null ? null : AttendanceService.formatTime(day.lastOut, employee.timeZone()),
                 day.workedMinutes / 60.0, lateMinutes, earlyMinutes, day.late, missedCheckout, day.date.equals(workDate), day.future, day.live, day.regularized, regularizationStatus);

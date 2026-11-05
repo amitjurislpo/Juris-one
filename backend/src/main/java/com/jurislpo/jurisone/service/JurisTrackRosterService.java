@@ -38,7 +38,7 @@ import org.springframework.stereotype.Service;
 /**
  * Pushes a business's roster (its shifts and employees) to JurisTrack: {@code PUT <base-url>/api/integration/employees} with a service token
  * ({@link JurisTrackTokenIssuer#issueService}). One business per call, the whole roster each time (JurisTrack's side is idempotent), so a manager
- * sees every report, a shift matches and a deactivation reaches JurisTrack. JurisOne has no per-date roster, so {@code schedule} is never sent.
+ * sees every report, a shift matches and a deactivation reaches JurisTrack. The dated shift assignments (V36) are not sent: only each employee's own shift goes, and {@code schedule} is never sent.
  *
  * <p>Employees of every status go, so that a past employee arrives as {@code isActive:false}; people without a usable email are left out.
  * {@code isActive} is "not a past employee" (probation and onboarding people work and track time). {@code role} is MANAGER only for a holder of the
