@@ -127,7 +127,7 @@ public class MyAttendanceService {
 
     public record PunchResult(String message, String kind) {}
 
-    static final int MAX_NOTE_LENGTH = 500;
+    static final int MAX_NOTE_LENGTH = 500; // the message below and the V33 check constraint say 500 too
 
     /** The check-out note: control characters removed, trimmed, null when blank; refused on a check-in or when longer than 500 characters. */
     static String cleanNote(String noteRaw, String expect) {
@@ -135,7 +135,7 @@ public class MyAttendanceService {
         String note = noteRaw.replaceAll("[\\p{Cntrl}\\p{Cf}]", " ").trim();
         if (note.isEmpty()) return null;
         if (!"OUT".equals(expect)) throw new UserException(HttpStatus.BAD_REQUEST, "A note can only be added when checking out.");
-        if (note.length() > MAX_NOTE_LENGTH) throw new UserException(HttpStatus.BAD_REQUEST, "The note can be at most " + MAX_NOTE_LENGTH + " characters.");
+        if (note.length() > MAX_NOTE_LENGTH) throw new UserException(HttpStatus.BAD_REQUEST, "The note can be at most 500 characters.");
         return note;
     }
 

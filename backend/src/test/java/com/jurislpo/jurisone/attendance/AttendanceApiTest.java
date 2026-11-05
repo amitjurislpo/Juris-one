@@ -105,6 +105,8 @@ class AttendanceApiTest extends IntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM punches WHERE employee_id = ?", Integer.class, person.id())).isZero();
         mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content(punchBody("IN", "\"   \""))).andExpect(status().isCreated());
         jdbc.update("UPDATE punches SET at = at - interval '2 hours' WHERE employee_id = ?", person.id());
+        // while checked in the summary carries the server's check-in time for the "working for" timer, and none after check-out
+        mockMvc.perform(get("/api/v1/attendance/summary").cookie(person.cookie())).andExpect(status().isOk()).andExpect(jsonPath("$.data.openSince").isNotEmpty());
         // oversized (501 characters) is refused and nothing is recorded
         mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content(punchBody("OUT", "\"" + "a".repeat(501) + "\""))).andExpect(status().isBadRequest());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM punches WHERE employee_id = ?", Integer.class, person.id())).isEqualTo(1);
@@ -114,6 +116,7 @@ class AttendanceApiTest extends IntegrationTest {
         String stored = jdbc.queryForObject("SELECT note FROM punches WHERE employee_id = ? AND kind = 'OUT'", String.class, person.id());
         assertThat(stored).isEqualTo("<script>alert(1)</script>'; DROP TABLE punches;--   done");
         assertThat(jdbc.queryForObject("SELECT note FROM punches WHERE employee_id = ? AND kind = 'IN'", String.class, person.id())).isNull();
+        mockMvc.perform(get("/api/v1/attendance/summary").cookie(person.cookie())).andExpect(status().isOk()).andExpect(jsonPath("$.data.openSince").isEmpty());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'attendance.punch' AND after::text LIKE '%hasNote%'", Integer.class, person.id())).isEqualTo(1);
 
         // the employee sees it in the day detail, the approver in the register
