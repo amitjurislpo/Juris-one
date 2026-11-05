@@ -40,9 +40,13 @@ public final class AttendanceEngine {
     /** Approved leave covering a date. {@code paidFraction}: 1 = paid from balance, 0 = loss of pay. */
     public record Leave(String code, String name, LeavePart part, double paidFraction) {}
 
-    /** Approved regularizations for a date. */
-    public record Regularization(boolean absent, boolean lateWaived) {
-        public static final Regularization NONE = new Regularization(false, false);
+    /** Approved regularizations for a date; {@code remoteWork}: an approved remote work request covers the date. */
+    public record Regularization(boolean absent, boolean lateWaived, boolean remoteWork) {
+        public static final Regularization NONE = new Regularization(false, false, false);
+
+        public Regularization(boolean absent, boolean lateWaived) {
+            this(absent, lateWaived, false);
+        }
     }
 
     public record DayInput(
@@ -91,6 +95,8 @@ public final class AttendanceEngine {
     // ───────────────────────── time-zone helpers ─────────────────────────
 
     public static final int WINDOW_LEAD_MIN = 240;
+    /** The day label of an approved remote work day. */
+    public static final String REMOTE_LABEL = "Remote";
 
     static int toMin(String time) {
         String[] parts = time.split(":");
@@ -207,7 +213,8 @@ public final class AttendanceEngine {
         facts.lastOut = lastOut;
         facts.workedMinutes = worked.minutes();
         facts.openSince = worked.openSince();
-        facts.late = rawLate && !dayInput.regularization().lateWaived();
+        boolean isRemote = dayInput.regularization().remoteWork();
+        facts.late = rawLate && !dayInput.regularization().lateWaived() && !isRemote; // remote work has no shift-start check-in to be late for
         facts.lateWaived = rawLate && dayInput.regularization().lateWaived();
         facts.missedCheckout = lastIsIn && dayOver;
         facts.live = !dayOver && !base.future;
@@ -226,7 +233,7 @@ public final class AttendanceEngine {
                 Leave leave = dayInput.leave();
                 return withLeave(base.with(DayStatus.LEAVE, leave.part() == LeavePart.FULL ? leave.name() : leave.name() + " · half day"), leave);
             }
-            return base.with(DayStatus.PENDING, "");
+            return base.with(DayStatus.PENDING, isRemote ? REMOTE_LABEL : "");
         }
 
         double full = dayInput.policy().fullDayHours() * 60;
@@ -240,7 +247,7 @@ public final class AttendanceEngine {
 
         // Half-day leave: the other half needs half-day hours.
         if (dayInput.leave() != null) {
-            boolean shortDay = dayOver && worked.minutes() < half; // the working half wasn't worked
+            boolean shortDay = dayOver && worked.minutes() < half && !isRemote; // the working half wasn't worked (remote work counts as worked)
             boolean regularized = shortDay && dayInput.regularization().absent();
             double[] split = leaveSplit(dayInput.leave());
             DayResult dayResult = facts.with(DayStatus.LEAVE, dayInput.leave().name() + " · half day");
@@ -249,6 +256,9 @@ public final class AttendanceEngine {
             dayResult.lopDays = split[1] + (shortDay && !regularized ? 0.5 : 0);
             return dayResult;
         }
+
+        // An approved remote work day is a normal working day: Present (paid, no LOP) whether or not there is a punch.
+        if (isRemote) return facts.with(DayStatus.PRESENT, REMOTE_LABEL);
 
         if (sorted.isEmpty()) {
             if (dayInput.regularization().absent()) {
