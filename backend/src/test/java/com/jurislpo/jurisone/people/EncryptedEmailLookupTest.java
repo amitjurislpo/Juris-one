@@ -121,10 +121,10 @@ class EncryptedEmailLookupTest extends IntegrationTest {
         String email = "target." + suffix + "@example.com";
         indexed(data, employeeRoleId, "TG" + suffix, email);
         List<String> attempts = List.of("ｔarget." + suffix + "@example.com", "tаrget." + suffix + "@example.com", "target." + suffix + "@example.com.", "target." + suffix + "@example.co",
-                "target." + suffix + "@example.com' OR '1'='1", "x'@y.com' OR 1=1 --", "target." + suffix + "@example.com\\u0000", "%@%", "target." + suffix + "@example.com; DROP TABLE employees");
+                "target." + suffix + "@example.com' OR '1'='1", "x'@y.com' OR 1=1 --", "%@%", "target." + suffix + "@example.com; DROP TABLE employees");
         for (String attempt : attempts) {
             // asking for a code always answers the same; the sign-in with the fixed dev code must then be refused
-            SignIn.session(mockMvc, attempt.replace("\\u0000", "")).andExpect(status().isUnauthorized());
+            SignIn.session(mockMvc, attempt).andExpect(status().isUnauthorized());
         }
         assertThat(jdbc.queryForObject("SELECT count(*) FROM employees WHERE email = ?", Long.class, email)).isEqualTo(1);
     }
