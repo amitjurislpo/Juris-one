@@ -56,8 +56,8 @@ class OnDutyApiTest extends IntegrationTest {
         jdbc.update("DELETE FROM on_duty_requests WHERE business_id = ?", data.business());
         jdbc.update("DELETE FROM holidays WHERE business_id = ?", data.business());
         jdbc.update("""
-            INSERT INTO leave_types (code, name, annual_quota, accrual_per_month, carry_forward_cap, paid, needs_balance, sort_order, active)
-            VALUES ('CL', 'Casual leave', 12, 1, 0, true, true, 1, true) ON CONFLICT (code) DO NOTHING""");
+            INSERT INTO leave_types (code, name, annual_quota, accrual_per_month, carry_forward_cap, max_stretch, paid, needs_balance, sort_order, active)
+            VALUES ('CL', 'Casual leave', 12, 1, 0, 3, true, true, 1, true) ON CONFLICT (code) DO NOTHING""");
     }
 
     static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder request) {
