@@ -92,6 +92,51 @@ class AttendanceApiTest extends IntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM punches WHERE employee_id = ? AND source = 'WEB' AND ip IS NULL", Integer.class, person.id())).isEqualTo(2);
     }
 
+    private String punchBody(String expect, String noteJson) {
+        return "{\"expect\":\"" + expect + "\"" + (noteJson == null ? "" : ",\"note\":" + noteJson) + "}";
+    }
+
+    @Test
+    void checkOutNoteIsStoredShownToTheEmployeeAndApproversAndRefusedOnCheckIn() throws Exception {
+        Person person = person(empRole);
+        Person hrPerson = person(hrRole);
+        // a note on a check-in is refused, a blank one is ignored
+        mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content(punchBody("IN", "\"working from home\""))).andExpect(status().isBadRequest());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM punches WHERE employee_id = ?", Integer.class, person.id())).isZero();
+        mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content(punchBody("IN", "\"   \""))).andExpect(status().isCreated());
+        jdbc.update("UPDATE punches SET at = at - interval '2 hours' WHERE employee_id = ?", person.id());
+        // while checked in the summary carries the server's check-in time for the "working for" timer, and none after check-out
+        mockMvc.perform(get("/api/v1/attendance/summary").cookie(person.cookie())).andExpect(status().isOk()).andExpect(jsonPath("$.data.openSince").isNotEmpty());
+        // oversized (501 characters) is refused and nothing is recorded
+        mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content(punchBody("OUT", "\"" + "a".repeat(501) + "\""))).andExpect(status().isBadRequest());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM punches WHERE employee_id = ?", Integer.class, person.id())).isEqualTo(1);
+        // script, SQL and NUL / control characters are stored as plain text (control characters turned into spaces)
+        String hostile = "<script>alert(1)</script>'; DROP TABLE punches;--" + (char) 92 + "u0000" + (char) 92 + "u0007 done"; // the JSON escapes for NUL and BEL, as a client sends them
+        mockMvc.perform(write(post("/api/v1/attendance/punches")).cookie(person.cookie()).content(punchBody("OUT", "\"" + hostile + "\""))).andExpect(status().isCreated());
+        String stored = jdbc.queryForObject("SELECT note FROM punches WHERE employee_id = ? AND kind = 'OUT'", String.class, person.id());
+        assertThat(stored).isEqualTo("<script>alert(1)</script>'; DROP TABLE punches;--   done");
+        assertThat(jdbc.queryForObject("SELECT note FROM punches WHERE employee_id = ? AND kind = 'IN'", String.class, person.id())).isNull();
+        mockMvc.perform(get("/api/v1/attendance/summary").cookie(person.cookie())).andExpect(status().isOk()).andExpect(jsonPath("$.data.openSince").isEmpty());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE actor_id = ? AND action = 'attendance.punch' AND after::text LIKE '%hasNote%'", Integer.class, person.id())).isEqualTo(1);
+
+        // the employee sees it in the day detail, the approver in the register
+        String workDate = json.readTree(mockMvc.perform(get("/api/v1/attendance/mine").cookie(person.cookie())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.days[?(@.today == true)].checkOutNote").value(stored)).andReturn().getResponse().getContentAsString()).at("/data/workDate").asText();
+        mockMvc.perform(get("/api/v1/attendance/register?date=" + workDate + "&search=" + person.code()).cookie(hrPerson.cookie())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rows[0].checkOutNote").value(stored));
+
+        // another business's approver cannot see it
+        TestData otherBusiness = new TestData(jdbc).inBusiness("other-note-business");
+        UUID otherRole = otherBusiness.role("hrm", "self", "dir", "att.all");
+        String otherCode = code();
+        otherBusiness.employee(otherCode, otherCode.toLowerCase() + "@example.com", otherRole);
+        String set = SignIn.session(mockMvc, otherCode.toLowerCase() + "@example.com").andReturn().getResponse().getHeader("Set-Cookie");
+        Matcher matcher = Pattern.compile("jo_at=([^;]+)").matcher(set);
+        assertThat(matcher.find()).isTrue();
+        mockMvc.perform(get("/api/v1/attendance/register?date=" + workDate + "&search=" + person.code()).cookie(new Cookie("jo_at", matcher.group(1)))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rows").isEmpty());
+    }
+
     @Test
     void myAttendanceComputesNightShiftsAndRegularizationsAreChecked() throws Exception {
         Person person = person(empRole);

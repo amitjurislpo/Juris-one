@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class AttendanceController {
 
-    public record PunchRequest(String expect) {}
+    public record PunchRequest(String expect, String note) {}
 
     private final Auth auth;
     private final MyAttendanceService mine;
@@ -64,13 +64,13 @@ public class AttendanceController {
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store").header("X-Content-Type-Options", "nosniff").body(file.body());
     }
 
-    /** Check in / check out ({@code {"expect": "IN" | "OUT"}} — the button the user saw). */
+    /** Check in / check out ({@code {"expect": "IN" | "OUT", "note": optional, check-out only, max 500}} — the button the user saw). */
     @PostMapping("/api/v1/attendance/punches")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Map<String, String>> punch(@RequestBody PunchRequest body, HttpServletRequest request) {
         CurrentUser user = auth.assertPerm("self");
         String ipAddress = RequestMeta.of(request).ipAddress();
-        MyAttendanceService.PunchResult punchResult = mine.punch(user, body.expect(), ipAddress);
+        MyAttendanceService.PunchResult punchResult = mine.punch(user, body.expect(), body.note(), ipAddress);
         jurisTrack.mirrorPunchAsTimeEvent(user, punchResult.kind(), ipAddress); // best effort: never fails the punch
         return ApiResult.success(punchResult.message(), Map.of("kind", punchResult.kind()));
     }
