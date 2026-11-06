@@ -5,6 +5,7 @@ import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.engine.AttendanceEngine.ShiftWindow;
 import com.jurislpo.jurisone.engine.Csv;
+import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.entity.DayStatus;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.repository.MyAttendanceRepository;
@@ -54,7 +55,7 @@ public class AttendanceSummaryService {
 
     public record SummaryDay(String date, String weekday, String status, String label, String shiftName, String firstIn, String lastOut, double hours,
                              int lateMinutes, int earlyMinutes, boolean late, boolean missedCheckout, boolean today, boolean future, boolean live,
-                             boolean regularized, String regularizationStatus) {}
+                             boolean regularized, String regularizationStatus, String checkOutNote) {}
 
     /** Footer counters. Days are fractions (a half day counts 0.5); {@code hours} is the same list in hours. */
     public record Counters(double payableDays, double present, double onDuty, double paidLeave, double holidays, double weekends, double unpaidLeave,
@@ -63,7 +64,7 @@ public class AttendanceSummaryService {
     public record ShiftCard(String name, String start, String end) {}
 
     public record Summary(boolean tracked, String view, String from, String to, String previousFrom, String nextFrom, String workDate, ShiftCard shift,
-                          Counters counters, List<SummaryDay> days) {}
+                          Counters counters, List<SummaryDay> days, String openSince) {}
 
     public record Export(String filename, String contentType, byte[] body) {}
 
@@ -106,7 +107,7 @@ public class AttendanceSummaryService {
 
     public Summary summary(CurrentUser user, Map<String, String> queryParams) {
         AttendanceEmployee employee = myAttendance.me(user);
-        if (employee == null) return new Summary(false, null, null, null, null, null, null, null, null, List.of());
+        if (employee == null) return new Summary(false, null, null, null, null, null, null, null, null, List.of(), null);
         Instant now = Instant.now();
         LocalDate workDate = attendanceService.currentWorkDate(employee, now);
         return build(user, employee, period(queryParams, workDate), workDate, now);
@@ -156,7 +157,14 @@ public class AttendanceSummaryService {
         String nextFrom = isMonth ? period.from().plusMonths(1).withDayOfMonth(1).toString() : period.from().plusDays(span).toString();
         AttendanceService.Shift shift = employee.shift();
         return new Summary(true, period.view(), period.from().toString(), period.to().toString(), previousFrom, nextFrom, workDate.toString(),
-                new ShiftCard(shift.name(), shift.startLocal(), shift.endLocal()), counters, days);
+                new ShiftCard(shift.name(), shift.startLocal(), shift.endLocal()), counters, days, openSince(employee, workDate, now));
+    }
+
+    /** When the check-in that is still open began (ISO, for the browser's \"working for\" timer), or null when the employee is not checked in. */
+    private String openSince(AttendanceEmployee employee, LocalDate workDate, Instant now) {
+        List<DayView> today = attendanceService.attendanceFor(List.of(employee), workDate, workDate, now).get(employee.id());
+        Instant since = today.isEmpty() ? null : today.get(0).dayResult.openSince;
+        return since == null ? null : Format.isoTimestamp(since);
     }
 
     private static double round(double value) {
@@ -182,7 +190,7 @@ public class AttendanceSummaryService {
         return new SummaryDay(day.date.toString(), day.date.getDayOfWeek().name(), day.status.name(), day.label, employee.shift().name(),
                 day.firstIn == null ? null : AttendanceService.formatTime(day.firstIn, employee.timeZone()),
                 day.lastOut == null ? null : AttendanceService.formatTime(day.lastOut, employee.timeZone()),
-                day.workedMinutes / 60.0, lateMinutes, earlyMinutes, day.late, missedCheckout, day.date.equals(workDate), day.future, day.live, day.regularized, regularizationStatus);
+                day.workedMinutes / 60.0, lateMinutes, earlyMinutes, day.late, missedCheckout, day.date.equals(workDate), day.future, day.live, day.regularized, regularizationStatus, view.checkOutNote());
     }
 
     // ───────────────────────── export ─────────────────────────

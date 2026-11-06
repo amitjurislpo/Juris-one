@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /** My attendance, regularization requests and check-in/out (REQUIREMENTS §5.4). self. */
@@ -47,7 +48,7 @@ public class MyAttendanceService {
 
     public record CalendarDay(String date, String status, String label, boolean late, boolean lateWaived, double hours, boolean today, boolean future,
                          String firstIn, String lastOut, boolean live, boolean missedCheckout, boolean offDayWork, double lopDays, double leaveDays,
-                         boolean regularized) {}
+                         boolean regularized, String checkOutNote) {}
 
     public record RegularizationView(String id, String date, String kind, String status, String decidedBy, String reason) {}
 
@@ -79,7 +80,7 @@ public class MyAttendanceService {
         for (DayView dayView : days) {
             calendarDays.add(new CalendarDay(dayView.dayResult.date.toString(), dayView.dayResult.status.name(), dayView.dayResult.label, dayView.dayResult.late, dayView.dayResult.lateWaived, dayView.dayResult.workedMinutes / 60.0, dayView.dayResult.date.equals(workDate), dayView.dayResult.future,
                     dayView.dayResult.firstIn == null ? null : AttendanceService.formatTime(dayView.dayResult.firstIn, employee.timeZone()), dayView.dayResult.lastOut == null ? null : AttendanceService.formatTime(dayView.dayResult.lastOut, employee.timeZone()),
-                    dayView.dayResult.live, dayView.dayResult.missedCheckout || (!dayView.punches.isEmpty() && !dayView.dayResult.live && dayView.dayResult.lastOut == null), dayView.dayResult.offDayWork, dayView.dayResult.lopDays, dayView.dayResult.leaveDays, dayView.dayResult.regularized));
+                    dayView.dayResult.live, dayView.dayResult.missedCheckout || (!dayView.punches.isEmpty() && !dayView.dayResult.live && dayView.dayResult.lastOut == null), dayView.dayResult.offDayWork, dayView.dayResult.lopDays, dayView.dayResult.leaveDays, dayView.dayResult.regularized, dayView.checkOutNote()));
         }
         String selectedDate = ListParams.text(queryParams, "date", "");
         String initialSel;
@@ -126,12 +127,25 @@ public class MyAttendanceService {
 
     public record PunchResult(String message, String kind) {}
 
+    static final int MAX_NOTE_LENGTH = 500; // the message below and the V33 check constraint say 500 too
+
+    /** The check-out note: control characters removed, trimmed, null when blank; refused on a check-in or when longer than 500 characters. */
+    static String cleanNote(String noteRaw, String expect) {
+        if (noteRaw == null) return null;
+        String note = noteRaw.replaceAll("[\\p{Cntrl}\\p{Cf}]", " ").trim();
+        if (note.isEmpty()) return null;
+        if (!"OUT".equals(expect)) throw new UserException(HttpStatus.BAD_REQUEST, "A note can only be added when checking out.");
+        if (note.length() > MAX_NOTE_LENGTH) throw new UserException(HttpStatus.BAD_REQUEST, "The note can be at most 500 characters.");
+        return note;
+    }
+
     /**
      * {@code expect} is the action the user saw on the button, so a double-click or a stale tab can't record the
      * opposite of what they meant.
      */
-    public PunchResult punch(CurrentUser user, String expectRaw, String ipAddress) {
+    public PunchResult punch(CurrentUser user, String expectRaw, String noteRaw, String ipAddress) {
         String expect = Check.oneOf(expectRaw, List.of("IN", "OUT"));
+        String note = cleanNote(noteRaw, expect);
         AttendanceEmployee employee = me(user);
         if (employee == null) throw new UserException(NOT_TRACKED);
         Instant now = Instant.now();
@@ -145,8 +159,8 @@ public class MyAttendanceService {
         if (!last.isEmpty() && now.toEpochMilli() - ((Timestamp) last.get(0).get("at")).toInstant().toEpochMilli() < MIN_GAP_MS) {
             throw new UserException("Just recorded — give it a few seconds.");
         }
-        repo.insertWebPunch(user.id(), now, expect, ipAddress);
-        audit.log(user.id(), "attendance.punch", "punch", user.id().toString(), null, Map.of("kind", expect, "punchedAt", now.toString()), ipAddress);
+        repo.insertWebPunch(user.id(), now, expect, ipAddress, note);
+        audit.log(user.id(), "attendance.punch", "punch", user.id().toString(), null, note == null ? Map.of("kind", expect, "punchedAt", now.toString()) : Map.of("kind", expect, "punchedAt", now.toString(), "hasNote", true), ipAddress);
         if ("IN".equals(expect)) return new PunchResult("Checked in. Have a productive shift.", "IN");
 
         LocalDate workDate = AttendanceEngine.workDateOf(now, employee.shift().shiftDefinition(), employee.timeZone());
@@ -168,7 +182,7 @@ public class MyAttendanceService {
         String current = !last.isEmpty() && "IN".equals(last.get(0).get("kind")) ? "IN" : "OUT";
         if (kind.equals(current)) return;
         if (!last.isEmpty() && now.toEpochMilli() - ((Timestamp) last.get(0).get("at")).toInstant().toEpochMilli() < MIN_GAP_MS) return;
-        repo.insertPunch(user.id(), now, kind, "JURISTRACK", ipAddress);
+        repo.insertPunch(user.id(), now, kind, "JURISTRACK", ipAddress, null);
         audit.log(user.id(), "attendance.punch", "punch", user.id().toString(), null, Map.of("kind", kind, "punchedAt", now.toString(), "source", "JURISTRACK"), ipAddress);
     }
 }

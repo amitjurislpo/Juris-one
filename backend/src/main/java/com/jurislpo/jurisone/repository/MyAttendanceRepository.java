@@ -44,14 +44,15 @@ public class MyAttendanceRepository {
         return jdbc.queryForList("SELECT at, kind::text AS kind FROM punches WHERE employee_id = ? ORDER BY at DESC LIMIT 1", employeeId);
     }
 
-    public void insertWebPunch(UUID employeeId, Instant instant, String kind, String ipAddress) {
-        insertPunch(employeeId, instant, kind, "WEB", ipAddress);
+    /** {@code note}: the optional check-out note (already validated), or null. */
+    public void insertWebPunch(UUID employeeId, Instant instant, String kind, String ipAddress, String note) {
+        insertPunch(employeeId, instant, kind, "WEB", ipAddress, note);
     }
 
     /** {@code source}: a value of the "PunchSource" type (WEB, JURISTRACK, ...). */
-    public void insertPunch(UUID employeeId, Instant instant, String kind, String source, String ipAddress) {
-        jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, ip, created_at) VALUES (?, ?, ?, ?::\"PunchKind\", ?::\"PunchSource\", ?, now())",
-                UUID.randomUUID(), employeeId, Timestamp.from(instant), kind, source, ipAddress);
+    public void insertPunch(UUID employeeId, Instant instant, String kind, String source, String ipAddress, String note) {
+        jdbc.update("INSERT INTO punches (id, employee_id, at, kind, source, ip, note, created_at) VALUES (?, ?, ?, ?::\"PunchKind\", ?::\"PunchSource\", ?, ?, now())",
+                UUID.randomUUID(), employeeId, Timestamp.from(instant), kind, source, ipAddress, note);
     }
 
     /** The employee's punches since {@code since}, oldest first. */
