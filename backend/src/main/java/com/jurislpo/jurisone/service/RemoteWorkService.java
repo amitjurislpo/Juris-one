@@ -43,7 +43,7 @@ public class RemoteWorkService {
     static final List<String> STATUSES = List.of("PENDING", "APPROVED", "DECLINED", "CANCELLED");
 
     /** The body of a new request: ISO dates and the reason. */
-    public record CreateInput(String fromDate, String toDate, String reason) {}
+    public record CreateInput(String fromDate, String toDate, String reason, String employeeId) {}
 
     public record DecisionResult(String id, boolean ok, String message) {}
 
@@ -87,7 +87,8 @@ public class RemoteWorkService {
     /**
      * Makes a request for the signed-in employee. Refused: bad dates or reason (400), a range over 31 days, a start more than the back-date limit
      * (the regularization rule) behind or more than a year ahead, a locked month, an overlap with another pending or approved request of the
-     * employee (409 REMOTE_WORK_ALREADY_REQUESTED). Returns the new id.
+     * employee (409 REMOTE_WORK_ALREADY_REQUESTED). Returns the new id. Admin / HR ({@code appr.reg}) may name an {@code employeeId} of the same business to
+     * raise the request for that employee; it is then approved at once (as the approver) and the employee is told. Anybody else naming another employee gets 403.
      */
     public String create(CurrentUser user, CreateInput input, String ipAddress) {
         if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input");
@@ -97,8 +98,18 @@ public class RemoteWorkService {
         if (from.until(to, ChronoUnit.DAYS) + 1 > MAX_RANGE_DAYS) throw new UserException(HttpStatus.BAD_REQUEST, "A request can cover at most " + MAX_RANGE_DAYS + " days.");
         String reason = Check.trimmed(input.reason(), 1, "Enter the reason for working remotely.", MAX_REASON_LENGTH, "Keep the reason under 500 characters.");
 
-        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", user.id());
-        if (employees.isEmpty()) throw new UserException(MyAttendanceService.NOT_TRACKED);
+        UUID subjectId = user.id();
+        if (input.employeeId() != null && !input.employeeId().isBlank()) {
+            UUID requested = Check.uuid(input.employeeId());
+            if (!requested.equals(user.id())) {
+                if (!user.can("appr.reg")) throw new ForbiddenException();
+                subjectId = requested;
+            }
+        }
+        boolean onBehalf = !subjectId.equals(user.id());
+        UUID employeeId = subjectId;
+        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", employeeId);
+        if (employees.isEmpty()) throw onBehalf ? new UserException(HttpStatus.NOT_FOUND, "Employee not found.") : new UserException(MyAttendanceService.NOT_TRACKED);
         AttendanceEmployee employee = employees.get(0);
         Instant now = Instant.now();
         LocalDate today = attendanceService.currentWorkDate(employee, now);
@@ -110,30 +121,47 @@ public class RemoteWorkService {
         UUID id = UUID.randomUUID();
         try {
             transactionTemplate.executeWithoutResult(status -> {
-                repo.lockEmployee(user.id());
-                if (repo.hasOpenOverlap(user.id(), from, to)) throw alreadyRequested();
-                repo.insert(id, user.id(), from, to, reason, user.id());
+                repo.lockEmployee(employeeId);
+                if (repo.hasOpenOverlap(employeeId, from, to)) throw alreadyRequested(onBehalf);
+                repo.insert(id, employeeId, from, to, reason, user.id());
                 Map<String, Object> view = new LinkedHashMap<>();
                 view.put("fromDate", from.toString());
                 view.put("toDate", to.toString());
                 view.put("days", from.until(to, ChronoUnit.DAYS) + 1);
                 view.put("reason", reason);
-                audit.log(user.id(), "remote_work.request", "remote_work", id.toString(), null, view, ipAddress);
+                if (onBehalf) {
+                    view.put("onBehalfOf", employeeId.toString()); // the actor is the audit row's actor; the employee it was raised for is named here
+                    view.put("employeeCode", employee.code());
+                }
+                audit.log(user.id(), onBehalf ? "remote_work.request_on_behalf" : "remote_work.request", "remote_work", id.toString(), null, view, ipAddress);
             });
         } catch (DuplicateKeyException e) {
-            throw alreadyRequested(); // two requests that start the same day at the same moment: the database index decides
+            throw alreadyRequested(onBehalf); // two requests that start the same day at the same moment: the database index decides
+        }
+        if (onBehalf) {
+            // Admin / HR raised it for the employee: approve it now, as the approver. If the approval is refused (for example a rule changed a moment ago)
+            // the request simply stays pending for a normal decision.
+            try {
+                decide(user, id.toString(), true, "Auto-approved: raised by " + user.name() + " for the employee", ipAddress);
+                return id.toString();
+            } catch (ApiException e) {
+                // stays pending
+            }
+            notifications.notify(employeeId, user.name() + " raised a remote work request for you for " + span(from, to), "/attendance?tab=remote-work");
         }
         long days = from.until(to, ChronoUnit.DAYS) + 1;
         String span = span(from, to) + (days > 1 ? " (" + days + " days)" : "");
-        for (UUID approverId : repo.approverIds(user.id())) {
-            notifications.notify(approverId, user.name() + " asked to work remotely for " + span(from, to), "/attendance?scope=team&tab=remote-work");
-            notifications.emailEmployee(approverId, name -> MailTemplates.remoteWorkRequested(name, user.name() + " asked to work remotely", span));
+        String who = onBehalf ? user.name() + " raised a remote work request for " + employee.name() : user.name() + " asked to work remotely";
+        for (UUID approverId : repo.approverIds(employeeId)) {
+            if (approverId.equals(user.id())) continue;
+            notifications.notify(approverId, who + " for " + span(from, to), "/attendance?scope=team&tab=remote-work");
+            notifications.emailEmployee(approverId, name -> MailTemplates.remoteWorkRequested(name, who, span));
         }
         return id.toString();
     }
 
-    private static ApiException alreadyRequested() {
-        return new ApiException(HttpStatus.CONFLICT, ALREADY_REQUESTED, "You already have a remote work request for some of these days.");
+    private static ApiException alreadyRequested(boolean onBehalf) {
+        return new ApiException(HttpStatus.CONFLICT, ALREADY_REQUESTED, (onBehalf ? "The employee already has" : "You already have") + " a remote work request for some of these days.");
     }
 
     // ───────────────────────── withdraw ─────────────────────────

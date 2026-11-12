@@ -5,6 +5,7 @@ import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.OnDutyRules;
 import com.jurislpo.jurisone.exception.ApiException;
+import com.jurislpo.jurisone.exception.ForbiddenException;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.repository.OnDutyRepository;
 import com.jurislpo.jurisone.repository.OnDutyRepository.Filter;
@@ -44,8 +45,8 @@ public class OnDutyService {
     static final DateTimeFormatter DAY_FIRST = DateTimeFormatter.ofPattern("dd-MM-yyyy", Locale.ROOT);
     static final List<String> STATUSES = List.of("PENDING", "APPROVED", "DECLINED", "CANCELLED");
 
-    /** The body of a new request: {@code toDate} makes a range, {@code part} is FULL, FIRST_HALF or SECOND_HALF (default FULL). */
-    public record CreateInput(String date, String toDate, String part, String location, String reason) {}
+    /** The body of a new request: {@code toDate} makes a range, {@code part} is FULL, FIRST_HALF or SECOND_HALF (default FULL), {@code employeeId} (Admin / HR only) raises it for that employee. */
+    public record CreateInput(String date, String toDate, String part, String location, String reason, String employeeId) {}
 
     /** One day of a request: whether it was made, and why not. */
     public record DayOutcome(String date, boolean ok, String message) {}
@@ -86,7 +87,11 @@ public class OnDutyService {
 
     // ───────────────────────── make a request ─────────────────────────
 
-    /** Makes the signed-in employee's request (for one day, or one per day of the range). The employee is always the signed-in user, never an id the client sends. */
+    /**
+     * Makes the signed-in employee's request (for one day, or one per day of the range). Only Admin / HR ({@code appr.reg}) may name another employee of the
+     * same business in {@code employeeId}; the request is then approved at once, as the approver, and the employee is told. Anybody else naming another
+     * employee gets 403, and an employee of another business is "not found".
+     */
     public Created create(CurrentUser user, CreateInput input, String ipAddress) {
         if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input");
         LocalDate first = parseDate(input.date());
@@ -97,8 +102,17 @@ public class OnDutyService {
         String location = OnDutyRules.location(input.location());
         boolean isRange = !last.equals(first);
 
-        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", user.id());
-        if (employees.isEmpty()) throw new UserException(MyAttendanceService.NOT_TRACKED);
+        UUID subjectId = user.id();
+        if (!isBlank(input.employeeId())) {
+            UUID requested = Check.uuid(input.employeeId());
+            if (!requested.equals(user.id())) {
+                if (!user.can("appr.reg")) throw new ForbiddenException();
+                subjectId = requested;
+            }
+        }
+        boolean onBehalf = !subjectId.equals(user.id());
+        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", subjectId);
+        if (employees.isEmpty()) throw onBehalf ? new UserException(HttpStatus.NOT_FOUND, "Employee not found.") : new UserException(MyAttendanceService.NOT_TRACKED);
         AttendanceEmployee employee = employees.get(0);
 
         Instant now = Instant.now();
@@ -110,6 +124,7 @@ public class OnDutyService {
         UUID batchId = isRange ? UUID.randomUUID() : null;
         List<DayOutcome> outcomes = new ArrayList<>();
         List<LocalDate> made = new ArrayList<>();
+        List<LocalDate> waiting = new ArrayList<>(); // days now waiting for a decision (not auto-approved)
         for (DayView view : views) {
             LocalDate date = view.dayResult.date;
             try {
@@ -125,15 +140,20 @@ public class OnDutyService {
                 after.put("part", part);
                 after.put("status", "PENDING");
                 if (batchId != null) after.put("batchId", batchId.toString());
+                if (onBehalf) {
+                    after.put("onBehalfOf", employee.id().toString()); // the actor is the audit row's actor; the employee it was raised for is named here
+                    after.put("employeeCode", employee.code());
+                }
                 try {
                     transactionTemplate.executeWithoutResult(transactionStatus -> {
                         repo.insert(new NewRequest(id, employee.id(), date, part, location, reason, user.id(), batchId));
-                        audit.log(user.id(), "attendance.on_duty_request", "on_duty_request", id.toString(), null, after, ipAddress);
+                        audit.log(user.id(), onBehalf ? "attendance.on_duty_request_on_behalf" : "attendance.on_duty_request", "on_duty_request", id.toString(), null, after, ipAddress);
                     });
                 } catch (DuplicateKeyException e) {
                     throw alreadyRequested(date); // two requests for the same day at the same moment: the database index decides
                 }
                 made.add(date);
+                if (!onBehalf || !autoApprove(user, id, employee, date, ipAddress)) waiting.add(date);
                 outcomes.add(new DayOutcome(date.toString(), true, "On Duty request added successfully"));
             } catch (ApiException e) {
                 if (!isRange) throw e;
@@ -141,18 +161,35 @@ public class OnDutyService {
             }
         }
         if (made.isEmpty()) throw new UserException(outcomes.get(0).message());
-        informApprovers(user, made);
+        informApprovers(user, employee, onBehalf, waiting);
         return new Created(isRange ? made.size() + " of " + outcomes.size() + " requests added" : "On Duty request added successfully", outcomes);
     }
 
-    /** A bell notification for every approver per day, and ONE email for the whole request. */
-    private void informApprovers(CurrentUser user, List<LocalDate> days) {
+    /**
+     * Admin / HR raised the request for the employee: approve it now, as the approver (the decision tells the employee). Returns false when the approval is
+     * refused (for example a rule changed a moment ago); the request then simply stays pending for a normal decision, and the employee is told it was raised.
+     */
+    private boolean autoApprove(CurrentUser actor, UUID id, AttendanceEmployee employee, LocalDate date, String ipAddress) {
+        try {
+            decide(actor, id.toString(), true, "Auto-approved: raised by " + actor.name() + " for the employee", ipAddress);
+            return true;
+        } catch (ApiException e) {
+            notifications.notify(employee.id(), actor.name() + " raised an On Duty request for you for " + Format.formatDayMonth(date), "/attendance?tab=on-duty");
+            return false;
+        }
+    }
+
+    /** A bell notification for every approver per waiting day, and ONE email for the whole request; the person who raised it is not told about their own request. */
+    private void informApprovers(CurrentUser actor, AttendanceEmployee employee, boolean onBehalf, List<LocalDate> days) {
+        if (days.isEmpty()) return;
         String span = days.size() == 1 ? Format.formatDayMonth(days.get(0)) : Format.formatDayMonth(days.get(0)) + " to " + Format.formatDayMonth(days.get(days.size() - 1)) + " (" + days.size() + " days)";
-        for (UUID approverId : repo.approverIds(user.id())) {
+        String who = onBehalf ? actor.name() + " raised an On Duty request for " + employee.name() : actor.name() + " asked for On Duty";
+        for (UUID approverId : repo.approverIds(employee.id())) {
+            if (approverId.equals(actor.id())) continue;
             for (LocalDate day : days) {
-                notifications.notify(approverId, user.name() + " asked for On Duty on " + Format.formatDayMonth(day), "/attendance?tab=on-duty&scope=team");
+                notifications.notify(approverId, who + " on " + Format.formatDayMonth(day), "/attendance?tab=on-duty&scope=team");
             }
-            notifications.emailEmployee(approverId, name -> MailTemplates.onDutyRequested(name, user.name() + " asked for On Duty", span));
+            notifications.emailEmployee(approverId, name -> MailTemplates.onDutyRequested(name, who, span));
         }
     }
 
