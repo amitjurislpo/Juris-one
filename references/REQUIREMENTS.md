@@ -253,6 +253,12 @@ When a new India employee is added, Finance is notified: "salary structure pendi
   - holiday work adds a comp-off balance
 - Requests are only allowed before that month's attendance lock. Every write is in the audit log.
 
+**Remote work requests (Attendance page, tab "Remote Work Requests"):**
+
+- The employee asks to work remotely for a **range of days** (at most 31, first day not further back than the regularization back-date limit and not more than a year ahead) with a reason (up to 500 characters). Overlap with another pending or approved request of the same employee is refused (409 `REMOTE_WORK_ALREADY_REQUESTED`); rejected and withdrawn requests do not block.
+- **Admin and HR** (`appr.reg`) approve or reject, one or several at once; a rejection needs remarks; first decision wins (409); nobody decides their own; approval is refused when a day lies in a locked month. The employee withdraws a pending request. A manager sees the direct reports' requests (Team, read only); an employee sees only their own; another business gets 404.
+- **An approved remote day is a normal working day:** Present, labelled "Remote", no loss of pay with or without a punch, no late mark; holidays, weekly offs and full-day leave stay as they are. Approvers get bell + email on a new request, the employee gets the decision. Audit: `remote_work.request / cancel / approve / decline`. Endpoints: see FRD FR-REMOTE-1 to FR-REMOTE-6.
+
 **Attendance register** (`att.all`: HR, Admin):
 
 - **Daily log:**
@@ -573,6 +579,8 @@ punches(id, employee_id, at timestamptz, kind in/out, source web/mobile, ip)
 attendance_days(employee_id, work_date, status, first_in, last_out, worked_minutes, late bool, locked bool, on_duty_days)
 regularization_requests(id, employee_id, work_date, kind, proposed_in, proposed_out, reason,
           status, decided_by, decided_at, decided_role)
+remote_work_requests(id, employee_id, from_date, to_date, reason, status, decided_by, decided_at, decided_role,
+          decision_note, created_by)
 holidays(id, date, name, region IN/US/ALL, created_by)
 leave_types(code, name, annual_quota, accrual_per_month, carry_forward_cap, expiry_days, ...)
 leave_ledger(id, employee_id, leave_type, delta, reason, ref_id, at)

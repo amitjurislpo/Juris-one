@@ -21,6 +21,7 @@ public class EnvironmentGuard {
     static final List<String> STRICT = List.of("uat", "prd");
     private static final List<String> SECRETS = List.of("jurisone.security.jwt-secret", "jurisone.security.pii-encryption-key", "spring.datasource.password");
 
+    private static final String DEVELOPMENT_KEY = "+R4tUi6tUMczCFAdAIisMzB9OX2kePXBhYVPjcMUwD4=";
     private static final Pattern DNS_LABEL = Pattern.compile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$");
     private static final Pattern BASE_DOMAIN = Pattern.compile("^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$");
 
@@ -61,6 +62,14 @@ public class EnvironmentGuard {
         String piiKey = blankTo(get.apply("jurisone.security.pii-encryption-key"), "");
         if (piiKey.isBlank() || piiKey.contains("<")) out.add("jurisone.security.pii-encryption-key is not set (PII_ENCRYPTION_KEY: 32 random bytes, base64)");
         else if (!isValidAesKey(piiKey)) out.add("jurisone.security.pii-encryption-key must be 32 bytes, base64-encoded");
+        else if (isWeakKey(piiKey)) out.add("jurisone.security.pii-encryption-key is a weak or well-known key (generate one with: openssl rand -base64 32)");
+        // keys retired by a rotation: only used to read old data; each must still be a proper key, and not the newest one again
+        for (String previous : blankTo(get.apply("jurisone.security.pii-encryption-previous-keys"), "").split(",")) {
+            if (previous.isBlank()) continue;
+            if (!isValidAesKey(previous)) out.add("jurisone.security.pii-encryption-previous-keys must hold 32-byte keys, base64-encoded, separated by commas");
+            else if (isWeakKey(previous)) out.add("jurisone.security.pii-encryption-previous-keys holds a weak or well-known key");
+            else if (previous.trim().equals(piiKey.trim())) out.add("jurisone.security.pii-encryption-previous-keys must not repeat the newest key");
+        }
         // the blind index key: only needed once an email switch that uses it is on, then it must be valid and must not be the PII key
         String blindKey = blankTo(get.apply("jurisone.security.email-blind-index-key"), "");
         boolean isBlindIndexUsed = "true".equalsIgnoreCase(blankTo(get.apply("jurisone.security.encrypt-email.dual-write"), "false"))
@@ -87,6 +96,13 @@ public class EnvironmentGuard {
         String adminLabel = blankTo(get.apply("jurisone.tenant-host.admin-label"), "admin").trim();
         if (!DNS_LABEL.matcher(adminLabel).matches()) out.add("jurisone.tenant-host.admin-label must be one lowercase DNS label (letters, digits, hyphens)");
         return out;
+    }
+
+    /** The key written in application-dev.properties (public in git), or one with fewer than 8 different byte values (all zeros, repeated pattern, ...). A random 32-byte key never qualifies. */
+    private static boolean isWeakKey(String value) {
+        byte[] bytes = java.util.Base64.getDecoder().decode(value.trim());
+        if (java.util.Base64.getEncoder().encodeToString(bytes).equals(DEVELOPMENT_KEY)) return true;
+        return new java.util.HashSet<>(java.util.stream.IntStream.range(0, bytes.length).mapToObj(i -> bytes[i]).toList()).size() < 8;
     }
 
     private static boolean isValidAesKey(String value) {

@@ -54,6 +54,15 @@ public final class MailTemplates {
                         + "<p style=\"color:#5D5F6D\">Open Approvals in JurisOne to approve or reject it.</p>"));
     }
 
+    /** An approver is told that a remote work request is waiting ({@code span} is "12 Nov to 14 Nov (3 days)"). */
+    public static Content remoteWorkRequested(String name, String who, String span) {
+        return new Content(
+                "Remote work request waiting for your decision",
+                "Hi " + name + ",\n\n" + who + " for " + span + ". Open the Remote Work Requests tab of Attendance in JurisOne to approve or reject it.",
+                shell("Remote work request", "<p>Hi " + escapeHtml(name) + ", " + escapeHtml(who) + " for <b>" + escapeHtml(span) + "</b>.</p>"
+                        + "<p style=\"color:#5D5F6D\">Open the Remote Work Requests tab of Attendance in JurisOne to approve or reject it.</p>"));
+    }
+
     /** An approver is told that an On Duty request is waiting ({@code who} is a sentence such as "Asha Rao asked for On Duty"). */
     public static Content onDutyRequested(String name, String who, String span) {
         return new Content(

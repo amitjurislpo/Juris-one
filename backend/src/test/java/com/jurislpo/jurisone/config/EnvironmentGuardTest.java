@@ -18,7 +18,7 @@ class EnvironmentGuardTest {
         environment.put("jurisone.mail.host", "smtp.example.com");
         environment.put("jurisone.app-url", "https://people.example.com");
         environment.put("jurisone.security.jwt-secret", "x".repeat(40));
-        environment.put("jurisone.security.pii-encryption-key", "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=");
+        environment.put("jurisone.security.pii-encryption-key", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=");
         environment.put("spring.datasource.password", "db-password");
         return environment;
     }
@@ -64,7 +64,7 @@ class EnvironmentGuardTest {
         environment.put("jurisone.seed.demo", "true");
         environment.put("jurisone.app-url", "http://sqe.internal:3015");
         environment.put("jurisone.mail.host", "smtp.example.com");
-        environment.put("jurisone.security.pii-encryption-key", "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=");
+        environment.put("jurisone.security.pii-encryption-key", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=");
         assertThat(problems(environment)).isEmpty();
         environment.put("jurisone.otp.fixed-code", "000000");
         environment.put("jurisone.mail.host", "");
@@ -204,5 +204,34 @@ class EnvironmentGuardTest {
             environment.put("jurisone.security.pii-encryption-key", "<generate: openssl rand -base64 32>");
             assertThat(problems(environment)).as(environmentName + " placeholder").singleElement().asString().startsWith("jurisone.security.pii-encryption-key");
         }
+    }
+
+    @Test
+    void weakAndWellKnownEncryptionKeysAreRefusedInEverySharedEnvironment() {
+        for (String environmentName : List.of("sqe", "uat", "prd")) {
+            Map<String, String> environment = good(environmentName);
+            environment.put("jurisone.security.pii-encryption-key", "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="); // 32 x 0x07
+            assertThat(problems(environment)).as(environmentName + " repeated byte").singleElement().asString().contains("weak");
+            environment.put("jurisone.security.pii-encryption-key", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="); // zeros
+            assertThat(problems(environment)).as(environmentName + " zeros").singleElement().asString().contains("weak");
+            environment.put("jurisone.security.pii-encryption-key", "+R4tUi6tUMczCFAdAIisMzB9OX2kePXBhYVPjcMUwD4="); // the key in application-dev.properties
+            assertThat(problems(environment)).as(environmentName + " dev key").singleElement().asString().contains("well-known");
+        }
+    }
+
+    @Test
+    void previousKeysForARotationMustBeProperKeysAndNotTheNewestOne() {
+        Map<String, String> environment = good("prd");
+        String oldKey = "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=";
+        environment.put("jurisone.security.pii-encryption-previous-keys", oldKey);
+        assertThat(problems(environment)).isEmpty();
+        environment.put("jurisone.security.pii-encryption-previous-keys", oldKey + ", " + oldKey);
+        assertThat(problems(environment)).isEmpty();
+        environment.put("jurisone.security.pii-encryption-previous-keys", "too-short");
+        assertThat(problems(environment)).singleElement().asString().contains("previous-keys");
+        environment.put("jurisone.security.pii-encryption-previous-keys", "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=");
+        assertThat(problems(environment)).singleElement().asString().contains("weak");
+        environment.put("jurisone.security.pii-encryption-previous-keys", environment.get("jurisone.security.pii-encryption-key"));
+        assertThat(problems(environment)).singleElement().asString().contains("must not repeat");
     }
 }
