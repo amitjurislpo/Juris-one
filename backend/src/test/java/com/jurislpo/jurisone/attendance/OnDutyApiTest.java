@@ -273,7 +273,9 @@ class OnDutyApiTest extends IntegrationTest {
         LocalDate saturday = today().minusDays(2);
         while (AttendanceEngine.dowOf(saturday) != 6) saturday = saturday.minusDays(1);
         mockMvc.perform(write(post(URL)).cookie(employee.cookie()).content(body(saturday, "FULL", "x"))).andExpect(status().isUnprocessableEntity());
-        LocalDate leaveDay = workday(6);
+        // a working day before the holiday, so the two never land on the same date whatever today's weekday is
+        LocalDate leaveDay = holiday.minusDays(1);
+        while (AttendanceEngine.dowOf(leaveDay) == 0 || AttendanceEngine.dowOf(leaveDay) == 6) leaveDay = leaveDay.minusDays(1);
         jdbc.update("INSERT INTO leave_requests (id, employee_id, leave_type, from_date, to_date, days, status) VALUES (?, ?, 'CL', ?, ?, 1, 'APPROVED')", UUID.randomUUID(), employee.id(),
                 java.sql.Date.valueOf(leaveDay), java.sql.Date.valueOf(leaveDay));
         mockMvc.perform(write(post(URL)).cookie(employee.cookie()).content(body(leaveDay, "FULL", "x"))).andExpect(status().isUnprocessableEntity())
