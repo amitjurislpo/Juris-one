@@ -153,6 +153,7 @@ public class AttendanceService {
 
         List<LeaveRow> leaves = repo.approvedLeaves(idArr, from, to);
         List<RegularizationRow> regularizations = repo.approvedRegularizations(idArr, from, to);
+        List<AttendanceRepository.RemoteWorkRow> remoteWork = repo.approvedRemoteWork(idArr, from, to);
         List<OnDutyRow> onDutyRows = repo.approvedOnDuty(idArr, from, to);
         List<PunchRow> punches = repo.punches(idArr, from.atStartOfDay(ZoneId.of("UTC")).toInstant().minusSeconds(36 * 3600),
                 to.atStartOfDay(ZoneId.of("UTC")).toInstant().plusSeconds(60 * 3600));
@@ -224,7 +225,8 @@ public class AttendanceService {
                     leave = new Leave(leaveRow.code(), leaveRow.name(), leaveRow.part(), fraction != null ? fraction : (leaveRow.paid() ? 1 : 0));
                 }
                 Regularization regularization = new Regularization(regularizationRows.stream().anyMatch(x -> x.kind().equals("ABSENT") || x.kind().equals("MISSED_CHECKOUT")),
-                        regularizationRows.stream().anyMatch(x -> x.kind().equals("LATE_CHECKIN")));
+                        regularizationRows.stream().anyMatch(x -> x.kind().equals("LATE_CHECKIN")),
+                        remoteWork.stream().anyMatch(x -> x.employeeId().equals(employee.id()) && !x.from().isAfter(day) && !x.to().isBefore(day)));
                 LeavePart onDutyPart = onDutyRows.stream().filter(x -> x.employeeId().equals(employee.id()) && x.date().equals(day)).map(x -> LeavePart.valueOf(x.part())).findFirst().orElse(null);
                 DayResult dayResult = AttendanceEngine.computeDay(new DayInput(date, now, employee.timeZone(), employee.shiftOn(date).shiftDefinition(), policy.engine(), employee.dateOfJoining(), employee.exitDate(),
                         policy.trackingStart(), holiday, leave, dayPunches, regularization, onDutyPart));
