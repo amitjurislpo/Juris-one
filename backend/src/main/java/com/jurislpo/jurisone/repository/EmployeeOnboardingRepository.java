@@ -12,8 +12,10 @@ import org.springframework.stereotype.Repository;
 public class EmployeeOnboardingRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public EmployeeOnboardingRepository(JdbcTemplate jdbc) {
+    public EmployeeOnboardingRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -34,10 +36,10 @@ public class EmployeeOnboardingRepository {
 
     /** Code, name, department, designation, time zone, photo marker, manager and the father's name of the employee master. */
     public List<Map<String, Object>> findEmployeeHeader(UUID employeeId) {
-        return jdbc.queryForList("""
-            SELECT e.code, e.full_name, e.designation, e.time_zone, e.father_name, e.photo_updated_at, d.name AS department_name,
-                   m.full_name AS manager_name, m.email AS manager_email, m.phone_enc AS manager_phone_enc
-            FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees m ON m.id = e.reporting_manager_id WHERE e.id = ?""", employeeId);
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT e.code, e.full_name, e.full_name_enc, e.designation, e.designation_enc, e.time_zone, e.father_name, e.photo_updated_at, d.name AS department_name,
+                   m.full_name AS manager_name, m.full_name_enc AS manager_name_enc, m.email AS manager_email, m.phone_enc AS manager_phone_enc
+            FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees m ON m.id = e.reporting_manager_id WHERE e.id = ?""", employeeId), "full_name", "designation", "manager_name");
     }
 
     public void saveProgress(UUID id, String status, int currentStep, String stepStatusJson) {
@@ -87,8 +89,8 @@ public class EmployeeOnboardingRepository {
     /** The onboarding and the employee facts needed to initiate onboarding for these employees (row-level security hides other businesses). */
     public List<Map<String, Object>> findForInvitation(List<UUID> employeeIds) {
         String placeholders = String.join(", ", java.util.Collections.nCopies(employeeIds.size(), "?"));
-        return jdbc.queryForList("SELECT e.id AS employee_id, e.full_name, e.email, e.portal_access, e.status::text AS employee_status, o.id AS onboarding_id, o.status "
-                + "FROM employees e JOIN employee_onboardings o ON o.employee_id = e.id WHERE e.id IN (" + placeholders + ")", employeeIds.toArray());
+        return nameReader.resolveAll(jdbc.queryForList("SELECT e.id AS employee_id, e.full_name, e.full_name_enc, e.email, e.portal_access, e.status::text AS employee_status, o.id AS onboarding_id, o.status "
+                + "FROM employees e JOIN employee_onboardings o ON o.employee_id = e.id WHERE e.id IN (" + placeholders + ")", employeeIds.toArray()), "full_name");
     }
 
     /** Onboarding is initiated: NOT_STARTED unless already in progress, filled by the employee or HR. */
@@ -99,7 +101,7 @@ public class EmployeeOnboardingRepository {
 
     /** Name and email of an employee (for the decision mail). */
     public List<Map<String, Object>> findEmployeeContact(UUID employeeId) {
-        return jdbc.queryForList("SELECT full_name, email FROM employees WHERE id = ?", employeeId);
+        return nameReader.resolveAll(jdbc.queryForList("SELECT full_name, full_name_enc, email FROM employees WHERE id = ?", employeeId), "full_name");
     }
 
     // ───────────────────────── reads ─────────────────────────

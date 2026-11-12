@@ -37,11 +37,13 @@ public class SeedRepository {
     private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
 
     private final com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption;
+    private final com.jurislpo.jurisone.service.EmployeeNameDirectory nameDirectory;
 
     private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
 
     public SeedRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption,
-                          com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption) {
+                          com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption, com.jurislpo.jurisone.service.EmployeeNameDirectory nameDirectory) {
+        this.nameDirectory = nameDirectory;
         this.nameEncryption = nameEncryption;
         this.emailEncryption = emailEncryption;
         this.jdbc = jdbc;
@@ -115,6 +117,7 @@ public class SeedRepository {
             VALUES (?, NULL, 'SA001', 'JurisOne Administrator', ?, 'Super Administrator', ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, ?, ?, ?, ?, now())""",
                 id, email, roleId, joined, nameEncryption.encrypt("JurisOne Administrator"), nameEncryption.encrypt("Super Administrator"),
                 emailEncryption.encryptForWrite(email), emailEncryption.blindIndexForWrite(email));
+        nameDirectory.invalidate();
     }
 
     /** Moves an existing employee onto the platform role (no business, department or manager; access on). */
@@ -149,6 +152,7 @@ public class SeedRepository {
                 aadhaarEnc, aadhaarLast4, uanEnc, uanLast4, bankEnc,
                 bankLast4, bankName, bankIfsc, nameEncryption.encrypt(name), nameEncryption.encrypt(title),
                 emailEncryption.encryptForWrite(email), emailEncryption.blindIndexForWrite(email));
+        nameDirectory.invalidate();
     }
 
     /** is_super_admin of the employee's user (zero or one row). */

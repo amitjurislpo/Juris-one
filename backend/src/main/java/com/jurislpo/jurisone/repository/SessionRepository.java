@@ -14,7 +14,7 @@ public class SessionRepository {
 
     private static final String USER_SQL = """
         SELECT s.id AS session_id, s.employee_id AS session_employee, s.expires_at, s.revoked_at, s.last_seen_at,
-               e.id, e.business_id, e.code, e.full_name, e.email, e.email_enc, e.designation, e.role_id, e.portal_access, e.status::text AS status,
+               e.id, e.business_id, e.code, e.full_name, e.full_name_enc, e.email, e.email_enc, e.designation, e.designation_enc, e.role_id, e.portal_access, e.status::text AS status,
                e.region::text AS region, e.time_zone, e.photo_updated_at, u.is_super_admin, u.employee_id AS user_id, r.key AS role_key, r.name AS role_name,
                EXISTS (SELECT 1 FROM employees d WHERE d.reporting_manager_id = e.id AND d.status <> 'EXITED') AS has_reports,
                (SELECT b.status FROM businesses b WHERE b.id = e.business_id) AS business_status
@@ -25,8 +25,10 @@ public class SessionRepository {
         WHERE s.id = ?""";
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public SessionRepository(JdbcTemplate jdbc) {
+    public SessionRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -81,7 +83,7 @@ public class SessionRepository {
 
     /** The session with its employee, user, role and business status (zero or one row). */
     public List<Map<String, Object>> findSessionUser(String sessionId) {
-        return jdbc.queryForList(USER_SQL, sessionId);
+        return nameReader.resolveAll(jdbc.queryForList(USER_SQL, sessionId), "full_name", "designation");
     }
 
     /** Sets {@code last_seen_at} to the database's now(). */

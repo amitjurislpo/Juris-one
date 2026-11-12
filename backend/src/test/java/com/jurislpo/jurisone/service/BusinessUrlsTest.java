@@ -16,7 +16,7 @@ class BusinessUrlsTest {
     static final UUID ACME_ID = UUID.randomUUID();
 
     static BusinessUrls urls(String appUrl, boolean isEnabled, String baseDomain) {
-        BusinessRepository repository = new BusinessRepository(null) {
+        BusinessRepository repository = new BusinessRepository(null, null) {
             @Override
             public String findCode(UUID businessId) {
                 return Map.of(ACME_ID, "acme-legal").get(businessId);
