@@ -484,7 +484,7 @@ public class RegularizationService {
 
     /** Approves or rejects several requests; each one is decided on its own (one failing does not stop the others). A rejection needs remarks. */
     public List<DecisionResult> decideMany(CurrentUser user, List<String> ids, Boolean approve, String note, String ipAddress) {
-        if (!user.can("appr.reg") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
+        if (!user.can("appr.reg", "roles.manage") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
         if (ids == null || ids.isEmpty() || ids.size() > MAX_BULK) throw new UserException(HttpStatus.BAD_REQUEST, "Choose between 1 and " + MAX_BULK + " requests.");
         if (approve == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean, received undefined");
         List<DecisionResult> results = new ArrayList<>();

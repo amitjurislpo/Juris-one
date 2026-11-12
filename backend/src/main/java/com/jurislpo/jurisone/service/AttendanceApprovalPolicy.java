@@ -21,8 +21,8 @@ import org.springframework.stereotype.Component;
  *   <li>An employee's request is decided by anybody holding {@code appr.reg} (Admin, HR), but never by the employee: only the Admin
  *   ({@code roles.manage}) may decide their own request.</li>
  *   <li>A request of an <b>HR</b> person (holds {@code appr.reg}, is not an Admin) is decided by HR's reporting manager, whatever that
- *   manager's role (this is the only attendance request a manager can decide, and only that one request at a time); when HR has no
- *   reporting manager it goes to the Admin. Other HR people cannot decide it, and HR cannot decide their own.</li>
+ *   manager's role (this is the only attendance request a manager can decide), or by the Admin ({@code roles.manage}) at any time, also when HR
+ *   has a manager. Other HR people cannot decide it, and HR cannot decide their own.</li>
  * </ul>
  * Row-level security keeps every query inside the business.
  */
@@ -56,7 +56,7 @@ public class AttendanceApprovalPolicy {
     private static boolean mayDecide(CurrentUser decider, Subject subject) {
         if (subject == null) return false;
         if (subject.id().equals(decider.id())) return decider.can("roles.manage") && decider.can("appr.reg");
-        if (subject.isHr()) return subject.managerId() != null ? decider.id().equals(subject.managerId()) : decider.can("roles.manage");
+        if (subject.isHr()) return decider.id().equals(subject.managerId()) || decider.can("roles.manage"); // HR's manager, or the Admin at any time
         return decider.can("appr.reg");
     }
 
@@ -70,7 +70,7 @@ public class AttendanceApprovalPolicy {
         if (mayDecide(decider, subject)) return;
         if (subject != null && subject.id().equals(decider.id())) throw new UserException("You can't decide your own request.");
         if (subject != null && subject.isHr() && decider.can("appr.reg", "roles.manage")) {
-            throw new UserException(HttpStatus.FORBIDDEN, "A request from HR is decided by HR's reporting manager (by the Admin when there is none).");
+            throw new UserException(HttpStatus.FORBIDDEN, "A request from HR is decided by HR's reporting manager or by the Admin.");
         }
         throw new ForbiddenException();
     }
@@ -94,10 +94,11 @@ public class AttendanceApprovalPolicy {
     public List<UUID> approversOf(UUID subjectId) {
         Subject subject = subject(subjectId);
         if (subject == null) return List.of();
-        if (subject.isHr() && subject.managerId() != null) return List.of(subject.managerId());
-        String permission = subject.isHr() ? "roles.manage" : "appr.reg";
-        return new ArrayList<>(jdbc.queryForList("SELECT DISTINCT e.id FROM employees e WHERE e.status IN ('ACTIVE', 'PROBATION') AND e.id <> ? AND " + HOLDS_PERMISSION,
+        String permission = subject.isHr() ? "roles.manage" : "appr.reg"; // HR's request: the Admin(s) and the reporting manager
+        List<UUID> approvers = new ArrayList<>(jdbc.queryForList("SELECT DISTINCT e.id FROM employees e WHERE e.status IN ('ACTIVE', 'PROBATION') AND e.id <> ? AND " + HOLDS_PERMISSION,
                 UUID.class, subjectId, permission));
+        if (subject.isHr() && subject.managerId() != null && !approvers.contains(subject.managerId())) approvers.add(subject.managerId());
+        return approvers;
     }
 
     /** Whether the signed-in user is the reporting manager of an HR person (they then see that person's attendance requests). */
@@ -116,7 +117,7 @@ public class AttendanceApprovalPolicy {
     }
 
     private int countPending(CurrentUser user, String table) {
-        if (!user.can("appr.reg") && !user.hasReports()) return 0;
+        if (!user.can("appr.reg", "roles.manage") && !user.hasReports()) return 0;
         int total = 0;
         // table names are fixed constants of this class, never user input
         for (Map<String, Object> row : jdbc.queryForList("SELECT employee_id, count(*) AS n FROM " + table + " WHERE status = 'PENDING' GROUP BY employee_id")) {

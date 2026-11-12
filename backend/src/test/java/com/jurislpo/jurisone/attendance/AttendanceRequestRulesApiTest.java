@@ -162,12 +162,18 @@ class AttendanceRequestRulesApiTest extends IntegrationTest {
         }
         String hrId = idOf("on_duty_requests", hr), noManagerId = idOf("on_duty_requests", hrWithoutManager), employeeId = idOf("on_duty_requests", employee), adminId = idOf("on_duty_requests", admin);
 
-        // HR cannot decide their own; another HR cannot; a person with no approval right cannot; the Admin cannot while HR has a manager
+        // HR cannot decide their own; another HR cannot; a person with no approval right cannot
         mockMvc.perform(write(put(ON_DUTY + "/" + hrId + "/decision")).cookie(hr.cookie()).content(decision(true))).andExpect(status().isUnprocessableEntity());
         mockMvc.perform(write(put(ON_DUTY + "/" + hrId + "/decision")).cookie(otherHr.cookie()).content(decision(true))).andExpect(status().isForbidden());
         mockMvc.perform(write(put(ON_DUTY + "/" + hrId + "/decision")).cookie(employee.cookie()).content(decision(true))).andExpect(status().isForbidden());
-        mockMvc.perform(write(put(ON_DUTY + "/" + hrId + "/decision")).cookie(admin.cookie()).content(decision(true))).andExpect(status().isForbidden());
         assertThat(statusOf("on_duty_requests", hrId)).isEqualTo("PENDING");
+        // the Admin may decide the request of an HR person who has a manager, at any time
+        Person hrWithManager = person(hrRole);
+        jdbc.update("UPDATE employees SET reporting_manager_id = ? WHERE id = ?", manager.id(), hrWithManager.id());
+        mockMvc.perform(write(post(ON_DUTY)).cookie(hrWithManager.cookie()).content(onDutyBody(day, ""))).andExpect(status().isCreated());
+        String withManagerId = idOf("on_duty_requests", hrWithManager);
+        mockMvc.perform(write(put(ON_DUTY + "/" + withManagerId + "/decision")).cookie(admin.cookie()).content(decision(true))).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("SELECT decided_by FROM on_duty_requests WHERE id = ?::uuid", UUID.class, withManagerId)).isEqualTo(admin.id());
         // the manager decides HR's request, and ONLY that kind of request: an ordinary employee's request is not theirs to decide
         mockMvc.perform(write(put(ON_DUTY + "/" + employeeId + "/decision")).cookie(manager.cookie()).content(decision(true))).andExpect(status().isForbidden());
         mockMvc.perform(write(put(ON_DUTY + "/" + hrId + "/decision")).cookie(manager.cookie()).content(decision(true))).andExpect(status().isOk());

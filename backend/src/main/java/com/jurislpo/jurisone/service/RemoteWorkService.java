@@ -327,7 +327,7 @@ public class RemoteWorkService {
 
     /** Approves or rejects one pending request (appr.reg). The first decision wins; a rejection needs remarks (up to 300 characters); nobody decides their own request. */
     public String decide(CurrentUser user, String idRaw, Boolean approve, String noteRaw, String ipAddress) {
-        if (!user.can("appr.reg") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
+        if (!user.can("appr.reg", "roles.manage") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
         UUID id = Check.uuid(idRaw);
         if (approve == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean, received undefined");
         String note = noteRaw == null ? null : noteRaw.trim();

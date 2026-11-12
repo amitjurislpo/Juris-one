@@ -123,7 +123,7 @@ public class ApprovalsService {
      * approved at once. The approver who raised it may do that (the "own request" rule still stops anyone deciding their own attendance).
      */
     public String decideRegularization(CurrentUser user, Decision decision, String ipAddress, boolean autoApproved) {
-        if (!user.can("appr.reg") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
+        if (!user.can("appr.reg", "roles.manage") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
         Parsed parsed = parse(decision);
         if (!parsed.approve() && (parsed.note() == null || parsed.note().isEmpty())) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the remarks for rejecting this request.");
         List<Map<String, Object>> rows = repo.findRegularizationForDecision(parsed.id());
