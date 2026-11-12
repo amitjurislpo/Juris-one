@@ -13,7 +13,7 @@ public final class Permissions {
             PEOPLE_VIEW = "people.view", PEOPLE_ADD = "people.add", ACCESS_TOGGLE = "access.toggle", DEPT_MANAGE = "dept.manage",
             HOLIDAYS_MANAGE = "holidays.manage", PAY_VIEW = "pay.view", PAY_CLOSE = "pay.close", STRUCT_MANAGE = "struct.manage",
             TAX_VIEW = "tax.view", PROOFS_VERIFY = "proofs.verify", POLICIES_MANAGE = "policies.manage", ASSETS_MANAGE = "assets.manage",
-            ANNOUNCEMENTS_MANAGE = "announcements.manage", LETTERS_MANAGE = "letters.manage", ROLES_MANAGE = "roles.manage";
+            ANNOUNCEMENTS_MANAGE = "announcements.manage", LETTERS_MANAGE = "letters.manage", SHIFTS_MANAGE = "shifts.manage", ROLES_MANAGE = "roles.manage";
 
     /** Task settings, and the "sees every project and task" exception (the Owner only; private access is audited). */
     public static final String TASKS_MANAGE = "tasks.manage";
@@ -51,6 +51,7 @@ public final class Permissions {
         descriptions.put(DEPT_MANAGE, "Create departments");
         descriptions.put(HOLIDAYS_MANAGE, "Manage holiday calendar");
         descriptions.put(LETTERS_MANAGE, "Issue HR letters & edit letter templates");
+        descriptions.put(SHIFTS_MANAGE, "Manage shifts & the shift roster");
         descriptions.put(PAY_VIEW, "View & edit payroll");
         descriptions.put(PAY_CLOSE, "Close payroll & publish payslips");
         descriptions.put(STRUCT_MANAGE, "Salary structures");
@@ -72,7 +73,7 @@ public final class Permissions {
 
     public static final List<Group> GROUPS = List.of(
             new Group("Self-service", List.of(SELF, DIR)),
-            new Group("People operations", List.of(ATT_ALL, APPR_LEAVE, APPR_REG, PEOPLE_VIEW, PEOPLE_ADD, ACCESS_TOGGLE, DEPT_MANAGE, HOLIDAYS_MANAGE, LETTERS_MANAGE)),
+            new Group("People operations", List.of(ATT_ALL, APPR_LEAVE, APPR_REG, PEOPLE_VIEW, PEOPLE_ADD, ACCESS_TOGGLE, DEPT_MANAGE, HOLIDAYS_MANAGE, LETTERS_MANAGE, SHIFTS_MANAGE)),
             new Group("Finance", List.of(PAY_VIEW, PAY_CLOSE, STRUCT_MANAGE, TAX_VIEW, PROOFS_VERIFY)),
             new Group("Administration", List.of(POLICIES_MANAGE, ASSETS_MANAGE, ANNOUNCEMENTS_MANAGE, ROLES_MANAGE)),
             new Group("Tasks", List.of(TASKS_MANAGE, PROJECTS_CREATE)),
