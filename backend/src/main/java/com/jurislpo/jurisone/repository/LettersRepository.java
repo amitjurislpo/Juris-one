@@ -13,10 +13,12 @@ import org.springframework.stereotype.Repository;
 public class LettersRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
     private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
 
-    public LettersRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts) {
+    public LettersRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
         this.salaryAmounts = salaryAmounts;
     }
@@ -49,15 +51,16 @@ public class LettersRepository {
     // ───────────────────────── employees and their data ─────────────────────────
 
     public List<Map<String, Object>> employeeChoices() {
-        return jdbc.queryForList("""
-            SELECT e.id, e.code, e.full_name, e.designation, e.status::text AS status, e.exit_date FROM employees e JOIN roles r ON r.id = e.role_id
-            WHERE r.key NOT IN ('owner', 'super_admin') ORDER BY e.full_name ASC""");
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT e.id, e.code, e.full_name, e.full_name_enc, e.designation, e.designation_enc, e.status::text AS status, e.exit_date FROM employees e JOIN roles r ON r.id = e.role_id
+            WHERE r.key NOT IN ('owner', 'super_admin')"""), "full_name", "designation").stream()
+                .sorted(java.util.Comparator.comparing(row -> (String) row.get("full_name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
     }
 
     public List<Map<String, Object>> employee(UUID id) {
-        return jdbc.queryForList("""
-            SELECT e.id, e.code, e.full_name, e.email, e.designation, e.date_of_joining, e.exit_date, d.name AS department_name
-            FROM employees e LEFT JOIN departments d ON d.id = e.department_id WHERE e.id = ?""", id);
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT e.id, e.code, e.full_name, e.full_name_enc, e.email, e.designation, e.designation_enc, e.date_of_joining, e.exit_date, d.name AS department_name
+            FROM employees e LEFT JOIN departments d ON d.id = e.department_id WHERE e.id = ?""", id), "full_name", "designation");
     }
 
     /** Monthly Basic + HRA + LTA + Special (paise) of the structure in force on the date; empty when none yet. */

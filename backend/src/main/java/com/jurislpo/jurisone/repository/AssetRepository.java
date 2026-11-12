@@ -1,7 +1,9 @@
 package com.jurislpo.jurisone.repository;
 
+import com.jurislpo.jurisone.crypto.EmployeeNameReader;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -15,23 +17,25 @@ public class AssetRepository {
     private static final String ASSET = """
         SELECT a.id::text AS "id", a.tag AS "tag", a.type AS "type", a.make AS "make", a.model AS "model", a.serial AS "serial",
                a.purchase_date::text AS "purchaseDate", a.status AS "status", a.notes AS "notes",
-               cur.employee_id::text AS "holderId", e.code AS "holderCode", e.full_name AS "holderName", cur.assigned_on::text AS "heldSince"
+               cur.employee_id::text AS "holderId", e.code AS "holderCode", e.full_name AS "holderName", e.full_name_enc AS "holderName_enc", cur.assigned_on::text AS "heldSince"
         FROM assets a
         LEFT JOIN asset_assignments cur ON cur.asset_id = a.id AND cur.returned_on IS NULL
         LEFT JOIN employees e ON e.id = cur.employee_id""";
 
     private final JdbcTemplate jdbc;
+    private final EmployeeNameReader nameReader;
 
-    public AssetRepository(JdbcTemplate jdbc) {
+    public AssetRepository(JdbcTemplate jdbc, EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
     public List<Map<String, Object>> findAll() {
-        return jdbc.queryForList(ASSET + " ORDER BY a.tag");
+        return nameReader.resolveAll(jdbc.queryForList(ASSET + " ORDER BY a.tag"), "holderName");
     }
 
     public List<Map<String, Object>> findById(UUID id) {
-        return jdbc.queryForList(ASSET + " WHERE a.id = ?", id);
+        return nameReader.resolveAll(jdbc.queryForList(ASSET + " WHERE a.id = ?", id), "holderName");
     }
 
     public boolean tagTaken(String tag, UUID exceptId) {
@@ -63,7 +67,8 @@ public class AssetRepository {
 
     /** Active employees (id, code, name) the manager can assign to. */
     public List<Map<String, Object>> findAssignees() {
-        return jdbc.queryForList("SELECT id::text AS \"id\", code AS \"code\", full_name AS \"name\" FROM employees WHERE status <> 'EXITED' ORDER BY full_name");
+        return nameReader.resolveAll(jdbc.queryForList("SELECT id::text AS \"id\", code AS \"code\", full_name AS \"name\", full_name_enc AS \"name_enc\" FROM employees WHERE status <> 'EXITED'"), "name").stream()
+                .sorted(Comparator.comparing(row -> (String) row.get("name"), EmployeeNameReader.NAME_ORDER)).toList();
     }
 
     public boolean assignable(UUID employeeId) {
@@ -88,9 +93,9 @@ public class AssetRepository {
 
     private static final String HISTORY = """
         SELECT s.id::text AS "id", s.asset_id::text AS "assetId", a.tag AS "tag", a.type AS "type", a.make AS "make", a.model AS "model", a.serial AS "serial",
-               s.employee_id::text AS "employeeId", e.code AS "employeeCode", e.full_name AS "employeeName",
-               s.assigned_on::text AS "assignedOn", s.assign_notes AS "assignNotes", ab.full_name AS "assignedBy",
-               s.returned_on::text AS "returnedOn", s.return_condition AS "returnCondition", s.return_notes AS "returnNotes", rb.full_name AS "returnedBy"
+               s.employee_id::text AS "employeeId", e.code AS "employeeCode", e.full_name AS "employeeName", e.full_name_enc AS "employeeName_enc",
+               s.assigned_on::text AS "assignedOn", s.assign_notes AS "assignNotes", ab.full_name AS "assignedBy", ab.full_name_enc AS "assignedBy_enc",
+               s.returned_on::text AS "returnedOn", s.return_condition AS "returnCondition", s.return_notes AS "returnNotes", rb.full_name AS "returnedBy", rb.full_name_enc AS "returnedBy_enc"
         FROM asset_assignments s
         JOIN assets a ON a.id = s.asset_id
         JOIN employees e ON e.id = s.employee_id
@@ -99,11 +104,15 @@ public class AssetRepository {
 
     /** Every assignment of one asset, newest first. */
     public List<Map<String, Object>> findHistory(UUID assetId) {
-        return jdbc.queryForList(HISTORY + " WHERE s.asset_id = ? ORDER BY s.assigned_on DESC, s.created_at DESC", assetId);
+        return resolveHistory(jdbc.queryForList(HISTORY + " WHERE s.asset_id = ? ORDER BY s.assigned_on DESC, s.created_at DESC", assetId));
     }
 
     /** Every assignment of one employee, newest first (open ones have no returnedOn). */
     public List<Map<String, Object>> findForEmployee(UUID employeeId) {
-        return jdbc.queryForList(HISTORY + " WHERE s.employee_id = ? ORDER BY s.assigned_on DESC, s.created_at DESC", employeeId);
+        return resolveHistory(jdbc.queryForList(HISTORY + " WHERE s.employee_id = ? ORDER BY s.assigned_on DESC, s.created_at DESC", employeeId));
+    }
+
+    private List<Map<String, Object>> resolveHistory(List<Map<String, Object>> rows) {
+        return nameReader.resolveAll(rows, "employeeName", "assignedBy", "returnedBy");
     }
 }

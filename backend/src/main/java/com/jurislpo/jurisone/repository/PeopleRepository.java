@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.repository;
 
+import com.jurislpo.jurisone.crypto.EmployeeNameReader;
 import com.jurislpo.jurisone.service.PhotoService;
 import com.jurislpo.jurisone.engine.PeopleRules;
 import com.jurislpo.jurisone.engine.PeopleRules.Target;
@@ -13,6 +14,7 @@ import com.jurislpo.jurisone.service.PeopleService.RoleRow;
 import java.sql.Date;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,10 +32,14 @@ public class PeopleRepository {
 
     private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
     private final com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
+    private final com.jurislpo.jurisone.service.EmployeeNameDirectory nameDirectory;
     private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
 
     public PeopleRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption,
-                            com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption) {
+                            com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader, com.jurislpo.jurisone.service.EmployeeNameDirectory nameDirectory) {
+        this.nameReader = nameReader;
+        this.nameDirectory = nameDirectory;
         this.jdbc = jdbc;
         this.salaryAmounts = salaryAmounts;
         this.nameEncryption = nameEncryption;
@@ -45,19 +51,20 @@ public class PeopleRepository {
     /** One page of the People list for the query; {@code canToggle} decides each row's access switch. */
     public List<PersonRow> findPage(PeopleQuery peopleQuery, Predicate<Target> canToggle) {
         List<Object> args = new ArrayList<>(peopleQuery.args);
+        args.addAll(peopleQuery.orderArgs);
         args.add(peopleQuery.listParams.take());
         args.add(peopleQuery.listParams.skip());
         return jdbc.query("""
-            SELECT e.id::text AS id, e.code, e.full_name, e.designation, e.status::text AS status, e.portal_access, e.time_zone, e.region::text AS region,
-                   e.role_id::text AS role_id, e.date_of_joining, d.name AS department_name, m.full_name AS manager, r.name AS role_name, r.key AS role_key,
+            SELECT e.id::text AS id, e.code, e.full_name, e.full_name_enc, e.designation, e.designation_enc, e.status::text AS status, e.portal_access, e.time_zone, e.region::text AS region,
+                   e.role_id::text AS role_id, e.date_of_joining, d.name AS department_name, m.full_name AS manager, m.full_name_enc AS manager_enc, r.name AS role_name, r.key AS role_key,
                    (SELECT u.is_super_admin FROM users u WHERE u.employee_id = e.id) AS super_admin, e.photo_updated_at,
                    (SELECT o.status FROM employee_onboardings o WHERE o.employee_id = e.id) AS onboarding_status
             """ + PeopleQuery.FROM + peopleQuery.where + peopleQuery.orderBy + " LIMIT ? OFFSET ?",
                 (resultSet, i) -> {
                     Target target = new Target(resultSet.getString("id"), resultSet.getString("role_id"), resultSet.getString("role_key"), EmployeeStatus.valueOf(resultSet.getString("status")),
                             resultSet.getBoolean("super_admin"));
-                    return new PersonRow(resultSet.getString("id"), resultSet.getString("code"), resultSet.getString("full_name"), resultSet.getString("designation"),
-                            resultSet.getString("department_name") == null ? "—" : resultSet.getString("department_name"), resultSet.getString("manager") == null ? "—" : resultSet.getString("manager"),
+                    return new PersonRow(resultSet.getString("id"), resultSet.getString("code"), nameReader.read(resultSet, "full_name"), nameReader.read(resultSet, "designation"),
+                            resultSet.getString("department_name") == null ? "—" : resultSet.getString("department_name"), orDash(nameReader.read(resultSet, "manager")),
                             PeopleRules.locationOfTimeZone(resultSet.getString("time_zone")).label(), "IN".equals(resultSet.getString("region")), resultSet.getString("role_name"),
                             resultSet.getString("status"), resultSet.getBoolean("portal_access"), resultSet.getDate("date_of_joining").toLocalDate().toString(),
                             canToggle.test(target), PhotoService.version(resultSet.getTimestamp("photo_updated_at")),
@@ -98,13 +105,14 @@ public class PeopleRepository {
 
     // ── directory ──
 
-    /** A directory page; {@code where} (may be empty) and {@code order} are built by the service, {@code args} bind the where. */
-    public List<DirectoryRow> findDirectoryPage(String where, String order, List<Object> args, int take, int skip) {
+    /** A directory page; {@code where} (may be empty) and {@code order} are built by the service, {@code args} bind the where, {@code orderArgs} the order. */
+    public List<DirectoryRow> findDirectoryPage(String where, String order, List<Object> args, List<Object> orderArgs, int take, int skip) {
         List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.addAll(orderArgs);
         pageArgs.add(take);
         pageArgs.add(skip);
-        return jdbc.query("SELECT id::text, full_name, email, designation, status::text, photo_updated_at, email_enc FROM employees" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
-                (resultSet, i) -> new DirectoryRow(resultSet.getString(1), resultSet.getString(2), emailEncryption.read(resultSet.getString(3), resultSet.getString(7)), resultSet.getString(4), resultSet.getString(5), PhotoService.version(resultSet.getTimestamp(6))), pageArgs.toArray());
+        return jdbc.query("SELECT id::text, full_name, full_name_enc, email, email_enc, designation, designation_enc, status::text, photo_updated_at FROM employees" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
+                (resultSet, i) -> new DirectoryRow(resultSet.getString("id"), nameReader.read(resultSet, "full_name"), emailEncryption.read(resultSet.getString("email"), resultSet.getString("email_enc")), nameReader.read(resultSet, "designation"), resultSet.getString("status"), PhotoService.version(resultSet.getTimestamp("photo_updated_at"))), pageArgs.toArray());
     }
 
     public Integer countDirectory(String where, List<Object> args) {
@@ -119,11 +127,11 @@ public class PeopleRepository {
 
     /** The employee row with department, manager, role, shift and user columns (empty when not found). */
     public List<Map<String, Object>> findProfile(UUID id) {
-        return jdbc.queryForList("""
-            SELECT e.*, e.status::text AS status_s, e.region::text AS region_s, d.name AS department_name, m.full_name AS manager, r.name AS role_name, r.key AS role_key,
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT e.*, e.status::text AS status_s, e.region::text AS region_s, d.name AS department_name, m.full_name AS manager, m.full_name_enc AS manager_enc, r.name AS role_name, r.key AS role_key,
                    s.code AS shift_code, s.start_local, s.end_local, us.is_super_admin
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees m ON m.id = e.reporting_manager_id
-            JOIN roles r ON r.id = e.role_id LEFT JOIN shifts s ON s.id = e.shift_id LEFT JOIN users us ON us.employee_id = e.id WHERE e.id = ?""", id);
+            JOIN roles r ON r.id = e.role_id LEFT JOIN shifts s ON s.id = e.shift_id LEFT JOIN users us ON us.employee_id = e.id WHERE e.id = ?""", id), "full_name", "first_name", "last_name", "designation", "manager");
     }
 
     /** Monthly gross of the salary structure in force on {@code on} (empty when none). */
@@ -134,7 +142,8 @@ public class PeopleRepository {
 
     /** Names of the manager's current direct reports. */
     public List<String> findCurrentReportNames(UUID managerId) {
-        return jdbc.queryForList("SELECT full_name FROM employees WHERE reporting_manager_id = ? AND status <> 'EXITED' ORDER BY full_name ASC", String.class, managerId);
+        return jdbc.query("SELECT full_name, full_name_enc FROM employees WHERE reporting_manager_id = ? AND status <> 'EXITED'", (resultSet, i) -> nameReader.read(resultSet, "full_name"), managerId).stream()
+                .sorted(EmployeeNameReader.NAME_ORDER).toList();
     }
 
     public Map<String, Object> findContactEnc(UUID id) {
@@ -144,7 +153,7 @@ public class PeopleRepository {
     // ── access & exit ──
 
     public Map<String, Object> findNameAndAccess(UUID id) {
-        return jdbc.queryForMap("SELECT full_name, portal_access FROM employees WHERE id = ?", id);
+        return nameReader.resolve(jdbc.queryForMap("SELECT full_name, full_name_enc, portal_access FROM employees WHERE id = ?", id), "full_name");
     }
 
     public void setPortalAccess(UUID id, boolean enabled) {
@@ -153,10 +162,10 @@ public class PeopleRepository {
 
     /** full_name, date_of_joining, status, portal_access and the count of current direct reports. */
     public Map<String, Object> findForExit(UUID id) {
-        return jdbc.queryForMap("""
-            SELECT full_name, date_of_joining, status::text AS status, portal_access,
+        return nameReader.resolve(jdbc.queryForMap("""
+            SELECT full_name, full_name_enc, date_of_joining, status::text AS status, portal_access,
                    (SELECT count(*) FROM employees r WHERE r.reporting_manager_id = e.id AND r.status <> 'EXITED') AS reports
-            FROM employees e WHERE id = ?""", id);
+            FROM employees e WHERE id = ?""", id), "full_name");
     }
 
     /** Probation / onboarding → permanent (Active). */
@@ -203,7 +212,7 @@ public class PeopleRepository {
 
     /** The employee row being edited, with region_s and status_s. */
     public Map<String, Object> findEditable(UUID id) {
-        return jdbc.queryForMap("SELECT e.*, e.region::text AS region_s, e.status::text AS status_s FROM employees e WHERE id = ?", id);
+        return nameReader.resolve(jdbc.queryForMap("SELECT e.*, e.region::text AS region_s, e.status::text AS status_s FROM employees e WHERE id = ?", id), "full_name", "first_name", "last_name", "designation");
     }
 
     public List<DepartmentOption> findDepartmentOptions() {
@@ -220,10 +229,11 @@ public class PeopleRepository {
     /** Current employees who can be a reporting manager, excluding {@code excludeId} (may be null). */
     public List<Manager> findManagerOptions(UUID excludeId) {
         return jdbc.query("""
-            SELECT e.id::text, e.full_name, e.designation, d.name FROM employees e LEFT JOIN departments d ON d.id = e.department_id
-            WHERE e.status <> 'EXITED' AND (?::uuid IS NULL OR e.id <> ?::uuid) ORDER BY e.full_name ASC""",
-                (resultSet, i) -> new Manager(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3) + (resultSet.getString(4) != null ? " · " + resultSet.getString(4) : "")),
-                excludeId, excludeId);
+            SELECT e.id::text AS id, e.full_name, e.full_name_enc, e.designation, e.designation_enc, d.name AS department_name FROM employees e LEFT JOIN departments d ON d.id = e.department_id
+            WHERE e.status <> 'EXITED' AND (?::uuid IS NULL OR e.id <> ?::uuid)""",
+                (resultSet, i) -> new Manager(resultSet.getString("id"), nameReader.read(resultSet, "full_name"),
+                        nameReader.read(resultSet, "designation") + (resultSet.getString("department_name") != null ? " · " + resultSet.getString("department_name") : "")),
+                excludeId, excludeId).stream().sorted(Comparator.comparing(Manager::name, EmployeeNameReader.NAME_ORDER)).toList();
     }
 
     /** Every role with its permission count, by creation. */
@@ -307,6 +317,7 @@ public class PeopleRepository {
                 nameEncryption.encrypt(fullName), nameEncryption.encrypt(firstName), nameEncryption.encrypt(lastName), nameEncryption.encrypt(designation),
                 emailEncryption.encryptForWrite(email), emailEncryption.blindIndexForWrite(email),
                 departmentId, managerId, roleId, dateOfJoining, timeZone, region, shiftId, status, id);
+        nameDirectory.invalidate();
     }
 
     /** Sets the optional attributes that were given (an empty value keeps what is stored). */
@@ -332,6 +343,7 @@ public class PeopleRepository {
                 timeZone, region, shiftId, status, access, createdBy, employmentType, paymentType, gender,
                 nameEncryption.encrypt(fullName), nameEncryption.encrypt(firstName), nameEncryption.encrypt(lastName), nameEncryption.encrypt(designation),
                 emailEncryption.encryptForWrite(email), emailEncryption.blindIndexForWrite(email));
+        nameDirectory.invalidate();
     }
 
     /** The new employee's user row. */
@@ -364,16 +376,21 @@ public class PeopleRepository {
     /** Export rows (up to 20,000) for the query, as CSV cells. */
     public List<List<Object>> findExportRows(PeopleQuery peopleQuery) {
         List<Object> args = new ArrayList<>(peopleQuery.args);
+        args.addAll(peopleQuery.orderArgs);
         return jdbc.query("""
-            SELECT e.code, e.full_name, e.email, e.designation, d.name AS department_name, m.full_name AS manager_name, m.code AS manager_code, e.time_zone, s.name AS shift,
+            SELECT e.code, e.full_name, e.full_name_enc, e.email, e.designation, e.designation_enc, d.name AS department_name, m.full_name AS manager_name, m.full_name_enc AS manager_name_enc, m.code AS manager_code, e.time_zone, s.name AS shift,
                    r.name AS role, e.status::text AS status, e.portal_access, e.date_of_joining, e.exit_date
             """ + PeopleQuery.FROM + " LEFT JOIN shifts s ON s.id = e.shift_id" + peopleQuery.where + peopleQuery.orderBy + " LIMIT 20000",
-                (resultSet, i) -> Arrays.asList(resultSet.getString("code"), resultSet.getString("full_name"), resultSet.getString("email"), resultSet.getString("designation"),
-                        emptyIfNull(resultSet.getString("department_name")), emptyIfNull(resultSet.getString("manager_name")), emptyIfNull(resultSet.getString("manager_code")), PeopleRules.locationOfTimeZone(resultSet.getString("time_zone")).label(),
+                (resultSet, i) -> Arrays.asList(resultSet.getString("code"), nameReader.read(resultSet, "full_name"), resultSet.getString("email"), nameReader.read(resultSet, "designation"),
+                        emptyIfNull(resultSet.getString("department_name")), emptyIfNull(nameReader.read(resultSet, "manager_name")), emptyIfNull(resultSet.getString("manager_code")), PeopleRules.locationOfTimeZone(resultSet.getString("time_zone")).label(),
                         resultSet.getString("time_zone"), emptyIfNull(resultSet.getString("shift")), resultSet.getString("role"), resultSet.getString("status"),
                         resultSet.getBoolean("portal_access") ? "Enabled" : "Disabled", resultSet.getDate("date_of_joining").toLocalDate().toString(),
                         resultSet.getDate("exit_date") == null ? "" : resultSet.getDate("exit_date").toLocalDate().toString()),
                 args.toArray());
+    }
+
+    private static String orDash(String text) {
+        return text == null ? "—" : text;
     }
 
     private static String emptyIfNull(String text) {

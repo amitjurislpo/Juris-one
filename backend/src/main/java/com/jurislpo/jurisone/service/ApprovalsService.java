@@ -9,7 +9,6 @@ import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.LeaveRules;
 import com.jurislpo.jurisone.repository.ApprovalsRepository;
-import com.jurislpo.jurisone.repository.PeopleQuery;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -45,8 +44,10 @@ public class ApprovalsService {
     private final LeaveService leave;
     private final AuditService audit;
     private final NotificationService notify;
+    private final EmployeeNameDirectory nameDirectory;
 
-    public ApprovalsService(ApprovalsRepository repo, TransactionTemplate transactionTemplate, AttendanceService attendance, LeaveService leave, AuditService audit, NotificationService notify) {
+    public ApprovalsService(ApprovalsRepository repo, TransactionTemplate transactionTemplate, AttendanceService attendance, LeaveService leave, AuditService audit, NotificationService notify, EmployeeNameDirectory nameDirectory) {
+        this.nameDirectory = nameDirectory;
         this.repo = repo;
         this.transactionTemplate = transactionTemplate;
         this.attendanceService = attendance;
@@ -200,8 +201,9 @@ public class ApprovalsService {
         boolean canLeave = user.can("appr.leave"), canReg = user.can("appr.reg");
         String tab = ListParams.pick(queryParams, "tab", List.of("leave", "regularizations"), canLeave ? "leave" : "regularizations");
         String search = ListParams.text(queryParams, "search", "").trim();
-        String nameFilter = search.isEmpty() ? "" : " AND e.full_name ILIKE ?";
-        Object[] nameArg = search.isEmpty() ? new Object[0] : new Object[] {PeopleQuery.like(search)};
+        List<Object> nameArgs = new ArrayList<>();
+        String nameFilter = search.isEmpty() ? "" : " AND " + nameDirectory.contains(EmployeeNameDirectory.Field.FULL_NAME, "e.id", "e.full_name", search, nameArgs);
+        Object[] nameArg = nameArgs.toArray();
 
         List<LeaveCard> leaveCards = new ArrayList<>();
         if (canLeave) {

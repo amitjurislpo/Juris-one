@@ -12,8 +12,10 @@ import org.springframework.stereotype.Repository;
 public class ShellRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public ShellRepository(JdbcTemplate jdbc) {
+    public ShellRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -54,10 +56,10 @@ public class ShellRepository {
 
     /** department, manager, date_of_joining, shift_code, start_local, end_local of the employee. */
     public Map<String, Object> profileCard(UUID employeeId) {
-        return jdbc.queryForMap("""
-            SELECT d.name AS department, m.full_name AS manager, e.date_of_joining, s.code AS shift_code, s.start_local, s.end_local
+        return nameReader.resolve(jdbc.queryForMap("""
+            SELECT d.name AS department, m.full_name AS manager, m.full_name_enc AS manager_enc, e.date_of_joining, s.code AS shift_code, s.start_local, s.end_local
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees m ON m.id = e.reporting_manager_id
-            LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.id = ?""", employeeId);
+            LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.id = ?""", employeeId), "manager");
     }
 
     public String businessName(UUID businessId) {

@@ -49,12 +49,14 @@ public class AuthService {
     private final MailService mail;
     private final SubscriptionService subscriptions;
     private final TenantHostGuard hostGuard;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
     public AuthService(AuthRepository repo, TransactionTemplate transactionTemplate, RateLimiter limiter, SessionService sessions,
                        SettingsService settings, AuditService audit, OtpService otps,
                        @org.springframework.beans.factory.annotation.Value("${jurisone.otp.requests-per-ip:10}") int otpPerIp,
                        @org.springframework.beans.factory.annotation.Value("${jurisone.otp.requests-per-email:5}") int otpPerEmail, MailService mail,
-                       SubscriptionService subscriptions, TenantHostGuard hostGuard) {
+                       SubscriptionService subscriptions, TenantHostGuard hostGuard, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.hostGuard = hostGuard;
         this.subscriptions = subscriptions;
         this.otpPerIp = otpPerIp;
@@ -203,13 +205,13 @@ public class AuthService {
         if (host != null && host.kind() == HostBusiness.Kind.UNKNOWN) throw unknownHost(host, "otp_request", meta); // after the limits: a scanner still pays
         Employee employee = findOnHost(email, host, "otp_request", meta);
         if (canReceiveOtp(employee)) {
-            otps.issue(email, employee.getFullName(), meta.ipAddress());
+            otps.issue(email, nameReader.fullName(employee), meta.ipAddress());
             audit.log(employee.getId(), "auth.otp_requested", "session", employee.getId().toString(), null,
                     java.util.Map.of("identifier", com.jurislpo.jurisone.security.AuditTrail.maskEmail(email)), meta.ipAddress());
         }
         else if (employee != null) { // the person is told by email why no code comes (the page still answers the same for everyone)
             history(employee, email, false, employee.getStatus() == EmployeeStatus.EXITED ? "exited" : !Boolean.TRUE.equals(employee.getPortalAccess()) ? "access_disabled" : "business_suspended", meta);
-            mail.send(email, MailTemplates.noCode(employee.getFullName(), employee.getStatus() == EmployeeStatus.EXITED ? MSG_EXITED
+            mail.send(email, MailTemplates.noCode(nameReader.fullName(employee), employee.getStatus() == EmployeeStatus.EXITED ? MSG_EXITED
                     : !Boolean.TRUE.equals(employee.getPortalAccess()) ? MSG_DISABLED : MSG_SUSPENDED));
         }
         return "If that account exists and is active, a 6-digit code is on its way to the email.";

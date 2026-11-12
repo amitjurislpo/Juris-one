@@ -17,11 +17,13 @@ import org.springframework.stereotype.Repository;
 public class PayrollOperationsRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
     private final com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots;
     private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
 
-    public PayrollOperationsRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots) {
+    public PayrollOperationsRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
         this.salaryAmounts = salaryAmounts;
         this.snapshots = snapshots;
@@ -31,10 +33,10 @@ public class PayrollOperationsRepository {
 
     /** Names of India employees on the books by {@code lastDay} without a structure effective by then. */
     public List<String> namesWithoutStructure(LocalDate lastDay) {
-        return jdbc.queryForList("""
-            SELECT full_name FROM employees e WHERE region = 'IN' AND status <> 'EXITED' AND date_of_joining <= ?
-              AND NOT EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?) ORDER BY full_name ASC""",
-                String.class, Date.valueOf(lastDay), Date.valueOf(lastDay));
+        return jdbc.query("""
+            SELECT full_name, full_name_enc FROM employees e WHERE region = 'IN' AND status <> 'EXITED' AND date_of_joining <= ?
+              AND NOT EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?)""",
+                (resultSet, i) -> nameReader.read(resultSet, "full_name"), Date.valueOf(lastDay), Date.valueOf(lastDay)).stream().sorted(com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER).toList();
     }
 
     public void insertOpenRun(UUID id, String month) {
@@ -70,7 +72,7 @@ public class PayrollOperationsRepository {
 
     /** full_name and region of an employee (empty when not found). */
     public List<Map<String, Object>> employeeRegion(UUID employeeId) {
-        return jdbc.queryForList("SELECT full_name, region::text AS region FROM employees WHERE id = ?", employeeId);
+        return nameReader.resolveAll(jdbc.queryForList("SELECT full_name, full_name_enc, region::text AS region FROM employees WHERE id = ?", employeeId), "full_name");
     }
 
     public List<Map<String, Object>> findAdjustment(UUID runId, UUID employeeId) {
@@ -98,7 +100,7 @@ public class PayrollOperationsRepository {
 
     /** The masked identifiers and contact details printed on / used for a payslip. */
     public Map<String, Object> payslipEmployee(UUID employeeId) {
-        return jdbc.queryForMap("SELECT pan_last4, uan_last4, bank_name, bank_account_last4, email, full_name FROM employees WHERE id = ?", employeeId);
+        return nameReader.resolve(jdbc.queryForMap("SELECT pan_last4, uan_last4, bank_name, bank_account_last4, email, full_name, full_name_enc FROM employees WHERE id = ?", employeeId), "full_name");
     }
 
     public void insertPayslip(UUID runId, UUID employeeId, String snapshot, String pdfPath) {
@@ -135,8 +137,8 @@ public class PayrollOperationsRepository {
     /** India employees not exited, optionally in one department ({@code deptId} null = all). */
     public List<Map<String, Object>> structureEmployees(String departmentId) {
         boolean byDepartment = departmentId != null;
-        return jdbc.queryForList("SELECT id, code, full_name, designation, date_of_joining FROM employees WHERE region = 'IN' AND status <> 'EXITED'"
-                + (byDepartment ? " AND department_id = ?::uuid" : ""), byDepartment ? new Object[] {departmentId} : new Object[0]);
+        return nameReader.resolveAll(jdbc.queryForList("SELECT id, code, full_name, full_name_enc, designation, designation_enc, date_of_joining FROM employees WHERE region = 'IN' AND status <> 'EXITED'"
+                + (byDepartment ? " AND department_id = ?::uuid" : ""), byDepartment ? new Object[] {departmentId} : new Object[0]), "full_name", "designation");
     }
 
     /** An employee's salary revisions, newest first. */
@@ -154,7 +156,7 @@ public class PayrollOperationsRepository {
 
     /** full_name, region, date_of_joining and status of an employee (empty when not found). */
     public List<Map<String, Object>> structureEmployee(UUID employeeId) {
-        return jdbc.queryForList("SELECT full_name, region::text AS region, date_of_joining, status::text AS status FROM employees WHERE id = ?", employeeId);
+        return nameReader.resolveAll(jdbc.queryForList("SELECT full_name, full_name_enc, region::text AS region, date_of_joining, status::text AS status FROM employees WHERE id = ?", employeeId), "full_name");
     }
 
     public Integer countStructuresEffective(UUID employeeId, String effectiveFrom) {
