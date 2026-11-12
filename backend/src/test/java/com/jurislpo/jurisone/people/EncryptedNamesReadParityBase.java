@@ -68,7 +68,7 @@ abstract class EncryptedNamesReadParityBase extends IntegrationTest {
             jdbc.update("UPDATE employees SET reporting_manager_id = ?, department_id = ? WHERE id = ?", reportsTo, i % 2 == 0 ? department : null, people.get(i));
         }
         for (int i = 0; i < 12; i++) {
-            jdbc.update("INSERT INTO employee_onboardings (id, employee_id, status) VALUES (?, ?, 'NOT_STARTED')", UUID.randomUUID(), people.get(i));
+            jdbc.update("INSERT INTO employee_onboardings (id, business_id, employee_id, status) VALUES (?, ?, ?, 'NOT_STARTED')", UUID.randomUUID(), data.business(), people.get(i));
         }
         Cookie hr = signIn("hr." + suffix + "@example.com");
         Cookie lead = signIn("mgr." + suffix + "@example.com");

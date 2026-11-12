@@ -110,7 +110,8 @@ class EncryptedNamesReadTest extends IntegrationTest {
         jdbc.update("UPDATE employees SET reporting_manager_id = ? WHERE id = ?", manager, person);
         jdbc.update("UPDATE employees SET reporting_manager_id = ? WHERE id = ?", hrId, manager);
         // the plaintext columns now hold something else; only the encrypted copies still say who these people are
-        jdbc.update("UPDATE employees SET full_name = 'PLAINLEAK', designation = 'plainjob', first_name = 'PLAINFIRST', last_name = 'PLAINLAST' WHERE id IN (?, ?)", person, manager);
+        jdbc.update("UPDATE employees SET full_name = 'PLAINLEAK', designation = 'plainjob', first_name = 'PLAINFIRST', last_name = 'PLAINLAST', first_name_enc = ?, last_name_enc = ? WHERE id IN (?, ?)",
+                TestData.PII_CRYPTO.encrypt("Realfirst"), TestData.PII_CRYPTO.encrypt("Reallast"), person, manager);
 
         long fallbacksBefore = nameReader.fallbackCount();
         for (String path : List.of("/api/v1/people", "/api/v1/directory", "/api/v1/people/" + person, "/api/v1/people/export", "/api/v1/letters/employees", "/api/v1/people/form-options?id=" + person)) {
@@ -199,6 +200,7 @@ class EncryptedNamesReadTest extends IntegrationTest {
     void hostileSearchTextIsTakenLiterallyAndNeverBreaksAnything() throws Exception {
         data.employee("PC" + suffix, "pc." + suffix + "@example.com", employeeRoleId, "Rate 100%_Done", "Percent");
         data.employee("PL" + suffix, "pl." + suffix + "@example.com", employeeRoleId, "Plain Name", "Plainer");
+        nameDirectory.invalidate(); // the rows above were inserted straight into the table, not through the application
         mockMvc.perform(get("/api/v1/people?search=%25").cookie(hr)).andExpect(jsonPath("$.data.total").value(1)); // % is a character, not a wildcard
         mockMvc.perform(get("/api/v1/people?search=_").cookie(hr)).andExpect(jsonPath("$.data.total").value(1));
         mockMvc.perform(get("/api/v1/directory?search=%25_").cookie(hr)).andExpect(jsonPath("$.data.total").value(1));
