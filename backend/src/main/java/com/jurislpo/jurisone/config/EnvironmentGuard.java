@@ -70,6 +70,12 @@ public class EnvironmentGuard {
             else if (isWeakKey(previous)) out.add("jurisone.security.pii-encryption-previous-keys holds a weak or well-known key");
             else if (previous.trim().equals(piiKey.trim())) out.add("jurisone.security.pii-encryption-previous-keys must not repeat the newest key");
         }
+        // the blind index key: only needed once an email switch that uses it is on, then it must be valid and must not be the PII key
+        String blindKey = blankTo(get.apply("jurisone.security.email-blind-index-key"), "");
+        boolean isBlindIndexUsed = "true".equalsIgnoreCase(blankTo(get.apply("jurisone.security.encrypt-email.dual-write"), "false"))
+                || "true".equalsIgnoreCase(blankTo(get.apply("jurisone.security.encrypt-email.lookup-by-blind-index"), "false"));
+        if (isBlindIndexUsed && (blindKey.isBlank() || blindKey.contains("<") || !isValidAesKey(blindKey))) out.add("jurisone.security.email-blind-index-key must be 32 bytes, base64-encoded, when an encrypt-email switch is on (EMAIL_BLIND_INDEX_KEY)");
+        else if (isBlindIndexUsed && blindKey.equals(piiKey)) out.add("jurisone.security.email-blind-index-key must differ from jurisone.security.pii-encryption-key");
         if (!STRICT.contains(name)) return out;
         if ("true".equalsIgnoreCase(blankTo(get.apply("jurisone.seed.demo"), "false"))) out.add("jurisone.seed.demo must be false (no demo data outside dev and sqe)");
         if (!blankTo(get.apply("jurisone.app-url"), "").startsWith("https://")) out.add("jurisone.app-url must be an https:// URL");

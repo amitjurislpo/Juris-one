@@ -28,6 +28,13 @@ public class Employee {
     @Column(name = "email", nullable = false, unique = true)
     private String email;  // stored lower-case
 
+    /** Encrypted copy of the email and its blind index (V38); read only here, written by the repositories' SQL. */
+    @Column(name = "email_enc", insertable = false, updatable = false)
+    private String emailEnc;
+
+    @Column(name = "email_blind_index", insertable = false, updatable = false)
+    private String emailBlindIndex;
+
     @Column(name = "phone_enc")
     private String phoneEnc;
 
@@ -159,6 +166,7 @@ public class Employee {
     public void setFatherName(String fatherName) { this.fatherName = fatherName; }
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
+    public String getEmailEnc() { return emailEnc; }
     public String getPhoneEnc() { return phoneEnc; }
     public void setPhoneEnc(String phoneEnc) { this.phoneEnc = phoneEnc; }
     public String getPhoneLast4() { return phoneLast4; }

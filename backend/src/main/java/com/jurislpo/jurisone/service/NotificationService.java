@@ -17,7 +17,10 @@ public class NotificationService {
     private final NotificationRepository repo;
     private final MailService mail;
 
-    public NotificationService(NotificationRepository repo, MailService mail) {
+    private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
+
+    public NotificationService(NotificationRepository repo, MailService mail, com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption) {
+        this.emailEncryption = emailEncryption;
         this.repo = repo;
         this.mail = mail;
     }
@@ -53,13 +56,13 @@ public class NotificationService {
         Employee employee = repo.findEmployee(employeeId);
         if (employee == null) return;
         notify(employeeId, what + " " + (approved ? "approved" : "declined") + " by " + by, link);
-        mail.send(employee.getEmail(), MailTemplates.decision(employee.getFullName(), what, approved, by, note));
+        mail.send(emailEncryption.emailOf(employee), MailTemplates.decision(employee.getFullName(), what, approved, by, note));
     }
 
     /** An email (no bell) to one employee's address; the content is built from the employee's name. Nothing is sent if the employee is gone. */
     public void emailEmployee(UUID employeeId, java.util.function.Function<String, MailTemplates.Content> content) {
         Employee employee = repo.findEmployee(employeeId);
         if (employee == null) return;
-        mail.send(employee.getEmail(), content.apply(employee.getFullName()));
+        mail.send(emailEncryption.emailOf(employee), content.apply(employee.getFullName()));
     }
 }

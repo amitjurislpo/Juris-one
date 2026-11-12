@@ -13,9 +13,11 @@ import org.springframework.stereotype.Repository;
 public class AuthRepository {
 
     private final EntityManager entityManager;
+    private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
 
-    public AuthRepository(EntityManager entityManager) {
+    public AuthRepository(EntityManager entityManager, com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption) {
         this.entityManager = entityManager;
+        this.emailEncryption = emailEncryption;
     }
 
     /** The business's status; throws when the business does not exist. */
@@ -25,6 +27,11 @@ public class AuthRepository {
 
     /** Employees (zero or one) with this sign-in email. */
     public List<Employee> findEmployeesByEmail(String email) {
+        if (emailEncryption.isLookupByBlindIndex()) {
+            List<Employee> byBlindIndex = entityManager.createQuery("SELECT e FROM Employee e WHERE e.emailBlindIndex = :v", Employee.class)
+                    .setParameter("v", emailEncryption.blindIndex(email)).getResultList();
+            if (!byBlindIndex.isEmpty() || !emailEncryption.isPlaintextFallback()) return byBlindIndex; // fallback only for rows the backfill has not reached yet
+        }
         return entityManager.createQuery("SELECT e FROM Employee e WHERE e.email = :v", Employee.class).setParameter("v", email).getResultList();
     }
 

@@ -26,7 +26,10 @@ public class ProfileService {
     private final PiiCrypto piiCrypto;
     private final AuditService audit;
 
-    public ProfileService(ProfileRepository repo, PiiCrypto piiCrypto, AuditService audit) {
+    private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
+
+    public ProfileService(ProfileRepository repo, PiiCrypto piiCrypto, AuditService audit, com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption) {
+        this.emailEncryption = emailEncryption;
         this.repo = repo;
         this.piiCrypto = piiCrypto;
         this.audit = audit;
@@ -47,7 +50,7 @@ public class ProfileService {
         out.put("firstName", names[0]);
         out.put("middleName", names[1]);
         out.put("lastName", names[2]);
-        out.put("email", row.get("email"));
+        out.put("email", emailEncryption.read((String) row.get("email"), (String) row.get("email_enc")));
         out.put("phone", row.get("phone_last4") == null ? null : (row.get("phone_country") == null ? "" : row.get("phone_country") + " ") + Masks.phone((String) row.get("phone_last4")));
         out.put("designation", row.get("designation"));
         out.put("department", row.get("department_name"));

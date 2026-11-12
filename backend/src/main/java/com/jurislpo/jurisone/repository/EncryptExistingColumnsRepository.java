@@ -88,6 +88,24 @@ public class EncryptExistingColumnsRepository {
                 + target.encryptedColumn() + " IS NOT DISTINCT FROM ?", newStored, id, expectedPlain, expectedStored);
     }
 
+    // ── employee email: encrypted copy and blind index beside the plaintext column ──
+
+    /** Id, plain email, stored encrypted copy and stored blind index of every employee that has an email, in id order (every business). */
+    public List<Map<String, Object>> findEmails() {
+        return jdbc.queryForList("SELECT id, email AS plain, email_enc AS stored, email_blind_index AS blind_index FROM employees WHERE email IS NOT NULL AND email <> '' ORDER BY id");
+    }
+
+    /** Sets the encrypted copy and blind index only if the row still has the plain email, copy and index that were read. A unique-index clash throws DuplicateKeyException. Returns rows changed. */
+    public int replaceEmailIfUnchanged(Object id, String expectedPlain, String expectedStored, String expectedBlindIndex, String newStored, String newBlindIndex) {
+        return jdbc.update("UPDATE employees SET email_enc = ?, email_blind_index = ? WHERE id = ? AND email = ? AND email_enc IS NOT DISTINCT FROM ? AND email_blind_index IS NOT DISTINCT FROM ?",
+                newStored, newBlindIndex, id, expectedPlain, expectedStored, expectedBlindIndex);
+    }
+
+    /** Employees with an email that cannot yet be found by blind index (zero before the plaintext fallback may be turned off). */
+    public int countEmailsWithoutBlindIndex() {
+        return jdbc.queryForObject("SELECT count(*) FROM employees WHERE email IS NOT NULL AND email <> '' AND email_blind_index IS NULL", Integer.class);
+    }
+
     // ── text columns ──
 
     /** Id and stored value of the rows that have a value in the column. */

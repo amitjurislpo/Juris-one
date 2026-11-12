@@ -34,6 +34,20 @@ class EnvironmentGuardTest {
     }
 
     @Test
+    void theEmailBlindIndexKeyIsNeededOnlyOnceAnEmailSwitchUsingItIsOn() {
+        Map<String, String> environment = good("prd");
+        assertThat(problems(environment)).isEmpty(); // all switches off by default: no key needed
+        environment.put("jurisone.security.encrypt-email.dual-write", "true");
+        assertThat(problems(environment)).hasSize(1).anyMatch(p -> p.contains("email-blind-index-key"));
+        environment.put("jurisone.security.email-blind-index-key", "short");
+        assertThat(problems(environment)).hasSize(1);
+        environment.put("jurisone.security.email-blind-index-key", environment.get("jurisone.security.pii-encryption-key"));
+        assertThat(problems(environment)).hasSize(1).anyMatch(p -> p.contains("must differ"));
+        environment.put("jurisone.security.email-blind-index-key", "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=");
+        assertThat(problems(environment)).isEmpty();
+    }
+
+    @Test
     void devMayUseTheFixedCodeAndDemoData() {
         Map<String, String> environment = new HashMap<>();
         environment.put("jurisone.env", "dev");
