@@ -98,16 +98,4 @@ class LeaveRulesTest {
             assertThat(compOffExpiries(List.of(new Credit("a", 1, parseDate("2026-09-01"), 0.5), second), 0.5, parseDate("2026-10-06"))).isEmpty();
         }
     }
-
-    @Nested
-    @DisplayName("year end")
-    class YearEnd {
-        @Test
-        @DisplayName("casual leave lapses, earned leave carries up to 30")
-        void lapse() {
-            assertThat(yearEndLapse(4, 0)).isEqualTo(4);
-            assertThat(yearEndLapse(34.5, 30)).isEqualTo(4.5);
-            assertThat(yearEndLapse(12, 30)).isZero();
-        }
-    }
 }

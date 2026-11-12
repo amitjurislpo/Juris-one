@@ -5,11 +5,13 @@ import static com.jurislpo.jurisone.engine.Num.round2;
 import com.jurislpo.jurisone.service.AttendanceService.AttendanceEmployee;
 import com.jurislpo.jurisone.common.Check;
 import com.jurislpo.jurisone.common.ListParams;
+import com.jurislpo.jurisone.exception.ForbiddenException;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.LeaveRules;
+import com.jurislpo.jurisone.engine.LeaveYear;
 import com.jurislpo.jurisone.repository.LeaveRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.math.BigDecimal;
@@ -34,9 +36,13 @@ public class LeaveService {
     private final LeaveRepository repo;
     private final AttendanceService attendanceService;
     private final AuditService audit;
+    private final SettingsService settings;
+    private final NotificationService notifications;
 
-    public LeaveService(LeaveRepository repo, AttendanceService attendance, AuditService audit) {
+    public LeaveService(LeaveRepository repo, AttendanceService attendance, AuditService audit, SettingsService settings, NotificationService notifications) {
+        this.notifications = notifications;
         this.repo = repo;
+        this.settings = settings;
         this.attendanceService = attendance;
         this.audit = audit;
     }
@@ -111,6 +117,15 @@ public class LeaveService {
 
         LocalDate today = attendanceService.currentWorkDate(employee, Instant.now());
         if (!forDecision && from.isBefore(today)) return out.withError("Leave can't start in the past. For a missed day, request a regularization.");
+        if (!forDecision) {
+            // one leave year at a time: no dates in the next (or an earlier) leave year, and no request across a year end
+            SettingsService.LeavePolicy leavePolicy = settings.leave();
+            LeaveYear.Span leaveYear = LeaveYear.of(today, leavePolicy.yearStartMonth(), leavePolicy.yearStartDay());
+            if (!leaveYear.contains(from) || !leaveYear.contains(to)) {
+                return out.withError("Leave can only be applied within the current leave year (" + leaveYear.start() + " to " + leaveYear.end()
+                        + "). Apply for later dates once the new leave year starts.");
+            }
+        }
         if (from.isBefore(employee.dateOfJoining())) return out.withError("Leave can't start before your joining date.");
         if (employee.exitDate() != null && to.isAfter(employee.exitDate())) return out.withError("Leave can't go beyond your last working day.");
         if (ChronoUnit.DAYS.between(from, to) + 1 > 62) return out.withError("Apply for at most two months at a time.");
@@ -143,7 +158,11 @@ public class LeaveService {
 
     // ───────────────────────── apply / cancel ─────────────────────────
 
-    public record ApplyInput(String type, String from, String to, String part, String reason) {}
+    /** {@code employeeId} (optional): Admin / HR (`appr.leave`) apply for that employee of their business; empty = for oneself. */
+    public record ApplyInput(String type, String from, String to, String part, String reason, String employeeId) {}
+
+    /** The result of applying: the message to show, the new request, and whether it was raised for someone else. */
+    public record Applied(String message, String requestId, boolean onBehalf) {}
 
     record Parsed(String type, LocalDate from, LocalDate to, LeavePart part, String reason) {}
 
@@ -159,6 +178,20 @@ public class LeaveService {
         return new Parsed(type, LocalDate.parse(applyInput.from()), LocalDate.parse(applyInput.to()), part, reason);
     }
 
+    /**
+     * Who the request is for: oneself, or (Admin / HR with {@code appr.leave}) an employee of the same business named in {@code employeeIdText}.
+     * Anybody else naming another person gets 403; an unknown id or an employee of another business gets 404; a malformed id gets 400.
+     */
+    AttendanceEmployee subject(CurrentUser user, String employeeIdText) {
+        if (employeeIdText == null || employeeIdText.isBlank()) return me(user);
+        UUID requested = Check.uuid(employeeIdText.trim());
+        if (requested.equals(user.id())) return me(user);
+        if (!user.can("appr.leave")) throw new ForbiddenException();
+        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", requested);
+        if (employees.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Employee not found.");
+        return employees.get(0);
+    }
+
     AttendanceEmployee me(CurrentUser user) {
         List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", user.id());
         if (employees.isEmpty()) throw new UserException("Leave isn't tracked for your account.");
@@ -167,20 +200,21 @@ public class LeaveService {
 
     /** Live numbers for the apply form — same rules the server enforces on submit. */
     public Preview preview(CurrentUser user, ApplyInput applyInput) {
-        AttendanceEmployee employee = me(user);
+        AttendanceEmployee employee = subject(user, applyInput.employeeId());
         Parsed parsed = parse(applyInput);
         return previewRequest(employee, parsed.type(), parsed.from(), parsed.to(), parsed.part(), null, false);
     }
 
-    public String apply(CurrentUser user, ApplyInput applyInput, String ipAddress) {
-        AttendanceEmployee employee = me(user);
+    public Applied apply(CurrentUser user, ApplyInput applyInput, String ipAddress) {
+        AttendanceEmployee employee = subject(user, applyInput.employeeId());
+        boolean onBehalf = !employee.id().equals(user.id());
         Parsed parsed = parse(applyInput);
         Preview preview = previewRequest(employee, parsed.type(), parsed.from(), parsed.to(), parsed.part(), null, false);
         if (preview.error() != null) throw new UserException(preview.error());
         LeavePart part = preview.dates().size() == 1 ? parsed.part() : LeavePart.FULL;
         String typeName = repo.findTypeName(parsed.type());
         UUID id = UUID.randomUUID();
-        repo.insertRequest(id, user.id(), parsed.type(), Date.valueOf(preview.from()), Date.valueOf(preview.to()), part.name(), BigDecimal.valueOf(preview.days()),
+        repo.insertRequest(id, employee.id(), parsed.type(), Date.valueOf(preview.from()), Date.valueOf(preview.to()), part.name(), BigDecimal.valueOf(preview.days()),
                 BigDecimal.valueOf(preview.lopDays()), parsed.reason().isEmpty() ? null : parsed.reason());
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("type", parsed.type());
@@ -189,10 +223,16 @@ public class LeaveService {
         after.put("part", part.name());
         after.put("days", preview.days());
         after.put("lopDays", preview.lopDays());
-        audit.log(user.id(), "leave.apply", "leave_request", id.toString(), null, after, ipAddress);
+        if (onBehalf) {
+            after.put("onBehalfOf", employee.id().toString()); // the actor is the audit row's actor; the employee it was raised for is named here
+            after.put("employeeCode", employee.code());
+        }
+        audit.log(user.id(), onBehalf ? "leave.apply_on_behalf" : "leave.apply", "leave_request", id.toString(), null, after, ipAddress);
         String span = preview.from().equals(preview.to()) ? Format.formatDayMonth(LocalDate.parse(preview.from())) : Format.formatDayMonth(LocalDate.parse(preview.from())) + " – " + Format.formatDayMonth(LocalDate.parse(preview.to()));
-        return typeName + " for " + formatNumber(preview.days()) + " day" + (preview.days() == 1 ? "" : "s") + " (" + span + ") sent to HR"
+        if (onBehalf) notifications.notify(employee.id(), user.name() + " applied " + typeName + " for you (" + span + ")", "/leave");
+        String message = typeName + " for " + formatNumber(preview.days()) + " day" + (preview.days() == 1 ? "" : "s") + " (" + span + ")" + (onBehalf ? " raised for " + employee.name() : " sent to HR")
                 + (preview.lopDays() != 0 ? " · " + formatNumber(preview.lopDays()) + " day(s) unpaid" : "");
+        return new Applied(message, id.toString(), onBehalf);
     }
 
     public String cancel(CurrentUser user, String idRaw) {
@@ -226,7 +266,8 @@ public class LeaveService {
         AttendanceService.ResolvedAttendancePolicy policy = attendanceService.policy();
         Instant now = Instant.now();
         LocalDate today = employee != null ? attendanceService.currentWorkDate(employee, now) : Format.isoInZone(now, user.timeZone());
-        int year = today.getYear();
+        SettingsService.LeavePolicy leavePolicy = settings.leave();
+        LeaveYear.Span leaveYear = LeaveYear.of(today, leavePolicy.yearStartMonth(), leavePolicy.yearStartDay());
 
         List<Balance> bals = balances(user.id());
         List<RequestRow> reqs = new ArrayList<>(repo.findRequests(user.id(), status, user.timeZone()));
@@ -236,13 +277,13 @@ public class LeaveService {
 
         double lopYear = 0;
         if (employee != null) {
-            LocalDate start = LocalDate.of(year, 1, 1);
+            LocalDate start = leaveYear.start();
             if (policy.trackingStart().isAfter(start)) start = policy.trackingStart();
             if (employee.dateOfJoining().isAfter(start)) start = employee.dateOfJoining();
             lopYear = AttendanceEngine.summarize(attendanceService.attendanceFor(List.of(employee), start, today, now).get(employee.id()).stream().filter(x -> !x.dayResult.future).map(x -> x.dayResult).toList(),
                     policy.engine()).lopDays;
         }
-        List<HolidayView> holidays = repo.findHolidayViews(user.region(), Date.valueOf(LocalDate.of(year, 1, 1)), Date.valueOf(LocalDate.of(year, 12, 31)));
+        List<HolidayView> holidays = repo.findHolidayViews(user.region(), Date.valueOf(leaveYear.start()), Date.valueOf(leaveYear.end()));
         Map<String, String> upcoming = repo.upcomingHolidays(user.region(), Date.valueOf(today));
         boolean probation = repo.onProbation(user.id());
         List<TypeOption> types = bals.stream().map(b -> new TypeOption(b.code(), b.name(), b.paid(), b.needsBalance() ? round2(b.balance() - b.pending()) : null, "EL".equals(b.code()) && probation ? EL_ON_PROBATION : null)).toList();
@@ -251,7 +292,9 @@ public class LeaveService {
         out.put("tab", tab);
         out.put("status", status);
         out.put("today", today.toString());
-        out.put("year", String.valueOf(year));
+        out.put("year", leaveYear.label());
+        out.put("yearFrom", leaveYear.start().toString());
+        out.put("yearTo", leaveYear.end().toString());
         out.put("canApply", employee != null);
         out.put("balances", bals);
         out.put("lopYear", lopYear);

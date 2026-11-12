@@ -39,7 +39,12 @@ class LeaveApiTest extends IntegrationTest {
 
     @BeforeEach
     void setUp() {
-        data = new TestData(jdbc);
+        data = new TestData(jdbc).inBusiness("leave-api-" + TestData.letters(8));
+        // a leave year that started a few days ago, so "next week" is always inside it (even in the last week of December) and the one-day difference between IST midnight and an employee's work date cannot matter
+        LocalDate today = AttendanceEngine.localParts(Instant.now(), "Asia/Kolkata").date().minusDays(3);
+        int startDay = today.getMonthValue() == 2 && today.getDayOfMonth() == 29 ? 28 : today.getDayOfMonth();
+        jdbc.update("INSERT INTO settings (key, value, updated_at, business_id) VALUES ('leave.policy', ?::jsonb, now(), ?) ON CONFLICT (key, business_id) DO UPDATE SET value = EXCLUDED.value",
+                "{\"yearStartMonth\":" + today.getMonthValue() + ",\"yearStartDay\":" + startDay + ",\"yearEnd\":{}}", data.business());
         empRole = data.role("employee", "self", "dir");
         hrRole = data.role("hrm", "self", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "holidays.manage");
         finRole = data.role("fm", "self", "dir", "people.view", "struct.manage", "pay.view");
@@ -81,7 +86,7 @@ class LeaveApiTest extends IntegrationTest {
         jdbc.update("INSERT INTO leave_ledger (id, employee_id, leave_type, delta, reason, at) VALUES (?, ?, ?, ?, 'ADJUSTMENT', now())", UUID.randomUUID(), employee, type, BigDecimal.valueOf(days));
     }
 
-    /** The next Mon–Wed run at least a week out (no holidays in the test DB). */
+    /** The next Monday at least a week out (no holidays in the test DB); setUp starts the leave year today, so it is always inside it. */
     static LocalDate nextMonday() {
         LocalDate nextWeek = AttendanceEngine.localParts(Instant.now(), "Asia/Kolkata").date().plusDays(7);
         while (AttendanceEngine.dowOf(nextWeek) != 1) nextWeek = nextWeek.plusDays(1);

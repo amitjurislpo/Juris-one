@@ -74,7 +74,7 @@ class PlatformApiTest extends IntegrationTest {
         assertThat(jdbc.queryForObject("SELECT code FROM employees WHERE id = ?", String.class, owner)).isEqualTo("AA01");
         assertThat(jdbc.queryForList("SELECT key FROM roles WHERE business_id = ? ORDER BY key", String.class, business))
                 .containsExactly("employee", "fe", "fm", "hre", "hrm", "owner");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM settings WHERE business_id = ?", Integer.class, business)).isEqualTo(7);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM settings WHERE business_id = ?", Integer.class, business)).isEqualTo(8);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM regularization_reasons WHERE business_id = ?", Integer.class, business)).isEqualTo(5);
         assertThat(jdbc.queryForList("SELECT name FROM departments WHERE business_id = ? ORDER BY name", String.class, business))
                 .containsExactly("Finance", "Human Resources");
