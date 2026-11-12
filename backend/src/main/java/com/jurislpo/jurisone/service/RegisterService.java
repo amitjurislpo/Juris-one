@@ -136,7 +136,7 @@ public class RegisterService {
         for (AttendanceEmployee employee : employees) {
             DayView dayView = all.get(employee.id()).get(0);
             rows.add(new DailyRow(employee.id().toString(), employee.code(), employee.name(), employee.department(), employee.region(), employee.timeZone(), PeopleRules.locationOfTimeZone(employee.timeZone()).label(),
-                    employee.shift().name(), dayStatusLabel(dayView), dayView.dayResult.late, clock(dayView.dayResult.firstIn, registerParams.timeZone(), employee, registerParams.day()), clock(dayView.dayResult.lastOut, registerParams.timeZone(), employee, registerParams.day()),
+                    employee.shiftOn(registerParams.day()).name(), dayStatusLabel(dayView), dayView.dayResult.late, clock(dayView.dayResult.firstIn, registerParams.timeZone(), employee, registerParams.day()), clock(dayView.dayResult.lastOut, registerParams.timeZone(), employee, registerParams.day()),
                     dayView.dayResult.workedMinutes / 60.0, dayView.dayResult.firstIn, dayView.dayResult.lastOut, dayView.checkOutNote()));
         }
         DailySummary sum = new DailySummary(rows.size(), (int) rows.stream().filter(r -> List.of("Present", "Working", "Half day").contains(r.status())).count(),
