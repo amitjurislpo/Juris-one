@@ -70,7 +70,6 @@ public class AttendanceRepository {
                         : new Shift(resultSet.getString("shift_code"), resultSet.getString("shift_name"), resultSet.getString("start_local"), resultSet.getString("end_local"), grace), List.of()),
                 args);
         employees.sort(Comparator.comparing(AttendanceEmployee::name, EmployeeNameReader.NAME_ORDER));
-        return employees;
         if (employees.isEmpty()) return employees;
         Map<UUID, List<ShiftPeriod>> periods = new HashMap<>();
         jdbc.query("""
