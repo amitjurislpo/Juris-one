@@ -238,7 +238,8 @@ public class LeaveService {
         AttendanceService.ResolvedAttendancePolicy policy = attendanceService.policy();
         Instant now = Instant.now();
         LocalDate today = employee != null ? attendanceService.currentWorkDate(employee, now) : Format.isoInZone(now, user.timeZone());
-        int year = today.getYear();
+        SettingsService.LeavePolicy leavePolicy = settings.leave();
+        LeaveYear.Span leaveYear = LeaveYear.of(today, leavePolicy.yearStartMonth(), leavePolicy.yearStartDay());
 
         List<Balance> bals = balances(user.id());
         List<RequestRow> reqs = new ArrayList<>(repo.findRequests(user.id(), status, user.timeZone()));
@@ -248,13 +249,13 @@ public class LeaveService {
 
         double lopYear = 0;
         if (employee != null) {
-            LocalDate start = LocalDate.of(year, 1, 1);
+            LocalDate start = leaveYear.start();
             if (policy.trackingStart().isAfter(start)) start = policy.trackingStart();
             if (employee.dateOfJoining().isAfter(start)) start = employee.dateOfJoining();
             lopYear = AttendanceEngine.summarize(attendanceService.attendanceFor(List.of(employee), start, today, now).get(employee.id()).stream().filter(x -> !x.dayResult.future).map(x -> x.dayResult).toList(),
                     policy.engine()).lopDays;
         }
-        List<HolidayView> holidays = repo.findHolidayViews(user.region(), Date.valueOf(LocalDate.of(year, 1, 1)), Date.valueOf(LocalDate.of(year, 12, 31)));
+        List<HolidayView> holidays = repo.findHolidayViews(user.region(), Date.valueOf(leaveYear.start()), Date.valueOf(leaveYear.end()));
         Map<String, String> upcoming = repo.upcomingHolidays(user.region(), Date.valueOf(today));
         boolean probation = repo.onProbation(user.id());
         List<TypeOption> types = bals.stream().map(b -> new TypeOption(b.code(), b.name(), b.paid(), b.needsBalance() ? round2(b.balance() - b.pending()) : null, "EL".equals(b.code()) && probation ? EL_ON_PROBATION : null)).toList();
@@ -263,7 +264,9 @@ public class LeaveService {
         out.put("tab", tab);
         out.put("status", status);
         out.put("today", today.toString());
-        out.put("year", String.valueOf(year));
+        out.put("year", leaveYear.label());
+        out.put("yearFrom", leaveYear.start().toString());
+        out.put("yearTo", leaveYear.end().toString());
         out.put("canApply", employee != null);
         out.put("balances", bals);
         out.put("lopYear", lopYear);

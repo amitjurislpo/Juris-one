@@ -36,6 +36,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 class LeavePolicyApiTest extends IntegrationTest {
 
     static final Instant JANUARY_2027 = LocalDate.parse("2027-01-02").atStartOfDay().toInstant(ZoneOffset.UTC).plusSeconds(7 * 3600);
+    static final Instant JUNE_2027 = LocalDate.parse("2027-06-15").atStartOfDay().toInstant(ZoneOffset.UTC).plusSeconds(7 * 3600);
+    static final Instant JULY_2027 = LocalDate.parse("2027-07-15").atStartOfDay().toInstant(ZoneOffset.UTC).plusSeconds(7 * 3600);
     static final Instant APRIL_2027 = LocalDate.parse("2027-04-02").atStartOfDay().toInstant(ZoneOffset.UTC).plusSeconds(7 * 3600);
 
     @Autowired MockMvc mockMvc;
@@ -257,5 +259,70 @@ class LeavePolicyApiTest extends IntegrationTest {
         assertThat(runYearEnd(APRIL_2027)).containsEntry("lapsed", 0);
         assertThat(lapsed(plain.id(), "CL")).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM job_runs WHERE name = 'leave.year_end' AND business_id = ?", Integer.class, data.business())).isZero();
+    }
+
+    // ───────────────────────── monthly accrual follows the leave year ─────────────────────────
+
+    Map<String, Object> runAccrual(Instant now) {
+        return TenantContext.call(data.business(), () -> jobs.jobLeaveAccrual(now));
+    }
+
+    List<String> accrualMonths(UUID employee, String type) {
+        return jdbc.queryForList("SELECT substring(ref_id from '[0-9]{4}-[0-9]{2}$') FROM leave_ledger WHERE employee_id = ? AND leave_type = ? AND reason = 'ACCRUAL' ORDER BY ref_id", String.class, employee, type);
+    }
+
+    double accrued(UUID employee, String type) {
+        return jdbc.queryForObject("SELECT coalesce(sum(delta), 0) FROM leave_ledger WHERE employee_id = ? AND leave_type = ? AND reason = 'ACCRUAL'", BigDecimal.class, employee, type).doubleValue();
+    }
+
+    @Test
+    void theCalendarYearAccruesFromJanuaryOnly() {
+        runAccrual(JUNE_2027);
+        assertThat(accrualMonths(plain.id(), "CL")).containsExactly("2027-01", "2027-02", "2027-03", "2027-04", "2027-05", "2027-06");
+        assertThat(runAccrual(JUNE_2027)).containsEntry("credited", 0);
+    }
+
+    @Test
+    void anAprilLeaveYearAccruesFromAprilAndAJoinerIsProRatedInsideIt() {
+        savePolicy("{\"yearStartMonth\":4,\"yearStartDay\":1,\"yearEnd\":{}}");
+        UUID joiner = plain.id();
+        jdbc.update("UPDATE employees SET date_of_joining = '2027-05-16' WHERE id = ?", joiner);
+        runAccrual(JUNE_2027);
+        assertThat(accrualMonths(admin.id(), "CL")).containsExactly("2027-04", "2027-05", "2027-06");
+        assertThat(accrualMonths(joiner, "CL")).containsExactly("2027-05", "2027-06");
+        assertThat(accrued(joiner, "CL")).isBetween(1.519, 1.521);
+        // the next leave year begins in April: March 2028 is still the same year, April 2028 starts a new one
+        runAccrual(LocalDate.parse("2028-03-20").atStartOfDay().toInstant(ZoneOffset.UTC).plusSeconds(7 * 3600));
+        runAccrual(LocalDate.parse("2028-04-02").atStartOfDay().toInstant(ZoneOffset.UTC).plusSeconds(7 * 3600));
+        assertThat(accrualMonths(admin.id(), "CL")).contains("2028-03", "2028-04").hasSize(13);
+    }
+
+    @Test
+    void changingTheLeaveYearStartMidYearNeverCreditsAMonthTwiceOrLosesBalance() throws Exception {
+        runAccrual(JUNE_2027);
+        double before = accrued(plain.id(), "CL") + accrued(plain.id(), "EL");
+        assertThat(before).isEqualTo(6 * 1.0 + 6 * 1.5);
+        // January -> April in June: the new year (Apr 2027 - Mar 2028) re-visits April..June, which are already credited
+        mockMvc.perform(write(put(POLICY + "/year"), hr, "{\"startMonth\":4,\"startDay\":1}")).andExpect(status().isOk());
+        assertThat(runAccrual(JUNE_2027)).containsEntry("credited", 0);
+        assertThat(accrued(plain.id(), "CL") + accrued(plain.id(), "EL")).isEqualTo(before);
+        // and back to January, then on to July: only July is new
+        mockMvc.perform(write(put(POLICY + "/year"), admin, "{\"startMonth\":1,\"startDay\":1}")).andExpect(status().isOk());
+        runAccrual(JULY_2027);
+        assertThat(accrualMonths(plain.id(), "CL")).containsExactly("2027-01", "2027-02", "2027-03", "2027-04", "2027-05", "2027-06", "2027-07");
+        assertThat(accrued(plain.id(), "CL") + accrued(plain.id(), "EL")).isEqualTo(before + 1.0 + 1.5);
+        // the balance already on the ledger is untouched by the change itself
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM leave_ledger WHERE employee_id = ? AND reason = 'EXPIRED'", Integer.class, plain.id())).isZero();
+    }
+
+    @Test
+    void theLeavePageNamesTheLeaveYear() throws Exception {
+        LocalDate today = AttendanceEngine.localParts(Instant.now(), "Asia/Kolkata").date();
+        mockMvc.perform(get("/api/v1/leave").cookie(plain.cookie())).andExpect(jsonPath("$.data.yearFrom").value(today.getYear() + "-01-01"))
+                .andExpect(jsonPath("$.data.yearTo").value(today.getYear() + "-12-31")).andExpect(jsonPath("$.data.year").value(String.valueOf(today.getYear())));
+        mockMvc.perform(write(put(POLICY + "/year"), hr, "{\"startMonth\":4,\"startDay\":1}")).andExpect(status().isOk());
+        int startYear = today.getMonthValue() >= 4 ? today.getYear() : today.getYear() - 1;
+        mockMvc.perform(get("/api/v1/leave").cookie(plain.cookie())).andExpect(jsonPath("$.data.yearFrom").value(startYear + "-04-01"))
+                .andExpect(jsonPath("$.data.yearTo").value((startYear + 1) + "-03-31")).andExpect(jsonPath("$.data.year").value(String.valueOf(startYear)));
     }
 }

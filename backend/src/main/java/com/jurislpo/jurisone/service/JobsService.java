@@ -173,25 +173,29 @@ public class JobsService {
     }
 
     /**
-     * Monthly leave accrual (CL 1, EL 1.5 …) credited at the start of each month of the leave year, pro-rata in the
+     * Monthly leave accrual (CL 1, EL 1.5 …) credited at the start of each month of the business's leave year (from the month it starts in), pro-rata in the
      * joining month. Backfills any month not yet credited; one ledger row per employee, type and month
      * (refId "accrual:&lt;type&gt;:&lt;yyyy-mm&gt;").
      */
     public Map<String, Object> jobLeaveAccrual(Instant now) {
-        String yearMonth = today(now).toString().substring(0, 7);
-        String year = yearMonth.substring(0, 4);
+        LocalDate today = today(now);
+        SettingsService.LeavePolicy policy = settings.leave();
+        // the accrual months of the current leave year: from the month the year starts in, up to this month
+        YearMonth currentMonth = YearMonth.from(today);
+        YearMonth firstMonth = YearMonth.from(LeaveYear.of(today, policy.yearStartMonth(), policy.yearStartDay()).start());
         List<Map<String, Object>> types = repo.findAccruingTypes();
-        List<Map<String, Object>> employees = repo.findAccrualEmployees(Date.valueOf(YearMonth.parse(yearMonth).atEndOfMonth()));
+        List<Map<String, Object>> employees = repo.findAccrualEmployees(Date.valueOf(currentMonth.atEndOfMonth()));
         Set<String> done = repo.findAccrualKeys();
         int credited = 0;
         for (Map<String, Object> employee : employees) {
             LocalDate dateOfJoining = ((Date) employee.get("date_of_joining")).toLocalDate();
-            for (int monthNumber = 1; monthNumber <= Integer.parseInt(yearMonth.substring(5)); monthNumber++) {
-                String month = year + "-" + String.format(java.util.Locale.ROOT, "%02d", monthNumber);
+            for (YearMonth yearMonth = firstMonth; !yearMonth.isAfter(currentMonth); yearMonth = yearMonth.plusMonths(1)) {
+                String month = yearMonth.toString();
                 for (Map<String, Object> type : types) {
+                    // one row per employee, type and calendar month: a changed leave year can never credit a month twice
                     String refId = "accrual:" + type.get("code") + ":" + month;
                     if (done.contains(employee.get("id") + "|" + refId)) continue;
-                    double amount = LeaveRules.accrualFor(YearMonth.parse(month), dateOfJoining, ((BigDecimal) type.get("accrual_per_month")).doubleValue());
+                    double amount = LeaveRules.accrualFor(yearMonth, dateOfJoining, ((BigDecimal) type.get("accrual_per_month")).doubleValue());
                     if (amount > 0) {
                         repo.insertAccrual(employee.get("id"), type.get("code"), BigDecimal.valueOf(amount), refId, "Accrual " + month);
                         credited++;
