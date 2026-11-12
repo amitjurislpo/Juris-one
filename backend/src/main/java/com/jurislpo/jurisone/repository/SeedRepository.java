@@ -73,7 +73,7 @@ public class SeedRepository {
     public UUID upsertShift(UUID id, String code, String name, String start, String end, String region, boolean crosses) {
         return jdbc.queryForObject("""
             INSERT INTO shifts (id, code, name, start_local, end_local, grace_minutes, region, crosses_midnight) VALUES (?, ?, ?, ?, ?, 15, ?::"Region", ?)
-            ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, start_local = EXCLUDED.start_local, end_local = EXCLUDED.end_local,
+            ON CONFLICT (COALESCE(business_id, '00000000-0000-0000-0000-000000000000'::uuid), code) DO UPDATE SET name = EXCLUDED.name, start_local = EXCLUDED.start_local, end_local = EXCLUDED.end_local,
               crosses_midnight = EXCLUDED.crosses_midnight RETURNING id""",
                 UUID.class, id, code, name, start, end, region, crosses);
     }
