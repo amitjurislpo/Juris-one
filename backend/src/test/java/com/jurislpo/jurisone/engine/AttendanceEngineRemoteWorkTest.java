@@ -144,4 +144,46 @@ class AttendanceEngineRemoteWorkTest {
         assertThat(new Regularization(true, false).remoteWork()).isFalse();
         assertThat(Regularization.NONE.remoteWork()).isFalse();
     }
+
+    static final Regularization REMOTE_HALF = new Regularization(false, false, false, true);
+
+    @Test
+    @DisplayName("a half-day remote day: the other half needs half-day hours, like a half-day On Duty")
+    void halfDayRemoteNeedsHalfADayOfWorkForTheOtherHalf() {
+        DayResult worked = compute("2026-09-16", LATER, null, null, List.of(punch("2026-09-16", "09:30", PunchKind.IN), punch("2026-09-16", "13:45", PunchKind.OUT)), REMOTE_HALF);
+        assertThat(worked.status).isEqualTo(DayStatus.PRESENT);
+        assertThat(worked.label).isEqualTo("Remote · half day");
+        assertThat(worked.lopDays).isZero();
+
+        DayResult notWorked = compute("2026-09-16", LATER, null, null, List.of(), REMOTE_HALF);
+        assertThat(notWorked.status).isEqualTo(DayStatus.HALF_DAY);
+        assertThat(notWorked.label).isEqualTo("Remote · half day");
+        assertThat(notWorked.lopDays).isEqualTo(0.5);
+
+        DayResult regularized = compute("2026-09-16", LATER, null, null, List.of(), new Regularization(true, false, false, true));
+        assertThat(regularized.status).isEqualTo(DayStatus.PRESENT);
+        assertThat(regularized.regularized).isTrue();
+        assertThat(regularized.lopDays).isZero();
+    }
+
+    @Test
+    @DisplayName("a half-day remote day still in progress is not yet loss of pay; a planned one shows its label")
+    void halfDayRemoteInProgressAndPlanned() {
+        Instant morning = at("2026-09-16", "10:30");
+        DayResult inProgress = compute("2026-09-16", morning, null, null, List.of(punch("2026-09-16", "09:30", PunchKind.IN)), REMOTE_HALF);
+        assertThat(inProgress.status).isEqualTo(DayStatus.PENDING);
+        assertThat(inProgress.lopDays).isZero();
+        DayResult planned = compute("2026-09-21", LATER.minusSeconds(86400L * 30), null, null, List.of(), REMOTE_HALF);
+        assertThat(planned.status).isEqualTo(DayStatus.PENDING);
+        assertThat(planned.label).isEqualTo("Remote · half day");
+    }
+
+    @Test
+    @DisplayName("half-day remote never overrides a holiday, a weekly off or a full-day leave")
+    void halfDayRemoteNeverOverridesOffDays() {
+        assertThat(compute("2026-09-16", LATER, "Founders day", null, List.of(), REMOTE_HALF).status).isEqualTo(DayStatus.HOLIDAY);
+        assertThat(compute("2026-09-19", LATER, null, null, List.of(), REMOTE_HALF).status).isEqualTo(DayStatus.WEEKLY_OFF);
+        DayResult leave = compute("2026-09-16", LATER, null, new Leave("CL", "Casual leave", LeavePart.FULL, 1), List.of(), REMOTE_HALF);
+        assertThat(leave.status).isEqualTo(DayStatus.LEAVE);
+    }
 }

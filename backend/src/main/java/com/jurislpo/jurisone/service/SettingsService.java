@@ -22,7 +22,7 @@ public class SettingsService {
                 {"fullDayHours":8,"halfDayHours":4,"graceMinutes":15,"lateMarksPerHalfDayLop":3,"weeklyOffs":[0,6],
                  "absenceJobBufferMinutes":120,"lockDayOfNextMonth":1,"lockTime":"10:00","shiftTargetHours":9,"trackingStartDate":"2026-04-01"}""",
             "attendance.regularization", """
-                {"backDateLimitDays":30,"monthlyLimit":30,"attachmentMandatory":false,"autoApprove":false}""",
+                {"backDateLimitDays":30,"monthlyLimit":30,"attachmentMandatory":false,"autoApprove":false,"onDutyMonthlyLimit":31,"remoteWorkMonthlyLimit":31}""",
             "employee.policy", """
                 {"probationMonths":6}""",
             "auth.policy", """
@@ -41,8 +41,13 @@ public class SettingsService {
     public record AttendancePolicy(double fullDayHours, double halfDayHours, int graceMinutes, int lateMarksPerHalfDayLop, List<Integer> weeklyOffs,
                                    int absenceJobBufferMinutes, int lockDayOfNextMonth, String lockTime, double shiftTargetHours, String trackingStartDate) {}
 
-    /** Rules for attendance regularization requests: how far back, how many a month, and whether a file must be attached. {@code autoApprove} (off by default): a request that Admin / HR raise for an employee is approved at once. */
-    public record RegularizationPolicy(int backDateLimitDays, int monthlyLimit, boolean attachmentMandatory, boolean autoApprove) {}
+    /**
+     * Rules for attendance requests: how far back, how many regularizations a month, and whether a file must be attached. {@code autoApprove} (off by
+     * default): a request that Admin / HR raise for an employee (regularization, On Duty or Remote Work) is approved at once. {@code onDutyMonthlyLimit} and
+     * {@code remoteWorkMonthlyLimit}: the most On Duty days / remote work days (a half day is 0.5) one employee can have pending or approved in a calendar
+     * month; 31 (the default) means no practical limit. Same settings row as the regularization rules; absent in an older saved value = the default.
+     */
+    public record RegularizationPolicy(int backDateLimitDays, int monthlyLimit, boolean attachmentMandatory, boolean autoApprove, Integer onDutyMonthlyLimit, Integer remoteWorkMonthlyLimit) {}
 
     public record EmployeePolicy(int probationMonths) {}
 

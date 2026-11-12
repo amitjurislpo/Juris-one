@@ -4,6 +4,7 @@ import com.jurislpo.jurisone.service.AttendanceService.AttendanceEmployee;
 import com.jurislpo.jurisone.service.AttendanceService.DayView;
 import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.exception.ApiException;
+import com.jurislpo.jurisone.exception.ForbiddenException;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.engine.Format;
@@ -45,8 +46,10 @@ public class ApprovalsService {
     private final LeaveService leave;
     private final AuditService audit;
     private final NotificationService notify;
+    private final AttendanceApprovalPolicy approvalPolicy;
 
-    public ApprovalsService(ApprovalsRepository repo, TransactionTemplate transactionTemplate, AttendanceService attendance, LeaveService leave, AuditService audit, NotificationService notify) {
+    public ApprovalsService(ApprovalsRepository repo, TransactionTemplate transactionTemplate, AttendanceService attendance, LeaveService leave, AuditService audit, NotificationService notify, AttendanceApprovalPolicy approvalPolicy) {
+        this.approvalPolicy = approvalPolicy;
         this.repo = repo;
         this.transactionTemplate = transactionTemplate;
         this.attendanceService = attendance;
@@ -120,13 +123,16 @@ public class ApprovalsService {
      * approved at once. The approver who raised it may do that (the "own request" rule still stops anyone deciding their own attendance).
      */
     public String decideRegularization(CurrentUser user, Decision decision, String ipAddress, boolean autoApproved) {
+        if (!user.can("appr.reg", "roles.manage") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
         Parsed parsed = parse(decision);
         if (!parsed.approve() && (parsed.note() == null || parsed.note().isEmpty())) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the remarks for rejecting this request.");
         List<Map<String, Object>> rows = repo.findRegularizationForDecision(parsed.id());
         if (rows.isEmpty()) throw new UserException("Request not found.");
         Map<String, Object> row = rows.get(0);
         UUID employeeId = (UUID) row.get("employee_id");
-        if (employeeId.equals(user.id()) || (!autoApproved && user.id().equals(row.get("created_by")))) throw new UserException("You can't decide your own request.");
+        // Admin may decide their own request; an HR person's request goes to HR's reporting manager (the Admin when there is none); never your own as HR
+        approvalPolicy.assertMayDecide(user, employeeId);
+        if (!autoApproved && !employeeId.equals(user.id()) && user.id().equals(row.get("created_by"))) throw new UserException("You can't decide your own request.");
         if (!"PENDING".equals(row.get("status"))) throw new UserException("This request was already decided.");
         LocalDate date = ((Date) row.get("work_date")).toLocalDate();
         String kind = (String) row.get("kind");

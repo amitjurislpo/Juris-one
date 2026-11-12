@@ -239,9 +239,10 @@ class OnDutyApiTest extends IntegrationTest {
         assertThat(count("SELECT count(*) FROM on_duty_requests WHERE employee_id = ?", employee.id())).isZero();
         assertThat(count("SELECT count(*) FROM employees WHERE id = ?", employee.id())).isEqualTo(1);
 
-        // an id the client sends is never trusted: the request is always for the signed-in user
+        // an id the client sends is never trusted: without the approval permission another employee's id is refused, and a status sent by the client is ignored
         Person colleague = person(employeeRole);
-        mockMvc.perform(write(post(URL)).cookie(employee.cookie()).content("{\"date\":\"" + day + "\",\"reason\":\"x\",\"employeeId\":\"" + colleague.id() + "\",\"status\":\"APPROVED\"}")).andExpect(status().isCreated());
+        mockMvc.perform(write(post(URL)).cookie(employee.cookie()).content("{\"date\":\"" + day + "\",\"reason\":\"x\",\"employeeId\":\"" + colleague.id() + "\",\"status\":\"APPROVED\"}")).andExpect(status().isForbidden());
+        mockMvc.perform(write(post(URL)).cookie(employee.cookie()).content("{\"date\":\"" + day + "\",\"reason\":\"x\",\"employeeId\":\"" + employee.id() + "\",\"status\":\"APPROVED\"}")).andExpect(status().isCreated());
         assertThat(count("SELECT count(*) FROM on_duty_requests WHERE employee_id = ? AND status = 'PENDING'", employee.id())).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM on_duty_requests WHERE employee_id = ?", colleague.id())).isZero();
 
@@ -386,5 +387,47 @@ class OnDutyApiTest extends IntegrationTest {
         // asking again for the same range: every day already has a request, so nothing is made and the first reason is shown
         mockMvc.perform(write(post(URL)).cookie(employee.cookie()).content("{\"date\":\"" + first + "\",\"toDate\":\"" + last + "\",\"reason\":\"Again\"}")).andExpect(status().isUnprocessableEntity());
         assertThat(count("SELECT count(*) FROM on_duty_requests WHERE employee_id = ?", employee.id())).isEqualTo(expected);
+    }
+
+    @Test
+    void adminAndHrRaiseOnDutyForAnEmployeeAndItIsApprovedAtOnce() throws Exception {
+        Person employee = person(employeeRole), colleague = person(employeeRole), hr = person(hrRole), secondHr = person(hrRole);
+        TestData stranger = data.inBusiness("on-duty-other");
+        Person outsider = person(stranger, stranger.role("employee", "self", "dir"));
+        LocalDate day = workday(2);
+        String plain = body(day, "FULL", "Client visit in Pune");
+        // the business setting autoApprove is on (it is off by default: see AttendanceRequestRulesApiTest)
+        jdbc.update("""
+            INSERT INTO settings (business_id, key, value, updated_at) VALUES (?, 'attendance.regularization', '{"autoApprove":true}', now())
+            ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value""", data.business());
+        // hostile and forbidden: a colleague cannot, another business is "not found", a malformed id is a bad request; nothing is stored
+        mockMvc.perform(write(post(URL)).cookie(colleague.cookie()).content(withEmployee(plain, employee.id().toString()))).andExpect(status().isForbidden());
+        mockMvc.perform(write(post(URL)).cookie(hr.cookie()).content(withEmployee(plain, outsider.id().toString()))).andExpect(status().isNotFound());
+        mockMvc.perform(write(post(URL)).cookie(hr.cookie()).content(withEmployee(plain, "1' OR '1'='1"))).andExpect(status().isBadRequest());
+        assertThat(count("SELECT count(*) FROM on_duty_requests WHERE employee_id IN (?, ?)", employee.id(), outsider.id())).isZero();
+
+        mockMvc.perform(write(post(URL)).cookie(hr.cookie()).content(withEmployee(plain, employee.id().toString()))).andExpect(status().isCreated());
+        String id = idOf(employee, day);
+        // the request belongs to the employee, was raised and approved by HR, and the audit names both
+        assertThat(jdbc.queryForObject("SELECT created_by FROM on_duty_requests WHERE id = ?::uuid", UUID.class, id)).isEqualTo(hr.id());
+        assertThat(jdbc.queryForObject("SELECT decided_by FROM on_duty_requests WHERE id = ?::uuid", UUID.class, id)).isEqualTo(hr.id());
+        assertThat(statusOf(id)).isEqualTo("APPROVED");
+        assertThat(jdbc.queryForObject("SELECT actor_id FROM audit_log WHERE action = 'attendance.on_duty_request_on_behalf' AND entity_id = ?", UUID.class, id)).isEqualTo(hr.id());
+        assertThat(jdbc.queryForObject("SELECT after->>'onBehalfOf' FROM audit_log WHERE action = 'attendance.on_duty_request_on_behalf' AND entity_id = ?", String.class, id)).isEqualTo(employee.id().toString());
+        assertThat(count("SELECT count(*) FROM audit_log WHERE action = 'attendance.on_duty_approve' AND entity_id = ?", id)).isEqualTo(1);
+        // the employee is told once (the decision), and nobody is asked to approve it again
+        assertThat(count("SELECT count(*) FROM notifications WHERE employee_id = ? AND link = '/attendance?tab=on-duty'", employee.id())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM notifications WHERE employee_id = ? AND link = '/attendance?tab=on-duty&scope=team'", secondHr.id())).isZero();
+        assertThat(summary(employee, day, day).get("counters").get("onDuty").asDouble()).isEqualTo(1.0);
+        // the same day again, for the same employee: refused (one open request per day)
+        mockMvc.perform(write(post(URL)).cookie(secondHr.cookie()).content(withEmployee(plain, employee.id().toString()))).andExpect(status().isConflict());
+        // naming yourself is an ordinary request that waits for a decision
+        LocalDate other = workday(3).equals(day) ? workday(4) : workday(3);
+        mockMvc.perform(write(post(URL)).cookie(hr.cookie()).content(withEmployee(body(other, "FULL", "Own visit"), hr.id().toString()))).andExpect(status().isCreated());
+        assertThat(statusOf(idOf(hr, other))).isEqualTo("PENDING");
+    }
+
+    static String withEmployee(String body, String employeeId) {
+        return body.replace("{", "{\"employeeId\":\"" + employeeId + "\",");
     }
 }
