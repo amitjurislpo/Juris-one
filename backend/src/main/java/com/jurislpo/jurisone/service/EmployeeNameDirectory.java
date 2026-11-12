@@ -89,12 +89,14 @@ public class EmployeeNameDirectory {
 
     /** An ORDER BY term that sorts rows by {@code field}, ascending or descending, with the value it needs appended to {@code args}. */
     public String orderBy(Field field, String idColumn, String plainColumn, boolean isAscending, List<Object> args) {
-        String direction = isAscending ? "ASC" : "DESC";
-        if (!isInMemory()) return plainColumn + " " + direction;
+        if (!isInMemory()) return plainColumn + " " + (isAscending ? "ASC" : "DESC");
         List<Entry> ordered = new ArrayList<>(snapshot());
-        ordered.sort(Comparator.comparing(field == Field.FULL_NAME ? Entry::fullName : Entry::designation, EmployeeNameReader.NAME_ORDER).thenComparing(Entry::id));
+        Comparator<Entry> byField = Comparator.comparing(field == Field.FULL_NAME ? Entry::fullName : Entry::designation, EmployeeNameReader.NAME_ORDER);
+        // The direction is applied here, not by the database, so that ties keep their own order (name ascending, then id) as the plaintext SQL does with its tie-break.
+        // The list position is then always read ascending; a row that is not in the list (no manager) is placed like the database places a NULL: last when ascending, first when descending.
+        ordered.sort((isAscending ? byField : byField.reversed()).thenComparing(Entry::fullName, EmployeeNameReader.NAME_ORDER).thenComparing(Entry::id));
         args.add(uuidArray(ordered.stream().map(Entry::id).toList()));
-        return "array_position(?::uuid[], " + idColumn + ") " + direction + " NULLS LAST";
+        return "array_position(?::uuid[], " + idColumn + ") ASC NULLS " + (isAscending ? "LAST" : "FIRST");
     }
 
     // ── cache ──

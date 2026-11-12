@@ -91,8 +91,8 @@ class EmployeeNameDirectoryTest {
         assertThat(directory.orderBy(Field.FULL_NAME, "e.id", "e.full_name", true, args)).isEqualTo("array_position(?::uuid[], e.id) ASC NULLS LAST");
         assertThat(args).containsExactly("{" + THIRD + "," + SECOND + "," + FIRST + "}"); // "Meera", "Zoya", "aarav": the order the C collation gave
         args.clear();
-        assertThat(directory.orderBy(Field.DESIGNATION, "e.id", "e.designation", false, args)).endsWith("DESC NULLS LAST");
-        assertThat(args).containsExactly("{" + THIRD + "," + FIRST + "," + SECOND + "}"); // no designation first, then "Senior Engineer" < "engineer"
+        assertThat(directory.orderBy(Field.DESIGNATION, "e.id", "e.designation", false, args)).endsWith("ASC NULLS FIRST");
+        assertThat(args).containsExactly("{" + SECOND + "," + FIRST + "," + THIRD + "}"); // descending: "engineer" > "Senior Engineer" > no designation (which the database would put first)
     }
 
     @Test

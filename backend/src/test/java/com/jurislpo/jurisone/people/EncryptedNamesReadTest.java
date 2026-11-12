@@ -124,7 +124,7 @@ class EncryptedNamesReadTest extends IntegrationTest {
         assertThat(body("/api/v1/directory", hr)).contains("Real Name", "Chief Wizard");
 
         // search and sort work on the decrypted text
-        mockMvc.perform(get("/api/v1/people?search=real%20na").cookie(hr)).andExpect(jsonPath("$.data.total").value(1)).andExpect(jsonPath("$.data.rows[0].name").value("Real Name"));
+        mockMvc.perform(get(java.net.URI.create("/api/v1/people?search=real%20na")).cookie(hr)).andExpect(jsonPath("$.data.total").value(1)).andExpect(jsonPath("$.data.rows[0].name").value("Real Name"));
         mockMvc.perform(get("/api/v1/people?search=WIZARD").cookie(hr)).andExpect(jsonPath("$.data.total").value(1));
         mockMvc.perform(get("/api/v1/people?search=maya").cookie(hr)).andExpect(jsonPath("$.data.total").value(2)); // Maya herself and her report (manager name is searched)
         mockMvc.perform(get("/api/v1/people?search=plainleak").cookie(hr)).andExpect(jsonPath("$.data.total").value(0));
@@ -201,10 +201,10 @@ class EncryptedNamesReadTest extends IntegrationTest {
         data.employee("PC" + suffix, "pc." + suffix + "@example.com", employeeRoleId, "Rate 100%_Done", "Percent");
         data.employee("PL" + suffix, "pl." + suffix + "@example.com", employeeRoleId, "Plain Name", "Plainer");
         nameDirectory.invalidate(); // the rows above were inserted straight into the table, not through the application
-        mockMvc.perform(get("/api/v1/people?search=%25").cookie(hr)).andExpect(jsonPath("$.data.total").value(1)); // % is a character, not a wildcard
-        mockMvc.perform(get("/api/v1/people?search=_").cookie(hr)).andExpect(jsonPath("$.data.total").value(1));
-        mockMvc.perform(get("/api/v1/directory?search=%25_").cookie(hr)).andExpect(jsonPath("$.data.total").value(1));
-        mockMvc.perform(get("/api/v1/people?search=P_ain").cookie(hr)).andExpect(jsonPath("$.data.total").value(0));
+        mockMvc.perform(get(java.net.URI.create("/api/v1/people?search=%25")).cookie(hr)).andExpect(jsonPath("$.data.total").value(1)); // % is a character, not a wildcard
+        mockMvc.perform(get(java.net.URI.create("/api/v1/people?search=_")).cookie(hr)).andExpect(jsonPath("$.data.total").value(1));
+        mockMvc.perform(get(java.net.URI.create("/api/v1/directory?search=%25_")).cookie(hr)).andExpect(jsonPath("$.data.total").value(1));
+        mockMvc.perform(get(java.net.URI.create("/api/v1/people?search=P_ain")).cookie(hr)).andExpect(jsonPath("$.data.total").value(0));
         for (String hostile : List.of("'; DROP TABLE employees; --", "%27%20OR%201%3D1%20--", "%5C", "%00", "a%00b", "%25%25%25%25", "‮", "%3Cscript%3Ealert(1)%3C%2Fscript%3E", "x".repeat(5000))) {
             for (String path : List.of("/api/v1/people?search=", "/api/v1/directory?search=", "/api/v1/onboardings?search=", "/api/v1/people?sort=manager&search=",
                     "/api/v1/audit?search=")) {
@@ -212,7 +212,7 @@ class EncryptedNamesReadTest extends IntegrationTest {
                 assertThat(body).as(path + " with hostile text").doesNotContain("\"status\":500", "Exception", "SQL");
             }
         }
-        mockMvc.perform(get("/api/v1/people?search='%3B%20DROP%20TABLE%20employees%3B%20--").cookie(hr)).andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(0));
+        mockMvc.perform(get(java.net.URI.create("/api/v1/people?search='%3B%20DROP%20TABLE%20employees%3B%20--")).cookie(hr)).andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(0));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM employees WHERE business_id = ?", Integer.class, data.business())).isGreaterThanOrEqualTo(4);
     }
 
@@ -265,10 +265,12 @@ class EncryptedNamesReadTest extends IntegrationTest {
     @Test
     void noNameIsEverWrittenToTheLog(CapturedOutput output) throws Exception {
         data.employee("LG" + suffix, "lg." + suffix + "@example.com", employeeRoleId, "Logtest Subject", "Logtest Role");
+        int logLengthBefore = output.getAll().length(); // only what these requests write counts; the sign-in mails of the set-up (dev logs mail bodies when no mail host is set) are not part of this check
         for (String path : List.of("/api/v1/people?search=logtest", "/api/v1/people?sort=manager", "/api/v1/directory?search=logtest&sort=title", "/api/v1/people/export", "/api/v1/onboardings?search=logtest",
                 "/api/v1/letters/employees", "/api/v1/people?search=%00")) {
             mockMvc.perform(get(path).cookie(hr));
         }
-        assertThat(output.getAll()).doesNotContain("Logtest Subject").doesNotContain("Logtest Role").doesNotContain("Hema Rao").doesNotContain("Oscar Owner");
+        String logged = output.getAll().substring(logLengthBefore);
+        assertThat(logged).doesNotContain("Logtest Subject").doesNotContain("Logtest Role").doesNotContain("Hema Rao").doesNotContain("Oscar Owner");
     }
 }

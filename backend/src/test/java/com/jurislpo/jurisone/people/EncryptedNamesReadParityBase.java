@@ -112,7 +112,7 @@ abstract class EncryptedNamesReadParityBase extends IntegrationTest {
     }
 
     private String ask(String path, Cookie cookie) throws Exception {
-        var response = mockMvc.perform(get(path).cookie(cookie)).andReturn().getResponse();
+        var response = mockMvc.perform(get(java.net.URI.create(path)).cookie(cookie)).andReturn().getResponse();
         String body = response.getContentAsString(StandardCharsets.UTF_8);
         return response.getStatus() + " " + UUID_TEXT.matcher(body).replaceAll("<uuid>");
     }
