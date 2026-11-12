@@ -30,11 +30,14 @@ public class PeopleRepository {
 
     private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
     private final com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption;
+    private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
 
-    public PeopleRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption) {
+    public PeopleRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption,
+                            com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption) {
         this.jdbc = jdbc;
         this.salaryAmounts = salaryAmounts;
         this.nameEncryption = nameEncryption;
+        this.emailEncryption = emailEncryption;
     }
 
     // ── list ──
@@ -100,8 +103,8 @@ public class PeopleRepository {
         List<Object> pageArgs = new ArrayList<>(args);
         pageArgs.add(take);
         pageArgs.add(skip);
-        return jdbc.query("SELECT id::text, full_name, email, designation, status::text, photo_updated_at FROM employees" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
-                (resultSet, i) -> new DirectoryRow(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4), resultSet.getString(5), PhotoService.version(resultSet.getTimestamp(6))), pageArgs.toArray());
+        return jdbc.query("SELECT id::text, full_name, email, designation, status::text, photo_updated_at, email_enc FROM employees" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
+                (resultSet, i) -> new DirectoryRow(resultSet.getString(1), resultSet.getString(2), emailEncryption.read(resultSet.getString(3), resultSet.getString(7)), resultSet.getString(4), resultSet.getString(5), PhotoService.version(resultSet.getTimestamp(6))), pageArgs.toArray());
     }
 
     public Integer countDirectory(String where, List<Object> args) {
@@ -265,16 +268,25 @@ public class PeopleRepository {
 
     /** Code of an employee in this business already using the email (empty when free). */
     public List<String> findCodeByEmail(String email) {
-        return jdbc.queryForList("SELECT code FROM employees WHERE email = ? LIMIT 1", String.class, email);
+        if (!emailEncryption.isLookupByBlindIndex()) return jdbc.queryForList("SELECT code FROM employees WHERE email = ? LIMIT 1", String.class, email);
+        if (!emailEncryption.isPlaintextFallback()) return jdbc.queryForList("SELECT code FROM employees WHERE email_blind_index = ? LIMIT 1", String.class, emailEncryption.blindIndex(email));
+        return jdbc.queryForList("SELECT code FROM employees WHERE email_blind_index = ? OR email = ? LIMIT 1", String.class, emailEncryption.blindIndex(email), email);
     }
 
     /** Code of another employee in this business already using the email (empty when free). */
     public List<String> findCodeByEmailExcept(String email, UUID exceptId) {
-        return jdbc.queryForList("SELECT code FROM employees WHERE email = ? AND id <> ? LIMIT 1", String.class, email, exceptId);
+        if (!emailEncryption.isLookupByBlindIndex()) return jdbc.queryForList("SELECT code FROM employees WHERE email = ? AND id <> ? LIMIT 1", String.class, email, exceptId);
+        if (!emailEncryption.isPlaintextFallback()) {
+            return jdbc.queryForList("SELECT code FROM employees WHERE email_blind_index = ? AND id <> ? LIMIT 1", String.class, emailEncryption.blindIndex(email), exceptId);
+        }
+        return jdbc.queryForList("SELECT code FROM employees WHERE (email_blind_index = ? OR email = ?) AND id <> ? LIMIT 1", String.class, emailEncryption.blindIndex(email), email, exceptId);
     }
 
     /** Whether the email is taken in any business (by someone other than {@code exceptId}, which may be null). */
     public Boolean emailInUse(String email, UUID exceptId) {
+        if (!emailEncryption.isLookupByBlindIndex()) return jdbc.queryForObject("SELECT jurisone_email_in_use(?, ?)", Boolean.class, email, exceptId);
+        Boolean isUsedByBlindIndex = jdbc.queryForObject("SELECT jurisone_email_blind_index_in_use(?, ?)", Boolean.class, emailEncryption.blindIndex(email), exceptId);
+        if (Boolean.TRUE.equals(isUsedByBlindIndex) || !emailEncryption.isPlaintextFallback()) return isUsedByBlindIndex;
         return jdbc.queryForObject("SELECT jurisone_email_in_use(?, ?)", Boolean.class, email, exceptId);
     }
 
@@ -288,11 +300,12 @@ public class PeopleRepository {
                                String region, UUID shiftId, String status) {
         jdbc.update("""
             UPDATE employees SET full_name = ?, first_name = ?, middle_name = ?, last_name = ?, joining_office = ?, father_name = ?, email = ?, designation = ?,
-              full_name_enc = ?, first_name_enc = ?, last_name_enc = ?, designation_enc = ?,
+              full_name_enc = ?, first_name_enc = ?, last_name_enc = ?, designation_enc = ?, email_enc = ?, email_blind_index = ?,
               department_id = ?::uuid, reporting_manager_id = ?::uuid,
               role_id = ?::uuid, date_of_joining = ?, time_zone = ?, region = ?::"Region", shift_id = ?, status = ?::"EmployeeStatus", updated_at = now()
             WHERE id = ?""", fullName, firstName, middleName, lastName, joiningOffice, fatherName, email, designation,
                 nameEncryption.encrypt(fullName), nameEncryption.encrypt(firstName), nameEncryption.encrypt(lastName), nameEncryption.encrypt(designation),
+                emailEncryption.encryptForWrite(email), emailEncryption.blindIndexForWrite(email),
                 departmentId, managerId, roleId, dateOfJoining, timeZone, region, shiftId, status, id);
     }
 
@@ -313,11 +326,12 @@ public class PeopleRepository {
         jdbc.update("""
             INSERT INTO employees (id, code, full_name, first_name, middle_name, last_name, joining_office, father_name, email, designation, department_id,
               reporting_manager_id, role_id, date_of_joining, time_zone, region, shift_id, status, portal_access, created_by, employment_type, payment_type, gender,
-              full_name_enc, first_name_enc, last_name_enc, designation_enc, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?::"Region", ?, ?::"EmployeeStatus", ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())""",
+              full_name_enc, first_name_enc, last_name_enc, designation_enc, email_enc, email_blind_index, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?::"Region", ?, ?::"EmployeeStatus", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())""",
                 id, code, fullName, firstName, middleName, lastName, joiningOffice, fatherName, email, designation, departmentId, managerId, roleId, dateOfJoining,
                 timeZone, region, shiftId, status, access, createdBy, employmentType, paymentType, gender,
-                nameEncryption.encrypt(fullName), nameEncryption.encrypt(firstName), nameEncryption.encrypt(lastName), nameEncryption.encrypt(designation));
+                nameEncryption.encrypt(fullName), nameEncryption.encrypt(firstName), nameEncryption.encrypt(lastName), nameEncryption.encrypt(designation),
+                emailEncryption.encryptForWrite(email), emailEncryption.blindIndexForWrite(email));
     }
 
     /** The new employee's user row. */

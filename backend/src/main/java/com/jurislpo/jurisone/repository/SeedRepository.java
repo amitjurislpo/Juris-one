@@ -38,8 +38,12 @@ public class SeedRepository {
 
     private final com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption;
 
-    public SeedRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption) {
+    private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
+
+    public SeedRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.EmployeeNameEncryption nameEncryption,
+                          com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption) {
         this.nameEncryption = nameEncryption;
+        this.emailEncryption = emailEncryption;
         this.jdbc = jdbc;
         this.salaryAmounts = salaryAmounts;
     }
@@ -69,7 +73,7 @@ public class SeedRepository {
     public UUID upsertShift(UUID id, String code, String name, String start, String end, String region, boolean crosses) {
         return jdbc.queryForObject("""
             INSERT INTO shifts (id, code, name, start_local, end_local, grace_minutes, region, crosses_midnight) VALUES (?, ?, ?, ?, ?, 15, ?::"Region", ?)
-            ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, start_local = EXCLUDED.start_local, end_local = EXCLUDED.end_local,
+            ON CONFLICT (COALESCE(business_id, '00000000-0000-0000-0000-000000000000'::uuid), code) DO UPDATE SET name = EXCLUDED.name, start_local = EXCLUDED.start_local, end_local = EXCLUDED.end_local,
               crosses_midnight = EXCLUDED.crosses_midnight RETURNING id""",
                 UUID.class, id, code, name, start, end, region, crosses);
     }
@@ -99,15 +103,18 @@ public class SeedRepository {
 
     /** Ids of employees with this email. */
     public List<UUID> findEmployeeIdsByEmail(String email) {
-        return jdbc.queryForList("SELECT id FROM employees WHERE email = ?", UUID.class, email);
+        if (!emailEncryption.isLookupByBlindIndex()) return jdbc.queryForList("SELECT id FROM employees WHERE email = ?", UUID.class, email);
+        if (!emailEncryption.isPlaintextFallback()) return jdbc.queryForList("SELECT id FROM employees WHERE email_blind_index = ?", UUID.class, emailEncryption.blindIndex(email));
+        return jdbc.queryForList("SELECT id FROM employees WHERE email_blind_index = ? OR email = ?", UUID.class, emailEncryption.blindIndex(email), email);
     }
 
     /** Inserts the super admin employee (no business, code SA001). */
     public void insertSuperAdminEmployee(UUID id, String email, UUID roleId, Date joined) {
         jdbc.update("""
-            INSERT INTO employees (id, business_id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, full_name_enc, designation_enc, updated_at)
-            VALUES (?, NULL, 'SA001', 'JurisOne Administrator', ?, 'Super Administrator', ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, ?, ?, now())""",
-                id, email, roleId, joined, nameEncryption.encrypt("JurisOne Administrator"), nameEncryption.encrypt("Super Administrator"));
+            INSERT INTO employees (id, business_id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, full_name_enc, designation_enc, email_enc, email_blind_index, updated_at)
+            VALUES (?, NULL, 'SA001', 'JurisOne Administrator', ?, 'Super Administrator', ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, ?, ?, ?, ?, now())""",
+                id, email, roleId, joined, nameEncryption.encrypt("JurisOne Administrator"), nameEncryption.encrypt("Super Administrator"),
+                emailEncryption.encryptForWrite(email), emailEncryption.blindIndexForWrite(email));
     }
 
     /** Moves an existing employee onto the platform role (no business, department or manager; access on). */
@@ -133,14 +140,15 @@ public class SeedRepository {
         jdbc.update("""
             INSERT INTO employees (id, code, full_name, father_name, email, designation, role_id, department_id, reporting_manager_id, date_of_joining, exit_date,
               status, time_zone, region, shift_id, portal_access, created_by, phone_enc, phone_last4, address_enc, pan_enc, pan_last4, aadhaar_enc, aadhaar_last4,
-              uan_enc, uan_last4, bank_account_enc, bank_account_last4, bank_name, bank_ifsc, full_name_enc, designation_enc, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::"EmployeeStatus", ?, ?::"Region", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())""",
+              uan_enc, uan_last4, bank_account_enc, bank_account_last4, bank_name, bank_ifsc, full_name_enc, designation_enc, email_enc, email_blind_index, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::"EmployeeStatus", ?, ?::"Region", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())""",
                 id, code, name, father, email, title, roleId, departmentId, managerId, dateOfJoining,
                 exit, status, timeZone, region, shiftId,
                 portalAccess, createdBy,
                 phoneEnc, phoneLast4, addressEnc, panEnc, panLast4,
                 aadhaarEnc, aadhaarLast4, uanEnc, uanLast4, bankEnc,
-                bankLast4, bankName, bankIfsc, nameEncryption.encrypt(name), nameEncryption.encrypt(title));
+                bankLast4, bankName, bankIfsc, nameEncryption.encrypt(name), nameEncryption.encrypt(title),
+                emailEncryption.encryptForWrite(email), emailEncryption.blindIndexForWrite(email));
     }
 
     /** is_super_admin of the employee's user (zero or one row). */

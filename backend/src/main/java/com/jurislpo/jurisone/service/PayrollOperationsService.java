@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.jurislpo.jurisone.crypto.FileCrypto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jurislpo.jurisone.common.Check;
@@ -47,10 +48,11 @@ public class PayrollOperationsService {
     private final PiiCrypto piiCrypto;
     private final ObjectMapper json;
     private final Path storageDir;
+    private final FileCrypto fileCrypto;
     private final BusinessUrls businessUrls;
 
     public PayrollOperationsService(PayrollOperationsRepository repo, TransactionTemplate transactionTemplate, PayrollService payroll, PayslipPdf payslipPdf, SettingsService settings, AuditService audit,
-                             MailService mail, PiiCrypto piiCrypto, ObjectMapper json, JurisOneProperties props, BusinessUrls businessUrls) {
+                             MailService mail, PiiCrypto piiCrypto, ObjectMapper json, JurisOneProperties props, BusinessUrls businessUrls, FileCrypto fileCrypto) {
         this.repo = repo;
         this.transactionTemplate = transactionTemplate;
         this.payroll = payroll;
@@ -61,6 +63,7 @@ public class PayrollOperationsService {
         this.piiCrypto = piiCrypto;
         this.json = json;
         this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
+        this.fileCrypto = fileCrypto;
         this.businessUrls = businessUrls;
     }
 
@@ -225,7 +228,7 @@ public class PayrollOperationsService {
                 PayrollService.Snapshot snapshot = payroll.toSnapshot(payRow, yearMonth, row, company, payDate);
                 String snapJson = json.writeValueAsString(snapshot);
                 Path path = directory.resolve(payRow.code() + ".pdf");
-                Files.write(path, payslipPdf.render(json.readTree(snapJson)));
+                fileCrypto.write(path, payslipPdf.render(json.readTree(snapJson)));
                 files.add(new File(payRow.employeeId(), storageDir.relativize(path).toString(), snapJson, snapshot.net()));
             }
         } catch (IOException e) {
@@ -413,7 +416,7 @@ public class PayrollOperationsService {
         try {
             String stored = (String) rows.get(0).get("pdf_path");
             if (stored == null) throw new IOException("no file");
-            bytes = Files.readAllBytes(resolveStored(stored));
+            bytes = fileCrypto.read(resolveStored(stored));
         } catch (IOException | IllegalArgumentException e) {
             try {
                 bytes = payslipPdf.render(json.readTree((String) rows.get(0).get("snapshot"))); // regenerate from the frozen snapshot

@@ -121,41 +121,43 @@ public class AttendanceSummaryService {
             regularizationByDate.putIfAbsent(regularization.date(), regularization.status());
         }
         double target = policy.shiftTargetHours();
-        double present = 0, paidLeave = 0, holidays = 0, weekends = 0, unpaidLeave = 0, absent = 0, presentHours = 0;
+        double present = 0, onDuty = 0, paidLeave = 0, holidays = 0, weekends = 0, unpaidLeave = 0, absent = 0, presentHours = 0;
         int lateCount = 0;
         List<SummaryDay> days = new ArrayList<>();
         for (DayView view : views) {
             AttendanceEngine.DayResult day = view.dayResult;
             if (!day.future) {
-                if (day.status == DayStatus.PRESENT) present += 1;
-                if (day.status == DayStatus.HALF_DAY) present += 0.5;
-                if (day.status == DayStatus.LEAVE && day.workedMinutes >= policy.engine().halfDayHours() * 60) present += 0.5;
+                double dayPresent = day.status == DayStatus.PRESENT ? 1 : day.status == DayStatus.HALF_DAY ? 0.5
+                        : day.status == DayStatus.LEAVE && day.workedMinutes >= policy.engine().halfDayHours() * 60 ? 0.5 : 0;
+                // An On Duty day is a present day of its own kind: its part is counted under "On duty", not again under "Present".
+                onDuty += day.onDutyDays;
+                present += Math.max(0, dayPresent - day.onDutyDays);
                 if (day.status == DayStatus.HOLIDAY) holidays += 1;
                 if (day.status == DayStatus.WEEKLY_OFF) weekends += 1;
                 paidLeave += day.leaveDays;
                 if (day.status == DayStatus.LEAVE) unpaidLeave += day.lopDays;
                 else absent += day.lopDays;
                 if (day.late) lateCount += 1;
-                if (day.status == DayStatus.PRESENT || day.status == DayStatus.HALF_DAY || day.status == DayStatus.LEAVE) presentHours += day.workedMinutes / 60.0;
+                if ((day.status == DayStatus.PRESENT || day.status == DayStatus.HALF_DAY || day.status == DayStatus.LEAVE) && day.onDutyDays < 1) presentHours += day.workedMinutes / 60.0;
             }
             if (!matches(day.status, period.status())) continue;
             days.add(row(employee, day, view, workDate, regularizationByDate.get(day.date.toString())));
         }
         Map<String, Double> hours = new LinkedHashMap<>();
-        hours.put("payableDays", round(presentHours + (paidLeave + holidays + weekends) * target));
+        hours.put("payableDays", round(presentHours + (onDuty + paidLeave + holidays + weekends) * target));
         hours.put("present", round(presentHours));
-        hours.put("onDuty", 0.0);
+        hours.put("onDuty", round(onDuty * target));
         hours.put("paidLeave", round(paidLeave * target));
         hours.put("holidays", round(holidays * target));
         hours.put("weekends", round(weekends * target));
         hours.put("unpaidLeave", round(unpaidLeave * target));
         hours.put("absent", round(absent * target));
-        Counters counters = new Counters(present + paidLeave + holidays + weekends, present, 0, paidLeave, holidays, weekends, unpaidLeave, absent, lateCount, hours);
+        Counters counters = new Counters(present + onDuty + paidLeave + holidays + weekends, present, onDuty, paidLeave, holidays, weekends, unpaidLeave, absent, lateCount, hours);
         long span = ChronoUnit.DAYS.between(period.from(), period.to()) + 1;
         boolean isMonth = period.view().equals("calendar");
         String previousFrom = isMonth ? period.from().minusMonths(1).withDayOfMonth(1).toString() : period.from().minusDays(span).toString();
         String nextFrom = isMonth ? period.from().plusMonths(1).withDayOfMonth(1).toString() : period.from().plusDays(span).toString();
-        AttendanceService.Shift shift = employee.shift();
+        AttendanceService.Shift shift = employee.shiftOn(workDate);
         return new Summary(true, period.view(), period.from().toString(), period.to().toString(), previousFrom, nextFrom, workDate.toString(),
                 new ShiftCard(shift.name(), shift.startLocal(), shift.endLocal()), counters, days, openSince(employee, workDate, now));
     }
@@ -182,12 +184,12 @@ public class AttendanceSummaryService {
     private SummaryDay row(AttendanceEmployee employee, AttendanceEngine.DayResult day, DayView view, LocalDate workDate, String regularizationStatus) {
         int lateMinutes = 0, earlyMinutes = 0;
         if (day.status == DayStatus.PRESENT || day.status == DayStatus.HALF_DAY) {
-            ShiftWindow window = AttendanceEngine.shiftWindow(day.date, employee.shift().shiftDefinition(), employee.timeZone());
+            ShiftWindow window = AttendanceEngine.shiftWindow(day.date, employee.shiftOn(day.date).shiftDefinition(), employee.timeZone());
             if (day.firstIn != null && day.firstIn.isAfter(window.graceUntil())) lateMinutes = (int) Duration.between(window.start(), day.firstIn).toMinutes();
             if (day.lastOut != null && !day.live && day.lastOut.isBefore(window.end())) earlyMinutes = (int) Duration.between(day.lastOut, window.end()).toMinutes();
         }
         boolean missedCheckout = day.missedCheckout || (!view.punches.isEmpty() && !day.live && day.lastOut == null);
-        return new SummaryDay(day.date.toString(), day.date.getDayOfWeek().name(), day.status.name(), day.label, employee.shift().name(),
+        return new SummaryDay(day.date.toString(), day.date.getDayOfWeek().name(), day.status.name(), day.label, employee.shiftOn(day.date).name(),
                 day.firstIn == null ? null : AttendanceService.formatTime(day.firstIn, employee.timeZone()),
                 day.lastOut == null ? null : AttendanceService.formatTime(day.lastOut, employee.timeZone()),
                 day.workedMinutes / 60.0, lateMinutes, earlyMinutes, day.late, missedCheckout, day.date.equals(workDate), day.future, day.live, day.regularized, regularizationStatus, view.checkOutNote());

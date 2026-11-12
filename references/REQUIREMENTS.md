@@ -62,6 +62,7 @@ Access is **permission-based**, not hard-coded by role name. Every API endpoint 
 | `att.all` | View everyone's attendance (attendance register, time-zone toggle) |
 | `appr.leave` | Approve or decline leave |
 | `appr.reg` | Approve or decline attendance regularization |
+| `shifts.manage` | Create shifts and assign them on the shift roster (Owner, HR Manager) |
 | `people.view` | View employee records |
 | `people.add` | Add and edit employees |
 | `access.toggle` | Enable or disable an employee's portal access |
@@ -174,7 +175,7 @@ The super admin keeps a catalogue of **role templates** (Platform → role templ
 
 - **PAN, Aadhaar, UAN, phone and address are PII.** Encrypt them at rest (application-level or pgcrypto) and show only masked values in the UI (`XXXX XXXX 1234`).
 - Follow UIDAI guidance for Aadhaar: store encrypted, display only the last 4 digits, restrict access to `people.view`.
-- Employee full name, first name, last name and designation are stored encrypted beside the plaintext (stage 1, `*_enc` columns, `jurisone.security.encrypt-names.dual-write`); reads switch to the encrypted copy in a later stage after a soak period, then the plaintext is cleared. See FR-DATA-6 in `FRD-JurisOne.md`.
+- Employee full name, first name, last name and designation are stored encrypted beside the plaintext (stage 1, `*_enc` columns, `jurisone.security.encrypt-names.dual-write`); reads switch to the encrypted copy in a later stage after a soak period, then the plaintext is cleared. See FR-DATA-6 in `FRD-JurisOne.md`. The work email also gets an encrypted copy and a keyed blind index (own key, `EMAIL_BLIND_INDEX_KEY`) for sign-in and duplicate checks, behind switches that are off by default (FR-DATA-8).
 
 **People list** (`people.view`):
 
@@ -230,7 +231,11 @@ When a new India employee is added, Finance is notified: "salary structure pendi
 - a "Request regularization" button on absent or late days
 - an **Upcoming holidays** section for the employee's region
 
-**Attendance summary (List / Tabular / Calendar views):** `GET /api/v1/attendance/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&view=list|tabular|calendar&status=` returns the signed-in employee's days for the period (default: the current week, the current month for `calendar`; at most 62 days; never an `employeeId`) and the footer counters: payable days (present + paid leave + holidays + weekends), present (half day = 0.5), on duty (0 until On Duty requests exist), paid leave, holidays, weekends, unpaid leave, absent (loss-of-pay days), late count, each also in hours (days times the shift target hours; present uses the hours really worked). Each day has the shift, first check-in, last check-out, hours, late by and early by (minutes; only on present and half days, late after the grace period) and the latest regularization status. `GET /api/v1/attendance/summary/export?format=csv|pdf` is the same rows as a file (CSV is formula-safe). Invalid input answers 400.
+**Shift roster (Attendance page, tab Shift):** shifts are per business (`shifts.business_id`; NULL = a built-in default that businesses can read but not change, row-level security enforces it) and `shift_assignments` holds date ranges per employee (migration V36). The shift of an employee on a date is the assignment covering it, else `employees.shift_id` (fallback, never copied or deleted). Endpoints: `GET|POST /api/v1/attendance/shifts`, `PATCH /api/v1/attendance/shifts/{id}`, `GET /api/v1/attendance/shift-roster?from=&to=&scope=mine|all`, `POST /api/v1/attendance/shift-assignments`, `DELETE /api/v1/attendance/shift-assignments/{id}`. Writes need `shifts.manage` and are audited; ranges of one employee never overlap (checked under a lock on the employee row); assignments start today or later, so computed and locked days are never rewritten. Weekly offs stay with the attendance policy; there are no rotations. The JurisTrack roster sync is unchanged: it sends only each employee's own shift (`employees.shift_id`), never the dated assignments, so JurisTrack keeps the employee's default shift while JurisOne's attendance uses the rostered shift of each date (open question: pushing the dated roster as JurisTrack `schedule` entries).
+
+**Attendance summary (List / Tabular / Calendar views):** `GET /api/v1/attendance/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&view=list|tabular|calendar&status=` returns the signed-in employee's days for the period (default: the current week, the current month for `calendar`; at most 62 days; never an `employeeId`) and the footer counters: payable days (present + paid leave + holidays + weekends), present (half day = 0.5), on duty (the part of the days with an approved On Duty request, counted inside the present days and not again under present), paid leave, holidays, weekends, unpaid leave, absent (loss-of-pay days), late count, each also in hours (days times the shift target hours; present uses the hours really worked). Each day has the shift, first check-in, last check-out, hours, late by and early by (minutes; only on present and half days, late after the grace period) and the latest regularization status. `GET /api/v1/attendance/summary/export?format=csv|pdf` is the same rows as a file (CSV is formula-safe). Invalid input answers 400.
+
+**On Duty (Attendance page, On Duty tab):** the employee asks for a full or half day (a range is one request per day) spent on official work away from the usual place; the request has a date, a duration (full day, first half, second half), an optional place and a required reason (500 characters). **Admin and HR approve** (`appr.reg`, as for regularization; the first decision is final; a rejection needs remarks; nobody decides their own request; single and bulk). Rules: not on a holiday, a weekly off, a leave day or outside the tracked period; not in a locked month (also not approvable once the month is locked); back-date limit = the regularization setting (default 30 days); planned duty up to 90 days ahead; one pending or approved request per employee per day (409 `ON_DUTY_ALREADY_REQUESTED`). Effect once approved: a full On Duty day is a Present, payable day (no loss of pay, no late mark); a half day is half present and the other half needs half-day hours, otherwise it is a half day with 0.5 loss of pay. The locked attendance day keeps its On Duty share, so the Attendance summary counters and payroll stay the same after the month closes. Approvers get bell + one email; the employee gets the decision by bell and email; every write is audited (`attendance.on_duty_request`, `_approve`, `_decline`, `_cancel`). Visibility: an employee sees their own requests, Admin / HR the whole business, anybody else or another business gets 404. Table `on_duty_requests(id, business_id, employee_id, work_date, part, location, reason, status, batch_id, created_by, decided_by, decided_at, decided_role, decision_note, created_at, updated_at)`.
 
 **Regularization:**
 
@@ -247,6 +252,12 @@ When a new India employee is added, Finance is notified: "salary structure pendi
   - a missed check-out gets its check-out punch
   - holiday work adds a comp-off balance
 - Requests are only allowed before that month's attendance lock. Every write is in the audit log.
+
+**Remote work requests (Attendance page, tab "Remote Work Requests"):**
+
+- The employee asks to work remotely for a **range of days** (at most 31, first day not further back than the regularization back-date limit and not more than a year ahead) with a reason (up to 500 characters). Overlap with another pending or approved request of the same employee is refused (409 `REMOTE_WORK_ALREADY_REQUESTED`); rejected and withdrawn requests do not block.
+- **Admin and HR** (`appr.reg`) approve or reject, one or several at once; a rejection needs remarks; first decision wins (409); nobody decides their own; approval is refused when a day lies in a locked month. The employee withdraws a pending request. A manager sees the direct reports' requests (Team, read only); an employee sees only their own; another business gets 404.
+- **An approved remote day is a normal working day:** Present, labelled "Remote", no loss of pay with or without a punch, no late mark; holidays, weekly offs and full-day leave stay as they are. Approvers get bell + email on a new request, the employee gets the decision. Audit: `remote_work.request / cancel / approve / decline`. Endpoints: see FRD FR-REMOTE-1 to FR-REMOTE-6.
 
 **Attendance register** (`att.all`: HR, Admin):
 
@@ -567,9 +578,11 @@ users(employee_id, failed_attempts, locked_until, last_login_at)
 sessions(id, employee_id, created_at, expires_at, ip, user_agent, revoked_at)
 shifts(id, name, start_local, end_local, grace_minutes, region)
 punches(id, employee_id, at timestamptz, kind in/out, source web/mobile, ip)
-attendance_days(employee_id, work_date, status, first_in, last_out, worked_minutes, late bool, locked bool)
+attendance_days(employee_id, work_date, status, first_in, last_out, worked_minutes, late bool, locked bool, on_duty_days)
 regularization_requests(id, employee_id, work_date, kind, proposed_in, proposed_out, reason,
           status, decided_by, decided_at, decided_role)
+remote_work_requests(id, employee_id, from_date, to_date, reason, status, decided_by, decided_at, decided_role,
+          decision_note, created_by)
 holidays(id, date, name, region IN/US/ALL, created_by)
 leave_types(code, name, annual_quota, accrual_per_month, carry_forward_cap, expiry_days, ...)
 leave_ledger(id, employee_id, leave_type, delta, reason, ref_id, at)

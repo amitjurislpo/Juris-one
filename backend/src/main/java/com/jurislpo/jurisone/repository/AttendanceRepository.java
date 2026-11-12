@@ -5,11 +5,13 @@ import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.entity.PunchKind;
 import com.jurislpo.jurisone.service.AttendanceService.AttendanceEmployee;
 import com.jurislpo.jurisone.service.AttendanceService.Shift;
+import com.jurislpo.jurisone.service.AttendanceService.ShiftPeriod;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -27,6 +29,12 @@ public class AttendanceRepository {
                            BigDecimal lop) {}
 
     public record RegularizationRow(UUID employeeId, LocalDate date, String kind) {}
+
+    /** An approved remote work request: the employee works remotely from {@code from} to {@code to}, both included. */
+    public record RemoteWorkRow(UUID employeeId, LocalDate from, LocalDate to) {}
+
+    /** An approved On Duty request: the day and which part of it (FULL, FIRST_HALF, SECOND_HALF). */
+    public record OnDutyRow(UUID employeeId, LocalDate date, String part) {}
 
     public record PunchRow(UUID employeeId, Instant punchedAt, PunchKind kind, String source, String note) {}
 
@@ -50,13 +58,26 @@ public class AttendanceRepository {
                    e.date_of_joining, e.exit_date, s.code AS shift_code, s.name AS shift_name, s.start_local, s.end_local, s.grace_minutes
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN shifts s ON s.id = e.shift_id
             WHERE""" + " " + TRACKED + (where == null || where.isBlank() ? "" : " AND (" + where + ")") + " ORDER BY e.full_name ASC";
-        return jdbc.query(sql, (resultSet, i) -> new AttendanceEmployee(
+        List<AttendanceEmployee> employees = jdbc.query(sql, (resultSet, i) -> new AttendanceEmployee(
                 (UUID) resultSet.getObject("id"), resultSet.getString("code"), resultSet.getString("full_name"), resultSet.getString("designation"),
                 resultSet.getString("department_name") == null ? "—" : resultSet.getString("department_name"), (UUID) resultSet.getObject("department_id"), resultSet.getString("time_zone"),
                 resultSet.getString("region"), resultSet.getDate("date_of_joining").toLocalDate(), resultSet.getDate("exit_date") == null ? null : resultSet.getDate("exit_date").toLocalDate(),
                 resultSet.getString("shift_code") == null ? new Shift(defaultShift.code(), defaultShift.name(), defaultShift.startLocal(), defaultShift.endLocal(), grace)
-                        : new Shift(resultSet.getString("shift_code"), resultSet.getString("shift_name"), resultSet.getString("start_local"), resultSet.getString("end_local"), grace)),
+                        : new Shift(resultSet.getString("shift_code"), resultSet.getString("shift_name"), resultSet.getString("start_local"), resultSet.getString("end_local"), grace), List.of()),
                 args);
+        if (employees.isEmpty()) return employees;
+        Map<UUID, List<ShiftPeriod>> periods = new HashMap<>();
+        jdbc.query("""
+            SELECT a.employee_id, a.from_date, a.to_date, s.code, s.name, s.start_local, s.end_local
+            FROM shift_assignments a JOIN shifts s ON s.id = a.shift_id WHERE a.employee_id = ANY (?) ORDER BY a.from_date""",
+                resultSet -> {
+                    periods.computeIfAbsent((UUID) resultSet.getObject("employee_id"), k -> new ArrayList<>()).add(new ShiftPeriod(resultSet.getDate("from_date").toLocalDate(),
+                            resultSet.getDate("to_date") == null ? null : resultSet.getDate("to_date").toLocalDate(),
+                            new Shift(resultSet.getString("code"), resultSet.getString("name"), resultSet.getString("start_local"), resultSet.getString("end_local"), grace)));
+                },
+                (Object) employees.stream().map(AttendanceEmployee::id).toArray(UUID[]::new));
+        return employees.stream().map(e -> new AttendanceEmployee(e.id(), e.code(), e.name(), e.designation(), e.department(), e.departmentId(), e.timeZone(), e.region(),
+                e.dateOfJoining(), e.exitDate(), e.shift(), periods.getOrDefault(e.id(), List.of()))).toList();
     }
 
     /** Approved leaves of these employees overlapping [from, to]. */
@@ -79,6 +100,22 @@ public class AttendanceRepository {
                 (resultSet, i) -> new RegularizationRow((UUID) resultSet.getObject(1), resultSet.getDate(2).toLocalDate(), resultSet.getString(3)), idArr, Date.valueOf(from), Date.valueOf(to));
     }
 
+    /** Approved remote work requests of these employees that touch [from, to]. */
+    public List<RemoteWorkRow> approvedRemoteWork(UUID[] idArr, LocalDate from, LocalDate to) {
+        return jdbc.query("""
+            SELECT employee_id, from_date, to_date FROM remote_work_requests
+            WHERE employee_id = ANY (?) AND status = 'APPROVED' AND from_date <= ? AND to_date >= ?""",
+                (resultSet, i) -> new RemoteWorkRow((UUID) resultSet.getObject(1), resultSet.getDate(2).toLocalDate(), resultSet.getDate(3).toLocalDate()), idArr, Date.valueOf(to), Date.valueOf(from));
+    }
+
+    /** Approved On Duty requests of these employees for work dates in [from, to]. */
+    public List<OnDutyRow> approvedOnDuty(UUID[] idArr, LocalDate from, LocalDate to) {
+        return jdbc.query("""
+            SELECT employee_id, work_date, part FROM on_duty_requests
+            WHERE employee_id = ANY (?) AND status = 'APPROVED' AND work_date >= ? AND work_date <= ?""",
+                (resultSet, i) -> new OnDutyRow((UUID) resultSet.getObject(1), resultSet.getDate(2).toLocalDate(), resultSet.getString(3)), idArr, Date.valueOf(from), Date.valueOf(to));
+    }
+
     /** Punches of these employees in [fromAt, toAt), oldest first. */
     public List<PunchRow> punches(UUID[] idArr, Instant fromAt, Instant toAt) {
         return jdbc.query("""
@@ -93,10 +130,10 @@ public class AttendanceRepository {
         Map<String, Map<String, Object>> locked = new HashMap<>();
         jdbc.query("""
             SELECT employee_id, work_date, status::text AS status, label, first_in, last_out, worked_minutes, late, late_waived, missed_checkout, regularized,
-                   lop_days, leave_days FROM attendance_days WHERE employee_id = ANY (?) AND locked AND work_date >= ? AND work_date <= ?""",
+                   lop_days, leave_days, on_duty_days FROM attendance_days WHERE employee_id = ANY (?) AND locked AND work_date >= ? AND work_date <= ?""",
                 resultSet -> {
                     Map<String, Object> row = new HashMap<>();
-                    for (String column : List.of("status", "label", "first_in", "last_out", "worked_minutes", "late", "late_waived", "missed_checkout", "regularized", "lop_days", "leave_days")) {
+                    for (String column : List.of("status", "label", "first_in", "last_out", "worked_minutes", "late", "late_waived", "missed_checkout", "regularized", "lop_days", "leave_days", "on_duty_days")) {
                         row.put(column, resultSet.getObject(column));
                     }
                     locked.put(resultSet.getObject("employee_id") + "|" + resultSet.getDate("work_date").toLocalDate(), row);
@@ -121,14 +158,14 @@ public class AttendanceRepository {
     public void upsertDay(UUID employeeId, DayResult dayResult, boolean lock) {
         jdbc.update("""
             INSERT INTO attendance_days (employee_id, work_date, status, label, first_in, last_out, worked_minutes, late, late_waived, regularized,
-              missed_checkout, lop_days, leave_days, locked, updated_at)
-            VALUES (?, ?, ?::"DayStatus", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+              missed_checkout, lop_days, leave_days, on_duty_days, locked, updated_at)
+            VALUES (?, ?, ?::"DayStatus", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
             ON CONFLICT (employee_id, work_date) DO UPDATE SET status = EXCLUDED.status, label = EXCLUDED.label, first_in = EXCLUDED.first_in,
               last_out = EXCLUDED.last_out, worked_minutes = EXCLUDED.worked_minutes, late = EXCLUDED.late, late_waived = EXCLUDED.late_waived,
               regularized = EXCLUDED.regularized, missed_checkout = EXCLUDED.missed_checkout, lop_days = EXCLUDED.lop_days,
-              leave_days = EXCLUDED.leave_days, locked = EXCLUDED.locked, updated_at = now()""",
+              leave_days = EXCLUDED.leave_days, on_duty_days = EXCLUDED.on_duty_days, locked = EXCLUDED.locked, updated_at = now()""",
                 employeeId, Date.valueOf(dayResult.date), dayResult.status.name(), dayResult.label, toTimestamp(dayResult.firstIn), toTimestamp(dayResult.lastOut), dayResult.workedMinutes, dayResult.late || dayResult.lateWaived,
-                dayResult.lateWaived, dayResult.regularized, dayResult.missedCheckout, BigDecimal.valueOf(dayResult.lopDays), BigDecimal.valueOf(dayResult.leaveDays), lock);
+                dayResult.lateWaived, dayResult.regularized, dayResult.missedCheckout, BigDecimal.valueOf(dayResult.lopDays), BigDecimal.valueOf(dayResult.leaveDays), BigDecimal.valueOf(dayResult.onDutyDays), lock);
     }
 
     private static Timestamp toTimestamp(Instant instant) {

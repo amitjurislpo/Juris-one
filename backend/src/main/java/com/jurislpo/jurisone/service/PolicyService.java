@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.jurislpo.jurisone.crypto.FileCrypto;
 import com.jurislpo.jurisone.common.Check;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.config.JurisOneProperties;
@@ -45,12 +46,14 @@ public class PolicyService {
     private final NotificationService notifications;
     private final AuditService audit;
     private final Path storageDir;
+    private final FileCrypto fileCrypto;
 
-    public PolicyService(PolicyRepository repo, NotificationService notifications, AuditService audit, JurisOneProperties props) {
+    public PolicyService(PolicyRepository repo, NotificationService notifications, AuditService audit, JurisOneProperties props, FileCrypto fileCrypto) {
         this.repo = repo;
         this.notifications = notifications;
         this.audit = audit;
         this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
+        this.fileCrypto = fileCrypto;
     }
 
     public static String sha256(byte[] bytes) {
@@ -228,7 +231,7 @@ public class PolicyService {
         Path absolutePath = directory.resolve(UUID.randomUUID() + ".pdf");
         try {
             Files.createDirectories(directory);
-            Files.write(absolutePath, bytes);
+            fileCrypto.write(absolutePath, bytes);
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
@@ -356,7 +359,7 @@ public class PolicyService {
         Path absolutePath = storageDir.resolve((String) rows.get(0).get("file_path")).normalize();
         if (!absolutePath.startsWith(storageDir)) return null;
         try {
-            return new PolicyFile((String) rows.get(0).get("file_name"), Files.readAllBytes(absolutePath));
+            return new PolicyFile((String) rows.get(0).get("file_name"), fileCrypto.read(absolutePath));
         } catch (IOException e) {
             return null;
         }
