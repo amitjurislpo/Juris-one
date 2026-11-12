@@ -14,6 +14,7 @@ import com.jurislpo.jurisone.IntegrationTest;
 import com.jurislpo.jurisone.SignIn;
 import com.jurislpo.jurisone.TestData;
 import com.jurislpo.jurisone.config.JurisOneProperties;
+import com.jurislpo.jurisone.crypto.FileCrypto;
 import com.jurislpo.jurisone.crypto.PiiCrypto;
 import com.jurislpo.jurisone.engine.OnboardingAttachmentSlots.Education;
 import com.jurislpo.jurisone.engine.OnboardingAttachmentSlots.Employment;
@@ -143,6 +144,24 @@ class AttachmentApiTest extends IntegrationTest {
                 .andExpect(header().string("Content-Disposition", Matchers.startsWith("attachment")));
         assertThat(attachments.uploadedSlotKeys(onboardingId)).containsExactly("qualification:" + educationId);
         assertThat(attachments.filesOf(onboardingId)).hasSize(1);
+    }
+
+    @Test
+    void theFileIsEncryptedOnDiskButServedBackAsUploadedAndAnOldPlaintextFileStillReads() throws Exception {
+        String id = uploaded("bank", "bank.pdf", PDF).at("/id").asText();
+        Path stored = absolutePathOf(id);
+        byte[] onDisk = Files.readAllBytes(stored);
+        assertThat(FileCrypto.isSealed(onDisk)).isTrue();
+        assertThat(new String(onDisk, StandardCharsets.ISO_8859_1)).doesNotContain("%PDF");
+        String url = "/api/v1/onboarding/mine/attachments/" + id + "/file";
+        var served = mockMvc.perform(get(url).cookie(cookie)).andExpect(status().isOk()).andExpect(header().string("Content-Type", "application/pdf")).andReturn().getResponse();
+        assertThat(served.getContentAsByteArray()).isEqualTo(PDF);
+        Files.write(stored, PDF); // a file from before encryption was switched on
+        assertThat(mockMvc.perform(get(url).cookie(cookie)).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray()).isEqualTo(PDF);
+        Files.write(stored, onDisk);
+        onDisk[onDisk.length - 1] ^= 1; // damaged on disk: refused, never served as garbage
+        Files.write(stored, onDisk);
+        mockMvc.perform(get(url).cookie(cookie)).andExpect(status().is5xxServerError());
     }
 
     @Test

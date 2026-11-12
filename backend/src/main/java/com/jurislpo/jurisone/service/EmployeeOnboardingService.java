@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.jurislpo.jurisone.crypto.FileCrypto;
 import static com.jurislpo.jurisone.config.ApiPaths.PREFIX;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -92,9 +93,10 @@ public class EmployeeOnboardingService {
     private final NotificationService notifications;
     private final ObjectMapper json;
     private final Path storageDir;
+    private final FileCrypto fileCrypto;
 
     public EmployeeOnboardingService(EmployeeOnboardingRepository repo, OnboardingAttachmentService attachments, PiiCrypto piiCrypto, AuditService audit, NotificationService notifications, ObjectMapper json,
-                                     JurisOneProperties properties) {
+                                     JurisOneProperties properties, FileCrypto fileCrypto) {
         this.repo = repo;
         this.attachments = attachments;
         this.piiCrypto = piiCrypto;
@@ -102,6 +104,7 @@ public class EmployeeOnboardingService {
         this.notifications = notifications;
         this.json = json;
         this.storageDir = Path.of(properties.storageDir()).toAbsolutePath().normalize();
+        this.fileCrypto = fileCrypto;
     }
 
     // ───────────────────────── session / shell ─────────────────────────
@@ -691,7 +694,7 @@ public class EmployeeOnboardingService {
         Path absolutePath = storageDir.resolve((String) rows.get(0).get("storage_path")).normalize();
         if (!absolutePath.startsWith(storageDir)) return null;
         try {
-            return new FileOut((String) rows.get(0).get("file_name"), (String) rows.get(0).get("mime"), Files.readAllBytes(absolutePath));
+            return new FileOut((String) rows.get(0).get("file_name"), (String) rows.get(0).get("mime"), fileCrypto.read(absolutePath));
         } catch (IOException e) {
             return null;
         }

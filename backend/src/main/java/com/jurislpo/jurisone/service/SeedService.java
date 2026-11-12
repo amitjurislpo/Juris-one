@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.jurislpo.jurisone.crypto.FileCrypto;
 import com.jurislpo.jurisone.config.JurisOneProperties;
 import com.jurislpo.jurisone.crypto.PiiCrypto;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
@@ -48,12 +49,13 @@ public class SeedService {
     private final BusinessSetupService setup;
     private final Environment environment;
     private final Path storageDir;
+    private final FileCrypto fileCrypto;
 
     private final com.jurislpo.jurisone.service.PlatformCompanyService platformCompany;
     private final TaskSeedService taskSeed;
 
     public SeedService(SeedRepository repo, PiiCrypto piiCrypto, PayrollOperationsService payrollOperations, JobsService jobs, BusinessSetupService setup,
-                       com.jurislpo.jurisone.service.PlatformCompanyService platformCompany, TaskSeedService taskSeed, Environment environment, JurisOneProperties props) {
+                       com.jurislpo.jurisone.service.PlatformCompanyService platformCompany, TaskSeedService taskSeed, Environment environment, JurisOneProperties props, FileCrypto fileCrypto) {
         this.platformCompany = platformCompany;
         this.taskSeed = taskSeed;
         this.repo = repo;
@@ -63,6 +65,7 @@ public class SeedService {
         this.setup = setup;
         this.environment = environment;
         this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
+        this.fileCrypto = fileCrypto;
     }
 
     static Date parseDate(String isoDate) {
@@ -298,7 +301,7 @@ public class SeedService {
             long amount = ((Number) item.get("amount")).longValue();
             String body = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\n% Demo proof: " + item.get("item_key") + ", "
                     + formatNumber(amount / 100.0) + " INR\ntrailer<</Root 1 0 R>>\n%%EOF\n";
-            Files.writeString(absolutePath, body, StandardCharsets.UTF_8);
+            fileCrypto.write(absolutePath, body.getBytes(StandardCharsets.UTF_8));
             repo.updateProofPath(item.get("id"), storageDir.relativize(absolutePath).toString());
         }
         if (!items.isEmpty()) log.info("Demo proof files: {}", items.size());
