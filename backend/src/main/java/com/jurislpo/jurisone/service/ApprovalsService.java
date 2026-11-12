@@ -45,8 +45,10 @@ public class ApprovalsService {
     private final LeaveService leave;
     private final AuditService audit;
     private final NotificationService notify;
+    private final SettingsService settings;
 
-    public ApprovalsService(ApprovalsRepository repo, TransactionTemplate transactionTemplate, AttendanceService attendance, LeaveService leave, AuditService audit, NotificationService notify) {
+    public ApprovalsService(ApprovalsRepository repo, TransactionTemplate transactionTemplate, AttendanceService attendance, LeaveService leave, AuditService audit, NotificationService notify, SettingsService settings) {
+        this.settings = settings;
         this.repo = repo;
         this.transactionTemplate = transactionTemplate;
         this.attendanceService = attendance;
@@ -56,6 +58,21 @@ public class ApprovalsService {
     }
 
     public record Decision(String id, Boolean approve, String note) {}
+
+    /**
+     * The business setting {@code autoApprove} (the one regularization, On Duty and Remote Work use; off by default) is on and an approver raised a leave
+     * request for an employee: approve it now, as the approver. If the approval is refused (for example the balance rules changed a moment ago) the
+     * request simply stays pending for a normal decision. Returns whether it was approved.
+     */
+    public boolean autoApproveRaisedLeave(CurrentUser approver, String requestId, String ipAddress) {
+        if (!settings.regularization().autoApprove() || !approver.can("appr.leave")) return false;
+        try {
+            decideLeave(approver, new Decision(requestId, true, "Auto-approved: raised by " + approver.name() + " for the employee"), ipAddress);
+            return true;
+        } catch (ApiException e) {
+            return false;
+        }
+    }
 
     record Parsed(UUID id, boolean approve, String note) {}
 
