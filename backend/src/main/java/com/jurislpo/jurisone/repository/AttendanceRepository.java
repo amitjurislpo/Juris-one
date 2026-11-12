@@ -31,7 +31,7 @@ public class AttendanceRepository {
     public record RegularizationRow(UUID employeeId, LocalDate date, String kind) {}
 
     /** An approved remote work request: the employee works remotely from {@code from} to {@code to}, both included. */
-    public record RemoteWorkRow(UUID employeeId, LocalDate from, LocalDate to) {}
+    public record RemoteWorkRow(UUID employeeId, LocalDate from, LocalDate to, String part) {}
 
     /** An approved On Duty request: the day and which part of it (FULL, FIRST_HALF, SECOND_HALF). */
     public record OnDutyRow(UUID employeeId, LocalDate date, String part) {}
@@ -103,9 +103,9 @@ public class AttendanceRepository {
     /** Approved remote work requests of these employees that touch [from, to]. */
     public List<RemoteWorkRow> approvedRemoteWork(UUID[] idArr, LocalDate from, LocalDate to) {
         return jdbc.query("""
-            SELECT employee_id, from_date, to_date FROM remote_work_requests
+            SELECT employee_id, from_date, to_date, part FROM remote_work_requests
             WHERE employee_id = ANY (?) AND status = 'APPROVED' AND from_date <= ? AND to_date >= ?""",
-                (resultSet, i) -> new RemoteWorkRow((UUID) resultSet.getObject(1), resultSet.getDate(2).toLocalDate(), resultSet.getDate(3).toLocalDate()), idArr, Date.valueOf(to), Date.valueOf(from));
+                (resultSet, i) -> new RemoteWorkRow((UUID) resultSet.getObject(1), resultSet.getDate(2).toLocalDate(), resultSet.getDate(3).toLocalDate(), resultSet.getString(4)), idArr, Date.valueOf(to), Date.valueOf(from));
     }
 
     /** Approved On Duty requests of these employees for work dates in [from, to]. */

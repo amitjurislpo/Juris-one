@@ -394,6 +394,10 @@ class OnDutyApiTest extends IntegrationTest {
         Person outsider = person(stranger, stranger.role("employee", "self", "dir"));
         LocalDate day = workday(2);
         String plain = body(day, "FULL", "Client visit in Pune");
+        // the business setting autoApprove is on (it is off by default: see AttendanceRequestRulesApiTest)
+        jdbc.update("""
+            INSERT INTO settings (business_id, key, value, updated_at) VALUES (?, 'attendance.regularization', '{"autoApprove":true}', now())
+            ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value""", data.business());
         // hostile and forbidden: a colleague cannot, another business is "not found", a malformed id is a bad request; nothing is stored
         mockMvc.perform(write(post(URL)).cookie(colleague.cookie()).content(withEmployee(plain, employee.id().toString()))).andExpect(status().isForbidden());
         mockMvc.perform(write(post(URL)).cookie(hr.cookie()).content(withEmployee(plain, outsider.id().toString()))).andExpect(status().isNotFound());

@@ -24,21 +24,21 @@ public class RemoteWorkRepository {
 
     /** A request as the list and the details show it; {@code status} is the stored one (DECLINED shows as "Rejected" in the app); {@code days} counts calendar days, both ends included. */
     public record Item(String id, String employeeId, String employeeCode, String employeeName, String department, String fromDate, String toDate, int days, String reason, String status,
-                       String decidedBy, String decidedAt, String decisionNote, String createdAt) {}
+                       String decidedBy, String decidedAt, String decisionNote, String createdAt, String part, String createdBy) {}
 
     /** Filters of the list; every value is bound as a parameter. Null = no filter. {@code managerId}: only the direct reports of that manager. */
     public record Filter(UUID employeeId, UUID managerId, String status, LocalDate monthFirst, LocalDate monthLast, String search, UUID departmentId) {}
 
     private static final String SELECT = """
         SELECT r.id::text, r.employee_id::text, e.code, e.full_name, d.name AS department, r.from_date, r.to_date, r.reason, r.status::text,
-               dd.full_name AS decided_by, r.decided_at, r.decision_note, r.created_at
+               dd.full_name AS decided_by, r.decided_at, r.decision_note, r.created_at, r.part, r.created_by::text
         FROM remote_work_requests r JOIN employees e ON e.id = r.employee_id LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees dd ON dd.id = r.decided_by""";
 
     private static Item item(ResultSet resultSet, int i) throws SQLException {
         LocalDate from = resultSet.getDate(6).toLocalDate(), to = resultSet.getDate(7).toLocalDate();
         return new Item(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4), resultSet.getString(5), from.toString(), to.toString(),
                 (int) (to.toEpochDay() - from.toEpochDay()) + 1, resultSet.getString(8), resultSet.getString(9), resultSet.getString(10), iso(resultSet.getTimestamp(11)), resultSet.getString(12),
-                iso(resultSet.getTimestamp(13)));
+                iso(resultSet.getTimestamp(13)), resultSet.getString(14), resultSet.getString(15));
     }
 
     private static String iso(Timestamp timestamp) {
@@ -80,7 +80,7 @@ public class RemoteWorkRepository {
     /** employee_id, the employee's reporting manager, status and dates of a request (empty when there is none). */
     public List<Map<String, Object>> findForDecision(UUID id) {
         return jdbc.queryForList("""
-            SELECT r.employee_id, e.reporting_manager_id AS manager_id, r.status::text AS status, r.from_date, r.to_date, e.full_name
+            SELECT r.employee_id, r.created_by, e.reporting_manager_id AS manager_id, r.status::text AS status, r.from_date, r.to_date, r.part, e.full_name
             FROM remote_work_requests r JOIN employees e ON e.id = r.employee_id WHERE r.id = ?""", id);
     }
 
@@ -89,16 +89,34 @@ public class RemoteWorkRepository {
         jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?, 35))", Object.class, "remote-work:" + employeeId);
     }
 
-    /** Does the employee have a pending or approved request touching [from, to]? */
-    public boolean hasOpenOverlap(UUID employeeId, LocalDate from, LocalDate to) {
-        Integer count = jdbc.queryForObject("SELECT count(*) FROM remote_work_requests WHERE employee_id = ? AND status IN ('PENDING', 'APPROVED') AND from_date <= ? AND to_date >= ?",
-                Integer.class, employeeId, Date.valueOf(to), Date.valueOf(from));
+    /** Does the employee have a pending or approved request touching [from, to], other than {@code exceptId} (the request being edited)? */
+    public boolean hasOpenOverlap(UUID employeeId, LocalDate from, LocalDate to, UUID exceptId) {
+        Integer count = jdbc.queryForObject("SELECT count(*) FROM remote_work_requests WHERE employee_id = ? AND status IN ('PENDING', 'APPROVED') AND from_date <= ? AND to_date >= ? AND id <> ?",
+                Integer.class, employeeId, Date.valueOf(to), Date.valueOf(from), exceptId);
         return count != null && count > 0;
     }
 
-    public void insert(UUID id, UUID employeeId, LocalDate from, LocalDate to, String reason, UUID createdBy) {
-        jdbc.update("INSERT INTO remote_work_requests (id, employee_id, from_date, to_date, reason, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, now(), now())",
-                id, employeeId, Date.valueOf(from), Date.valueOf(to), reason, createdBy);
+    /**
+     * Remote work days of the employee inside [first, last] in pending and approved requests other than {@code exceptId} (a half day counts 0.5);
+     * they count against the monthly remote work limit.
+     */
+    public double usedDays(UUID employeeId, LocalDate first, LocalDate last, UUID exceptId) {
+        Double days = jdbc.queryForObject("""
+            SELECT COALESCE(SUM((LEAST(to_date, ?) - GREATEST(from_date, ?) + 1) * CASE WHEN part = 'FULL' THEN 1.0 ELSE 0.5 END), 0)::float8
+            FROM remote_work_requests WHERE employee_id = ? AND status IN ('PENDING', 'APPROVED') AND from_date <= ? AND to_date >= ? AND id <> ?""",
+                Double.class, Date.valueOf(last), Date.valueOf(first), employeeId, Date.valueOf(last), Date.valueOf(first), exceptId);
+        return days == null ? 0 : days;
+    }
+
+    public void insert(UUID id, UUID employeeId, LocalDate from, LocalDate to, String part, String reason, UUID createdBy) {
+        jdbc.update("INSERT INTO remote_work_requests (id, employee_id, from_date, to_date, part, reason, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, now(), now())",
+                id, employeeId, Date.valueOf(from), Date.valueOf(to), part, reason, createdBy);
+    }
+
+    /** Changes a request that is still pending (the requester edits it); returns rows changed (0 = decided or withdrawn a moment ago). */
+    public int updatePending(UUID id, LocalDate from, LocalDate to, String part, String reason) {
+        return jdbc.update("UPDATE remote_work_requests SET from_date = ?, to_date = ?, part = ?, reason = ?, updated_at = now() WHERE id = ? AND status = 'PENDING'",
+                Date.valueOf(from), Date.valueOf(to), part, reason, id);
     }
 
     /** Withdraws the employee's own request if it is still pending; returns rows changed (0 = decided or withdrawn a moment ago). */
@@ -110,13 +128,5 @@ public class RemoteWorkRepository {
     public int decide(UUID id, String status, UUID decidedBy, String decidedRole, String note) {
         return jdbc.update("UPDATE remote_work_requests SET status = ?::\"RequestStatus\", decided_by = ?, decided_at = now(), decided_role = ?, decision_note = ?, updated_at = now() "
                 + "WHERE id = ? AND status = 'PENDING'", status, decidedBy, decidedRole, note, id);
-    }
-
-    /** Active employees who can approve (appr.reg, through their main or an additional role), except the requester. */
-    public List<UUID> approverIds(UUID exceptEmployeeId) {
-        return jdbc.queryForList("""
-            SELECT DISTINCT e.id FROM employees e
-            JOIN role_permissions rp ON rp.role_id = e.role_id OR rp.role_id IN (SELECT ar.role_id FROM employee_additional_roles ar WHERE ar.employee_id = e.id)
-            WHERE rp.permission_key = 'appr.reg' AND e.status IN ('ACTIVE', 'PROBATION') AND e.id <> ?""", UUID.class, exceptEmployeeId);
     }
 }

@@ -90,9 +90,11 @@ public class RegularizationService {
     private final ObjectMapper json;
     private final Path storageDir;
     private final FileCrypto fileCrypto;
+    private final AttendanceApprovalPolicy approvalPolicy;
 
     public RegularizationService(AttendanceService attendanceService, RegularizationRepository repo, SettingsService settings, AuditService audit, NotificationService notifications,
-                                 ApprovalsService approvals, ObjectMapper json, JurisOneProperties properties, FileCrypto fileCrypto) {
+                                 ApprovalsService approvals, ObjectMapper json, JurisOneProperties properties, FileCrypto fileCrypto, AttendanceApprovalPolicy approvalPolicy) {
+        this.approvalPolicy = approvalPolicy;
         this.attendanceService = attendanceService;
         this.repo = repo;
         this.settings = settings;
@@ -258,7 +260,7 @@ public class RegularizationService {
         if (days.isEmpty()) return;
         String span = days.size() == 1 ? Format.formatDayMonth(days.get(0)) : Format.formatDayMonth(days.get(0)) + " to " + Format.formatDayMonth(days.get(days.size() - 1)) + " (" + days.size() + " days)";
         String who = onBehalf ? actor.name() + " raised a regularization request for " + employee.name() : employee.name() + " asked to regularize attendance";
-        for (UUID approverId : repo.approverIds(employee.id())) {
+        for (UUID approverId : approvalPolicy.approversOf(employee.id())) {
             if (approverId.equals(actor.id())) continue;
             notifications.emailEmployee(approverId, name -> MailTemplates.regularizationRequested(name, who, span));
         }
@@ -361,7 +363,7 @@ public class RegularizationService {
                 // stays pending
             }
         }
-        for (UUID approverId : repo.approverIds(subjectId)) {
+        for (UUID approverId : approvalPolicy.approversOf(subjectId)) {
             if (approverId.equals(actor.id())) continue;
             notifications.notify(approverId, (onBehalf ? actor.name() + " raised a regularization request for " + employee.name() : actor.name() + " asked to regularize attendance")
                     + " for " + Format.formatDayMonth(date), "/approvals?tab=regularizations");
@@ -397,7 +399,7 @@ public class RegularizationService {
 
     // ───────────────────────── read ─────────────────────────
 
-    private static Filter filterOf(Map<String, String> queryParams, UUID employeeId) {
+    private static Filter filterOf(Map<String, String> queryParams, UUID employeeId, UUID hrReportsOf) {
         String status = ListParams.pick(queryParams, "status", STATUSES, "");
         LocalDate from = null, to = null;
         String month = ListParams.text(queryParams, "month", "");
@@ -411,16 +413,29 @@ public class RegularizationService {
         UUID requestedEmployee = employeeId;
         String employeeText = ListParams.text(queryParams, "employeeId", "");
         if (employeeId == null && !employeeText.isEmpty()) requestedEmployee = Check.uuid(employeeText);
-        return new Filter(requestedEmployee, status.isEmpty() ? null : status, from, to, ListParams.text(queryParams, "search", "").trim(), departmentId);
+        return new Filter(requestedEmployee, status.isEmpty() ? null : status, from, to, ListParams.text(queryParams, "search", "").trim(), departmentId, hrReportsOf);
     }
 
-    /** Requests with their Old/New values: {@code scope=mine} (self) or {@code scope=all} (appr.reg; the whole business), filtered by status, month, search, departmentId, employeeId. */
+    /**
+     * Requests with their Old/New values: {@code scope=mine} or {@code scope=all}, filtered by status, month, search, departmentId, employeeId. Scope all: Admin and
+     * HR ({@code appr.reg}) see the whole business; the reporting manager of an HR person sees (and decides) only the requests of those HR people; anybody else
+     * gets 403. {@code decidable}: the ids of the pending requests on the page that the signed-in user may decide (the server's rule).
+     */
     public Map<String, Object> list(CurrentUser user, boolean everyone, Map<String, String> queryParams) {
-        Filter filter = filterOf(queryParams, everyone ? null : user.id());
+        UUID hrReportsOf = null;
+        if (everyone && !user.can("appr.reg")) {
+            if (!approvalPolicy.managesHr(user)) throw new ForbiddenException();
+            hrReportsOf = user.id();
+        }
+        Filter filter = filterOf(queryParams, everyone ? null : user.id(), hrReportsOf);
         ListParams page = ListParams.of(queryParams, List.of("date"), "date", PAGE_SIZE, "desc");
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("scope", everyone ? "all" : "mine");
-        out.put("items", repo.list(filter, page.skip(), page.take()));
+        List<Item> items = repo.list(filter, page.skip(), page.take());
+        Map<String, String> pending = new LinkedHashMap<>();
+        for (Item item : items) if ("PENDING".equals(item.status())) pending.put(item.id(), item.employeeId());
+        out.put("items", items);
+        out.put("decidable", approvalPolicy.decidableRequests(user, pending));
         out.put("total", repo.count(filter));
         out.put("page", page.page());
         out.put("pageSize", PAGE_SIZE);
@@ -430,7 +445,9 @@ public class RegularizationService {
     /** One request: its owner, or an approver; anybody else (another person, another business) gets "not found". */
     public Item details(CurrentUser user, String idRaw) {
         Item item = repo.find(Check.uuid(idRaw));
-        if (item == null || (!item.employeeId().equals(user.id().toString()) && !user.can("appr.reg"))) throw new UserException(HttpStatus.NOT_FOUND, "Request not found.");
+        if (item == null || (!item.employeeId().equals(user.id().toString()) && !user.can("appr.reg") && !approvalPolicy.mayDecide(user, UUID.fromString(item.employeeId())))) {
+            throw new UserException(HttpStatus.NOT_FOUND, "Request not found.");
+        }
         return item;
     }
 
@@ -438,7 +455,7 @@ public class RegularizationService {
 
     /** CSV of the requests the filters match (up to 5000), for approvers. */
     public Export export(CurrentUser user, Map<String, String> queryParams) {
-        List<Item> items = repo.list(filterOf(queryParams, null), 0, 5000);
+        List<Item> items = repo.list(filterOf(queryParams, null, null), 0, 5000);
         List<List<?>> rows = new ArrayList<>();
         for (Item item : items) {
             rows.add(List.of(item.employeeCode(), item.employeeName(), item.department() == null ? "" : item.department(), item.date(), item.kind(),
@@ -467,6 +484,7 @@ public class RegularizationService {
 
     /** Approves or rejects several requests; each one is decided on its own (one failing does not stop the others). A rejection needs remarks. */
     public List<DecisionResult> decideMany(CurrentUser user, List<String> ids, Boolean approve, String note, String ipAddress) {
+        if (!user.can("appr.reg") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
         if (ids == null || ids.isEmpty() || ids.size() > MAX_BULK) throw new UserException(HttpStatus.BAD_REQUEST, "Choose between 1 and " + MAX_BULK + " requests.");
         if (approve == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean, received undefined");
         List<DecisionResult> results = new ArrayList<>();
@@ -478,6 +496,77 @@ public class RegularizationService {
             }
         }
         return results;
+    }
+
+    // ───────────────────────── edit ─────────────────────────
+
+    /** The new values of a pending request: same fields as the request form (the day itself does not change; withdraw and ask again for another day). */
+    public record EditInput(String kind, String checkIn, String checkOut, String reasonId, String description) {}
+
+    /**
+     * Changes a request that is still pending. Only the person who raised it may; every rule of a new request applies again (kind fits the day, times, reason,
+     * description, attachment rule, back-date limit, locked month, one request per day, monthly limit); Old / New are worked out again on the server; the first
+     * decision wins (409). The attachment is kept as it is. Audited with the old and new values.
+     */
+    public String edit(CurrentUser user, String idRaw, EditInput input, String ipAddress) {
+        UUID id = Check.uuid(idRaw);
+        if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input");
+        List<Map<String, Object>> rows = repo.findForEdit(id);
+        if (rows.isEmpty() || !user.id().equals(rows.get(0).get("created_by"))) throw new UserException(HttpStatus.NOT_FOUND, "Request not found.");
+        Map<String, Object> row = rows.get(0);
+        if (!"PENDING".equals(row.get("status"))) throw new UserException("Only pending requests can be changed.");
+        UUID subjectId = (UUID) row.get("employee_id");
+        boolean onBehalf = !subjectId.equals(user.id());
+        LocalDate date = ((java.sql.Date) row.get("work_date")).toLocalDate();
+        AttendanceEmployee employee = employeeFor(subjectId, onBehalf);
+        String kind = Check.oneOf(input.kind(), RegularizationRules.KINDS);
+        String zone = employee.timeZone();
+        Instant now = Instant.now();
+        RegularizationPolicy rules = settings.regularization();
+        LocalDate today = attendanceService.currentWorkDate(employee, now);
+        AttendanceService.ResolvedAttendancePolicy policy = attendanceService.policy();
+        if (attendanceService.isMonthLocked(date.toString().substring(0, 7), policy, now)) throw new UserException("Attendance for this month is locked. Ask Finance to adjust LOP in payroll.");
+        if (date.isBefore(today.minusDays(rules.backDateLimitDays()))) throw new UserException("Requests can be made up to " + rules.backDateLimitDays() + " days back.");
+        DayView day = dayOf(employee, date, now);
+        String problem = kindProblem(kind, day);
+        if (problem != null) throw new UserException(problem);
+        if (repo.hasPendingExcept(subjectId, date, id)) throw alreadyPending(date);
+        if (!repo.openStatusExcept(subjectId, date, kind, id).isEmpty()) throw new UserException("This day is already regularized.");
+        YearMonth month = YearMonth.from(date);
+        if (repo.countUsed(subjectId, month.atDay(1), month.atEndOfMonth()) - 1 >= rules.monthlyLimit()) {
+            throw new UserException((onBehalf ? "They have" : "You have") + " used all " + rules.monthlyLimit() + " regularization requests for " + Format.monthLabel(month.toString()) + ".");
+        }
+        Instant checkIn = RegularizationRules.parseLocalDateTime(input.checkIn(), zone), checkOut = RegularizationRules.parseLocalDateTime(input.checkOut(), zone);
+        RegularizationRules.requireTimesFor(kind, checkIn, checkOut);
+        RegularizationRules.checkTimes(date, checkIn, checkOut, day.dayResult.firstIn, zone, now);
+        if (isBlank(input.reasonId())) throw new UserException(HttpStatus.BAD_REQUEST, "Choose a reason.");
+        Reason reason = repo.findReason(Check.uuid(input.reasonId(), "Choose a reason."));
+        if (reason == null || !reason.active()) throw new UserException(HttpStatus.BAD_REQUEST, "Choose a reason.");
+        String description = input.description() == null ? "" : input.description().trim();
+        if (description.length() > RegularizationRules.MAX_DESCRIPTION_LENGTH) throw new UserException(HttpStatus.BAD_REQUEST, "Keep the description under 500 characters.");
+        if (reason.requiresDescription() && description.isEmpty()) throw new UserException(HttpStatus.BAD_REQUEST, "Add a description for this reason.");
+        if (description.isEmpty()) description = null;
+        String reasonText = description == null ? reason.label() : reason.label() + " — " + description;
+        if (rules.attachmentMandatory() && row.get("attachment_path") == null) throw new UserException(HttpStatus.BAD_REQUEST, "Attach a supporting document.");
+        Instant effectiveIn = checkIn != null ? checkIn : day.dayResult.firstIn, effectiveOut = checkOut != null ? checkOut : day.dayResult.lastOut;
+        Integer minutes = RegularizationRules.minutesBetween(effectiveIn, effectiveOut);
+        Integer newMinutes = minutes != null ? minutes : day.dayResult.workedMinutes;
+        String oldStatus = day.dayResult.status.name();
+        String newStatus = RegularizationRules.newStatus(oldStatus, kind, newMinutes, policy.engine());
+        Map<String, Object> after = new LinkedHashMap<>();
+        after.put("date", date.toString());
+        after.put("kind", kind);
+        after.put("checkIn", checkIn == null ? null : MyAttendanceService.formatIsoInstant(checkIn));
+        after.put("checkOut", checkOut == null ? null : MyAttendanceService.formatIsoInstant(checkOut));
+        after.put("reasonId", reason.id());
+        if (onBehalf) after.put("onBehalfOf", subjectId.toString());
+        String descriptionToSave = description;
+        if (repo.updatePending(id, kind, checkIn, checkOut, reasonText, UUID.fromString(reason.id()), descriptionToSave, day.dayResult.firstIn, day.dayResult.lastOut, day.dayResult.workedMinutes,
+                oldStatus, newMinutes, newStatus) == 0) {
+            throw new ApiException(HttpStatus.CONFLICT, ALREADY_DECIDED, "This request was decided a moment ago.");
+        }
+        audit.log(user.id(), "regularization.edit", "regularization", id.toString(), Map.of("status", "PENDING"), after, ipAddress);
+        return "Regularization request updated";
     }
 
     // ───────────────────────── rules and reasons ─────────────────────────
@@ -496,6 +585,8 @@ public class RegularizationService {
         out.put("monthlyLimit", rules.monthlyLimit());
         out.put("attachmentMandatory", rules.attachmentMandatory());
         out.put("autoApprove", rules.autoApprove());
+        out.put("onDutyMonthlyLimit", rules.onDutyMonthlyLimit());
+        out.put("remoteWorkMonthlyLimit", rules.remoteWorkMonthlyLimit());
         out.put("maxAttachmentMb", MAX_ATTACHMENT_MB);
         out.put("month", month.toString());
         out.put("usedThisMonth", used);
@@ -510,6 +601,11 @@ public class RegularizationService {
             throw new UserException(HttpStatus.BAD_REQUEST, "Back-date limit must be 0–365 days and the monthly limit 1–1000.");
         }
         RegularizationPolicy before = settings.regularization();
+        // an older client that does not send the two new limits keeps what is saved
+        Integer onDutyLimit = input.onDutyMonthlyLimit() == null ? before.onDutyMonthlyLimit() : input.onDutyMonthlyLimit();
+        Integer remoteLimit = input.remoteWorkMonthlyLimit() == null ? before.remoteWorkMonthlyLimit() : input.remoteWorkMonthlyLimit();
+        if (onDutyLimit < 1 || onDutyLimit > 31 || remoteLimit < 1 || remoteLimit > 31) throw new UserException(HttpStatus.BAD_REQUEST, "The monthly On Duty and remote work limits must be 1–31 days.");
+        input = new RegularizationPolicy(input.backDateLimitDays(), input.monthlyLimit(), input.attachmentMandatory(), input.autoApprove(), onDutyLimit, remoteLimit);
         JsonNode value = json.valueToTree(input);
         settings.save("attendance.regularization", value);
         audit.log(user.id(), "regularization.settings", "settings", "attendance.regularization", before, input, ipAddress);

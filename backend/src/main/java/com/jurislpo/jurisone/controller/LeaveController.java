@@ -69,7 +69,7 @@ public class LeaveController {
     /** Approve or reject a regularization request ({@code {approve, note?}}); the first decision wins. */
     @PutMapping("/api/v1/attendance/regularizations/{id}/decision")
     public ApiResult<Void> decideRegularization(@PathVariable String id, @RequestBody DecisionBody body, HttpServletRequest request) {
-        return ApiResult.message(approvals.decideRegularization(auth.assertPerm("appr.reg"), body.with(id), RequestMeta.of(request).ipAddress()));
+        return ApiResult.message(approvals.decideRegularization(auth.assertPerm(), body.with(id), RequestMeta.of(request).ipAddress()));
     }
 
     public record DecisionBody(Boolean approve, String note) {

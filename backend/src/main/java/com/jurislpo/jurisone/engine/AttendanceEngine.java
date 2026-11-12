@@ -41,12 +41,19 @@ public final class AttendanceEngine {
     /** Approved leave covering a date. {@code paidFraction}: 1 = paid from balance, 0 = loss of pay. */
     public record Leave(String code, String name, LeavePart part, double paidFraction) {}
 
-    /** Approved regularizations for a date; {@code remoteWork}: an approved remote work request covers the date. */
-    public record Regularization(boolean absent, boolean lateWaived, boolean remoteWork) {
-        public static final Regularization NONE = new Regularization(false, false, false);
+    /**
+     * Approved regularizations for a date; {@code remoteWork}: an approved remote work request covers the whole date; {@code remoteHalf}: an approved
+     * half-day remote work request covers one half of it (the other half is an ordinary working half).
+     */
+    public record Regularization(boolean absent, boolean lateWaived, boolean remoteWork, boolean remoteHalf) {
+        public static final Regularization NONE = new Regularization(false, false, false, false);
+
+        public Regularization(boolean absent, boolean lateWaived, boolean remoteWork) {
+            this(absent, lateWaived, remoteWork, false);
+        }
 
         public Regularization(boolean absent, boolean lateWaived) {
-            this(absent, lateWaived, false);
+            this(absent, lateWaived, false, false);
         }
     }
 
@@ -111,6 +118,9 @@ public final class AttendanceEngine {
     public static final int WINDOW_LEAD_MIN = 240;
     /** The day label of an approved remote work day. */
     public static final String REMOTE_LABEL = "Remote";
+
+    /** The day label of an approved half-day remote work request. */
+    public static final String REMOTE_HALF_LABEL = "Remote · half day";
 
     static int toMin(String time) {
         String[] parts = time.split(":");
@@ -248,6 +258,7 @@ public final class AttendanceEngine {
                 return withLeave(base.with(DayStatus.LEAVE, leave.part() == LeavePart.FULL ? leave.name() : leave.name() + " · half day"), leave);
             }
             if (isRemote) return base.with(DayStatus.PENDING, REMOTE_LABEL);
+            if (dayInput.regularization().remoteHalf()) return base.with(DayStatus.PENDING, REMOTE_HALF_LABEL);
             if (dayInput.onDutyPart() != null) {
                 DayResult dayResult = base.with(DayStatus.PENDING, onDutyLabel(dayInput.onDutyPart()));
                 dayResult.onDutyDays = onDutyDays(dayInput.onDutyPart());
@@ -279,6 +290,7 @@ public final class AttendanceEngine {
 
         // An approved remote work day is a normal working day: Present (paid, no LOP) whether or not there is a punch.
         if (isRemote) return facts.with(DayStatus.PRESENT, REMOTE_LABEL);
+        if (dayInput.regularization().remoteHalf()) return halfDayWorkedElsewhere(dayInput, facts, worked.minutes(), dayOver, half, REMOTE_HALF_LABEL);
         if (dayInput.onDutyPart() != null) return onDutyDay(dayInput, facts, worked.minutes(), dayOver, half);
 
         if (sorted.isEmpty()) {
@@ -314,6 +326,23 @@ public final class AttendanceEngine {
         }
         DayResult dayResult = facts.with(DayStatus.ABSENT, facts.missedCheckout ? "Missed check-out · LOP" : "Short day · LOP");
         dayResult.lopDays = 1;
+        return dayResult;
+    }
+
+    /**
+     * A working day of which one half is remote work: the remote half counts as worked, the other half needs half-day hours like the other half of
+     * a half-day leave or On Duty; short of that it is a half day with 0.5 loss of pay (or paid in full when an absence regularization is approved).
+     */
+    private static DayResult halfDayWorkedElsewhere(DayInput dayInput, DayResult facts, int workedMinutes, boolean dayOver, double halfMinutes, String label) {
+        if (workedMinutes >= halfMinutes) return facts.with(DayStatus.PRESENT, label);
+        if (!dayOver) return facts.with(DayStatus.PENDING, label);
+        if (dayInput.regularization().absent()) {
+            DayResult dayResult = facts.with(DayStatus.PRESENT, label);
+            dayResult.regularized = true;
+            return dayResult;
+        }
+        DayResult dayResult = facts.with(DayStatus.HALF_DAY, label);
+        dayResult.lopDays = 0.5;
         return dayResult;
     }
 

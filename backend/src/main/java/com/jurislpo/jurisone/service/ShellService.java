@@ -46,7 +46,11 @@ public class ShellService {
     private final InboxService inbox;
     private final EmployeeOnboardingService onboarding;
 
-    public ShellService(ShellRepository repo, com.jurislpo.jurisone.service.SubscriptionService subscriptions, InboxService inbox, EmployeeOnboardingService onboarding) {
+    private final AttendanceApprovalPolicy approvalPolicy;
+
+    public ShellService(ShellRepository repo, com.jurislpo.jurisone.service.SubscriptionService subscriptions, InboxService inbox, EmployeeOnboardingService onboarding,
+                        AttendanceApprovalPolicy approvalPolicy) {
+        this.approvalPolicy = approvalPolicy;
         this.onboarding = onboarding;
         this.repo = repo;
         this.inbox = inbox;
@@ -90,6 +94,8 @@ public class ShellService {
         Map<String, Integer> badges = new LinkedHashMap<>();
         badges.put("approvals", pending);
         badges.put("proofs", proofs);
+        // Attendance: pending regularization / On Duty / remote work requests waiting for THIS user to decide (the server's approval rule)
+        badges.put("attendanceRequests", user.businessId() == null ? 0 : approvalPolicy.pendingFor(user).total());
         // My tasks: my open tasks (direct or indirect assignee) that are overdue or due today, in each task's time zone
         badges.put("myTasks", user.businessId() != null && user.navAllowed("my-tasks") ? repo.countMyTasksDueByToday(user.id()) : 0);
         String businessName = user.businessId() == null ? null : repo.businessName(user.businessId());

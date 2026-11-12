@@ -43,7 +43,10 @@ public class RemoteWorkService {
     static final List<String> STATUSES = List.of("PENDING", "APPROVED", "DECLINED", "CANCELLED");
 
     /** The body of a new request: ISO dates and the reason. */
-    public record CreateInput(String fromDate, String toDate, String reason, String employeeId) {}
+    /** {@code part}: FULL (default), FIRST_HALF or SECOND_HALF; a half day is one day (fromDate = toDate). */
+    public record CreateInput(String fromDate, String toDate, String reason, String employeeId, String part) {}
+
+    public record EditInput(String fromDate, String toDate, String reason, String part) {}
 
     public record DecisionResult(String id, boolean ok, String message) {}
 
@@ -53,9 +56,13 @@ public class RemoteWorkService {
     private final AuditService audit;
     private final NotificationService notifications;
     private final TransactionTemplate transactionTemplate;
+    private final AttendanceApprovalPolicy approvalPolicy;
+    private static final UUID NO_REQUEST = new UUID(0, 0);
+    static final List<String> PARTS = List.of("FULL", "FIRST_HALF", "SECOND_HALF");
 
     public RemoteWorkService(AttendanceService attendanceService, RemoteWorkRepository repo, SettingsService settings, AuditService audit, NotificationService notifications,
-                             TransactionTemplate transactionTemplate) {
+                             TransactionTemplate transactionTemplate, AttendanceApprovalPolicy approvalPolicy) {
+        this.approvalPolicy = approvalPolicy;
         this.attendanceService = attendanceService;
         this.repo = repo;
         this.settings = settings;
@@ -97,6 +104,7 @@ public class RemoteWorkService {
         if (to.isBefore(from)) throw new UserException(HttpStatus.BAD_REQUEST, "The last day can't be before the first day.");
         if (from.until(to, ChronoUnit.DAYS) + 1 > MAX_RANGE_DAYS) throw new UserException(HttpStatus.BAD_REQUEST, "A request can cover at most " + MAX_RANGE_DAYS + " days.");
         String reason = Check.trimmed(input.reason(), 1, "Enter the reason for working remotely.", MAX_REASON_LENGTH, "Keep the reason under 500 characters.");
+        String part = partOf(input.part(), from, to);
 
         UUID subjectId = user.id();
         if (input.employeeId() != null && !input.employeeId().isBlank()) {
@@ -117,17 +125,19 @@ public class RemoteWorkService {
         if (from.isBefore(today.minusDays(backDays))) throw new UserException("Requests can be made up to " + backDays + " days back.");
         if (from.isAfter(today.plusDays(MAX_DAYS_AHEAD))) throw new UserException("Requests can be made up to " + MAX_DAYS_AHEAD + " days ahead.");
         if (touchesLockedMonth(from, to, today, now)) throw new UserException("Attendance for this month is locked. Ask Finance to adjust LOP in payroll.");
+        checkMonthlyLimit(employeeId, from, to, part, NO_REQUEST, onBehalf);
 
         UUID id = UUID.randomUUID();
         try {
             transactionTemplate.executeWithoutResult(status -> {
                 repo.lockEmployee(employeeId);
-                if (repo.hasOpenOverlap(employeeId, from, to)) throw alreadyRequested(onBehalf);
-                repo.insert(id, employeeId, from, to, reason, user.id());
+                if (repo.hasOpenOverlap(employeeId, from, to, NO_REQUEST)) throw alreadyRequested(onBehalf);
+                repo.insert(id, employeeId, from, to, part, reason, user.id());
                 Map<String, Object> view = new LinkedHashMap<>();
                 view.put("fromDate", from.toString());
                 view.put("toDate", to.toString());
                 view.put("days", from.until(to, ChronoUnit.DAYS) + 1);
+                view.put("part", part);
                 view.put("reason", reason);
                 if (onBehalf) {
                     view.put("onBehalfOf", employeeId.toString()); // the actor is the audit row's actor; the employee it was raised for is named here
@@ -139,25 +149,48 @@ public class RemoteWorkService {
             throw alreadyRequested(onBehalf); // two requests that start the same day at the same moment: the database index decides
         }
         if (onBehalf) {
-            // Admin / HR raised it for the employee: approve it now, as the approver. If the approval is refused (for example a rule changed a moment ago)
-            // the request simply stays pending for a normal decision.
-            try {
-                decide(user, id.toString(), true, "Auto-approved: raised by " + user.name() + " for the employee", ipAddress);
-                return id.toString();
-            } catch (ApiException e) {
-                // stays pending
+            // Admin / HR raised it for the employee. With the business setting autoApprove on (the same one as for regularization, off by default) it is approved
+            // now, as the approver; if the approval is refused (the approval rule: an HR person's request is decided by their manager; or a rule changed a moment
+            // ago) or the setting is off, the request waits for a normal decision.
+            if (settings.regularization().autoApprove()) {
+                try {
+                    decide(user, id.toString(), true, "Auto-approved: raised by " + user.name() + " for the employee", ipAddress);
+                    return id.toString();
+                } catch (ApiException e) {
+                    // stays pending
+                }
             }
             notifications.notify(employeeId, user.name() + " raised a remote work request for you for " + span(from, to), "/attendance?tab=remote-work");
         }
         long days = from.until(to, ChronoUnit.DAYS) + 1;
         String span = span(from, to) + (days > 1 ? " (" + days + " days)" : "");
         String who = onBehalf ? user.name() + " raised a remote work request for " + employee.name() : user.name() + " asked to work remotely";
-        for (UUID approverId : repo.approverIds(employeeId)) {
+        for (UUID approverId : approvalPolicy.approversOf(employeeId)) {
             if (approverId.equals(user.id())) continue;
             notifications.notify(approverId, who + " for " + span(from, to), "/attendance?scope=team&tab=remote-work");
             notifications.emailEmployee(approverId, name -> MailTemplates.remoteWorkRequested(name, who, span));
         }
         return id.toString();
+    }
+
+    /** FULL by default; a half day (first or second half) must be a single day (400 otherwise). */
+    static String partOf(String text, LocalDate from, LocalDate to) {
+        String part = text == null || text.isBlank() ? "FULL" : Check.oneOf(text, PARTS);
+        if (!"FULL".equals(part) && !from.equals(to)) throw new UserException(HttpStatus.BAD_REQUEST, "A half day is a single day.");
+        return part;
+    }
+
+    /** The monthly remote work limit (days; a half day is 0.5), for every month the request touches, counting the employee's other pending and approved requests. */
+    private void checkMonthlyLimit(UUID employeeId, LocalDate from, LocalDate to, String part, UUID exceptId, boolean onBehalf) {
+        int limit = settings.regularization().remoteWorkMonthlyLimit();
+        double perDay = "FULL".equals(part) ? 1 : 0.5;
+        for (YearMonth month = YearMonth.from(from); !month.atDay(1).isAfter(to); month = month.plusMonths(1)) {
+            LocalDate first = month.atDay(1).isBefore(from) ? from : month.atDay(1), last = month.atEndOfMonth().isAfter(to) ? to : month.atEndOfMonth();
+            double asked = (first.until(last, ChronoUnit.DAYS) + 1) * perDay;
+            if (repo.usedDays(employeeId, month.atDay(1), month.atEndOfMonth(), exceptId) + asked > limit + 1e-9) {
+                throw new UserException((onBehalf ? "They have" : "You have") + " used all " + limit + " remote work days for " + Format.monthLabel(month.toString()) + ".");
+            }
+        }
     }
 
     private static ApiException alreadyRequested(boolean onBehalf) {
@@ -174,6 +207,58 @@ public class RemoteWorkService {
         if (repo.cancel(id, user.id()) == 0) throw new ApiException(HttpStatus.CONFLICT, ALREADY_DECIDED, "This request was decided a moment ago.");
         audit.log(user.id(), "remote_work.cancel", "remote_work", id.toString(), Map.of("status", "PENDING"), Map.of("status", "CANCELLED"), ipAddress);
         return "Request withdrawn";
+    }
+
+    // ───────────────────────── edit ─────────────────────────
+
+    /**
+     * Changes a request that is still pending. Only the person who raised it may; every rule of a new request applies again (dates, window, locked month,
+     * overlap, monthly limit); the first decision wins (409). Audited with the old and new values.
+     */
+    public String edit(CurrentUser user, String idRaw, EditInput input, String ipAddress) {
+        UUID id = Check.uuid(idRaw);
+        if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input");
+        List<Map<String, Object>> rows = repo.findForDecision(id);
+        if (rows.isEmpty() || !user.id().equals(rows.get(0).get("created_by"))) throw new UserException(HttpStatus.NOT_FOUND, "Request not found.");
+        Map<String, Object> row = rows.get(0);
+        if (!"PENDING".equals(row.get("status"))) throw new UserException("Only pending requests can be changed.");
+        UUID employeeId = (UUID) row.get("employee_id");
+        boolean onBehalf = !employeeId.equals(user.id());
+        LocalDate from = parseDate(input.fromDate(), "Invalid date."), to = parseDate(input.toDate(), "Invalid date.");
+        if (to.isBefore(from)) throw new UserException(HttpStatus.BAD_REQUEST, "The last day can't be before the first day.");
+        if (from.until(to, ChronoUnit.DAYS) + 1 > MAX_RANGE_DAYS) throw new UserException(HttpStatus.BAD_REQUEST, "A request can cover at most " + MAX_RANGE_DAYS + " days.");
+        String reason = Check.trimmed(input.reason(), 1, "Enter the reason for working remotely.", MAX_REASON_LENGTH, "Keep the reason under 500 characters.");
+        String part = partOf(input.part(), from, to);
+        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", employeeId);
+        if (employees.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Employee not found.");
+        Instant now = Instant.now();
+        LocalDate today = attendanceService.currentWorkDate(employees.get(0), now);
+        int backDays = settings.regularization().backDateLimitDays();
+        if (from.isBefore(today.minusDays(backDays))) throw new UserException("Requests can be made up to " + backDays + " days back.");
+        if (from.isAfter(today.plusDays(MAX_DAYS_AHEAD))) throw new UserException("Requests can be made up to " + MAX_DAYS_AHEAD + " days ahead.");
+        if (touchesLockedMonth(from, to, today, now)) throw new UserException("Attendance for this month is locked. Ask Finance to adjust LOP in payroll.");
+        checkMonthlyLimit(employeeId, from, to, part, id, onBehalf);
+        Map<String, Object> before = new LinkedHashMap<>();
+        before.put("fromDate", ((Date) row.get("from_date")).toLocalDate().toString());
+        before.put("toDate", ((Date) row.get("to_date")).toLocalDate().toString());
+        before.put("part", row.get("part"));
+        Map<String, Object> after = new LinkedHashMap<>();
+        after.put("fromDate", from.toString());
+        after.put("toDate", to.toString());
+        after.put("part", part);
+        after.put("reason", reason);
+        if (onBehalf) after.put("onBehalfOf", employeeId.toString());
+        try {
+            transactionTemplate.executeWithoutResult(status -> {
+                repo.lockEmployee(employeeId);
+                if (repo.hasOpenOverlap(employeeId, from, to, id)) throw alreadyRequested(onBehalf);
+                if (repo.updatePending(id, from, to, part, reason) == 0) throw new ApiException(HttpStatus.CONFLICT, ALREADY_DECIDED, "This request was decided a moment ago.");
+                audit.log(user.id(), "remote_work.edit", "remote_work", id.toString(), before, after, ipAddress);
+            });
+        } catch (DuplicateKeyException e) {
+            throw alreadyRequested(onBehalf);
+        }
+        return "Remote work request updated";
     }
 
     // ───────────────────────── read ─────────────────────────
@@ -216,7 +301,11 @@ public class RemoteWorkService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("scope", isTeam ? "team" : "mine");
         out.put("canDecide", isTeam && user.can("appr.reg"));
-        out.put("items", repo.list(filter, page.skip(), page.take()));
+        List<Item> items = repo.list(filter, page.skip(), page.take());
+        Map<String, String> pending = new LinkedHashMap<>();
+        for (Item item : items) if ("PENDING".equals(item.status())) pending.put(item.id(), item.employeeId());
+        out.put("items", items);
+        out.put("decidable", approvalPolicy.decidableRequests(user, pending)); // the pending requests on this page the signed-in user may decide (the server's rule)
         out.put("total", repo.count(filter));
         out.put("page", page.page());
         out.put("pageSize", PAGE_SIZE);
@@ -238,6 +327,7 @@ public class RemoteWorkService {
 
     /** Approves or rejects one pending request (appr.reg). The first decision wins; a rejection needs remarks (up to 300 characters); nobody decides their own request. */
     public String decide(CurrentUser user, String idRaw, Boolean approve, String noteRaw, String ipAddress) {
+        if (!user.can("appr.reg") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
         UUID id = Check.uuid(idRaw);
         if (approve == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean, received undefined");
         String note = noteRaw == null ? null : noteRaw.trim();
@@ -248,7 +338,7 @@ public class RemoteWorkService {
         if (rows.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Request not found.");
         Map<String, Object> row = rows.get(0);
         UUID employeeId = (UUID) row.get("employee_id");
-        if (employeeId.equals(user.id())) throw new UserException("You can't decide your own request.");
+        approvalPolicy.assertMayDecide(user, employeeId); // Admin may decide their own; HR's goes to HR's manager (or the Admin); never your own as HR
         if (!"PENDING".equals(row.get("status"))) throw new UserException("This request was already decided.");
         LocalDate from = ((Date) row.get("from_date")).toLocalDate(), to = ((Date) row.get("to_date")).toLocalDate();
         Instant now = Instant.now();
@@ -277,6 +367,7 @@ public class RemoteWorkService {
 
     /** Approves or rejects several requests; each one is decided on its own (one failing does not stop the others). */
     public List<DecisionResult> decideMany(CurrentUser user, List<String> ids, Boolean approve, String note, String ipAddress) {
+        if (!user.can("appr.reg") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
         if (ids == null || ids.isEmpty() || ids.size() > MAX_BULK) throw new UserException(HttpStatus.BAD_REQUEST, "Choose between 1 and " + MAX_BULK + " requests.");
         if (approve == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean, received undefined");
         List<DecisionResult> results = new ArrayList<>();
