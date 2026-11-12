@@ -4,6 +4,7 @@ import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.engine.AttendanceEngine.DayInput;
 import com.jurislpo.jurisone.engine.AttendanceEngine.DayResult;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Leave;
+import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Policy;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Punch;
 import com.jurislpo.jurisone.engine.AttendanceEngine.Regularization;
@@ -15,6 +16,7 @@ import com.jurislpo.jurisone.repository.AttendanceRepository;
 import com.jurislpo.jurisone.repository.AttendanceRepository.HolidayRow;
 import com.jurislpo.jurisone.repository.AttendanceRepository.LeaveRow;
 import com.jurislpo.jurisone.repository.AttendanceRepository.PunchRow;
+import com.jurislpo.jurisone.repository.AttendanceRepository.OnDutyRow;
 import com.jurislpo.jurisone.repository.AttendanceRepository.RegularizationRow;
 import com.jurislpo.jurisone.service.SettingsService.AttendancePolicy;
 import java.math.BigDecimal;
@@ -117,6 +119,7 @@ public class AttendanceService {
 
         List<LeaveRow> leaves = repo.approvedLeaves(idArr, from, to);
         List<RegularizationRow> regularizations = repo.approvedRegularizations(idArr, from, to);
+        List<OnDutyRow> onDutyRows = repo.approvedOnDuty(idArr, from, to);
         List<PunchRow> punches = repo.punches(idArr, from.atStartOfDay(ZoneId.of("UTC")).toInstant().minusSeconds(36 * 3600),
                 to.atStartOfDay(ZoneId.of("UTC")).toInstant().plusSeconds(60 * 3600));
         Map<String, Map<String, Object>> locked = repo.lockedDays(idArr, from, to);
@@ -172,6 +175,7 @@ public class AttendanceService {
                     dayResult.live = false;
                     dayResult.future = false;
                     dayResult.offDayWork = false;
+                    dayResult.onDutyDays = ((BigDecimal) row.get("on_duty_days")).doubleValue();
                     days.add(new DayView(dayResult, dayPunches));
                     continue;
                 }
@@ -187,8 +191,9 @@ public class AttendanceService {
                 }
                 Regularization regularization = new Regularization(regularizationRows.stream().anyMatch(x -> x.kind().equals("ABSENT") || x.kind().equals("MISSED_CHECKOUT")),
                         regularizationRows.stream().anyMatch(x -> x.kind().equals("LATE_CHECKIN")));
+                LeavePart onDutyPart = onDutyRows.stream().filter(x -> x.employeeId().equals(employee.id()) && x.date().equals(day)).map(x -> LeavePart.valueOf(x.part())).findFirst().orElse(null);
                 DayResult dayResult = AttendanceEngine.computeDay(new DayInput(date, now, employee.timeZone(), employee.shift().shiftDefinition(), policy.engine(), employee.dateOfJoining(), employee.exitDate(),
-                        policy.trackingStart(), holiday, leave, dayPunches, regularization));
+                        policy.trackingStart(), holiday, leave, dayPunches, regularization, onDutyPart));
                 days.add(new DayView(dayResult, dayPunches));
             }
             out.put(employee.id(), days);

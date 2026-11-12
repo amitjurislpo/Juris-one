@@ -28,6 +28,9 @@ public class AttendanceRepository {
 
     public record RegularizationRow(UUID employeeId, LocalDate date, String kind) {}
 
+    /** An approved On Duty request: the day and which part of it (FULL, FIRST_HALF, SECOND_HALF). */
+    public record OnDutyRow(UUID employeeId, LocalDate date, String part) {}
+
     public record PunchRow(UUID employeeId, Instant punchedAt, PunchKind kind, String source, String note) {}
 
     public record HolidayRow(LocalDate date, String name, String region) {}
@@ -79,6 +82,14 @@ public class AttendanceRepository {
                 (resultSet, i) -> new RegularizationRow((UUID) resultSet.getObject(1), resultSet.getDate(2).toLocalDate(), resultSet.getString(3)), idArr, Date.valueOf(from), Date.valueOf(to));
     }
 
+    /** Approved On Duty requests of these employees for work dates in [from, to]. */
+    public List<OnDutyRow> approvedOnDuty(UUID[] idArr, LocalDate from, LocalDate to) {
+        return jdbc.query("""
+            SELECT employee_id, work_date, part FROM on_duty_requests
+            WHERE employee_id = ANY (?) AND status = 'APPROVED' AND work_date >= ? AND work_date <= ?""",
+                (resultSet, i) -> new OnDutyRow((UUID) resultSet.getObject(1), resultSet.getDate(2).toLocalDate(), resultSet.getString(3)), idArr, Date.valueOf(from), Date.valueOf(to));
+    }
+
     /** Punches of these employees in [fromAt, toAt), oldest first. */
     public List<PunchRow> punches(UUID[] idArr, Instant fromAt, Instant toAt) {
         return jdbc.query("""
@@ -93,10 +104,10 @@ public class AttendanceRepository {
         Map<String, Map<String, Object>> locked = new HashMap<>();
         jdbc.query("""
             SELECT employee_id, work_date, status::text AS status, label, first_in, last_out, worked_minutes, late, late_waived, missed_checkout, regularized,
-                   lop_days, leave_days FROM attendance_days WHERE employee_id = ANY (?) AND locked AND work_date >= ? AND work_date <= ?""",
+                   lop_days, leave_days, on_duty_days FROM attendance_days WHERE employee_id = ANY (?) AND locked AND work_date >= ? AND work_date <= ?""",
                 resultSet -> {
                     Map<String, Object> row = new HashMap<>();
-                    for (String column : List.of("status", "label", "first_in", "last_out", "worked_minutes", "late", "late_waived", "missed_checkout", "regularized", "lop_days", "leave_days")) {
+                    for (String column : List.of("status", "label", "first_in", "last_out", "worked_minutes", "late", "late_waived", "missed_checkout", "regularized", "lop_days", "leave_days", "on_duty_days")) {
                         row.put(column, resultSet.getObject(column));
                     }
                     locked.put(resultSet.getObject("employee_id") + "|" + resultSet.getDate("work_date").toLocalDate(), row);
@@ -121,14 +132,14 @@ public class AttendanceRepository {
     public void upsertDay(UUID employeeId, DayResult dayResult, boolean lock) {
         jdbc.update("""
             INSERT INTO attendance_days (employee_id, work_date, status, label, first_in, last_out, worked_minutes, late, late_waived, regularized,
-              missed_checkout, lop_days, leave_days, locked, updated_at)
-            VALUES (?, ?, ?::"DayStatus", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+              missed_checkout, lop_days, leave_days, on_duty_days, locked, updated_at)
+            VALUES (?, ?, ?::"DayStatus", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
             ON CONFLICT (employee_id, work_date) DO UPDATE SET status = EXCLUDED.status, label = EXCLUDED.label, first_in = EXCLUDED.first_in,
               last_out = EXCLUDED.last_out, worked_minutes = EXCLUDED.worked_minutes, late = EXCLUDED.late, late_waived = EXCLUDED.late_waived,
               regularized = EXCLUDED.regularized, missed_checkout = EXCLUDED.missed_checkout, lop_days = EXCLUDED.lop_days,
-              leave_days = EXCLUDED.leave_days, locked = EXCLUDED.locked, updated_at = now()""",
+              leave_days = EXCLUDED.leave_days, on_duty_days = EXCLUDED.on_duty_days, locked = EXCLUDED.locked, updated_at = now()""",
                 employeeId, Date.valueOf(dayResult.date), dayResult.status.name(), dayResult.label, toTimestamp(dayResult.firstIn), toTimestamp(dayResult.lastOut), dayResult.workedMinutes, dayResult.late || dayResult.lateWaived,
-                dayResult.lateWaived, dayResult.regularized, dayResult.missedCheckout, BigDecimal.valueOf(dayResult.lopDays), BigDecimal.valueOf(dayResult.leaveDays), lock);
+                dayResult.lateWaived, dayResult.regularized, dayResult.missedCheckout, BigDecimal.valueOf(dayResult.lopDays), BigDecimal.valueOf(dayResult.leaveDays), BigDecimal.valueOf(dayResult.onDutyDays), lock);
     }
 
     private static Timestamp toTimestamp(Instant instant) {
