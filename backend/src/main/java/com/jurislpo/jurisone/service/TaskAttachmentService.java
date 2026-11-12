@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.jurislpo.jurisone.crypto.FileCrypto;
 import com.jurislpo.jurisone.config.JurisOneProperties;
 import com.jurislpo.jurisone.exception.ForbiddenException;
 import com.jurislpo.jurisone.exception.UserException;
@@ -56,15 +57,17 @@ public class TaskAttachmentService {
     private final TaskActivityService activity;
     private final AuditService audit;
     private final Path storageDir;
+    private final FileCrypto fileCrypto;
 
     public TaskAttachmentService(TaskAttachmentRepository repo, TaskRepository tasks, TaskService taskService, TaskActivityService activity, AuditService audit,
-                                 JurisOneProperties props) {
+                                 JurisOneProperties props, FileCrypto fileCrypto) {
         this.repo = repo;
         this.tasks = tasks;
         this.taskService = taskService;
         this.activity = activity;
         this.audit = audit;
         this.storageDir = Path.of(props.storageDir()).toAbsolutePath().normalize();
+        this.fileCrypto = fileCrypto;
     }
 
     static boolean startsWith(byte[] bytes, byte[] magic) {
@@ -113,7 +116,7 @@ public class TaskAttachmentService {
         Path absolutePath = directory.resolve(UUID.randomUUID() + "." + type.extension());
         try {
             Files.createDirectories(directory);
-            Files.write(absolutePath, bytes);
+            fileCrypto.write(absolutePath, bytes);
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
@@ -147,7 +150,7 @@ public class TaskAttachmentService {
         Path absolutePath = storageDir.resolve(row.filePath()).normalize();
         if (!absolutePath.startsWith(storageDir)) throw new UserException(HttpStatus.NOT_FOUND, "File not found.");
         try {
-            return new FileOut(row.fileName(), row.contentType(), Files.readAllBytes(absolutePath));
+            return new FileOut(row.fileName(), row.contentType(), fileCrypto.read(absolutePath));
         } catch (IOException e) {
             throw new UserException(HttpStatus.NOT_FOUND, "File not found.");
         }
