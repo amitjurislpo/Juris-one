@@ -63,6 +63,15 @@ public final class MailTemplates {
                         + "<p style=\"color:#5D5F6D\">Open the Remote Work Requests tab of Attendance in JurisOne to approve or reject it.</p>"));
     }
 
+    /** An approver is told that an On Duty request is waiting ({@code who} is a sentence such as "Asha Rao asked for On Duty"). */
+    public static Content onDutyRequested(String name, String who, String span) {
+        return new Content(
+                "On Duty request waiting for your decision",
+                "Hi " + name + ",\n\n" + who + " for " + span + ". Open the On Duty tab of Attendance in JurisOne to approve or reject it.",
+                shell("On Duty request", "<p>Hi " + escapeHtml(name) + ", " + escapeHtml(who) + " for <b>" + escapeHtml(span) + "</b>.</p>"
+                        + "<p style=\"color:#5D5F6D\">Open the On Duty tab of Attendance in JurisOne to approve or reject it.</p>"));
+    }
+
     /** An HR letter was issued to the employee; the PDF is attached and also lives under My letters. */
     public static Content letter(String name, String business, String subject, String reference, String link) {
         return new Content(
