@@ -175,7 +175,7 @@ The super admin keeps a catalogue of **role templates** (Platform → role templ
 
 - **PAN, Aadhaar, UAN, phone and address are PII.** Encrypt them at rest (application-level or pgcrypto) and show only masked values in the UI (`XXXX XXXX 1234`).
 - Follow UIDAI guidance for Aadhaar: store encrypted, display only the last 4 digits, restrict access to `people.view`.
-- Employee full name, first name, last name and designation are stored encrypted beside the plaintext (stage 1, `*_enc` columns, `jurisone.security.encrypt-names.dual-write`); reads switch to the encrypted copy in a later stage after a soak period, then the plaintext is cleared. See FR-DATA-6 in `FRD-JurisOne.md`.
+- Employee full name, first name, last name and designation are stored encrypted beside the plaintext (stage 1, `*_enc` columns, `jurisone.security.encrypt-names.dual-write`); reads switch to the encrypted copy in a later stage after a soak period, then the plaintext is cleared. See FR-DATA-6 in `FRD-JurisOne.md`. The work email also gets an encrypted copy and a keyed blind index (own key, `EMAIL_BLIND_INDEX_KEY`) for sign-in and duplicate checks, behind switches that are off by default (FR-DATA-8).
 
 **People list** (`people.view`):
 
