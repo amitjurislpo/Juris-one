@@ -40,8 +40,8 @@ class LeaveApiTest extends IntegrationTest {
     @BeforeEach
     void setUp() {
         data = new TestData(jdbc).inBusiness("leave-api-" + TestData.letters(8));
-        // a leave year that starts today, so "next week" is always inside the leave year (even in the last week of December)
-        LocalDate today = AttendanceEngine.localParts(Instant.now(), "Asia/Kolkata").date();
+        // a leave year that started a few days ago, so "next week" is always inside it (even in the last week of December) and the one-day difference between IST midnight and an employee's work date cannot matter
+        LocalDate today = AttendanceEngine.localParts(Instant.now(), "Asia/Kolkata").date().minusDays(3);
         int startDay = today.getMonthValue() == 2 && today.getDayOfMonth() == 29 ? 28 : today.getDayOfMonth();
         jdbc.update("INSERT INTO settings (key, value, updated_at, business_id) VALUES ('leave.policy', ?::jsonb, now(), ?) ON CONFLICT (key, business_id) DO UPDATE SET value = EXCLUDED.value",
                 "{\"yearStartMonth\":" + today.getMonthValue() + ",\"yearStartDay\":" + startDay + ",\"yearEnd\":{}}", data.business());
