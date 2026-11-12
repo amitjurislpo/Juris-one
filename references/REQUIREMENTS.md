@@ -281,6 +281,8 @@ When a new India employee is added, Finance is notified: "salary structure pendi
 | Comp-off (CO) | Earned from approved holiday/weekend work of 4h+, expires in 60 days |
 | Leave without pay (LOP) | Unpaid |
 
+**Leave year and year end.** The leave year starts every year on a month and day set per business (default 1 January, so 1 January to 31 December); Admin and HR can change it. Leave can only be applied inside the current leave year (not for the next year, not across a year end). For each leave type with a balance, Admin and HR choose what happens at the end of the leave year: **collapse** (balance of every employee becomes 0), **carry forward all**, or **carry forward up to a cap** (the rest lapses). Without a choice: CL lapses, EL carries forward up to 30. API: `GET /api/v1/settings/leave-policy`, `PUT /api/v1/settings/leave-policy/year` (`{startMonth, startDay}`), `PATCH /api/v1/settings/leave-policy/types/{code}` (`{yearEndAction: COLLAPSE|CARRY_ALL|CARRY_CAPPED, carryForwardCap}`), all for `roles.manage` or `holidays.manage`, audited as `leave.year_change` and `leave.year_end_change`. Stored in the business setting `leave.policy`. The year-end job runs once per leave year (idempotent).
+
 **Earned leave is not available during probation** (or before joining): the apply form shows it locked ("Not during probation") and the API refuses it; it becomes available once the employee is permanent. If nothing can be applied for, the Apply button explains why instead of opening the form.
 
 New joiners accrue pro-rata from the date of joining. All balance changes go through a **leave ledger** (accrual, used, cancelled, encashed, expired, adjustment).

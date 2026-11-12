@@ -10,6 +10,7 @@ import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.LeaveRules;
+import com.jurislpo.jurisone.engine.LeaveYear;
 import com.jurislpo.jurisone.repository.LeaveRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.math.BigDecimal;
@@ -34,9 +35,11 @@ public class LeaveService {
     private final LeaveRepository repo;
     private final AttendanceService attendanceService;
     private final AuditService audit;
+    private final SettingsService settings;
 
-    public LeaveService(LeaveRepository repo, AttendanceService attendance, AuditService audit) {
+    public LeaveService(LeaveRepository repo, AttendanceService attendance, AuditService audit, SettingsService settings) {
         this.repo = repo;
+        this.settings = settings;
         this.attendanceService = attendance;
         this.audit = audit;
     }
@@ -111,6 +114,15 @@ public class LeaveService {
 
         LocalDate today = attendanceService.currentWorkDate(employee, Instant.now());
         if (!forDecision && from.isBefore(today)) return out.withError("Leave can't start in the past. For a missed day, request a regularization.");
+        if (!forDecision) {
+            // one leave year at a time: no dates in the next (or an earlier) leave year, and no request across a year end
+            SettingsService.LeavePolicy leavePolicy = settings.leave();
+            LeaveYear.Span leaveYear = LeaveYear.of(today, leavePolicy.yearStartMonth(), leavePolicy.yearStartDay());
+            if (!leaveYear.contains(from) || !leaveYear.contains(to)) {
+                return out.withError("Leave can only be applied within the current leave year (" + leaveYear.start() + " to " + leaveYear.end()
+                        + "). Apply for later dates once the new leave year starts.");
+            }
+        }
         if (from.isBefore(employee.dateOfJoining())) return out.withError("Leave can't start before your joining date.");
         if (employee.exitDate() != null && to.isAfter(employee.exitDate())) return out.withError("Leave can't go beyond your last working day.");
         if (ChronoUnit.DAYS.between(from, to) + 1 > 62) return out.withError("Apply for at most two months at a time.");

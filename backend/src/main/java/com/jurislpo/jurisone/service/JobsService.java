@@ -3,6 +3,7 @@ package com.jurislpo.jurisone.service;
 import com.jurislpo.jurisone.service.AttendanceService.AttendanceEmployee;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.engine.LeaveRules;
+import com.jurislpo.jurisone.engine.LeaveYear;
 import com.jurislpo.jurisone.engine.Num;
 import com.jurislpo.jurisone.engine.PeopleRules;
 import com.jurislpo.jurisone.entity.EmployeeStatus;
@@ -224,31 +225,35 @@ public class JobsService {
         return Map.of("expired", expired);
     }
 
-    /** On 1 January: casual leave lapses, earned leave carries forward up to its cap. Once per year. */
+    /**
+     * When a leave year ends (the business's leave year, 1 January by default): each leave type collapses, carries forward in full or
+     * carries forward up to a cap, as the business chose (leave policy; without a choice the type's own default). Once per year.
+     */
     public Map<String, Object> jobLeaveYearEnd(Instant now) {
-        String previous = String.valueOf(today(now).getYear() - 1);
-        Integer runCount = repo.countYearEndRuns(previous);
+        SettingsService.LeavePolicy policy = settings.leave();
+        LeaveYear.Span ended = LeaveYear.before(today(now), policy.yearStartMonth(), policy.yearStartDay());
+        String year = ended.label();
+        // a start day that was changed after this year ended: the old calendar's year end is not processed
+        if (policy.yearStartChangedOn() != null && !ended.end().plusDays(1).isAfter(LocalDate.parse(policy.yearStartChangedOn()))) return Map.of("lapsed", 0);
+        Integer runCount = repo.countYearEndRuns(year);
         if (runCount != null && runCount > 0) return Map.of("lapsed", 0);
-        String firstYear = String.valueOf(attendanceService.policy().trackingStart().getYear());
-        if (previous.compareTo(firstYear) < 0) return Map.of("lapsed", 0);
-        List<Map<String, Object>> types = repo.findYearEndTypes();
-        Timestamp end = Timestamp.from(LocalDate.parse(previous + "-12-31").atTime(23, 59, 59).toInstant(ZoneOffset.UTC));
+        if (ended.end().isBefore(attendanceService.policy().trackingStart())) return Map.of("lapsed", 0);
+        Timestamp end = Timestamp.from(ended.end().atTime(23, 59, 59).toInstant(ZoneOffset.UTC));
         int lapsed = 0;
-        for (Map<String, Object> type : types) {
-            BigDecimal cap = (BigDecimal) type.get("carry_forward_cap");
-            List<Map<String, Object>> sums = repo.sumBalancesUntil(type.get("code"), end);
-            for (Map<String, Object> sumRow : sums) {
+        for (Map<String, Object> type : repo.findYearEndTypes()) {
+            LeavePolicyService.YearEnd yearEnd = LeavePolicyService.yearEndOf(policy, (String) type.get("code"), ((BigDecimal) type.get("carry_forward_cap")).doubleValue());
+            if (yearEnd.action() == LeaveYear.YearEndAction.CARRY_ALL) continue;
+            for (Map<String, Object> sumRow : repo.sumBalancesUntil(type.get("code"), end)) {
                 BigDecimal sum = (BigDecimal) sumRow.get("total_delta");
-                double amount = LeaveRules.yearEndLapse(Num.round2(sum == null ? 0 : sum.doubleValue()), cap.doubleValue());
+                double amount = LeaveYear.lapse(yearEnd.action(), Num.round2(sum == null ? 0 : sum.doubleValue()), yearEnd.carryForwardCap());
                 if (amount > 0) {
-                    // Prisma Decimal.toString(): "0" for zero
-                    String note = cap.compareTo(BigDecimal.ZERO) == 0 ? "Lapsed at year end" : "Above carry-forward cap";
-                    repo.insertYearEndLapse(sumRow.get("employee_id"), type.get("code"), BigDecimal.valueOf(-amount), "year_end:" + previous, note);
+                    String note = yearEnd.action() == LeaveYear.YearEndAction.COLLAPSE ? "Lapsed at year end" : "Above carry-forward cap";
+                    repo.insertYearEndLapse(sumRow.get("employee_id"), type.get("code"), BigDecimal.valueOf(-amount), "year_end:" + year, note);
                     lapsed++;
                 }
             }
         }
-        repo.insertYearEndRun(previous, "{\"lapsed\":" + lapsed + "}");
+        repo.insertYearEndRun(year, "{\"lapsed\":" + lapsed + "}");
         return Map.of("lapsed", lapsed);
     }
 

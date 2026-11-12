@@ -34,7 +34,16 @@ public class PoliciesRepository {
         return jdbc.query("SELECT * FROM leave_types WHERE active ORDER BY sort_order ASC", (resultSet, i) -> new LeaveTypeView(
                 resultSet.getString("code"), resultSet.getString("name"), resultSet.getBigDecimal("annual_quota").doubleValue(), resultSet.getBigDecimal("accrual_per_month").doubleValue(),
                 resultSet.getBigDecimal("carry_forward_cap").doubleValue(), toDouble(resultSet.getBigDecimal("max_stretch")), resultSet.getBigDecimal("encash_per_year").doubleValue(),
-                resultSet.getInt("encash_after_months"), (Integer) resultSet.getObject("expiry_days")));
+                resultSet.getInt("encash_after_months"), (Integer) resultSet.getObject("expiry_days"), null));
+    }
+
+    /** Code, name and own carry-forward cap of a leave type that has a year-end choice. */
+    public record YearEndType(String code, String name, double carryForwardCap) {}
+
+    /** Active, balance-tracked leave types other than comp-off (comp-off expires on its own), in display order. */
+    public List<YearEndType> findYearEndTypes() {
+        return jdbc.query("SELECT code, name, carry_forward_cap FROM leave_types WHERE active AND needs_balance AND code <> 'CO' ORDER BY sort_order ASC",
+                (resultSet, i) -> new YearEndType(resultSet.getString(1), resultSet.getString(2), resultSet.getBigDecimal(3).doubleValue()));
     }
 
     private static Double toDouble(BigDecimal value) {

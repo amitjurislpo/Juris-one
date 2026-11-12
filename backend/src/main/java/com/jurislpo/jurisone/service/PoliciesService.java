@@ -23,7 +23,7 @@ public class PoliciesService {
     public record RolePerms(String id, String key, String name, List<String> perms) {}
 
     public record LeaveTypeView(String code, String name, double annualQuota, double accrualPerMonth, double carryForwardCap, Double maxStretch,
-                                double encashPerYear, int encashAfterMonths, Integer expiryDays) {}
+                                double encashPerYear, int encashAfterMonths, Integer expiryDays, String yearEndAction) {}
 
     public record HolidayView(String id, String date, String name, String region) {}
 
@@ -57,7 +57,13 @@ public class PoliciesService {
     }
 
     public List<LeaveTypeView> leaveTypes() {
-        return repo.findActiveLeaveTypes();
+        SettingsService.LeavePolicy policy = settings.leave();
+        // the business's year-end choice replaces the type's own default carry-forward cap
+        return repo.findActiveLeaveTypes().stream().map(type -> {
+            LeavePolicyService.YearEnd yearEnd = LeavePolicyService.yearEndOf(policy, type.code(), type.carryForwardCap());
+            return new LeaveTypeView(type.code(), type.name(), type.annualQuota(), type.accrualPerMonth(), yearEnd.carryForwardCap(), type.maxStretch(), type.encashPerYear(),
+                    type.encashAfterMonths(), type.expiryDays(), yearEnd.action().name());
+        }).toList();
     }
 
     public List<HolidayView> holidays(int year) {
