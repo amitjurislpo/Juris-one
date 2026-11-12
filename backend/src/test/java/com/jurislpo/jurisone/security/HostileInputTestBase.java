@@ -34,7 +34,7 @@ public abstract class HostileInputTestBase extends IntegrationTest {
     public static final String BETA_MARKER = "BETASECRET";
 
     public static final List<String> WIDE_PERMISSIONS = List.of("self", "dir", "att.all", "appr.leave", "appr.reg", "people.view", "people.add", "access.toggle", "dept.manage", "holidays.manage",
-            "pay.view", "struct.manage", "tax.view", "proofs.verify", "policies.manage", "assets.manage", "announcements.manage", "letters.manage", "roles.manage");
+            "pay.view", "struct.manage", "tax.view", "proofs.verify", "policies.manage", "assets.manage", "announcements.manage", "letters.manage", "shifts.manage", "roles.manage");
 
     /** Strings an attacker sends in text fields, filters and ids. */
     public static final List<String> HOSTILE_TEXT = List.of("' OR '1'='1", "'; DROP TABLE employees; --", "1; SELECT pg_sleep(10)--", "\" OR \"\"=\"", "%27%20OR%201=1",

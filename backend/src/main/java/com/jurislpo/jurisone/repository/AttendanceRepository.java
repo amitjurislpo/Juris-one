@@ -5,11 +5,13 @@ import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.entity.PunchKind;
 import com.jurislpo.jurisone.service.AttendanceService.AttendanceEmployee;
 import com.jurislpo.jurisone.service.AttendanceService.Shift;
+import com.jurislpo.jurisone.service.AttendanceService.ShiftPeriod;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -53,13 +55,26 @@ public class AttendanceRepository {
                    e.date_of_joining, e.exit_date, s.code AS shift_code, s.name AS shift_name, s.start_local, s.end_local, s.grace_minutes
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN shifts s ON s.id = e.shift_id
             WHERE""" + " " + TRACKED + (where == null || where.isBlank() ? "" : " AND (" + where + ")") + " ORDER BY e.full_name ASC";
-        return jdbc.query(sql, (resultSet, i) -> new AttendanceEmployee(
+        List<AttendanceEmployee> employees = jdbc.query(sql, (resultSet, i) -> new AttendanceEmployee(
                 (UUID) resultSet.getObject("id"), resultSet.getString("code"), resultSet.getString("full_name"), resultSet.getString("designation"),
                 resultSet.getString("department_name") == null ? "—" : resultSet.getString("department_name"), (UUID) resultSet.getObject("department_id"), resultSet.getString("time_zone"),
                 resultSet.getString("region"), resultSet.getDate("date_of_joining").toLocalDate(), resultSet.getDate("exit_date") == null ? null : resultSet.getDate("exit_date").toLocalDate(),
                 resultSet.getString("shift_code") == null ? new Shift(defaultShift.code(), defaultShift.name(), defaultShift.startLocal(), defaultShift.endLocal(), grace)
-                        : new Shift(resultSet.getString("shift_code"), resultSet.getString("shift_name"), resultSet.getString("start_local"), resultSet.getString("end_local"), grace)),
+                        : new Shift(resultSet.getString("shift_code"), resultSet.getString("shift_name"), resultSet.getString("start_local"), resultSet.getString("end_local"), grace), List.of()),
                 args);
+        if (employees.isEmpty()) return employees;
+        Map<UUID, List<ShiftPeriod>> periods = new HashMap<>();
+        jdbc.query("""
+            SELECT a.employee_id, a.from_date, a.to_date, s.code, s.name, s.start_local, s.end_local
+            FROM shift_assignments a JOIN shifts s ON s.id = a.shift_id WHERE a.employee_id = ANY (?) ORDER BY a.from_date""",
+                resultSet -> {
+                    periods.computeIfAbsent((UUID) resultSet.getObject("employee_id"), k -> new ArrayList<>()).add(new ShiftPeriod(resultSet.getDate("from_date").toLocalDate(),
+                            resultSet.getDate("to_date") == null ? null : resultSet.getDate("to_date").toLocalDate(),
+                            new Shift(resultSet.getString("code"), resultSet.getString("name"), resultSet.getString("start_local"), resultSet.getString("end_local"), grace)));
+                },
+                (Object) employees.stream().map(AttendanceEmployee::id).toArray(UUID[]::new));
+        return employees.stream().map(e -> new AttendanceEmployee(e.id(), e.code(), e.name(), e.designation(), e.department(), e.departmentId(), e.timeZone(), e.region(),
+                e.dateOfJoining(), e.exitDate(), e.shift(), periods.getOrDefault(e.id(), List.of()))).toList();
     }
 
     /** Approved leaves of these employees overlapping [from, to]. */
