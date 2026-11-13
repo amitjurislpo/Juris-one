@@ -341,6 +341,11 @@ class AttendanceRequestRulesApiTest extends IntegrationTest {
         mockMvc.perform(write(post(REMOTE)).cookie(employee.cookie()).content(remoteBody(days.get(0), days.get(0), ""))).andExpect(status().isCreated());
         mockMvc.perform(write(post(REMOTE)).cookie(employee.cookie()).content(remoteBody(days.get(1), days.get(1), ""))).andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.startsWith("You have used all 1 remote work days")));
+        // nothing used yet but the request alone is longer than the limit: it says so (it used to read "used all 1" with nothing used)
+        Person longRequest = person(employeeRole);
+        long asked = java.time.temporal.ChronoUnit.DAYS.between(days.get(2), days.get(0)) + 1;
+        mockMvc.perform(write(post(REMOTE)).cookie(longRequest.cookie()).content(remoteBody(days.get(2), days.get(0), ""))).andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("The limit is 1 remote work days for " + com.jurislpo.jurisone.engine.Format.monthLabel(days.get(0).toString().substring(0, 7)) + ", but this request is for " + asked + "."));
         Person halfPerson = person(employeeRole);
         mockMvc.perform(write(post(REMOTE)).cookie(halfPerson.cookie()).content(remoteBody(days.get(0), days.get(0), ",\"part\":\"FIRST_HALF\""))).andExpect(status().isCreated());
         mockMvc.perform(write(post(REMOTE)).cookie(halfPerson.cookie()).content(remoteBody(days.get(1), days.get(1), ",\"part\":\"FIRST_HALF\""))).andExpect(status().isCreated());

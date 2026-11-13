@@ -187,10 +187,17 @@ public class RemoteWorkService {
         for (YearMonth month = YearMonth.from(from); !month.atDay(1).isAfter(to); month = month.plusMonths(1)) {
             LocalDate first = month.atDay(1).isBefore(from) ? from : month.atDay(1), last = month.atEndOfMonth().isAfter(to) ? to : month.atEndOfMonth();
             double asked = (first.until(last, ChronoUnit.DAYS) + 1) * perDay;
-            if (repo.usedDays(employeeId, month.atDay(1), month.atEndOfMonth(), exceptId) + asked > limit + 1e-9) {
-                throw new UserException((onBehalf ? "They have" : "You have") + " used all " + limit + " remote work days for " + Format.monthLabel(month.toString()) + ".");
-            }
+            double used = repo.usedDays(employeeId, month.atDay(1), month.atEndOfMonth(), exceptId);
+            if (used + asked > limit + 1e-9) throw new UserException(limitMessage(onBehalf, used, asked, limit, Format.monthLabel(month.toString())));
         }
+    }
+
+    /** Why a request goes over the month's limit: everything is used, nothing is used yet (the request alone is too long), or some is used and the request asks for more than is left. */
+    static String limitMessage(boolean onBehalf, double used, double asked, int limit, String month) {
+        String who = onBehalf ? "They have" : "You have";
+        if (used >= limit - 1e-9) return who + " used all " + limit + " remote work days for " + month + ".";
+        if (used < 1e-9) return "The limit is " + limit + " remote work days for " + month + ", but this request is for " + LeaveService.formatNumber(asked) + ".";
+        return who + " used " + LeaveService.formatNumber(used) + " of " + limit + " remote work days for " + month + ", and this request is for " + LeaveService.formatNumber(asked) + ".";
     }
 
     private static ApiException alreadyRequested(boolean onBehalf) {
