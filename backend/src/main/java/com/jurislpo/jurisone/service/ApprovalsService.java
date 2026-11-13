@@ -10,6 +10,8 @@ import com.jurislpo.jurisone.engine.AttendanceEngine.LeavePart;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.LeaveRules;
 import com.jurislpo.jurisone.repository.ApprovalsRepository;
+import com.jurislpo.jurisone.repository.OnDutyRepository;
+import com.jurislpo.jurisone.repository.RemoteWorkRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -22,6 +24,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -48,8 +51,13 @@ public class ApprovalsService {
     private final AttendanceApprovalPolicy approvalPolicy;
     private final SettingsService settings;
     private final EmployeeNameDirectory nameDirectory;
+    private final OnDutyRepository onDutyRepository;
+    private final RemoteWorkRepository remoteWorkRepository;
 
-    public ApprovalsService(ApprovalsRepository repo, TransactionTemplate transactionTemplate, AttendanceService attendance, LeaveService leave, AuditService audit, NotificationService notify, AttendanceApprovalPolicy approvalPolicy, SettingsService settings, EmployeeNameDirectory nameDirectory) {
+    public ApprovalsService(ApprovalsRepository repo, TransactionTemplate transactionTemplate, AttendanceService attendance, LeaveService leave, AuditService audit, NotificationService notify, AttendanceApprovalPolicy approvalPolicy, SettingsService settings, EmployeeNameDirectory nameDirectory,
+                            OnDutyRepository onDutyRepository, RemoteWorkRepository remoteWorkRepository) {
+        this.onDutyRepository = onDutyRepository;
+        this.remoteWorkRepository = remoteWorkRepository;
         this.approvalPolicy = approvalPolicy;
         this.settings = settings;
         this.nameDirectory = nameDirectory;
@@ -214,6 +222,9 @@ public class ApprovalsService {
 
     public record RegularizationCard(String id, String name, String department, String kind, String date, String detail, String reason) {}
 
+    /** An On Duty or Remote Work request waiting for the signed-in approver (decided with the request's own decision endpoint). */
+    public record AttendanceRequestCard(String id, String name, String department, String kind, String date, String detail, String reason) {}
+
     public record Decided(String id, Instant decidedAt, String when, String employeeName, String what, boolean approved, String decidedBy) {}
 
     static String formatTwoDecimals(double value) {
@@ -282,6 +293,10 @@ public class ApprovalsService {
         int leaveCount = canLeave ? count(repo.countPendingLeave(user.id())) : 0;
         int regCount = canReg ? count(repo.countPendingRegularizations(user.id())) : 0;
 
+        // On Duty and Remote Work requests the signed-in approver may decide (the server's approval rule: HR's own go to their manager or the Admin)
+        List<AttendanceRequestCard> onDutyCards = canReg ? onDutyCards(user, search) : List.of();
+        List<AttendanceRequestCard> remoteWorkCards = canReg ? remoteWorkCards(user, search) : List.of();
+
         Timestamp since = Timestamp.from(Instant.now().minus(30, ChronoUnit.DAYS));
         List<Decided> decided = new ArrayList<>();
         if ("leave".equals(tab) && canLeave) {
@@ -310,10 +325,45 @@ public class ApprovalsService {
         out.put("canApproveRegularizations", canReg);
         out.put("leaveCount", leaveCount);
         out.put("regularizationCount", regCount);
+        out.put("onDutyCount", onDutyCards.size());
+        out.put("remoteWorkCount", remoteWorkCards.size());
         out.put("leaveCards", leaveCards);
         out.put("regularizationCards", regCards);
+        out.put("onDutyCards", onDutyCards);
+        out.put("remoteWorkCards", remoteWorkCards);
         out.put("decided", decided);
         return out;
+    }
+
+    private static final int ATTENDANCE_CARD_LIMIT = 100;
+
+    private List<AttendanceRequestCard> onDutyCards(CurrentUser user, String search) {
+        List<OnDutyRepository.Item> pending = onDutyRepository.list(new OnDutyRepository.Filter(null, "PENDING", null, null, search, null, null), 0, ATTENDANCE_CARD_LIMIT);
+        Map<String, String> requesterByRequest = new LinkedHashMap<>();
+        for (OnDutyRepository.Item item : pending) requesterByRequest.put(item.id(), item.employeeId());
+        Set<String> decidable = approvalPolicy.decidableRequests(user, requesterByRequest);
+        List<AttendanceRequestCard> cards = new ArrayList<>();
+        for (OnDutyRepository.Item item : pending) {
+            if (!decidable.contains(item.id())) continue;
+            String location = item.location() == null || item.location().isBlank() ? "" : " · " + item.location();
+            cards.add(new AttendanceRequestCard(item.id(), item.employeeName(), item.department() == null ? "—" : item.department(), "On Duty",
+                    Format.formatDayMonth(LocalDate.parse(item.date())), PART.get(item.part()) + location, item.reason()));
+        }
+        return cards;
+    }
+
+    private List<AttendanceRequestCard> remoteWorkCards(CurrentUser user, String search) {
+        List<RemoteWorkRepository.Item> pending = remoteWorkRepository.list(new RemoteWorkRepository.Filter(null, null, "PENDING", null, null, search, null), 0, ATTENDANCE_CARD_LIMIT);
+        Map<String, String> requesterByRequest = new LinkedHashMap<>();
+        for (RemoteWorkRepository.Item item : pending) requesterByRequest.put(item.id(), item.employeeId());
+        Set<String> decidable = approvalPolicy.decidableRequests(user, requesterByRequest);
+        List<AttendanceRequestCard> cards = new ArrayList<>();
+        for (RemoteWorkRepository.Item item : pending) {
+            if (!decidable.contains(item.id())) continue;
+            cards.add(new AttendanceRequestCard(item.id(), item.employeeName(), item.department() == null ? "—" : item.department(), "Remote Work",
+                    span(LocalDate.parse(item.fromDate()), LocalDate.parse(item.toDate())), PART.get(item.part()) + " · " + item.days() + (item.days() == 1 ? " day" : " days"), item.reason()));
+        }
+        return cards;
     }
 
     private static int count(Integer count) {

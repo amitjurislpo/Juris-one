@@ -5,7 +5,6 @@ import com.jurislpo.jurisone.common.RequestMeta;
 import com.jurislpo.jurisone.repository.RemoteWorkRepository.Item;
 import com.jurislpo.jurisone.security.Auth;
 import com.jurislpo.jurisone.service.RemoteWorkService;
-import com.jurislpo.jurisone.service.RemoteWorkService;
 import com.jurislpo.jurisone.service.RemoteWorkService.CreateInput;
 import com.jurislpo.jurisone.service.RemoteWorkService.DecisionResult;
 import jakarta.servlet.http.HttpServletRequest;
@@ -45,7 +44,9 @@ public class RemoteWorkController {
     /** ?scope=mine|team&status=&month=YYYY-MM&search=&departmentId=&employeeId=&page=; scope=team: appr.reg sees everyone, a manager the direct reports. */
     @GetMapping("/api/v1/attendance/remote-work-requests")
     public ApiResult<Map<String, Object>> list(@RequestParam Map<String, String> queryParams) {
-        return ApiResult.success(remoteWork.list(auth.requirePage("attendance"), queryParams));
+        // the team scope is for approvers (the Admin has no attendance page of their own); the service refuses anyone who may not see it
+        boolean isTeam = "team".equals(queryParams.get("scope"));
+        return ApiResult.success(remoteWork.list(isTeam ? auth.assertPerm() : auth.requirePage("attendance"), queryParams));
     }
 
     @PostMapping("/api/v1/attendance/remote-work-requests")
@@ -63,7 +64,7 @@ public class RemoteWorkController {
 
     @GetMapping("/api/v1/attendance/remote-work-requests/{id}")
     public ApiResult<Item> details(@PathVariable String id) {
-        return ApiResult.success(remoteWork.details(auth.requirePage("attendance"), id));
+        return ApiResult.success(remoteWork.details(auth.assertPerm(), id));
     }
 
     /** Withdraws my own pending request. */
