@@ -63,8 +63,9 @@ abstract class EncryptedNamesReadParityBase extends IntegrationTest {
             String name = FIRST_NAMES[i % 10] + " " + LAST_NAMES[(i / 10) * 3 + (i % 10) % 3];
             people.add(data.employee("P" + String.format("%02d", i), "p" + i + "." + suffix + "@example.com", employeeRole, name, DESIGNATIONS[i % 5]));
         }
+        // No two people may have exactly the same name: such a tie is decided by the random id, which differs between the two runs ("Élodie Dubois" already comes from the generated people).
         // The same letters in different case, with and without accents, with a space, a hyphen or nothing between two words: the order must not depend on the switch.
-        String[] trickyNames = {"zoya khan", "Zoya Khan", "ZOYA KHAN", "Elodie Dubois", "Élodie Dubois", "élodie dubois", "Joshi Rao", "Joshi-Rao", "JoshiRao", "Zoya Khan-Shah", "Zoya Khanna", "anita Iyer", "Anita iyer", "Mary O'Neil", "Mary Oneil", "Zoe Naik"};
+        String[] trickyNames = {"zoya khan", "Zoya Khan", "ZOYA KHAN", "Elodie Dubois", "ÉLODIE Dubois", "élodie dubois", "Joshi Rao", "Joshi-Rao", "JoshiRao", "Zoya Khan-Shah", "Zoya Khanna", "anita Iyer", "Anita iyer", "Mary O'Neil", "Mary Oneil", "Zoe Naik"};
         for (int i = 0; i < trickyNames.length; i++) {
             data.employee("T" + String.format("%02d", i), "t" + i + "." + suffix + "@example.com", employeeRole, trickyNames[i], i % 2 == 0 ? "analyst" : "Analyst");
         }
