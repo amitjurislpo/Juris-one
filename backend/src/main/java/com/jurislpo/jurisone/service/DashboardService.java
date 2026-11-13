@@ -277,7 +277,8 @@ public class DashboardService {
     /** Anyone with active direct reports. Read-only — approvals stay with HR (REQUIREMENTS §5.13). */
     public Map<String, Object> team(CurrentUser user, Map<String, String> queryParams) {
         ListParams listParams = ListParams.of(queryParams, TEAM_SORTS, "name");
-        List<TeamMember> team = repo.teamMembers(user.id());
+        // the query has no ORDER BY (names may be encrypted), so fix the order here: "who's away" must not change from one call to the next
+        List<TeamMember> team = repo.teamMembers(user.id()).stream().sorted(Comparator.comparing(TeamMember::fullName, LOCALE).thenComparing(TeamMember::id)).toList();
         Map<UUID, TodayStatus> status = todayStatuses(team.stream().map(TeamMember::id).toList(), Instant.now());
 
         // Who's away · this week (Mon–Fri) in the manager's zone
