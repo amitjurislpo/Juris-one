@@ -36,8 +36,10 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
     public static final String READ_ONLY_MESSAGE = "Your organisation's subscription has ended. You can view and export your data but not change it. "
             + "Please contact your administrator to renew.";
 
-    /** Reachable with no usable subscription at all (not started / none): the owner's Subscription page and employee export are what the "paused" screen links to (the owner permission is still checked). */
-    static final List<String> OPEN = List.of(PREFIX + "/auth/", PREFIX + "/me", PREFIX + "/shell", PREFIX + "/business/subscription", PREFIX + "/business/employees/export", PREFIX + "/audit/page-views");
+    /** Reachable with no usable subscription at all (not started / none). */
+    static final List<String> OPEN = List.of(PREFIX + "/auth/", PREFIX + "/me", PREFIX + "/shell");
+    /** Exact paths, reads only, with no usable subscription: what the "paused" screen links to (the owner permission is still checked). Nothing else under them, and no write, gets through. */
+    static final List<String> OPEN_FOR_READ = List.of(PREFIX + "/business/subscription", PREFIX + "/business/employees/export");
     /** Still writable once the subscription has ended. */
     static final List<String> WRITABLE_WHEN_ENDED = List.of(PREFIX + "/auth/", PREFIX + "/notifications", PREFIX + "/audit/page-views"); // page views are only recorded
 
@@ -52,7 +54,7 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        return !uri.startsWith(PREFIX_SLASH) || OPEN.stream().anyMatch(uri::startsWith);
+        return !uri.startsWith(PREFIX_SLASH) || OPEN.stream().anyMatch(uri::startsWith) || (isRead(request) && OPEN_FOR_READ.contains(uri));
     }
 
     @Override
