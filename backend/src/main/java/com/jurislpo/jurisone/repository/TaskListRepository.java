@@ -75,7 +75,7 @@ public class TaskListRepository {
             CROSS JOIN LATERAL (SELECT (now() AT TIME ZONE e.time_zone) AS local_now) clock
             GROUP BY e.id, e.full_name, e.full_name_enc, e.code, e.photo_updated_at""".formatted(TaskQuery.OVERDUE), managerId, depth), "name").stream()
                 .sorted(java.util.Comparator.comparingLong((Map<String, Object> row) -> ((Number) row.get("depth")).longValue())
-                        .thenComparing(row -> (String) row.get("name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
+                        .thenComparing(row -> (String) row.get("name"), com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     /** Whether the employee is in the manager's reporting scope (depth ≤ {@code depth}). */

@@ -60,7 +60,8 @@ class EmployeeNameDirectoryTest {
         assertThat(directory.contains(Field.FULL_NAME, "e.id", "e.full_name", "100%_", args)).isEqualTo("e.full_name ILIKE ?");
         assertThat(args).containsExactly("%100\\%\\_%");
         List<Object> orderArgs = new ArrayList<>();
-        assertThat(directory.orderBy(Field.DESIGNATION, "e.id", "e.designation", false, orderArgs)).isEqualTo("e.designation DESC");
+        assertThat(directory.orderBy(Field.DESIGNATION, "e.id", "e.designation", false, orderArgs)).isEqualTo("e.designation COLLATE \"en-US-x-icu\" DESC");
+        assertThat(directory.orderBy(Field.FULL_NAME, "e.id", "e.full_name", true, orderArgs)).isEqualTo("e.full_name COLLATE \"en-US-x-icu\" ASC, e.id");
         assertThat(orderArgs).isEmpty();
         assertThat(directory.loadCount()).isZero();
     }
@@ -84,15 +85,15 @@ class EmployeeNameDirectoryTest {
     }
 
     @Test
-    void rankingIsByCharacterCodeThenIdWithNullsLast() {
+    void rankingIsLocaleAwareThenIdWithNullsLast() {
         TenantContext.set(UUID.randomUUID());
         EmployeeNameDirectory directory = directory(true);
         List<Object> args = new ArrayList<>();
         assertThat(directory.orderBy(Field.FULL_NAME, "e.id", "e.full_name", true, args)).isEqualTo("array_position(?::uuid[], e.id) ASC NULLS LAST");
-        assertThat(args).containsExactly("{" + THIRD + "," + SECOND + "," + FIRST + "}"); // "Meera", "Zoya", "aarav": the order the C collation gave
+        assertThat(args).containsExactly("{" + FIRST + "," + THIRD + "," + SECOND + "}"); // "aarav", "Meera", "Zoya": by letter, not by character code (which put "aarav" last)
         args.clear();
         assertThat(directory.orderBy(Field.DESIGNATION, "e.id", "e.designation", false, args)).endsWith("ASC NULLS FIRST");
-        assertThat(args).containsExactly("{" + SECOND + "," + FIRST + "," + THIRD + "}"); // descending: "engineer" > "Senior Engineer" > no designation (which the database would put first)
+        assertThat(args).containsExactly("{" + THIRD + "," + FIRST + "," + SECOND + "}"); // descending: no designation first (as the database does), then "Senior Engineer", then "engineer"
     }
 
     @Test

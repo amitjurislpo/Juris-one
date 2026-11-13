@@ -63,6 +63,11 @@ abstract class EncryptedNamesReadParityBase extends IntegrationTest {
             String name = FIRST_NAMES[i % 10] + " " + LAST_NAMES[(i / 10) * 3 + (i % 10) % 3];
             people.add(data.employee("P" + String.format("%02d", i), "p" + i + "." + suffix + "@example.com", employeeRole, name, DESIGNATIONS[i % 5]));
         }
+        // The same letters in different case, with and without accents, with a space, a hyphen or nothing between two words: the order must not depend on the switch.
+        String[] trickyNames = {"zoya khan", "Zoya Khan", "ZOYA KHAN", "Elodie Dubois", "Élodie Dubois", "élodie dubois", "Joshi Rao", "Joshi-Rao", "JoshiRao", "Zoya Khan-Shah", "Zoya Khanna", "anita Iyer", "Anita iyer", "Mary O'Neil", "Mary Oneil", "Zoe Naik"};
+        for (int i = 0; i < trickyNames.length; i++) {
+            data.employee("T" + String.format("%02d", i), "t" + i + "." + suffix + "@example.com", employeeRole, trickyNames[i], i % 2 == 0 ? "analyst" : "Analyst");
+        }
         for (int i = 0; i < people.size(); i++) {
             UUID reportsTo = i >= 1 && i <= 3 ? manager : i >= 5 ? people.get(i % 5) : null;
             jdbc.update("UPDATE employees SET reporting_manager_id = ?, department_id = ? WHERE id = ?", reportsTo, i % 2 == 0 ? department : null, people.get(i));
@@ -74,12 +79,12 @@ abstract class EncryptedNamesReadParityBase extends IntegrationTest {
         Cookie lead = signIn("mgr." + suffix + "@example.com");
 
         Map<String, String> answers = new LinkedHashMap<>();
-        for (String query : new String[] {"", "?search=ar", "?search=%25", "?search=_", "?search=100%25_", "?search=ENGINEER", "?search=aarav%20mehta", "?search=Mehta", "?search=o%27neil",
+        for (String query : new String[] {"", "?search=zoya", "?search=zoya&sort=name&sortDirection=desc", "?search=elodie", "?search=joshi", "?search=mary", "?pageSize=100&sort=name", "?pageSize=100&sort=name&sortDirection=desc", "?search=ar", "?search=%25", "?search=_", "?search=100%25_", "?search=ENGINEER", "?search=aarav%20mehta", "?search=Mehta", "?search=o%27neil",
                 "?sort=name&sortDirection=desc", "?sort=manager", "?sort=manager&sortDirection=desc", "?sort=code&sortDirection=desc", "?sort=department", "?sort=status&sortDirection=desc",
                 "?page=2", "?page=2&sort=name&sortDirection=desc", "?status=Current&search=an&sort=department", "?search=%25%25&page=2"}) {
             answers.put("people" + query, ask("/api/v1/people" + query, hr));
         }
-        for (String query : new String[] {"", "?search=eng", "?sort=title", "?sort=title&sortDirection=desc", "?sort=email", "?sort=status", "?page=2", "?search=%25", "?search=_ra", "?sort=name&sortDirection=desc&page=2"}) {
+        for (String query : new String[] {"", "?search=zoya", "?search=anita&sort=name&sortDirection=desc", "?pageSize=100&sort=title", "?pageSize=100&sort=title&sortDirection=desc", "?search=eng", "?sort=title", "?sort=title&sortDirection=desc", "?sort=email", "?sort=status", "?page=2", "?search=%25", "?search=_ra", "?sort=name&sortDirection=desc&page=2"}) {
             answers.put("directory" + query, ask("/api/v1/directory" + query, hr));
         }
         for (String query : new String[] {"", "?search=zoya", "?search=%25", "?search=aarav&pageSize=5", "?pageSize=5"}) {

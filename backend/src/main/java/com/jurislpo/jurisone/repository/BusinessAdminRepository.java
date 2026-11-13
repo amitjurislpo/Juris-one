@@ -52,7 +52,7 @@ public class BusinessAdminRepository {
             FROM employees e JOIN roles r ON r.id = e.role_id
             WHERE e.business_id = ? AND r.key = 'owner'""",
                 (resultSet, i) -> new Owner(resultSet.getString("id"), resultSet.getString("code"), nameReader.read(resultSet, "full_name"), resultSet.getString("email"), resultSet.getBoolean("portal_access"),
-                        resultSet.getString("status")), businessId).stream().sorted(Comparator.comparing(Owner::name, com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
+                        resultSet.getString("status")), businessId).stream().sorted(Comparator.comparing(Owner::name, com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     /** Ids of businesses (other than {@code editing}, when given) using the code. */

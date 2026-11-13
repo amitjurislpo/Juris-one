@@ -16,12 +16,12 @@ import com.jurislpo.jurisone.repository.DashboardRepository.Member;
 import com.jurislpo.jurisone.repository.DashboardRepository.TeamLeave;
 import com.jurislpo.jurisone.repository.DashboardRepository.TeamMember;
 import com.jurislpo.jurisone.security.CurrentUser;
-import java.text.Collator;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import com.jurislpo.jurisone.common.NameOrder;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -37,7 +37,6 @@ import org.springframework.stereotype.Service;
 public class DashboardService {
 
     /** {@code String.prototype.localeCompare} (Node's default locale). */
-    static final Comparator<String> LOCALE = Collator.getInstance(Locale.US)::compare;
 
     private final DashboardRepository repo;
     private final AttendanceService attendanceService;
@@ -130,7 +129,7 @@ public class DashboardService {
 
         List<DepartmentCount> byDepartment = new ArrayList<>(departments.stream().map(d -> new DepartmentCount(d.name(), (int) current.stream().filter(e -> d.id().equals(e.departmentId())).count()))
                 .filter(d -> d.count() > 0).toList());
-        byDepartment.sort(Comparator.comparingInt(DepartmentCount::count).reversed().thenComparing(DepartmentCount::name, LOCALE));
+        byDepartment.sort(Comparator.comparingInt(DepartmentCount::count).reversed().thenComparing(DepartmentCount::name, NameOrder.INSTANCE));
         int unassigned = (int) current.stream().filter(e -> e.departmentId() == null).count();
         if (unassigned > 0) byDepartment.add(new DepartmentCount("No department", unassigned));
 
@@ -278,7 +277,7 @@ public class DashboardService {
     public Map<String, Object> team(CurrentUser user, Map<String, String> queryParams) {
         ListParams listParams = ListParams.of(queryParams, TEAM_SORTS, "name");
         // the query has no ORDER BY (names may be encrypted), so fix the order here: "who's away" must not change from one call to the next
-        List<TeamMember> team = repo.teamMembers(user.id()).stream().sorted(Comparator.comparing(TeamMember::fullName, LOCALE).thenComparing(TeamMember::id)).toList();
+        List<TeamMember> team = repo.teamMembers(user.id()).stream().sorted(Comparator.comparing(TeamMember::fullName, NameOrder.INSTANCE).thenComparing(TeamMember::id)).toList();
         Map<UUID, TodayStatus> status = todayStatuses(team.stream().map(TeamMember::id).toList(), Instant.now());
 
         // Who's away · this week (Mon–Fri) in the manager's zone
@@ -293,7 +292,7 @@ public class DashboardService {
         List<TeamRow> all = team.stream().map(m -> new TeamRow(m.id().toString(), m.code(), m.fullName(), m.designation(), m.shift(), status.get(m.id()), m.photo())).toList();
         List<TeamRow> rows = new ArrayList<>(all.stream().filter(m -> search.isEmpty() || (m.fullName() + " " + m.code() + " " + m.designation()).toLowerCase().contains(search)).toList());
         Map<String, Function<TeamRow, String>> keys = Map.of("name", TeamRow::fullName, "id", TeamRow::code, "title", TeamRow::designation, "status", r -> r.status().label());
-        Comparator<TeamRow> comparator = Comparator.comparing(keys.get(listParams.sort()), LOCALE);
+        Comparator<TeamRow> comparator = Comparator.comparing(keys.get(listParams.sort()), NameOrder.INSTANCE);
         rows.sort(listParams.asc() ? comparator : comparator.reversed());
 
         List<Away> away = team.stream().map(member -> new Away(member.id().toString(), member.fullName(), days.stream().map(day -> {

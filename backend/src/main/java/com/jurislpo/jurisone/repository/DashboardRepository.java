@@ -80,7 +80,7 @@ public class DashboardRepository {
     public List<Member> directReports(UUID managerId) {
         return jdbc.query("SELECT id, full_name, full_name_enc, designation, designation_enc FROM employees WHERE reporting_manager_id = ? AND status <> 'EXITED'",
                 (resultSet, i) -> new Member((UUID) resultSet.getObject("id"), nameReader.read(resultSet, "full_name"), nameReader.read(resultSet, "designation")), managerId).stream()
-                .sorted(Comparator.comparing(Member::name, com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
+                .sorted(Comparator.comparing(Member::name, com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     /** The employee's latest closed payslip month (empty when none). */
