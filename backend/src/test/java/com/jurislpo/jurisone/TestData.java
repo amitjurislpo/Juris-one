@@ -13,6 +13,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 public final class TestData {
 
     public static final String DEFAULT_BUSINESS = "test-business";
+    /** The key the tests run with (see {@link IntegrationTest}). */
+    public static final com.jurislpo.jurisone.crypto.PiiCrypto PII_CRYPTO = new com.jurislpo.jurisone.crypto.PiiCrypto("BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=");
 
     private final JdbcTemplate jdbc;
     private final UUID business;
@@ -75,11 +77,16 @@ public final class TestData {
 
     /** An India employee with portal access (signs in with the emailed code). */
     public UUID employee(String code, String email, UUID roleId) {
+        return employee(code, email, roleId, "Person " + code, "Associate");
+    }
+
+    /** The same, with the name and designation given; the encrypted copies are written too, as the application does. */
+    public UUID employee(String code, String email, UUID roleId, String fullName, String designation) {
         UUID id = UUID.randomUUID();
         jdbc.update("""
-            INSERT INTO employees (id, business_id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'Associate', ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, now())""",
-                id, business, code, "Person " + code, email, roleId, Date.valueOf(LocalDate.of(2025, 1, 1)));
+            INSERT INTO employees (id, business_id, code, full_name, email, designation, role_id, date_of_joining, status, time_zone, region, portal_access, full_name_enc, designation_enc, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'Asia/Kolkata', 'IN', true, ?, ?, now())""",
+                id, business, code, fullName, email, designation, roleId, Date.valueOf(LocalDate.of(2025, 1, 1)), PII_CRYPTO.encrypt(fullName), PII_CRYPTO.encrypt(designation));
         jdbc.update("INSERT INTO users (employee_id) VALUES (?)", id);
         return id;
     }

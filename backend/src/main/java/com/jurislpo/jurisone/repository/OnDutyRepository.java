@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import com.jurislpo.jurisone.service.AttendanceApprovalPolicy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -25,22 +26,23 @@ public class OnDutyRepository {
 
     /** A request as the list and the details dialog show it. {@code status} is the stored one (DECLINED shows as "Rejected" in the app). */
     public record Item(String id, String employeeId, String employeeCode, String employeeName, String department, String date, String part, String location, String reason,
-                       String status, String decidedBy, String decidedAt, String decisionNote, String createdAt) {}
+                       String status, String decidedBy, String decidedAt, String decisionNote, String createdAt, String createdBy) {}
 
     public record NewRequest(UUID id, UUID employeeId, LocalDate workDate, String part, String location, String reason, UUID createdBy, UUID batchId) {}
 
     /** Filters of the list. Null = no filter. */
-    public record Filter(UUID employeeId, String status, LocalDate from, LocalDate to, String search, UUID departmentId) {}
+    /** {@code hrReportsOf}: only requests of HR people whose reporting manager is this employee (what a manager sees and may decide). */
+    public record Filter(UUID employeeId, String status, LocalDate from, LocalDate to, String search, UUID departmentId, UUID hrReportsOf) {}
 
     private static final String SELECT = """
         SELECT r.id::text, r.employee_id::text, e.code, e.full_name, d.name AS department, r.work_date, r.part, r.location, r.reason, r.status::text,
-               dd.full_name AS decided_by, r.decided_at, r.decision_note, r.created_at
+               dd.full_name AS decided_by, r.decided_at, r.decision_note, r.created_at, r.created_by::text
         FROM on_duty_requests r JOIN employees e ON e.id = r.employee_id LEFT JOIN departments d ON d.id = e.department_id LEFT JOIN employees dd ON dd.id = r.decided_by""";
 
     private static Item item(ResultSet resultSet, int i) throws SQLException {
         return new Item(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4), resultSet.getString(5), resultSet.getDate(6).toLocalDate().toString(),
                 resultSet.getString(7), resultSet.getString(8), resultSet.getString(9), resultSet.getString(10), resultSet.getString(11), iso(resultSet.getTimestamp(12)),
-                resultSet.getString(13), iso(resultSet.getTimestamp(14)));
+                resultSet.getString(13), iso(resultSet.getTimestamp(14)), resultSet.getString(15));
     }
 
     private static String iso(Timestamp timestamp) {
@@ -55,6 +57,12 @@ public class OnDutyRepository {
         if (filter.to() != null) { where.append(" AND r.work_date <= ?"); args.add(Date.valueOf(filter.to())); }
         if (filter.departmentId() != null) { where.append(" AND e.department_id = ?"); args.add(filter.departmentId()); }
         if (filter.search() != null && !filter.search().isEmpty()) { where.append(" AND e.full_name ILIKE ?"); args.add(PeopleQuery.like(filter.search())); }
+        if (filter.hrReportsOf() != null) {
+            where.append(" AND e.reporting_manager_id = ? AND ").append(AttendanceApprovalPolicy.SUBJECT_IS_HR);
+            args.add(filter.hrReportsOf());
+            args.add("appr.reg");
+            args.add("roles.manage");
+        }
         return where.toString();
     }
 
@@ -79,10 +87,10 @@ public class OnDutyRepository {
         return items.isEmpty() ? null : items.get(0);
     }
 
-    /** employee_id, work_date, part and status of a request, for a decision or a withdrawal (empty when there is none). */
+    /** employee_id, created_by, work_date, part and status of a request, for a decision, an edit or a withdrawal (empty when there is none). */
     public List<Map<String, Object>> findForDecision(UUID id) {
         return jdbc.queryForList("""
-            SELECT r.employee_id, r.work_date, r.part, r.status::text AS status, e.full_name FROM on_duty_requests r JOIN employees e ON e.id = r.employee_id WHERE r.id = ?""", id);
+            SELECT r.employee_id, r.created_by, r.work_date, r.part, r.status::text AS status, e.full_name FROM on_duty_requests r JOIN employees e ON e.id = r.employee_id WHERE r.id = ?""", id);
     }
 
     public void insert(NewRequest request) {
@@ -98,6 +106,25 @@ public class OnDutyRepository {
                 String.class, employeeId, Date.valueOf(date));
     }
 
+    /** Status of the pending or approved request for this employee and day, other than {@code exceptId} (empty when there is none). */
+    public List<String> openStatusExcept(UUID employeeId, LocalDate date, UUID exceptId) {
+        return jdbc.queryForList("SELECT status::text FROM on_duty_requests WHERE employee_id = ? AND work_date = ? AND id <> ? AND status IN ('PENDING', 'APPROVED') LIMIT 1",
+                String.class, employeeId, Date.valueOf(date), exceptId);
+    }
+
+    /** Days of the employee's pending or approved requests in [first, last] (they count against the monthly On Duty limit), other than {@code exceptId}. */
+    public int countUsed(UUID employeeId, LocalDate first, LocalDate last, UUID exceptId) {
+        Integer count = jdbc.queryForObject("SELECT count(*) FROM on_duty_requests WHERE employee_id = ? AND work_date >= ? AND work_date <= ? AND status IN ('PENDING', 'APPROVED') AND id <> ?",
+                Integer.class, employeeId, Date.valueOf(first), Date.valueOf(last), exceptId);
+        return count == null ? 0 : count;
+    }
+
+    /** Changes a request that is still pending (the requester edits it); returns rows changed (0 = decided or withdrawn a moment ago). */
+    public int updatePending(UUID id, LocalDate date, String part, String location, String reason) {
+        return jdbc.update("UPDATE on_duty_requests SET work_date = ?, part = ?, location = ?, reason = ?, updated_at = now() WHERE id = ? AND status = 'PENDING'",
+                Date.valueOf(date), part, location, reason, id);
+    }
+
     /** Withdraws the employee's own request if it is still pending; returns rows changed (0 = decided or withdrawn a moment ago). */
     public int cancel(UUID id, UUID employeeId) {
         return jdbc.update("UPDATE on_duty_requests SET status = 'CANCELLED', updated_at = now() WHERE id = ? AND employee_id = ? AND status = 'PENDING'", id, employeeId);
@@ -107,15 +134,5 @@ public class OnDutyRepository {
     public int decide(UUID id, String status, UUID decidedBy, Instant decidedAt, String decidedRole, String note) {
         return jdbc.update("UPDATE on_duty_requests SET status = ?::\"RequestStatus\", decided_by = ?, decided_at = ?, decided_role = ?, decision_note = ?, updated_at = now() WHERE id = ? AND status = 'PENDING'",
                 status, decidedBy, Timestamp.from(decidedAt), decidedRole, note, id);
-    }
-
-    /** Active employees who can approve (appr.reg through the main or an additional role), except the requester. */
-    public List<UUID> approverIds(UUID exceptEmployeeId) {
-        return jdbc.queryForList("""
-            SELECT e.id FROM employees e
-            WHERE e.status IN ('ACTIVE', 'PROBATION') AND e.id <> ?
-              AND (EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = e.role_id AND rp.permission_key = 'appr.reg')
-                   OR EXISTS (SELECT 1 FROM employee_additional_roles ar JOIN role_permissions rp ON rp.role_id = ar.role_id
-                              WHERE ar.employee_id = e.id AND rp.permission_key = 'appr.reg'))""", UUID.class, exceptEmployeeId);
     }
 }

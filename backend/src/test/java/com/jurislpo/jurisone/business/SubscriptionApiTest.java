@@ -222,13 +222,18 @@ class SubscriptionApiTest extends IntegrationTest {
     }
 
     @Test
-    void aSessionWhoseSubscriptionWasCancelledIsRefusedEverywhereButMe() throws Exception {
+    void aSessionWhoseSubscriptionWasCancelledIsRefusedEverywhereButMeAndTheOwnersPausedScreenLinks() throws Exception {
         LocalDate today = LocalDate.now();
         Created created = createBusiness(plan(null), today.toString(), today.plusMonths(1).toString());
         Cookie owner = signIn(created.ownerEmail());
         jdbc.update("UPDATE business_subscriptions SET status = 'CANCELLED' WHERE business_id = ?", created.business());
         mockMvc.perform(get("/api/v1/people").cookie(owner)).andExpect(status().isPaymentRequired());
-        mockMvc.perform(get("/api/v1/business/subscription").cookie(owner)).andExpect(status().isPaymentRequired());
+        mockMvc.perform(get("/api/v1/business/subscription").cookie(owner)).andExpect(status().isOk()); // the "paused" screen links to it
+        mockMvc.perform(get("/api/v1/business/employees/export").cookie(owner)).andExpect(status().isOk());
+        // only those two exact paths, and only to read: writes, other paths below them and the page-view log stay closed
+        mockMvc.perform(write(post("/api/v1/business/subscription")).cookie(owner).content("{}")).andExpect(status().isPaymentRequired());
+        mockMvc.perform(get("/api/v1/business/subscription/anything").cookie(owner)).andExpect(status().isPaymentRequired());
+        mockMvc.perform(write(post("/api/v1/audit/page-views")).cookie(owner).content("{}")).andExpect(status().isPaymentRequired());
         mockMvc.perform(get("/api/v1/me").cookie(owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.subscriptionActive").value(false))
                 .andExpect(jsonPath("$.data.readOnly").value(false));
     }

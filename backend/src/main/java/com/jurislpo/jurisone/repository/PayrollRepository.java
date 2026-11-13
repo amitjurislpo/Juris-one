@@ -13,11 +13,13 @@ import org.springframework.stereotype.Repository;
 public class PayrollRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
     private final com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots;
     private final com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts;
 
-    public PayrollRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots) {
+    public PayrollRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.SalaryAmountsCrypto salaryAmounts, com.jurislpo.jurisone.crypto.PayslipSnapshotCrypto snapshots, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
         this.salaryAmounts = salaryAmounts;
         this.snapshots = snapshots;
@@ -37,12 +39,12 @@ public class PayrollRepository {
      * {@code args} are (last, first, last[, ids]) matching {@code idFilter}.
      */
     public List<Map<String, Object>> payrollEmployees(String idFilter, Object[] args) {
-        return jdbc.queryForList("""
-            SELECT e.id, e.code, e.full_name, e.designation, e.date_of_joining, e.exit_date, d.name AS department_name
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT e.id, e.code, e.full_name, e.full_name_enc, e.designation, e.designation_enc, e.date_of_joining, e.exit_date, d.name AS department_name
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id
             WHERE e.region = 'IN' AND e.date_of_joining <= ? AND (e.exit_date IS NULL OR e.exit_date >= ?)
-              AND EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?)""" + idFilter + " ORDER BY e.full_name ASC",
-                args);
+              AND EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?)""" + idFilter + "", args), "full_name", "designation").stream()
+                .sorted(java.util.Comparator.comparing(row -> (String) row.get("full_name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
     }
 
     /** India and company-wide holidays in [first, last]. */

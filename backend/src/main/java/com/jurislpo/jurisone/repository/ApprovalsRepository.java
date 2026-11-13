@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.repository;
 
+import com.jurislpo.jurisone.crypto.EmployeeNameReader;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
@@ -16,9 +17,11 @@ import org.springframework.stereotype.Repository;
 public class ApprovalsRepository {
 
     private final JdbcTemplate jdbc;
+    private final EmployeeNameReader nameReader;
 
-    public ApprovalsRepository(JdbcTemplate jdbc) {
+    public ApprovalsRepository(JdbcTemplate jdbc, EmployeeNameReader nameReader) {
         this.jdbc = jdbc;
+        this.nameReader = nameReader;
     }
 
     /** A decided leave request (last 30 days list). */
@@ -29,9 +32,9 @@ public class ApprovalsRepository {
 
     /** The leave request with its type name and the employee's name (empty when not found). */
     public List<Map<String, Object>> findLeaveForDecision(UUID id) {
-        return jdbc.queryForList("""
+        return nameReader.resolveAll(jdbc.queryForList("""
             SELECT l.employee_id, l.leave_type, l.from_date, l.to_date, l.part::text AS part, l.days, l.lop_days, l.status::text AS status, t.name AS type_name,
-                   e.full_name FROM leave_requests l JOIN leave_types t ON t.code = l.leave_type JOIN employees e ON e.id = l.employee_id WHERE l.id = ?""", id);
+                   e.full_name, e.full_name_enc FROM leave_requests l JOIN leave_types t ON t.code = l.leave_type JOIN employees e ON e.id = l.employee_id WHERE l.id = ?""", id), "full_name");
     }
 
     /** Decides the leave request if it is still pending; returns rows changed (0 = someone else decided first). */
@@ -42,9 +45,9 @@ public class ApprovalsRepository {
 
     /** The regularization request with the employee's name (empty when not found). */
     public List<Map<String, Object>> findRegularizationForDecision(UUID id) {
-        return jdbc.queryForList("""
-            SELECT r.employee_id, r.created_by, r.work_date, r.kind::text AS kind, r.status::text AS status, r.proposed_in, r.proposed_out, e.full_name
-            FROM regularization_requests r JOIN employees e ON e.id = r.employee_id WHERE r.id = ?""", id);
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT r.employee_id, r.created_by, r.work_date, r.kind::text AS kind, r.status::text AS status, r.proposed_in, r.proposed_out, e.full_name, e.full_name_enc
+            FROM regularization_requests r JOIN employees e ON e.id = r.employee_id WHERE r.id = ?""", id), "full_name");
     }
 
     /** Decides the regularization if it is still pending; returns rows changed (0 = someone else decided first). */
@@ -76,11 +79,11 @@ public class ApprovalsRepository {
      * {@code AND …} condition whose parameters follow the approver's id in {@code args}.
      */
     public List<Map<String, Object>> findPendingLeave(String nameFilter, Object[] args) {
-        return jdbc.queryForList("""
+        return nameReader.resolveAll(jdbc.queryForList("""
             SELECT l.id, l.employee_id, l.leave_type, t.name AS type_name, l.from_date, l.to_date, l.part::text AS part, l.days, l.lop_days, l.reason,
-                   e.full_name, e.department_id, d.name AS department_name
+                   e.full_name, e.full_name_enc, e.department_id, d.name AS department_name
             FROM leave_requests l JOIN leave_types t ON t.code = l.leave_type JOIN employees e ON e.id = l.employee_id LEFT JOIN departments d ON d.id = e.department_id
-            WHERE l.status = 'PENDING' AND l.employee_id <> ?""" + nameFilter + " ORDER BY l.from_date ASC", args);
+            WHERE l.status = 'PENDING' AND l.employee_id <> ?""" + nameFilter + " ORDER BY l.from_date ASC", args), "full_name");
     }
 
     /** Other pending or approved leave in the department overlapping from..to. */
@@ -93,10 +96,10 @@ public class ApprovalsRepository {
 
     /** Pending regularizations of everyone but the approver, oldest first; {@code nameFilter} / {@code args} as for leave. */
     public List<Map<String, Object>> findPendingRegularizations(String nameFilter, Object[] args) {
-        return jdbc.queryForList("""
-            SELECT r.id, r.employee_id, r.work_date, r.kind::text AS kind, r.proposed_in, r.proposed_out, r.reason, e.full_name, e.time_zone, d.name AS department_name
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT r.id, r.employee_id, r.work_date, r.kind::text AS kind, r.proposed_in, r.proposed_out, r.reason, e.full_name, e.full_name_enc, e.time_zone, d.name AS department_name
             FROM regularization_requests r JOIN employees e ON e.id = r.employee_id LEFT JOIN departments d ON d.id = e.department_id
-            WHERE r.status = 'PENDING' AND r.employee_id <> ?""" + nameFilter + " ORDER BY r.work_date ASC", args);
+            WHERE r.status = 'PENDING' AND r.employee_id <> ?""" + nameFilter + " ORDER BY r.work_date ASC", args), "full_name");
     }
 
     public Integer countPendingLeave(UUID exceptEmployeeId) {
@@ -110,20 +113,20 @@ public class ApprovalsRepository {
     /** The 15 most recently decided leave requests since the given time. */
     public List<DecidedLeave> findDecidedLeave(Timestamp since) {
         return jdbc.query("""
-            SELECT l.id::text, l.decided_at, e.full_name, t.name, l.from_date, l.to_date, l.status::text, dd.full_name AS by
+            SELECT l.id::text AS id, l.decided_at, e.full_name, e.full_name_enc, t.name AS type_name, l.from_date, l.to_date, l.status::text AS status, dd.full_name AS by, dd.full_name_enc AS by_enc
             FROM leave_requests l JOIN employees e ON e.id = l.employee_id JOIN leave_types t ON t.code = l.leave_type LEFT JOIN employees dd ON dd.id = l.decided_by
             WHERE l.status IN ('APPROVED', 'DECLINED') AND l.decided_at >= ? ORDER BY l.decided_at DESC LIMIT 15""",
-                (resultSet, i) -> new DecidedLeave(resultSet.getString(1), resultSet.getTimestamp(2).toInstant(), resultSet.getString(3), resultSet.getString(4), resultSet.getDate(5).toLocalDate(),
-                        resultSet.getDate(6).toLocalDate(), resultSet.getString(7), resultSet.getString(8)), since);
+                (resultSet, i) -> new DecidedLeave(resultSet.getString("id"), resultSet.getTimestamp("decided_at").toInstant(), nameReader.read(resultSet, "full_name"), resultSet.getString("type_name"),
+                        resultSet.getDate("from_date").toLocalDate(), resultSet.getDate("to_date").toLocalDate(), resultSet.getString("status"), nameReader.read(resultSet, "by")), since);
     }
 
     /** The 15 most recently decided regularizations since the given time. */
     public List<DecidedRegularization> findDecidedRegularizations(Timestamp since) {
         return jdbc.query("""
-            SELECT r.id::text, r.decided_at, e.full_name, r.kind::text, r.work_date, r.status::text, dd.full_name AS by, r.decided_role
+            SELECT r.id::text AS id, r.decided_at, e.full_name, e.full_name_enc, r.kind::text AS kind, r.work_date, r.status::text AS status, dd.full_name AS by, dd.full_name_enc AS by_enc, r.decided_role
             FROM regularization_requests r JOIN employees e ON e.id = r.employee_id LEFT JOIN employees dd ON dd.id = r.decided_by
             WHERE r.status IN ('APPROVED', 'DECLINED') AND r.decided_at >= ? ORDER BY r.decided_at DESC LIMIT 15""",
-                (resultSet, i) -> new DecidedRegularization(resultSet.getString(1), resultSet.getTimestamp(2).toInstant(), resultSet.getString(3), resultSet.getString(4), resultSet.getDate(5).toLocalDate(),
-                        resultSet.getString(6), resultSet.getString(7), resultSet.getString(8)), since);
+                (resultSet, i) -> new DecidedRegularization(resultSet.getString("id"), resultSet.getTimestamp("decided_at").toInstant(), nameReader.read(resultSet, "full_name"), resultSet.getString("kind"),
+                        resultSet.getDate("work_date").toLocalDate(), resultSet.getString("status"), nameReader.read(resultSet, "by"), resultSet.getString("decided_role")), since);
     }
 }

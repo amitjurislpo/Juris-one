@@ -34,8 +34,10 @@ public class ProjectRepository {
     static final String ROW = """
         SELECT p.id::text AS "id", p.key AS "key", p.name AS "name", p.description AS "description", p.visibility AS "visibility", p.status AS "status",
                p.color AS "color", p.department_id::text AS "departmentId", d.name AS "departmentName",
-               (SELECT coalesce(array_agg(e.full_name ORDER BY e.full_name), '{}') FROM project_members m JOIN employees e ON e.id = m.employee_id
+               (SELECT coalesce(array_agg(e.full_name ORDER BY e.id), '{}') FROM project_members m JOIN employees e ON e.id = m.employee_id
                 WHERE m.project_id = p.id AND m.role = 'OWNER') AS "ownerNames",
+               (SELECT coalesce(array_agg(e.full_name_enc ORDER BY e.id), '{}') FROM project_members m JOIN employees e ON e.id = m.employee_id
+                WHERE m.project_id = p.id AND m.role = 'OWNER') AS "ownerNames_enc",
                mine.role AS "myRole", (SELECT count(*) FROM project_members m WHERE m.project_id = p.id) AS "memberCount",
                stats.open AS "openTaskCount", stats.overdue AS "overdueTaskCount", %s AS "updatedAt"
         FROM projects p
@@ -44,8 +46,10 @@ public class ProjectRepository {
         %s""".formatted(TaskQuery.iso("p.updated_at"), STATS);
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public ProjectRepository(JdbcTemplate jdbc) {
+    public ProjectRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -56,7 +60,7 @@ public class ProjectRepository {
         String where = where(isTaskAdmin, status, search, args);
         args.add(limit);
         args.add(offset);
-        return JdbcRows.normalize(jdbc.queryForList(ROW + where + " ORDER BY " + orderBy + ", lower(p.name) LIMIT ? OFFSET ?", args.toArray()));
+        return nameReader.resolveNameLists(JdbcRows.normalize(jdbc.queryForList(ROW + where + " ORDER BY " + orderBy + ", lower(p.name) LIMIT ? OFFSET ?", args.toArray())), "ownerNames");
     }
 
     public int countRows(UUID viewerId, boolean isTaskAdmin, String status, String search) {
@@ -85,7 +89,7 @@ public class ProjectRepository {
     }
 
     public List<Map<String, Object>> findRowById(UUID projectId, UUID viewerId) {
-        return JdbcRows.normalize(jdbc.queryForList(ROW + " WHERE p.id = ? AND p.deleted_at IS NULL", viewerId, projectId));
+        return nameReader.resolveNameLists(JdbcRows.normalize(jdbc.queryForList(ROW + " WHERE p.id = ? AND p.deleted_at IS NULL", viewerId, projectId)), "ownerNames");
     }
 
     public List<ProjectFacts> findFacts(UUID projectId, UUID employeeId) {
@@ -156,11 +160,13 @@ public class ProjectRepository {
     // ── members ──
 
     public List<Map<String, Object>> findMembers(UUID projectId) {
-        return jdbc.queryForList("""
-            SELECT m.employee_id::text AS "employeeId", e.code AS "code", e.full_name AS "name", (extract(epoch FROM e.photo_updated_at) * 1000)::bigint AS "photo",
-                   e.designation AS "designation", m.role AS "role", e.status <> 'EXITED' AS "isActive"
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT m.employee_id::text AS "employeeId", e.code AS "code", e.full_name AS "name", e.full_name_enc AS "name_enc", (extract(epoch FROM e.photo_updated_at) * 1000)::bigint AS "photo",
+                   e.designation AS "designation", e.designation_enc AS "designation_enc", m.role AS "role", e.status <> 'EXITED' AS "isActive"
             FROM project_members m JOIN employees e ON e.id = m.employee_id WHERE m.project_id = ?
-            ORDER BY CASE m.role WHEN 'OWNER' THEN 0 WHEN 'MEMBER' THEN 1 ELSE 2 END, e.full_name""", projectId);
+            ORDER BY CASE m.role WHEN 'OWNER' THEN 0 WHEN 'MEMBER' THEN 1 ELSE 2 END""", projectId), "name", "designation").stream()
+                .sorted(java.util.Comparator.comparingInt((Map<String, Object> row) -> "OWNER".equals(row.get("role")) ? 0 : "MEMBER".equals(row.get("role")) ? 1 : 2)
+                        .thenComparing(row -> (String) row.get("name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
     }
 
     public String findMemberRole(UUID projectId, UUID employeeId) {

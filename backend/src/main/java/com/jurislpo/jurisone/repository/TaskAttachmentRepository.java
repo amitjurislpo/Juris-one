@@ -13,18 +13,20 @@ public class TaskAttachmentRepository {
     public record AttachmentRow(UUID id, String filePath, String fileName, String contentType, UUID uploadedBy) {}
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public TaskAttachmentRepository(JdbcTemplate jdbc) {
+    public TaskAttachmentRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
     /** The task's attachments (not deleted), newest first, with {@code uploadedById} for the delete right. */
     public List<Map<String, Object>> findForTask(UUID taskId) {
-        return jdbc.queryForList("""
-            SELECT a.id::text AS "id", a.file_name AS "fileName", a.content_type AS "contentType", a.size_bytes AS "sizeBytes", u.full_name AS "uploadedByName",
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT a.id::text AS "id", a.file_name AS "fileName", a.content_type AS "contentType", a.size_bytes AS "sizeBytes", u.full_name AS "uploadedByName", u.full_name_enc AS "uploadedByName_enc",
                    a.uploaded_by::text AS "uploadedById", %s AS "uploadedAt"
             FROM task_attachments a LEFT JOIN employees u ON u.id = a.uploaded_by WHERE a.task_id = ? AND a.deleted_at IS NULL ORDER BY a.uploaded_at DESC"""
-                .formatted(TaskQuery.iso("a.uploaded_at")), taskId);
+                .formatted(TaskQuery.iso("a.uploaded_at")), taskId), "uploadedByName");
     }
 
     public int count(UUID taskId) {

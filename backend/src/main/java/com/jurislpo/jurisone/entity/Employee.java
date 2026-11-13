@@ -22,6 +22,10 @@ public class Employee {
     @Column(name = "full_name", nullable = false)
     private String fullName;
 
+    /** The encrypted copy of the name (written by the People statements, never by the entity). */
+    @Column(name = "full_name_enc", insertable = false, updatable = false)
+    private String fullNameEnc;
+
     @Column(name = "father_name")
     private String fatherName;
 
@@ -162,6 +166,7 @@ public class Employee {
     public void setCode(String code) { this.code = code; }
     public String getFullName() { return fullName; }
     public void setFullName(String fullName) { this.fullName = fullName; }
+    public String getFullNameEnc() { return fullNameEnc; }
     public String getFatherName() { return fatherName; }
     public void setFatherName(String fatherName) { this.fatherName = fatherName; }
     public String getEmail() { return email; }

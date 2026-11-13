@@ -4,6 +4,7 @@ import com.jurislpo.jurisone.engine.Shifts;
 import com.jurislpo.jurisone.service.DashboardService.MyLeave;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,8 +28,10 @@ public class DashboardRepository {
     public record Holiday(LocalDate date, String region) {}
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public DashboardRepository(JdbcTemplate jdbc) {
+    public DashboardRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -75,8 +78,9 @@ public class DashboardRepository {
 
     /** Active direct reports, by name. */
     public List<Member> directReports(UUID managerId) {
-        return jdbc.query("SELECT id, full_name, designation FROM employees WHERE reporting_manager_id = ? AND status <> 'EXITED' ORDER BY full_name ASC",
-                (resultSet, i) -> new Member((UUID) resultSet.getObject(1), resultSet.getString(2), resultSet.getString(3)), managerId);
+        return jdbc.query("SELECT id, full_name, full_name_enc, designation, designation_enc FROM employees WHERE reporting_manager_id = ? AND status <> 'EXITED'",
+                (resultSet, i) -> new Member((UUID) resultSet.getObject("id"), nameReader.read(resultSet, "full_name"), nameReader.read(resultSet, "designation")), managerId).stream()
+                .sorted(Comparator.comparing(Member::name, com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
     }
 
     /** The employee's latest closed payslip month (empty when none). */
@@ -94,10 +98,10 @@ public class DashboardRepository {
     /** Active direct reports with their shift label (My team). */
     public List<TeamMember> teamMembers(UUID managerId) {
         return jdbc.query("""
-            SELECT e.id, e.code, e.full_name, e.designation, e.region::text, s.code AS shift_code, s.start_local, s.end_local, e.photo_updated_at
+            SELECT e.id, e.code, e.full_name, e.full_name_enc, e.designation, e.designation_enc, e.region::text AS region, s.code AS shift_code, s.start_local, s.end_local, e.photo_updated_at
             FROM employees e LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.reporting_manager_id = ? AND e.status <> 'EXITED'""",
-                (resultSet, i) -> new TeamMember((UUID) resultSet.getObject(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4), resultSet.getString(5),
-                        Shifts.label(resultSet.getString(6), resultSet.getString(7), resultSet.getString(8)), com.jurislpo.jurisone.service.PhotoService.version(resultSet.getTimestamp(9))), managerId);
+                (resultSet, i) -> new TeamMember((UUID) resultSet.getObject("id"), resultSet.getString("code"), nameReader.read(resultSet, "full_name"), nameReader.read(resultSet, "designation"), resultSet.getString("region"),
+                        Shifts.label(resultSet.getString("shift_code"), resultSet.getString("start_local"), resultSet.getString("end_local")), com.jurislpo.jurisone.service.PhotoService.version(resultSet.getTimestamp("photo_updated_at"))), managerId);
     }
 
     /** Approved or pending leaves of these employees overlapping [from, to]. */

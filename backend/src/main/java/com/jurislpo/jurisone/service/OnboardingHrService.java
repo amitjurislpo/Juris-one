@@ -51,9 +51,11 @@ public class OnboardingHrService {
     private final MailService mail;
     private final AuditService audit;
     private final BusinessUrls businessUrls;
+    private final EmployeeNameDirectory nameDirectory;
 
     public OnboardingHrService(PeopleService people, EmployeeOnboardingService onboarding, OnboardingAttachmentService attachments, EmployeeOnboardingRepository onboardingRepo,
-                               OnboardingHrRepository hrRepo, MailService mail, AuditService audit, BusinessUrls businessUrls) {
+                               OnboardingHrRepository hrRepo, MailService mail, AuditService audit, BusinessUrls businessUrls, EmployeeNameDirectory nameDirectory) {
+        this.nameDirectory = nameDirectory;
         this.people = people;
         this.onboarding = onboarding;
         this.attachments = attachments;
@@ -98,11 +100,15 @@ public class OnboardingHrService {
             args.add(status);
         }
         if (!listParams.search().isEmpty()) {
-            conditions.add("(e.full_name ILIKE ? OR e.email ILIKE ? OR e.code ILIKE ?)");
-            for (int i = 0; i < 3; i++) args.add(PeopleQuery.like(listParams.search()));
+            String nameMatch = nameDirectory.contains(EmployeeNameDirectory.Field.FULL_NAME, "e.id", "e.full_name", listParams.search(), args);
+            args.add(PeopleQuery.like(listParams.search()));
+            args.add(PeopleQuery.like(listParams.search()));
+            conditions.add("(" + nameMatch + " OR e.email ILIKE ? OR e.code ILIKE ?)");
         }
         String where = " WHERE " + String.join(" AND ", conditions);
-        List<Row> rows = hrRepo.findPage(where, args, listParams.take(), listParams.skip()).stream().map(row -> new Row(row.get("employee_id").toString(), (String) row.get("full_name"),
+        List<Object> orderArgs = new ArrayList<>();
+        String nameOrder = nameDirectory.orderBy(EmployeeNameDirectory.Field.FULL_NAME, "e.id", "e.full_name", true, orderArgs);
+        List<Row> rows = hrRepo.findPage(where, args, nameOrder, orderArgs, listParams.take(), listParams.skip()).stream().map(row -> new Row(row.get("employee_id").toString(), (String) row.get("full_name"),
                 (String) row.get("code"), (String) row.get("email"), (String) row.get("designation"), (String) row.get("department_name"), (String) row.get("status"),
                 row.get("submitted_at") == null ? null : Format.isoTimestamp(((Timestamp) row.get("submitted_at")).toInstant()), ((Number) row.get("current_step")).intValue())).toList();
         return new Page(rows, hrRepo.count(where, args), listParams.page(), listParams.take());

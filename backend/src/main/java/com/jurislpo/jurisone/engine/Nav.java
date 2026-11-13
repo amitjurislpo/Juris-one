@@ -56,6 +56,7 @@ public final class Nav {
             item("onboard-employee", "Onboard employee", "plus", List.of(PEOPLE_ADD), "People ops"),
             item("departments", "Departments", "building", List.of(DEPT_MANAGE), "People ops"),
             item("holidays", "Holiday calendar", "sun", List.of(HOLIDAYS_MANAGE), "People ops"),
+            item("leave-policy", "Leave policy", "cal", List.of(ROLES_MANAGE, HOLIDAYS_MANAGE), "People ops"),
             item("assets", "Assets", "layers", List.of(ASSETS_MANAGE), "People ops"),
             item("manage-announcements", "Post announcements", "bell", List.of(ANNOUNCEMENTS_MANAGE), "People ops"),
             item("letters", "HR letters", "doc", List.of(LETTERS_MANAGE), "People ops"),

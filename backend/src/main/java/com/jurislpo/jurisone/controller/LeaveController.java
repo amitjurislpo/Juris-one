@@ -5,6 +5,7 @@ import com.jurislpo.jurisone.service.LeaveService;
 import com.jurislpo.jurisone.common.ApiResult;
 import com.jurislpo.jurisone.common.RequestMeta;
 import com.jurislpo.jurisone.security.Auth;
+import com.jurislpo.jurisone.security.CurrentUser;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -40,14 +41,19 @@ public class LeaveController {
     /** Live numbers for the apply form ({@code ?type=&from=&to=&part=}); rule failures come back in {@code data.error} (200). */
     @GetMapping("/api/v1/leave/previews")
     public ApiResult<LeaveService.Preview> preview(@RequestParam(required = false) String type, @RequestParam(required = false) String from,
-                                                   @RequestParam(required = false) String to, @RequestParam(required = false) String part) {
-        return ApiResult.success(leave.preview(auth.assertPerm("self"), new LeaveService.ApplyInput(type, from, to, part, null)));
+                                                   @RequestParam(required = false) String to, @RequestParam(required = false) String part,
+                                                   @RequestParam(required = false) String employeeId) {
+        return ApiResult.success(leave.preview(auth.assertPerm("self"), new LeaveService.ApplyInput(type, from, to, part, null, employeeId)));
     }
 
     @PostMapping("/api/v1/leave/requests")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResult<Void> apply(@RequestBody LeaveService.ApplyInput body, HttpServletRequest request) {
-        return ApiResult.message(leave.apply(auth.assertPerm("self"), body, RequestMeta.of(request).ipAddress()));
+        CurrentUser user = auth.assertPerm("self");
+        String ipAddress = RequestMeta.of(request).ipAddress();
+        LeaveService.Applied applied = leave.apply(user, body, ipAddress);
+        boolean approved = applied.onBehalf() && approvals.autoApproveRaisedLeave(user, applied.requestId(), ipAddress);
+        return ApiResult.message(applied.message() + (approved ? " · approved" : ""));
     }
 
     @DeleteMapping("/api/v1/leave/requests/{id}")
@@ -69,7 +75,7 @@ public class LeaveController {
     /** Approve or reject a regularization request ({@code {approve, note?}}); the first decision wins. */
     @PutMapping("/api/v1/attendance/regularizations/{id}/decision")
     public ApiResult<Void> decideRegularization(@PathVariable String id, @RequestBody DecisionBody body, HttpServletRequest request) {
-        return ApiResult.message(approvals.decideRegularization(auth.assertPerm("appr.reg"), body.with(id), RequestMeta.of(request).ipAddress()));
+        return ApiResult.message(approvals.decideRegularization(auth.assertPerm(), body.with(id), RequestMeta.of(request).ipAddress()));
     }
 
     public record DecisionBody(Boolean approve, String note) {

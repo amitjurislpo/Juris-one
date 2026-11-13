@@ -15,8 +15,10 @@ import org.springframework.stereotype.Repository;
 public class TaxOperationsRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public TaxOperationsRepository(JdbcTemplate jdbc) {
+    public TaxOperationsRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -135,19 +137,19 @@ public class TaxOperationsRepository {
     /** One row per employee with declarations or proofs this FY. */
     public List<ProofRow> proofRows(String financialYear) {
         return jdbc.query("""
-            SELECT e.id::text, e.full_name, e.code, d.name AS department_name, COALESCE((SELECT t.regime::text FROM tax_profiles t WHERE t.employee_id = e.id AND t.fy = ?), 'NEW') AS regime,
+            SELECT e.id::text AS id, e.full_name, e.full_name_enc, e.code, d.name AS department_name, COALESCE((SELECT t.regime::text FROM tax_profiles t WHERE t.employee_id = e.id AND t.fy = ?), 'NEW') AS regime,
                    (SELECT COALESCE(sum(i.amount), 0) FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ?) AS declared_amount,
                    (SELECT count(*) FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ? AND i.status = 'PENDING') AS pending_count,
                    (SELECT count(*) FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ? AND i.status = 'APPROVED') AS approved_count
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id
             WHERE EXISTS (SELECT 1 FROM declaration_items i WHERE i.employee_id = e.id AND i.fy = ? AND (i.amount > 0 OR i.proof_path IS NOT NULL))""",
-                (resultSet, i) -> new ProofRow(resultSet.getString(1), resultSet.getString(2), resultSet.getString(3), resultSet.getString(4) == null ? "—" : resultSet.getString(4), resultSet.getString(5),
-                        resultSet.getLong(6), resultSet.getInt(7), resultSet.getInt(8)), financialYear, financialYear, financialYear, financialYear, financialYear);
+                (resultSet, i) -> new ProofRow(resultSet.getString("id"), nameReader.read(resultSet, "full_name"), resultSet.getString("code"), resultSet.getString("department_name") == null ? "—" : resultSet.getString("department_name"), resultSet.getString("regime"),
+                        resultSet.getLong("declared_amount"), resultSet.getInt("pending_count"), resultSet.getInt("approved_count")), financialYear, financialYear, financialYear, financialYear, financialYear);
     }
 
     /** The employee's name and code, or null when there is no such employee in this business. */
     public Map<String, Object> employeeNameCode(UUID employeeId) {
-        List<Map<String, Object>> rows = jdbc.queryForList("SELECT full_name, code FROM employees WHERE id = ?", employeeId);
+        List<Map<String, Object>> rows = nameReader.resolveAll(jdbc.queryForList("SELECT full_name, full_name_enc, code FROM employees WHERE id = ?", employeeId), "full_name");
         return rows.isEmpty() ? null : rows.get(0);
     }
 

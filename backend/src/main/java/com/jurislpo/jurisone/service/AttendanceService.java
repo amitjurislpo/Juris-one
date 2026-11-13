@@ -226,7 +226,8 @@ public class AttendanceService {
                 }
                 Regularization regularization = new Regularization(regularizationRows.stream().anyMatch(x -> x.kind().equals("ABSENT") || x.kind().equals("MISSED_CHECKOUT")),
                         regularizationRows.stream().anyMatch(x -> x.kind().equals("LATE_CHECKIN")),
-                        remoteWork.stream().anyMatch(x -> x.employeeId().equals(employee.id()) && !x.from().isAfter(day) && !x.to().isBefore(day)));
+                        remoteWork.stream().anyMatch(x -> "FULL".equals(x.part()) && x.employeeId().equals(employee.id()) && !x.from().isAfter(day) && !x.to().isBefore(day)),
+                        remoteWork.stream().anyMatch(x -> !"FULL".equals(x.part()) && x.employeeId().equals(employee.id()) && !x.from().isAfter(day) && !x.to().isBefore(day)));
                 LeavePart onDutyPart = onDutyRows.stream().filter(x -> x.employeeId().equals(employee.id()) && x.date().equals(day)).map(x -> LeavePart.valueOf(x.part())).findFirst().orElse(null);
                 DayResult dayResult = AttendanceEngine.computeDay(new DayInput(date, now, employee.timeZone(), employee.shiftOn(date).shiftDefinition(), policy.engine(), employee.dateOfJoining(), employee.exitDate(),
                         policy.trackingStart(), holiday, leave, dayPunches, regularization, onDutyPart));
