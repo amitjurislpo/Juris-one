@@ -49,7 +49,7 @@ abstract class EncryptedNamesReadParityBase extends IntegrationTest {
 
     void runScenario() throws Exception {
         String mode = isReadEncrypted() ? "read-encrypted" : "read-plaintext";
-        String suffix = TestData.letters(8);
+        String suffix = String.valueOf(java.util.concurrent.ThreadLocalRandom.current().nextLong(10_000_000L, 100_000_000L)); // digits only: a letter suffix in the e-mail addresses could match a search such as "ar" in one run and not in the other
         TestData data = new TestData(jdbc).inBusiness("parity-" + suffix);
         UUID hrRole = data.role("hrm", "self", "dir", "people.view", "people.add", "letters.manage");
         UUID leadRole = data.role("lead", "self", "dir");
