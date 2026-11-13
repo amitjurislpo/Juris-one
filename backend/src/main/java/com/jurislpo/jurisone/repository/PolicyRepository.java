@@ -16,13 +16,15 @@ public class PolicyRepository {
 
     /** Employees who must acknowledge (current, not owners). */
     static final String REQUIRED = """
-        SELECT e.id, e.code, e.full_name, d.name AS department FROM employees e JOIN roles r ON r.id = e.role_id
+        SELECT e.id, e.code, e.full_name, e.full_name_enc, d.name AS department FROM employees e JOIN roles r ON r.id = e.role_id
         LEFT JOIN departments d ON d.id = e.department_id
         WHERE e.business_id = jurisone_tenant_id() AND e.status <> 'EXITED' AND r.key NOT IN ('owner', 'super_admin')""";
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public PolicyRepository(JdbcTemplate jdbc) {
+    public PolicyRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -94,7 +96,7 @@ public class PolicyRepository {
 
     /** code, full_name and email of the employee. */
     public Map<String, Object> findEmployeeSnapshot(UUID employeeId) {
-        return jdbc.queryForMap("SELECT code, full_name, email FROM employees WHERE id = ?", employeeId);
+        return nameReader.resolve(jdbc.queryForMap("SELECT code, full_name, full_name_enc, email FROM employees WHERE id = ?", employeeId), "full_name");
     }
 
     /** Records an acknowledgement; returns 0 when this version was already acknowledged by the employee. */
@@ -148,7 +150,7 @@ public class PolicyRepository {
      */
     public List<Map<String, Object>> findVersions(UUID policyId) {
         return jdbc.query("""
-            SELECT v.id, v.version, v.title, v.published_at, e.full_name, v.file_name, v.requires_ack, v.body_sha256, v.file_sha256,
+            SELECT v.id, v.version, v.title, v.published_at, e.full_name, e.full_name_enc, v.file_name, v.requires_ack, v.body_sha256, v.file_sha256,
                    (SELECT count(*) FROM policy_acknowledgements a WHERE a.policy_version_id = v.id) AS acks
             FROM policy_versions v LEFT JOIN employees e ON e.id = v.published_by WHERE v.policy_id = ? ORDER BY v.version DESC""", (resultSet, i) -> {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -156,12 +158,12 @@ public class PolicyRepository {
             row.put("version", resultSet.getInt(2));
             row.put("title", resultSet.getString(3));
             row.put("publishedAt", formatIsoTimestamp(resultSet.getTimestamp(4)));
-            row.put("publishedBy", resultSet.getString(5));
-            row.put("fileName", resultSet.getString(6));
-            row.put("requiresAcknowledgement", resultSet.getBoolean(7));
-            row.put("bodySha256", resultSet.getString(8));
-            row.put("fileSha256", resultSet.getString(9));
-            row.put("acknowledgements", resultSet.getLong(10));
+            row.put("publishedBy", nameReader.read(resultSet, "full_name"));
+            row.put("fileName", resultSet.getString(7));
+            row.put("requiresAcknowledgement", resultSet.getBoolean(8));
+            row.put("bodySha256", resultSet.getString(9));
+            row.put("fileSha256", resultSet.getString(10));
+            row.put("acknowledgements", resultSet.getLong(11));
             return row;
         }, policyId);
     }
@@ -172,18 +174,20 @@ public class PolicyRepository {
      */
     public List<Map<String, Object>> findRequiredPeople(Object versionId, UUID policyId) {
         return jdbc.query("""
-            SELECT * FROM (SELECT x.code, x.full_name, x.department,
+            SELECT * FROM (SELECT x.code, x.full_name, x.full_name_enc, x.department,
                    (SELECT a.acknowledged_at FROM policy_acknowledgements a WHERE a.policy_version_id = ?::uuid AND a.employee_id = x.id) AS acked_at,
                    (SELECT max(a.version) FROM policy_acknowledgements a WHERE a.policy_id = ? AND a.employee_id = x.id) AS last_version
-            FROM (""" + REQUIRED + ") x) y ORDER BY y.acked_at IS NOT NULL, y.full_name", (resultSet, i) -> {
+            FROM (""" + REQUIRED + ") x) y", (resultSet, i) -> {
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("code", resultSet.getString(1));
-            row.put("name", resultSet.getString(2));
-            row.put("department", resultSet.getString(3));
-            row.put("acknowledgedAt", formatIsoTimestamp(resultSet.getTimestamp(4)));
-            row.put("lastVersion", resultSet.getObject(5));
+            row.put("code", resultSet.getString("code"));
+            row.put("name", nameReader.read(resultSet, "full_name"));
+            row.put("department", resultSet.getString("department"));
+            row.put("acknowledgedAt", formatIsoTimestamp(resultSet.getTimestamp("acked_at")));
+            row.put("lastVersion", resultSet.getObject("last_version"));
             return row;
-        }, versionId, policyId);
+        }, versionId, policyId).stream()
+                .sorted(java.util.Comparator.comparing((Map<String, Object> row) -> row.get("acknowledgedAt") != null)
+                        .thenComparing(row -> (String) row.get("name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
     }
 
     public void insert(UUID id, String title, String body, boolean requiresAcknowledgement, UUID createdBy) {

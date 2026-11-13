@@ -16,6 +16,7 @@ import com.jurislpo.jurisone.engine.PeopleRules.Location;
 import com.jurislpo.jurisone.engine.PeopleRules.Target;
 import com.jurislpo.jurisone.engine.Shifts;
 import com.jurislpo.jurisone.entity.EmployeeStatus;
+import com.jurislpo.jurisone.security.AuditTrail;
 import com.jurislpo.jurisone.security.CurrentUser;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -45,9 +46,12 @@ public class PeopleService {
     private final JurisTrackRosterTrigger rosterTrigger;
     private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
 
+    private final EmployeeNameDirectory nameDirectory;
+
     public PeopleService(PeopleRepository repo, TransactionTemplate transactionTemplate, ActorService actors, AuditService audit, PiiCrypto piiCrypto, SessionService sessions,
-                         com.jurislpo.jurisone.service.SubscriptionService subscriptions, JurisTrackRosterTrigger rosterTrigger, com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption) {
+                         com.jurislpo.jurisone.service.SubscriptionService subscriptions, JurisTrackRosterTrigger rosterTrigger, com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption, EmployeeNameDirectory nameDirectory) {
         this.emailEncryption = emailEncryption;
+        this.nameDirectory = nameDirectory;
         this.rosterTrigger = rosterTrigger;
         this.subscriptions = subscriptions;
         this.repo = repo;
@@ -68,7 +72,7 @@ public class PeopleService {
     public record Page(List<PersonRow> rows, int total, int page, int take, List<DepartmentSummary> departments, Map<String, Integer> counts, boolean seePay, boolean canAdd) {}
 
     public Page page(CurrentUser user, Map<String, String> queryParams) {
-        PeopleQuery peopleQuery = new PeopleQuery(queryParams, user.id());
+        PeopleQuery peopleQuery = new PeopleQuery(queryParams, user.id(), nameDirectory);
         Actor actor = actors.actor(user);
         List<PersonRow> rows = repo.findPage(peopleQuery, t -> PeopleRules.canToggleAccess(actor, t));
         Integer total = repo.count(peopleQuery);
@@ -95,18 +99,22 @@ public class PeopleService {
             args.add(departmentId);
         }
         if (!listParams.search().isEmpty()) {
-            conditions.add("(full_name ILIKE ? OR email ILIKE ? OR designation ILIKE ?)");
-            for (int i = 0; i < 3; i++) args.add(PeopleQuery.like(listParams.search()));
+            String search = listParams.search();
+            String nameMatch = nameDirectory.contains(EmployeeNameDirectory.Field.FULL_NAME, "id", "full_name", search, args);
+            args.add(PeopleQuery.like(search));
+            String designationMatch = nameDirectory.contains(EmployeeNameDirectory.Field.DESIGNATION, "id", "designation", search, args);
+            conditions.add("(" + nameMatch + " OR email ILIKE ? OR " + designationMatch + ")");
         }
         String where = conditions.isEmpty() ? "" : " WHERE " + String.join(" AND ", conditions);
         String direction = listParams.asc() ? "ASC" : "DESC";
+        List<Object> orderArgs = new ArrayList<>();
         String order = switch (listParams.sort()) {
             case "email" -> "email " + direction;
-            case "title" -> "designation " + direction + ", full_name ASC";
-            case "status" -> "status " + direction + ", full_name ASC";
-            default -> "full_name " + direction;
+            case "title" -> nameDirectory.orderBy(EmployeeNameDirectory.Field.DESIGNATION, "id", "designation", listParams.asc(), orderArgs) + ", " + nameDirectory.orderBy(EmployeeNameDirectory.Field.FULL_NAME, "id", "full_name", true, orderArgs);
+            case "status" -> "status " + direction + ", " + nameDirectory.orderBy(EmployeeNameDirectory.Field.FULL_NAME, "id", "full_name", true, orderArgs);
+            default -> nameDirectory.orderBy(EmployeeNameDirectory.Field.FULL_NAME, "id", "full_name", listParams.asc(), orderArgs);
         };
-        List<DirectoryRow> rows = repo.findDirectoryPage(where, order, args, listParams.take(), listParams.skip());
+        List<DirectoryRow> rows = repo.findDirectoryPage(where, order, args, orderArgs, listParams.take(), listParams.skip());
         Integer total = repo.countDirectory(where, args);
         Integer active = repo.countCurrent();
         List<DepartmentSummary> departments = repo.findActiveDepartments();
@@ -540,10 +548,11 @@ public class PeopleService {
             Map<String, Object> currentRow = current;
             UUID id = editId;
             Map<String, Object> before = new LinkedHashMap<>();
-            before.put("fullName", currentRow.get("full_name"));
+            before.put("fullName", AuditTrail.maskName((String) currentRow.get("full_name")));
+            before.put("code", currentRow.get("code"));
             before.put("fatherNameSet", currentRow.get("father_name") != null);
             before.put("email", currentRow.get("email"));
-            before.put("designation", currentRow.get("designation"));
+            before.put("designation", AuditTrail.maskName((String) currentRow.get("designation")));
             before.put("departmentId", textOrEmpty(currentRow.get("department_id")));
             before.put("reportingManagerId", textOrEmpty(currentRow.get("reporting_manager_id")));
             before.put("roleId", textOrEmpty(currentRow.get("role_id")));
@@ -554,10 +563,11 @@ public class PeopleService {
             before.put("paymentType", currentRow.get("payment_type"));
             before.put("gender", currentRow.get("gender"));
             Map<String, Object> after = new LinkedHashMap<>();
-            after.put("fullName", fullName);
+            after.put("code", currentRow.get("code"));
+            after.put("fullName", AuditTrail.maskName(fullName));
             after.put("fatherNameSet", !employeeInput.fatherName().isEmpty());
             after.put("email", email);
-            after.put("designation", employeeInput.designation());
+            after.put("designation", AuditTrail.maskName(employeeInput.designation()));
             after.put("departmentId", employeeInput.departmentId());
             after.put("reportingManagerId", managerId);
             after.put("roleId", employeeInput.roleId());
@@ -605,10 +615,10 @@ public class PeopleService {
             after.put("employmentType", blankToNull(employeeInput.employmentType()));
             after.put("paymentType", blankToNull(employeeInput.paymentType()));
             after.put("gender", blankToNull(employeeInput.gender()));
-            after.put("fullName", fullName);
+            after.put("fullName", AuditTrail.maskName(fullName));
             after.put("fatherNameSet", !employeeInput.fatherName().isEmpty());
             after.put("email", email);
-            after.put("designation", employeeInput.designation());
+            after.put("designation", AuditTrail.maskName(employeeInput.designation()));
             after.put("departmentId", employeeInput.departmentId());
             after.put("reportingManagerId", managerId);
             after.put("roleId", employeeInput.roleId());
@@ -668,7 +678,7 @@ public class PeopleService {
     public record Export(String filename, String body) {}
 
     public Export export(CurrentUser user, Map<String, String> queryParams) {
-        PeopleQuery peopleQuery = new PeopleQuery(queryParams);
+        PeopleQuery peopleQuery = new PeopleQuery(queryParams, nameDirectory);
         List<List<Object>> rows = repo.findExportRows(peopleQuery);
         Map<String, Object> after = new LinkedHashMap<>();
         after.put("rows", rows.size());

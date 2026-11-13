@@ -3,6 +3,7 @@ package com.jurislpo.jurisone.service;
 import com.jurislpo.jurisone.service.AttendanceService.AttendanceEmployee;
 import com.jurislpo.jurisone.engine.AttendanceEngine;
 import com.jurislpo.jurisone.engine.LeaveRules;
+import com.jurislpo.jurisone.engine.LeaveYear;
 import com.jurislpo.jurisone.engine.Num;
 import com.jurislpo.jurisone.engine.PeopleRules;
 import com.jurislpo.jurisone.entity.EmployeeStatus;
@@ -172,25 +173,29 @@ public class JobsService {
     }
 
     /**
-     * Monthly leave accrual (CL 1, EL 1.5 …) credited at the start of each month of the leave year, pro-rata in the
+     * Monthly leave accrual (CL 1, EL 1.5 …) credited at the start of each month of the business's leave year (from the month it starts in), pro-rata in the
      * joining month. Backfills any month not yet credited; one ledger row per employee, type and month
      * (refId "accrual:&lt;type&gt;:&lt;yyyy-mm&gt;").
      */
     public Map<String, Object> jobLeaveAccrual(Instant now) {
-        String yearMonth = today(now).toString().substring(0, 7);
-        String year = yearMonth.substring(0, 4);
+        LocalDate today = today(now);
+        SettingsService.LeavePolicy policy = settings.leave();
+        // the accrual months of the current leave year: from the month the year starts in, up to this month
+        YearMonth currentMonth = YearMonth.from(today);
+        YearMonth firstMonth = YearMonth.from(LeaveYear.of(today, policy.yearStartMonth(), policy.yearStartDay()).start());
         List<Map<String, Object>> types = repo.findAccruingTypes();
-        List<Map<String, Object>> employees = repo.findAccrualEmployees(Date.valueOf(YearMonth.parse(yearMonth).atEndOfMonth()));
+        List<Map<String, Object>> employees = repo.findAccrualEmployees(Date.valueOf(currentMonth.atEndOfMonth()));
         Set<String> done = repo.findAccrualKeys();
         int credited = 0;
         for (Map<String, Object> employee : employees) {
             LocalDate dateOfJoining = ((Date) employee.get("date_of_joining")).toLocalDate();
-            for (int monthNumber = 1; monthNumber <= Integer.parseInt(yearMonth.substring(5)); monthNumber++) {
-                String month = year + "-" + String.format(java.util.Locale.ROOT, "%02d", monthNumber);
+            for (YearMonth yearMonth = firstMonth; !yearMonth.isAfter(currentMonth); yearMonth = yearMonth.plusMonths(1)) {
+                String month = yearMonth.toString();
                 for (Map<String, Object> type : types) {
+                    // one row per employee, type and calendar month: a changed leave year can never credit a month twice
                     String refId = "accrual:" + type.get("code") + ":" + month;
                     if (done.contains(employee.get("id") + "|" + refId)) continue;
-                    double amount = LeaveRules.accrualFor(YearMonth.parse(month), dateOfJoining, ((BigDecimal) type.get("accrual_per_month")).doubleValue());
+                    double amount = LeaveRules.accrualFor(yearMonth, dateOfJoining, ((BigDecimal) type.get("accrual_per_month")).doubleValue());
                     if (amount > 0) {
                         repo.insertAccrual(employee.get("id"), type.get("code"), BigDecimal.valueOf(amount), refId, "Accrual " + month);
                         credited++;
@@ -224,39 +229,46 @@ public class JobsService {
         return Map.of("expired", expired);
     }
 
-    /** On 1 January: casual leave lapses, earned leave carries forward up to its cap. Once per year. */
+    /**
+     * When a leave year ends (the business's leave year, 1 January by default): each leave type collapses, carries forward in full or
+     * carries forward up to a cap, as the business chose (leave policy; without a choice the type's own default). Once per year.
+     */
     public Map<String, Object> jobLeaveYearEnd(Instant now) {
-        String previous = String.valueOf(today(now).getYear() - 1);
-        Integer runCount = repo.countYearEndRuns(previous);
+        SettingsService.LeavePolicy policy = settings.leave();
+        LeaveYear.Span ended = LeaveYear.before(today(now), policy.yearStartMonth(), policy.yearStartDay());
+        String year = ended.label();
+        // a start day that was changed after this year ended: the old calendar's year end is not processed
+        if (policy.yearStartChangedOn() != null && !ended.end().plusDays(1).isAfter(LocalDate.parse(policy.yearStartChangedOn()))) return Map.of("lapsed", 0);
+        Integer runCount = repo.countYearEndRuns(year);
         if (runCount != null && runCount > 0) return Map.of("lapsed", 0);
-        String firstYear = String.valueOf(attendanceService.policy().trackingStart().getYear());
-        if (previous.compareTo(firstYear) < 0) return Map.of("lapsed", 0);
-        List<Map<String, Object>> types = repo.findYearEndTypes();
-        Timestamp end = Timestamp.from(LocalDate.parse(previous + "-12-31").atTime(23, 59, 59).toInstant(ZoneOffset.UTC));
+        if (ended.end().isBefore(attendanceService.policy().trackingStart())) return Map.of("lapsed", 0);
+        Timestamp end = Timestamp.from(ended.end().atTime(23, 59, 59).toInstant(ZoneOffset.UTC));
         int lapsed = 0;
-        for (Map<String, Object> type : types) {
-            BigDecimal cap = (BigDecimal) type.get("carry_forward_cap");
-            List<Map<String, Object>> sums = repo.sumBalancesUntil(type.get("code"), end);
-            for (Map<String, Object> sumRow : sums) {
+        for (Map<String, Object> type : repo.findYearEndTypes()) {
+            LeavePolicyService.YearEnd yearEnd = LeavePolicyService.yearEndOf(policy, (String) type.get("code"), ((BigDecimal) type.get("carry_forward_cap")).doubleValue());
+            if (yearEnd.action() == LeaveYear.YearEndAction.CARRY_ALL) continue;
+            for (Map<String, Object> sumRow : repo.sumBalancesUntil(type.get("code"), end)) {
                 BigDecimal sum = (BigDecimal) sumRow.get("total_delta");
-                double amount = LeaveRules.yearEndLapse(Num.round2(sum == null ? 0 : sum.doubleValue()), cap.doubleValue());
+                double amount = LeaveYear.lapse(yearEnd.action(), Num.round2(sum == null ? 0 : sum.doubleValue()), yearEnd.carryForwardCap());
                 if (amount > 0) {
-                    // Prisma Decimal.toString(): "0" for zero
-                    String note = cap.compareTo(BigDecimal.ZERO) == 0 ? "Lapsed at year end" : "Above carry-forward cap";
-                    repo.insertYearEndLapse(sumRow.get("employee_id"), type.get("code"), BigDecimal.valueOf(-amount), "year_end:" + previous, note);
+                    String note = yearEnd.action() == LeaveYear.YearEndAction.COLLAPSE ? "Lapsed at year end" : "Above carry-forward cap";
+                    repo.insertYearEndLapse(sumRow.get("employee_id"), type.get("code"), BigDecimal.valueOf(-amount), "year_end:" + year, note);
                     lapsed++;
                 }
             }
         }
-        repo.insertYearEndRun(previous, "{\"lapsed\":" + lapsed + "}");
+        repo.insertYearEndRun(year, "{\"lapsed\":" + lapsed + "}");
         return Map.of("lapsed", lapsed);
     }
 
-    void logSummary(Map<String, Object> row) {
-        if (row.containsKey("skipped")) return;
-        @SuppressWarnings("unchecked")
-        List<String> locked = (List<String>) ((Map<String, Object>) row.get("lock")).get("locked");
-        log.info("[jobs] status {} · days {}{}", ((Map<?, ?>) row.get("status")).get("changed"), ((Map<?, ?>) row.get("finalize")).get("written"),
-                locked.isEmpty() ? "" : " · locked " + String.join(", ", locked));
+    /** Logs one line per business of a scheduled run (the result is keyed by business code). */
+    void logSummary(Map<String, Object> result) {
+        if (result.containsKey("skipped")) return;
+        for (Map.Entry<String, Object> entry : result.entrySet()) {
+            if (!(entry.getValue() instanceof Map<?, ?> row)) continue;
+            Object locked = ((Map<?, ?>) row.get("lock")).get("locked");
+            String lockedText = locked instanceof List<?> months && !months.isEmpty() ? " · locked " + String.join(", ", months.stream().map(String::valueOf).toList()) : "";
+            log.info("[jobs] {} status {} · days {}{}", entry.getKey(), ((Map<?, ?>) row.get("status")).get("changed"), ((Map<?, ?>) row.get("finalize")).get("written"), lockedText);
+        }
     }
 }

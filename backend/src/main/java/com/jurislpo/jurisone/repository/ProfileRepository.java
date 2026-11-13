@@ -11,17 +11,19 @@ import org.springframework.stereotype.Repository;
 public class ProfileRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public ProfileRepository(JdbcTemplate jdbc) {
+    public ProfileRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
     /** The employee row plus department, manager, role and shift names. */
     public Map<String, Object> findProfile(UUID id) {
-        return jdbc.queryForMap("""
-            SELECT e.*, d.name AS department_name, m.full_name AS manager, r.name AS role_name, s.name AS shift_name
+        return nameReader.resolve(jdbc.queryForMap("""
+            SELECT e.*, d.name AS department_name, m.full_name AS manager, m.full_name_enc AS manager_enc, r.name AS role_name, s.name AS shift_name
             FROM employees e JOIN roles r ON r.id = e.role_id LEFT JOIN departments d ON d.id = e.department_id
-            LEFT JOIN employees m ON m.id = e.reporting_manager_id LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.id = ?""", id);
+            LEFT JOIN employees m ON m.id = e.reporting_manager_id LEFT JOIN shifts s ON s.id = e.shift_id WHERE e.id = ?""", id), "full_name", "first_name", "last_name", "designation", "manager");
     }
 
     /** Stores (replaces) the employee's photo and stamps {@code employees.photo_updated_at}; returns the new stamp. */

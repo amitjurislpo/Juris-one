@@ -5,6 +5,7 @@ import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.engine.Format;
 import com.jurislpo.jurisone.engine.OnDutyRules;
 import com.jurislpo.jurisone.exception.ApiException;
+import com.jurislpo.jurisone.exception.ForbiddenException;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.repository.OnDutyRepository;
 import com.jurislpo.jurisone.repository.OnDutyRepository.Filter;
@@ -44,8 +45,8 @@ public class OnDutyService {
     static final DateTimeFormatter DAY_FIRST = DateTimeFormatter.ofPattern("dd-MM-yyyy", Locale.ROOT);
     static final List<String> STATUSES = List.of("PENDING", "APPROVED", "DECLINED", "CANCELLED");
 
-    /** The body of a new request: {@code toDate} makes a range, {@code part} is FULL, FIRST_HALF or SECOND_HALF (default FULL). */
-    public record CreateInput(String date, String toDate, String part, String location, String reason) {}
+    /** The body of a new request: {@code toDate} makes a range, {@code part} is FULL, FIRST_HALF or SECOND_HALF (default FULL), {@code employeeId} (Admin / HR only) raises it for that employee. */
+    public record CreateInput(String date, String toDate, String part, String location, String reason, String employeeId) {}
 
     /** One day of a request: whether it was made, and why not. */
     public record DayOutcome(String date, boolean ok, String message) {}
@@ -60,9 +61,11 @@ public class OnDutyService {
     private final AuditService audit;
     private final NotificationService notifications;
     private final TransactionTemplate transactionTemplate;
+    private final AttendanceApprovalPolicy approvalPolicy;
 
     public OnDutyService(AttendanceService attendanceService, OnDutyRepository repo, SettingsService settings, AuditService audit, NotificationService notifications,
-                         TransactionTemplate transactionTemplate) {
+                         TransactionTemplate transactionTemplate, AttendanceApprovalPolicy approvalPolicy) {
+        this.approvalPolicy = approvalPolicy;
         this.attendanceService = attendanceService;
         this.repo = repo;
         this.settings = settings;
@@ -86,7 +89,11 @@ public class OnDutyService {
 
     // ───────────────────────── make a request ─────────────────────────
 
-    /** Makes the signed-in employee's request (for one day, or one per day of the range). The employee is always the signed-in user, never an id the client sends. */
+    /**
+     * Makes the signed-in employee's request (for one day, or one per day of the range). Only Admin / HR ({@code appr.reg}) may name another employee of the
+     * same business in {@code employeeId}; the request is then approved at once, as the approver, and the employee is told. Anybody else naming another
+     * employee gets 403, and an employee of another business is "not found".
+     */
     public Created create(CurrentUser user, CreateInput input, String ipAddress) {
         if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input");
         LocalDate first = parseDate(input.date());
@@ -97,8 +104,17 @@ public class OnDutyService {
         String location = OnDutyRules.location(input.location());
         boolean isRange = !last.equals(first);
 
-        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", user.id());
-        if (employees.isEmpty()) throw new UserException(MyAttendanceService.NOT_TRACKED);
+        UUID subjectId = user.id();
+        if (!isBlank(input.employeeId())) {
+            UUID requested = Check.uuid(input.employeeId());
+            if (!requested.equals(user.id())) {
+                if (!user.can("appr.reg")) throw new ForbiddenException();
+                subjectId = requested;
+            }
+        }
+        boolean onBehalf = !subjectId.equals(user.id());
+        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", subjectId);
+        if (employees.isEmpty()) throw onBehalf ? new UserException(HttpStatus.NOT_FOUND, "Employee not found.") : new UserException(MyAttendanceService.NOT_TRACKED);
         AttendanceEmployee employee = employees.get(0);
 
         Instant now = Instant.now();
@@ -110,30 +126,31 @@ public class OnDutyService {
         UUID batchId = isRange ? UUID.randomUUID() : null;
         List<DayOutcome> outcomes = new ArrayList<>();
         List<LocalDate> made = new ArrayList<>();
+        List<LocalDate> waiting = new ArrayList<>(); // days now waiting for a decision (not auto-approved)
         for (DayView view : views) {
             LocalDate date = view.dayResult.date;
             try {
-                String problem = OnDutyRules.windowProblem(date, today, backDateLimitDays);
-                if (problem != null) throw new UserException(problem);
-                if (attendanceService.isMonthLocked(date.toString().substring(0, 7), policy, now)) throw new UserException("Attendance for this month is locked. Ask Finance to adjust LOP in payroll.");
-                problem = OnDutyRules.dayProblem(view.dayResult.status);
-                if (problem != null) throw new UserException(problem);
-                if (!repo.openStatus(employee.id(), date).isEmpty()) throw alreadyRequested(date);
+                checkDay(employee, date, view.dayResult.status, today, policy, now, backDateLimitDays, NO_REQUEST, onBehalf);
                 UUID id = UUID.randomUUID();
                 Map<String, Object> after = new LinkedHashMap<>();
                 after.put("date", date.toString());
                 after.put("part", part);
                 after.put("status", "PENDING");
                 if (batchId != null) after.put("batchId", batchId.toString());
+                if (onBehalf) {
+                    after.put("onBehalfOf", employee.id().toString()); // the actor is the audit row's actor; the employee it was raised for is named here
+                    after.put("employeeCode", employee.code());
+                }
                 try {
                     transactionTemplate.executeWithoutResult(transactionStatus -> {
                         repo.insert(new NewRequest(id, employee.id(), date, part, location, reason, user.id(), batchId));
-                        audit.log(user.id(), "attendance.on_duty_request", "on_duty_request", id.toString(), null, after, ipAddress);
+                        audit.log(user.id(), onBehalf ? "attendance.on_duty_request_on_behalf" : "attendance.on_duty_request", "on_duty_request", id.toString(), null, after, ipAddress);
                     });
                 } catch (DuplicateKeyException e) {
                     throw alreadyRequested(date); // two requests for the same day at the same moment: the database index decides
                 }
                 made.add(date);
+                if (!onBehalf || !autoApprove(user, id, employee, date, ipAddress)) waiting.add(date);
                 outcomes.add(new DayOutcome(date.toString(), true, "On Duty request added successfully"));
             } catch (ApiException e) {
                 if (!isRange) throw e;
@@ -141,18 +158,61 @@ public class OnDutyService {
             }
         }
         if (made.isEmpty()) throw new UserException(outcomes.get(0).message());
-        informApprovers(user, made);
+        informApprovers(user, employee, onBehalf, waiting);
         return new Created(isRange ? made.size() + " of " + outcomes.size() + " requests added" : "On Duty request added successfully", outcomes);
     }
 
-    /** A bell notification for every approver per day, and ONE email for the whole request. */
-    private void informApprovers(CurrentUser user, List<LocalDate> days) {
+    private static final UUID NO_REQUEST = new UUID(0, 0);
+
+    /**
+     * The rules every day of a request must meet, for a new request and for an edit alike (400/409/422): inside the window, month not locked, a working
+     * day, no other open request for the day (other than {@code exceptId}, the request being edited) and the monthly On Duty limit not used up.
+     */
+    private void checkDay(AttendanceEmployee employee, LocalDate date, com.jurislpo.jurisone.entity.DayStatus status, LocalDate today, AttendanceService.ResolvedAttendancePolicy policy,
+                          Instant now, int backDateLimitDays, UUID exceptId, boolean onBehalf) {
+        String problem = OnDutyRules.windowProblem(date, today, backDateLimitDays);
+        if (problem != null) throw new UserException(problem);
+        if (attendanceService.isMonthLocked(date.toString().substring(0, 7), policy, now)) throw new UserException("Attendance for this month is locked. Ask Finance to adjust LOP in payroll.");
+        problem = OnDutyRules.dayProblem(status);
+        if (problem != null) throw new UserException(problem);
+        if (!repo.openStatusExcept(employee.id(), date, exceptId).isEmpty()) throw alreadyRequested(date);
+        YearMonth month = YearMonth.from(date);
+        int limit = settings.regularization().onDutyMonthlyLimit();
+        if (repo.countUsed(employee.id(), month.atDay(1), month.atEndOfMonth(), exceptId) >= limit) {
+            throw new UserException((onBehalf ? "They have" : "You have") + " used all " + limit + " On Duty days for " + Format.monthLabel(month.toString()) + ".");
+        }
+    }
+
+    /**
+     * Admin / HR raised the request for the employee and the business setting {@code autoApprove} is on: approve it now, as the approver (the decision tells
+     * the employee), unless the approval rule forbids it (an HR person's request is decided by their manager). Returns false when it is not approved (for example a rule changed a moment ago); the request then simply stays pending for a normal decision, and the employee is told it was raised.
+     */
+    private boolean autoApprove(CurrentUser actor, UUID id, AttendanceEmployee employee, LocalDate date, String ipAddress) {
+        // the business setting (the same one as for regularization, off by default) decides; off = the request waits for a normal decision
+        if (!settings.regularization().autoApprove()) {
+            notifications.notify(employee.id(), actor.name() + " raised an On Duty request for you for " + Format.formatDayMonth(date), "/attendance?tab=on-duty");
+            return false;
+        }
+        try {
+            decide(actor, id.toString(), true, "Auto-approved: raised by " + actor.name() + " for the employee", ipAddress);
+            return true;
+        } catch (ApiException e) {
+            notifications.notify(employee.id(), actor.name() + " raised an On Duty request for you for " + Format.formatDayMonth(date), "/attendance?tab=on-duty");
+            return false;
+        }
+    }
+
+    /** A bell notification for every approver per waiting day, and ONE email for the whole request; the person who raised it is not told about their own request. */
+    private void informApprovers(CurrentUser actor, AttendanceEmployee employee, boolean onBehalf, List<LocalDate> days) {
+        if (days.isEmpty()) return;
         String span = days.size() == 1 ? Format.formatDayMonth(days.get(0)) : Format.formatDayMonth(days.get(0)) + " to " + Format.formatDayMonth(days.get(days.size() - 1)) + " (" + days.size() + " days)";
-        for (UUID approverId : repo.approverIds(user.id())) {
+        String who = onBehalf ? actor.name() + " raised an On Duty request for " + employee.name() : actor.name() + " asked for On Duty";
+        for (UUID approverId : approvalPolicy.approversOf(employee.id())) {
+            if (approverId.equals(actor.id())) continue;
             for (LocalDate day : days) {
-                notifications.notify(approverId, user.name() + " asked for On Duty on " + Format.formatDayMonth(day), "/attendance?tab=on-duty&scope=team");
+                notifications.notify(approverId, who + " on " + Format.formatDayMonth(day), "/attendance?tab=on-duty&scope=team");
             }
-            notifications.emailEmployee(approverId, name -> MailTemplates.onDutyRequested(name, user.name() + " asked for On Duty", span));
+            notifications.emailEmployee(approverId, name -> MailTemplates.onDutyRequested(name, who, span));
         }
     }
 
@@ -173,7 +233,7 @@ public class OnDutyService {
 
     // ───────────────────────── read ─────────────────────────
 
-    private static Filter filterOf(Map<String, String> queryParams, UUID employeeId) {
+    private static Filter filterOf(Map<String, String> queryParams, UUID employeeId, UUID hrReportsOf) {
         String status = ListParams.pick(queryParams, "status", STATUSES, "");
         LocalDate from = null, to = null;
         String month = ListParams.text(queryParams, "month", "");
@@ -187,16 +247,29 @@ public class OnDutyService {
         UUID requestedEmployee = employeeId;
         String employeeText = ListParams.text(queryParams, "employeeId", "");
         if (employeeId == null && !employeeText.isEmpty()) requestedEmployee = Check.uuid(employeeText);
-        return new Filter(requestedEmployee, status.isEmpty() ? null : status, from, to, ListParams.text(queryParams, "search", "").trim(), departmentId);
+        return new Filter(requestedEmployee, status.isEmpty() ? null : status, from, to, ListParams.text(queryParams, "search", "").trim(), departmentId, hrReportsOf);
     }
 
-    /** {@code scope=mine} (self) or {@code scope=all} (appr.reg; the whole business), filtered by status, month, search, departmentId, employeeId. */
+    /**
+     * {@code scope=mine} or {@code scope=all}, filtered by status, month, search, departmentId, employeeId. Scope all: Admin and HR ({@code appr.reg}) see the
+     * whole business; the reporting manager of an HR person sees (and decides) only the requests of those HR people; anybody else gets 403.
+     * {@code decidable}: the ids of the pending requests on the page that the signed-in user may decide (the server's rule, for the Approve / Reject buttons).
+     */
     public Map<String, Object> list(CurrentUser user, boolean everyone, Map<String, String> queryParams) {
-        Filter filter = filterOf(queryParams, everyone ? null : user.id());
+        UUID hrReportsOf = null;
+        if (everyone && !user.can("appr.reg")) {
+            if (!approvalPolicy.managesHr(user)) throw new ForbiddenException();
+            hrReportsOf = user.id();
+        }
+        Filter filter = filterOf(queryParams, everyone ? null : user.id(), hrReportsOf);
         ListParams page = ListParams.of(queryParams, List.of("date"), "date", PAGE_SIZE, "desc");
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("scope", everyone ? "all" : "mine");
-        out.put("items", repo.list(filter, page.skip(), page.take()));
+        List<Item> items = repo.list(filter, page.skip(), page.take());
+        Map<String, String> pending = new LinkedHashMap<>();
+        for (Item item : items) if ("PENDING".equals(item.status())) pending.put(item.id(), item.employeeId());
+        out.put("items", items);
+        out.put("decidable", approvalPolicy.decidableRequests(user, pending));
         out.put("total", repo.count(filter));
         out.put("page", page.page());
         out.put("pageSize", PAGE_SIZE);
@@ -206,8 +279,56 @@ public class OnDutyService {
     /** One request: its owner, or an approver; anybody else (another person, another business) gets "not found". */
     public Item details(CurrentUser user, String idRaw) {
         Item item = repo.find(Check.uuid(idRaw));
-        if (item == null || (!item.employeeId().equals(user.id().toString()) && !user.can("appr.reg"))) throw new UserException(HttpStatus.NOT_FOUND, "Request not found.");
+        if (item == null || (!item.employeeId().equals(user.id().toString()) && !user.can("appr.reg") && !approvalPolicy.mayDecide(user, UUID.fromString(item.employeeId())))) {
+            throw new UserException(HttpStatus.NOT_FOUND, "Request not found.");
+        }
         return item;
+    }
+
+    // ───────────────────────── edit ─────────────────────────
+
+    public record EditInput(String date, String part, String location, String reason) {}
+
+    /**
+     * Changes a request that is still pending. Only the person who raised it may (an employee their own, Admin / HR the one they raised for someone); every
+     * rule of a new request applies again; the first decision wins, so a request decided a moment ago answers 409. Audited with the old and new values.
+     */
+    public String edit(CurrentUser user, String idRaw, EditInput input, String ipAddress) {
+        UUID id = Check.uuid(idRaw);
+        if (input == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input");
+        List<Map<String, Object>> rows = repo.findForDecision(id);
+        if (rows.isEmpty() || !user.id().equals(rows.get(0).get("created_by"))) throw new UserException(HttpStatus.NOT_FOUND, "Request not found.");
+        Map<String, Object> row = rows.get(0);
+        if (!"PENDING".equals(row.get("status"))) throw new UserException("Only pending requests can be changed.");
+        UUID employeeId = (UUID) row.get("employee_id");
+        LocalDate date = isBlank(input.date()) ? ((Date) row.get("work_date")).toLocalDate() : parseDate(input.date());
+        String part = isBlank(input.part()) ? (String) row.get("part") : Check.oneOf(input.part(), OnDutyRules.PARTS);
+        String reason = OnDutyRules.reason(input.reason());
+        String location = OnDutyRules.location(input.location());
+        List<AttendanceEmployee> employees = attendanceService.loadAttendanceEmployees("e.id = ?", employeeId);
+        if (employees.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, "Employee not found.");
+        AttendanceEmployee employee = employees.get(0);
+        Instant now = Instant.now();
+        DayView view = attendanceService.attendanceFor(List.of(employee), date, date, now).get(employee.id()).get(0);
+        checkDay(employee, date, view.dayResult.status, attendanceService.currentWorkDate(employee, now), attendanceService.policy(), now, settings.regularization().backDateLimitDays(), id,
+                !employeeId.equals(user.id()));
+        Map<String, Object> before = new LinkedHashMap<>();
+        before.put("date", ((Date) row.get("work_date")).toLocalDate().toString());
+        before.put("part", row.get("part"));
+        Map<String, Object> after = new LinkedHashMap<>();
+        after.put("date", date.toString());
+        after.put("part", part);
+        after.put("reason", reason);
+        if (!employeeId.equals(user.id())) after.put("onBehalfOf", employeeId.toString());
+        try {
+            transactionTemplate.executeWithoutResult(transactionStatus -> {
+                if (repo.updatePending(id, date, part, location, reason) == 0) throw new ApiException(HttpStatus.CONFLICT, ALREADY_DECIDED, "This request was decided a moment ago.");
+                audit.log(user.id(), "attendance.on_duty_edit", "on_duty_request", id.toString(), before, after, ipAddress);
+            });
+        } catch (DuplicateKeyException e) {
+            throw alreadyRequested(date);
+        }
+        return "On Duty request updated";
     }
 
     // ───────────────────────── decide ─────────────────────────
@@ -217,6 +338,7 @@ public class OnDutyService {
      * refused for a locked month and for a day that has since become a holiday, weekly off or leave.
      */
     public String decide(CurrentUser user, String idRaw, Boolean approve, String noteRaw, String ipAddress) {
+        if (!user.can("appr.reg", "roles.manage") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
         UUID id = Check.uuid(idRaw);
         if (approve == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean, received undefined");
         String note = noteRaw == null ? null : noteRaw.trim();
@@ -226,7 +348,7 @@ public class OnDutyService {
         if (rows.isEmpty()) throw new UserException("Request not found.");
         Map<String, Object> row = rows.get(0);
         UUID employeeId = (UUID) row.get("employee_id");
-        if (employeeId.equals(user.id())) throw new UserException("You can't decide your own request.");
+        approvalPolicy.assertMayDecide(user, employeeId); // Admin may decide their own; HR's goes to HR's manager (or the Admin); never your own as HR
         if (!"PENDING".equals(row.get("status"))) throw new UserException("This request was already decided.");
         LocalDate date = ((Date) row.get("work_date")).toLocalDate();
         if (approve) {
@@ -257,6 +379,7 @@ public class OnDutyService {
 
     /** Several requests at once; each is decided on its own (one failing does not stop the others). */
     public List<DecisionResult> decideMany(CurrentUser user, List<String> ids, Boolean approve, String note, String ipAddress) {
+        if (!user.can("appr.reg") && !user.hasReports()) throw new ForbiddenException(); // only approvers and managers reach the approval rule
         if (ids == null || ids.isEmpty() || ids.size() > MAX_BULK) throw new UserException(HttpStatus.BAD_REQUEST, "Choose between 1 and " + MAX_BULK + " requests.");
         if (approve == null) throw new UserException(HttpStatus.BAD_REQUEST, "Invalid input: expected boolean, received undefined");
         if (!approve && isBlank(note)) throw new UserException(HttpStatus.BAD_REQUEST, "Enter the remarks for rejecting this request.");

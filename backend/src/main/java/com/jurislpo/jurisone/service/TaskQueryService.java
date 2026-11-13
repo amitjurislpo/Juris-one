@@ -5,7 +5,6 @@ import com.jurislpo.jurisone.engine.Mentions;
 import com.jurislpo.jurisone.engine.TaskAccess;
 import com.jurislpo.jurisone.engine.TaskAccess.TaskPermissions;
 import com.jurislpo.jurisone.exception.UserException;
-import com.jurislpo.jurisone.repository.PeopleQuery;
 import com.jurislpo.jurisone.repository.ProjectRepository.ProjectFacts;
 import com.jurislpo.jurisone.repository.TaskAttachmentRepository;
 import com.jurislpo.jurisone.repository.TaskListRepository;
@@ -40,9 +39,11 @@ public class TaskQueryService {
     private final TaskActivityService activity;
     private final ProjectService projects;
     private final AuditService audit;
+    private final EmployeeNameDirectory nameDirectory;
 
     public TaskQueryService(TaskListRepository lists, TaskRepository tasks, WorkflowStatusRepository statuses, TaskAttachmentRepository attachments,
-                            TaskService taskService, TaskActivityService activity, ProjectService projects, AuditService audit) {
+                            TaskService taskService, TaskActivityService activity, ProjectService projects, AuditService audit, EmployeeNameDirectory nameDirectory) {
+        this.nameDirectory = nameDirectory;
         this.lists = lists;
         this.tasks = tasks;
         this.statuses = statuses;
@@ -51,6 +52,10 @@ public class TaskQueryService {
         this.activity = activity;
         this.projects = projects;
         this.audit = audit;
+    }
+
+    private TaskQuery query(Map<String, String> queryParams, UUID viewerId, boolean isTaskAdmin, TaskQuery.Scope scope, int depth, boolean isDueFilterApplied) {
+        return new TaskQuery(queryParams, viewerId, isTaskAdmin, scope, depth, isDueFilterApplied, nameDirectory);
     }
 
     /** Adds {@code labels: [{id, name, color}]} to every TaskRow (one query for the page). */
@@ -79,13 +84,13 @@ public class TaskQueryService {
 
     /** {@code GET /api/tasks}: every task the user can see (the Owner: all), filtered. */
     public Map<String, Object> list(CurrentUser user, Map<String, String> queryParams) {
-        return page(new TaskQuery(queryParams, user.id(), ProjectService.isTaskAdmin(user), TaskQuery.Scope.VISIBLE, 2, true));
+        return page(query(queryParams, user.id(), ProjectService.isTaskAdmin(user), TaskQuery.Scope.VISIBLE, 2, true));
     }
 
     /** {@code GET /api/tasks/mine}: my tasks by relation, with the due bucket counts (open tasks by default). */
     public Map<String, Object> mine(CurrentUser user, Map<String, String> queryParams) {
-        Map<String, Object> out = page(new TaskQuery(queryParams, user.id(), ProjectService.isTaskAdmin(user), TaskQuery.Scope.MINE, 2, true));
-        out.put("counts", lists.bucketCounts(new TaskQuery(queryParams, user.id(), ProjectService.isTaskAdmin(user), TaskQuery.Scope.MINE, 2, false)));
+        Map<String, Object> out = page(query(queryParams, user.id(), ProjectService.isTaskAdmin(user), TaskQuery.Scope.MINE, 2, true));
+        out.put("counts", lists.bucketCounts(query(queryParams, user.id(), ProjectService.isTaskAdmin(user), TaskQuery.Scope.MINE, 2, false)));
         return out;
     }
 
@@ -98,7 +103,7 @@ public class TaskQueryService {
             boolean isMember = employeeId.matches("^[0-9a-fA-F-]{36}$") && lists.isInTeam(user.id(), UUID.fromString(employeeId), depth);
             params.put("assigneeId", isMember ? employeeId : UUID.randomUUID().toString()); // someone outside the team: nothing
         }
-        Map<String, Object> out = page(new TaskQuery(params, user.id(), ProjectService.isTaskAdmin(user), TaskQuery.Scope.TEAM, depth, true));
+        Map<String, Object> out = page(query(params, user.id(), ProjectService.isTaskAdmin(user), TaskQuery.Scope.TEAM, depth, true));
         out.put("people", lists.findTeamPeople(user.id(), depth));
         return out;
     }
@@ -108,12 +113,12 @@ public class TaskQueryService {
         UUID projectId = TaskInputs.optionalUuid(ListParams.text(queryParams, "projectId", ""), "Invalid UUID");
         if (projectId != null) projects.visible(user, projectId);
         String search = ListParams.text(queryParams, "search", "").trim();
-        return lists.findAssignees(projectId, search.isEmpty() ? null : PeopleQuery.like(search));
+        return lists.findAssignees(projectId, search.isEmpty() ? null : search);
     }
 
     /** One TaskRow, read without the list's visibility rule (the caller checked the access). */
     Map<String, Object> row(CurrentUser user, UUID taskId) {
-        TaskQuery query = new TaskQuery(Map.of(), user.id(), true, TaskQuery.Scope.PROJECT, 2, false).restrictToTask(taskId);
+        TaskQuery query = query(Map.of(), user.id(), true, TaskQuery.Scope.PROJECT, 2, false).restrictToTask(taskId);
         List<Map<String, Object>> rows = withLabels(lists.findRows(query));
         if (rows.isEmpty()) throw new UserException(HttpStatus.NOT_FOUND, TaskService.NOT_FOUND);
         return rows.get(0);
@@ -155,7 +160,7 @@ public class TaskQueryService {
         subtaskParams.put("sort", "createdAt");
         subtaskParams.put("pageSize", "100");
         subtaskParams.put("isArchivedProjectIncluded", "true");
-        out.put("subtasks", withLabels(lists.findRows(new TaskQuery(subtaskParams, user.id(), ProjectService.isTaskAdmin(user), TaskQuery.Scope.VISIBLE, 2, true))));
+        out.put("subtasks", withLabels(lists.findRows(query(subtaskParams, user.id(), ProjectService.isTaskAdmin(user), TaskQuery.Scope.VISIBLE, 2, true))));
         out.put("checklist", tasks.findChecklist(taskId));
         List<Map<String, Object>> files = new ArrayList<>();
         for (Map<String, Object> attachment : attachments.findForTask(taskId)) {
@@ -193,13 +198,13 @@ public class TaskQueryService {
         openParams.put("statusCategory", "TODO,IN_PROGRESS");
         Map<String, String> doneParams = new HashMap<>(openParams);
         doneParams.put("statusCategory", "DONE");
-        TaskQuery open = new TaskQuery(openParams, user.id(), true, TaskQuery.Scope.PROJECT, 2, true);
-        TaskQuery done = new TaskQuery(doneParams, user.id(), true, TaskQuery.Scope.PROJECT, 2, true).restrictToCompleted(doneWithinDays, true);
+        TaskQuery open = query(openParams, user.id(), true, TaskQuery.Scope.PROJECT, 2, true);
+        TaskQuery done = query(doneParams, user.id(), true, TaskQuery.Scope.PROJECT, 2, true).restrictToCompleted(doneWithinDays, true);
         List<Map<String, Object>> cards = new ArrayList<>(withLabels(lists.findBoard(open, BOARD_OPEN_LIMIT)));
         cards.addAll(withLabels(lists.findBoard(done, BOARD_DONE_LIMIT)));
         Map<UUID, Long> counts = new HashMap<>(lists.countByStatus(open));
         counts.putAll(lists.countByStatus(done));
-        boolean hasMoreDone = lists.count(new TaskQuery(doneParams, user.id(), true, TaskQuery.Scope.PROJECT, 2, true).restrictToCompleted(doneWithinDays, false)) > 0;
+        boolean hasMoreDone = lists.count(query(doneParams, user.id(), true, TaskQuery.Scope.PROJECT, 2, true).restrictToCompleted(doneWithinDays, false)) > 0;
 
         List<Map<String, Object>> columns = new ArrayList<>();
         for (StatusRow status : statuses.findSet(projectId)) {

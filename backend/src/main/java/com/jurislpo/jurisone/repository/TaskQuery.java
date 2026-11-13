@@ -3,6 +3,7 @@ package com.jurislpo.jurisone.repository;
 import com.jurislpo.jurisone.common.ListParams;
 import com.jurislpo.jurisone.engine.TaskDueDates;
 import com.jurislpo.jurisone.engine.TaskKeys;
+import com.jurislpo.jurisone.service.EmployeeNameDirectory;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -81,12 +82,12 @@ public final class TaskQuery {
                t.parent_task_id::text AS "parentTaskId", CASE WHEN pp.id IS NULL THEN NULL ELSE pp.key || '-' || pt.number END AS "parentKey",
                t.title AS "title", t.type AS "type", t.status_id::text AS "statusId", s.name AS "statusName", s.category AS "statusCategory", s.color AS "statusColor",
                t.priority AS "priority",
-               t.assignee_id::text AS "assigneeId", ae.full_name AS "assigneeName", ae.code AS "assigneeCode", %s AS "assigneePhoto",
+               t.assignee_id::text AS "assigneeId", ae.full_name AS "assigneeName", ae.full_name_enc AS "assigneeName_enc", ae.code AS "assigneeCode", %s AS "assigneePhoto",
                CASE WHEN ae.id IS NULL THEN NULL ELSE ae.status <> 'EXITED' END AS "isAssigneeActive",
-               t.indirect_assignee_id::text AS "indirectAssigneeId", ie.full_name AS "indirectAssigneeName", ie.code AS "indirectAssigneeCode", %s AS "indirectAssigneePhoto",
+               t.indirect_assignee_id::text AS "indirectAssigneeId", ie.full_name AS "indirectAssigneeName", ie.full_name_enc AS "indirectAssigneeName_enc", ie.code AS "indirectAssigneeCode", %s AS "indirectAssigneePhoto",
                CASE WHEN ie.id IS NULL THEN NULL ELSE ie.status <> 'EXITED' END AS "isIndirectAssigneeActive",
                CASE WHEN t.assignee_id = ? THEN 'DIRECT' WHEN t.indirect_assignee_id = ? THEN 'INDIRECT' END AS "myAssignment",
-               t.reporter_id::text AS "reporterId", re.full_name AS "reporterName",
+               t.reporter_id::text AS "reporterId", re.full_name AS "reporterName", re.full_name_enc AS "reporterName_enc",
                t.start_date::text AS "startDate", t.due_date::text AS "dueDate", to_char(t.due_time, 'HH24:MI') AS "dueTime", tz.zone AS "dueTimeZone",
                t.estimate_minutes AS "estimateMinutes", t.reminder_before_minutes AS "reminderBeforeMinutes", %s AS "isOverdue",
                subtasks.total AS "subtaskCount", subtasks.done AS "subtaskDoneCount", checklist.total AS "checklistCount", checklist.done AS "checklistDoneCount",
@@ -102,6 +103,7 @@ public final class TaskQuery {
     private final List<Object> args = new ArrayList<>();
     private final UUID viewerId;
     private final String orderBy;
+    private final List<Object> orderArgs = new ArrayList<>();
 
     /**
      * @param viewerId    the signed-in employee
@@ -110,7 +112,7 @@ public final class TaskQuery {
      * @param depth       reporting-line depth for {@link Scope#TEAM} (and 2 for "manager of the assignee" visibility)
      * @param isDueFilterApplied false to ignore {@code due} (the bucket counts of My tasks)
      */
-    public TaskQuery(Map<String, String> queryParams, UUID viewerId, boolean isTaskAdmin, Scope scope, int depth, boolean isDueFilterApplied) {
+    public TaskQuery(Map<String, String> queryParams, UUID viewerId, boolean isTaskAdmin, Scope scope, int depth, boolean isDueFilterApplied, EmployeeNameDirectory nameDirectory) {
         this.viewerId = viewerId;
         listParams = ListParams.of(queryParams, SORTS, "dueDate", pageSize(queryParams), "asc");
         pageSize = listParams.take();
@@ -141,7 +143,7 @@ public final class TaskQuery {
         }
         boolean isOpenByDefault = scope == Scope.MINE || scope == Scope.TEAM;
         addFilters(queryParams, isOpenByDefault, isDueFilterApplied, scope == Scope.PROJECT);
-        orderBy = orderBy(listParams);
+        orderBy = orderBy(listParams, nameDirectory, orderArgs);
     }
 
     static int pageSize(Map<String, String> queryParams) {
@@ -244,7 +246,7 @@ public final class TaskQuery {
         if (!query.isEmpty()) add("t.search_vector @@ to_tsquery('simple', ?)", query);
     }
 
-    static String orderBy(ListParams listParams) {
+    static String orderBy(ListParams listParams, EmployeeNameDirectory nameDirectory, List<Object> orderArgs) {
         String direction = listParams.asc() ? "ASC" : "DESC";
         String order = switch (listParams.sort()) {
             case "priority" -> "CASE t.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END " + direction
@@ -254,7 +256,7 @@ public final class TaskQuery {
             case "key" -> "p.key " + direction + " NULLS LAST, t.number " + direction;
             case "title" -> "lower(t.title) " + direction;
             case "status" -> "CASE s.category WHEN 'TODO' THEN 0 WHEN 'IN_PROGRESS' THEN 1 ELSE 2 END " + direction + ", s.position " + direction;
-            case "assignee" -> "ae.full_name " + direction + " NULLS LAST";
+            case "assignee" -> nameDirectory.orderBy(EmployeeNameDirectory.Field.FULL_NAME, "ae.id", "ae.full_name", listParams.asc(), orderArgs);
             // a date-only task is due at the end of its day, so it sorts after the timed tasks of that day; no due date last
             default -> listParams.asc() ? "t.due_date ASC NULLS LAST, t.due_time ASC NULLS LAST" : "t.due_date DESC NULLS LAST, t.due_time DESC NULLS FIRST";
         };
@@ -287,6 +289,7 @@ public final class TaskQuery {
         all.add(viewerId);
         all.add(viewerId);
         all.addAll(args);
+        all.addAll(orderArgs);
         all.add(listParams.take());
         all.add(listParams.skip());
         return all.toArray();

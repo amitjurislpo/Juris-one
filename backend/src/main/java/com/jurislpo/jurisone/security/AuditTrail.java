@@ -69,6 +69,17 @@ public final class AuditTrail {
         return trimmedEmail.charAt(0) + "***" + trimmedEmail.substring(atIndex);
     }
 
+    /** J*** K***: the first letter of each word, enough to recognise a person next to the employee code in the same row, not enough to read the name. */
+    public static String maskName(String name) {
+        if (name == null || name.isBlank()) return "";
+        StringBuilder masked = new StringBuilder();
+        for (String word : name.trim().split("\s+")) {
+            if (masked.length() > 0) masked.append(' ');
+            masked.appendCodePoint(word.codePointAt(0)).append("***");
+        }
+        return masked.toString();
+    }
+
     /** Adds a fact to this request's audit row. */
     @SuppressWarnings("unchecked")
     public static void hint(HttpServletRequest request, String key, Object value) {

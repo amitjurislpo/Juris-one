@@ -88,11 +88,11 @@ public class RegularizationController {
         return ApiResult.success(created.message(), created.days());
     }
 
-    /** ?scope=mine|all&status=&month=YYYY-MM&search=&departmentId=&employeeId=&page=; scope=all needs appr.reg. */
+    /** ?scope=mine|all&status=&month=YYYY-MM&search=&departmentId=&employeeId=&page=; scope=all: appr.reg sees everyone, the manager of an HR person sees that HR person's requests. */
     @GetMapping("/api/v1/attendance/regularizations")
     public ApiResult<Map<String, Object>> list(@RequestParam Map<String, String> queryParams) {
         boolean everyone = "all".equals(queryParams.get("scope"));
-        return ApiResult.success(regularizations.list(auth.assertPerm(everyone ? "appr.reg" : "self"), everyone, queryParams));
+        return ApiResult.success(regularizations.list(auth.assertPerm(everyone ? new String[0] : new String[] {"self"}), everyone, queryParams));
     }
 
     @GetMapping("/api/v1/attendance/regularizations/export")
@@ -104,6 +104,12 @@ public class RegularizationController {
     @GetMapping("/api/v1/attendance/regularizations/{id}")
     public ApiResult<Item> details(@PathVariable String id) {
         return ApiResult.success(regularizations.details(auth.assertPerm("self", "appr.reg"), id));
+    }
+
+    /** Changes a request that is still pending (only the person who raised it). */
+    @PatchMapping("/api/v1/attendance/regularizations/{id}")
+    public ApiResult<Void> edit(@PathVariable String id, @RequestBody RegularizationService.EditInput body, HttpServletRequest request) {
+        return ApiResult.message(regularizations.edit(auth.assertPerm("self"), id, body, RequestMeta.of(request).ipAddress()));
     }
 
     @DeleteMapping("/api/v1/attendance/regularizations/{id}")
@@ -123,7 +129,7 @@ public class RegularizationController {
     /** Approve or reject several requests at once ({ids, approve, note}); one result per request. */
     @PostMapping("/api/v1/attendance/regularization-decisions")
     public ApiResult<List<DecisionResult>> decideMany(@RequestBody BulkDecisionBody body, HttpServletRequest request) {
-        return ApiResult.success(regularizations.decideMany(auth.assertPerm("appr.reg"), body.ids(), body.approve(), body.note(), RequestMeta.of(request).ipAddress()));
+        return ApiResult.success(regularizations.decideMany(auth.assertPerm(), body.ids(), body.approve(), body.note(), RequestMeta.of(request).ipAddress()));
     }
 
     /** The rules (back-date limit, monthly limit, attachment) with my use of the month (?month=YYYY-MM) and the reasons. */

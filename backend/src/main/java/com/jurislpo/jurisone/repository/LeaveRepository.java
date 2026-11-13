@@ -18,13 +18,15 @@ import org.springframework.stereotype.Repository;
 public class LeaveRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
     /** Still on probation (or not yet joined): earned leave isn't available. */
     public boolean onProbation(UUID employeeId) {
         return !jdbc.queryForList("SELECT 1 FROM employees WHERE id = ? AND status IN ('PROBATION', 'ONBOARDING')", employeeId).isEmpty();
     }
 
-    public LeaveRepository(JdbcTemplate jdbc) {
+    public LeaveRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -113,13 +115,13 @@ public class LeaveRepository {
     public List<RequestRow> findRequests(UUID employeeId, String status, String timeZone) {
         return jdbc.query("""
             SELECT l.id::text AS id, t.name AS type_name, l.leave_type, l.from_date, l.to_date, l.part::text AS part, l.days, l.lop_days, l.applied_at,
-                   l.reason, l.status::text AS status, d.full_name AS decided_by
+                   l.reason, l.status::text AS status, d.full_name AS decided_by, d.full_name_enc AS decided_by_enc
             FROM leave_requests l JOIN leave_types t ON t.code = l.leave_type LEFT JOIN employees d ON d.id = l.decided_by
             WHERE l.employee_id = ? AND (? = 'All' OR l.status::text = ?)""",
                 (resultSet, i) -> new RequestRow(resultSet.getString("id"), resultSet.getString("type_name"), resultSet.getString("leave_type"), resultSet.getDate("from_date").toLocalDate().toString(),
                         resultSet.getDate("to_date").toLocalDate().toString(), resultSet.getString("part"), resultSet.getBigDecimal("days").doubleValue(),
                         resultSet.getBigDecimal("lop_days").doubleValue(), Format.isoInZone(resultSet.getTimestamp("applied_at").toInstant(), timeZone).toString(),
-                        resultSet.getString("reason"), resultSet.getString("status"), resultSet.getString("decided_by"), resultSet.getTimestamp("applied_at").toInstant()),
+                        resultSet.getString("reason"), resultSet.getString("status"), nameReader.read(resultSet, "decided_by"), resultSet.getTimestamp("applied_at").toInstant()),
                 employeeId, status, status);
     }
 

@@ -54,6 +54,15 @@ class NavTest {
     }
 
     @Test
+    @DisplayName("shows Leave policy to Admin and HR, not to a plain employee or Finance")
+    void leavePolicy() {
+        assertThat(visible(ADMIN, false)).contains("leave-policy");
+        assertThat(visible(HR_MANAGER, false)).contains("leave-policy");
+        assertThat(visible(EMPLOYEE, false)).doesNotContain("leave-policy");
+        assertThat(visible(FIN_EXEC, false)).doesNotContain("leave-policy");
+    }
+
+    @Test
     @DisplayName("shows My team only with active direct reports")
     void team() {
         assertThat(visible(EMPLOYEE, false)).doesNotContain("team");

@@ -108,9 +108,4 @@ public final class LeaveRules {
         }
         return out;
     }
-
-    /** Year-end: casual leave lapses entirely; earned leave carries forward up to the cap. */
-    public static double yearEndLapse(double balance, double carryForwardCap) {
-        return round2(Math.max(0, balance - carryForwardCap));
-    }
 }

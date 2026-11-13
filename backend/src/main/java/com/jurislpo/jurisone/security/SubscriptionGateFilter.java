@@ -23,7 +23,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * A business can be used only while a subscription covers today.
  * <ul>
  *   <li>Not started yet, or never had one: sign-in is refused (see AuthService); a session that already exists gets 402
- *       {@code SUBSCRIPTION_INACTIVE} on every API except sign-out / refresh, who-am-I and the shell.</li>
+ *       {@code SUBSCRIPTION_INACTIVE} on every API except sign-out / refresh, who-am-I, the shell and the owner's Subscription page and employee export.</li>
  *   <li>Ended: read-only. Every read (and the exports) works; every write answers 402 {@code SUBSCRIPTION_INACTIVE},
  *       except signing out / refreshing the session and marking notifications read.</li>
  * </ul>
@@ -38,6 +38,8 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
 
     /** Reachable with no usable subscription at all (not started / none). */
     static final List<String> OPEN = List.of(PREFIX + "/auth/", PREFIX + "/me", PREFIX + "/shell");
+    /** Exact paths, reads only, with no usable subscription: what the "paused" screen links to (the owner permission is still checked). Nothing else under them, and no write, gets through. */
+    static final List<String> OPEN_FOR_READ = List.of(PREFIX + "/business/subscription", PREFIX + "/business/employees/export");
     /** Still writable once the subscription has ended. */
     static final List<String> WRITABLE_WHEN_ENDED = List.of(PREFIX + "/auth/", PREFIX + "/notifications", PREFIX + "/audit/page-views"); // page views are only recorded
 
@@ -52,7 +54,7 @@ public class SubscriptionGateFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        return !uri.startsWith(PREFIX_SLASH) || OPEN.stream().anyMatch(uri::startsWith);
+        return !uri.startsWith(PREFIX_SLASH) || OPEN.stream().anyMatch(uri::startsWith) || (isRead(request) && OPEN_FOR_READ.contains(uri));
     }
 
     @Override

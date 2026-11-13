@@ -1,6 +1,8 @@
 package com.jurislpo.jurisone.repository;
 
 import com.jurislpo.jurisone.common.ListParams;
+import com.jurislpo.jurisone.service.EmployeeNameDirectory;
+import com.jurislpo.jurisone.service.EmployeeNameDirectory.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,21 +27,23 @@ public final class PeopleQuery {
     public final String where;
     public final List<Object> args = new ArrayList<>();
     public final String orderBy;
+    /** Values the {@link #orderBy} binds (the name ranking when names are sorted in memory); they come after the {@link #args}. */
+    public final List<Object> orderArgs = new ArrayList<>();
 
     /** Prisma {@code contains, mode: insensitive} → ILIKE with the LIKE wildcards escaped. */
     public static String like(String search) {
         return "%" + search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
     }
 
-    public PeopleQuery(Map<String, String> queryParams) {
-        this(queryParams, null);
+    public PeopleQuery(Map<String, String> queryParams, EmployeeNameDirectory names) {
+        this(queryParams, null, names);
     }
 
     /**
      * Owners (the business admin) are never listed or exported; {@code viewer} (the signed-in person) is left out of
      * their own list.
      */
-    public PeopleQuery(Map<String, String> queryParams, java.util.UUID viewer) {
+    public PeopleQuery(Map<String, String> queryParams, java.util.UUID viewer, EmployeeNameDirectory names) {
         listParams = ListParams.of(queryParams, SORTS, "name");
         String status = ListParams.pick(queryParams, "status", STATUS, "Current");
         String access = ListParams.pick(queryParams, "access", ACCESS, "All");
@@ -64,21 +68,31 @@ public final class PeopleQuery {
             args.add(department);
         }
         if (!listParams.search().isEmpty()) {
-            conditions.add("(e.full_name ILIKE ? OR e.code ILIKE ? OR e.email ILIKE ? OR e.designation ILIKE ? OR m.full_name ILIKE ?)");
-            for (int i = 0; i < 5; i++) args.add(like(listParams.search()));
+            String search = listParams.search();
+            String nameMatch = names.contains(Field.FULL_NAME, "e.id", "e.full_name", search, args);
+            args.add(like(search));
+            args.add(like(search));
+            String designationMatch = names.contains(Field.DESIGNATION, "e.id", "e.designation", search, args);
+            String managerMatch = names.contains(Field.FULL_NAME, "m.id", "m.full_name", search, args);
+            conditions.add("(" + nameMatch + " OR e.code ILIKE ? OR e.email ILIKE ? OR " + designationMatch + " OR " + managerMatch + ")");
         }
         where = conditions.isEmpty() ? "" : " WHERE " + String.join(" AND ", conditions);
         String direction = listParams.asc() ? "ASC" : "DESC";
+        boolean isAscending = listParams.asc();
         orderBy = " ORDER BY " + switch (listParams.sort()) {
             case "code" -> "e.code " + direction;
-            case "department" -> "d.name " + direction + ", e.full_name ASC";
-            case "manager" -> "m.full_name " + direction + ", e.full_name ASC";
-            case "location" -> "e.region " + direction + ", e.time_zone " + direction + ", e.full_name ASC";
-            case "role" -> "r.name " + direction + ", e.full_name ASC";
-            case "status" -> "e.status " + direction + ", e.full_name ASC";
-            case "access" -> "e.portal_access " + direction + ", e.full_name ASC";
+            case "department" -> "d.name " + direction + nameTieBreak(names);
+            case "manager" -> names.orderBy(Field.FULL_NAME, "m.id", "m.full_name", isAscending, orderArgs) + nameTieBreak(names);
+            case "location" -> "e.region " + direction + ", e.time_zone " + direction + nameTieBreak(names);
+            case "role" -> "r.name " + direction + nameTieBreak(names);
+            case "status" -> "e.status " + direction + nameTieBreak(names);
+            case "access" -> "e.portal_access " + direction + nameTieBreak(names);
             case "dateOfJoining" -> "e.date_of_joining " + direction;
-            default -> "e.full_name " + direction;
+            default -> names.orderBy(Field.FULL_NAME, "e.id", "e.full_name", isAscending, orderArgs);
         };
+    }
+
+    private String nameTieBreak(EmployeeNameDirectory names) {
+        return ", " + names.orderBy(Field.FULL_NAME, "e.id", "e.full_name", true, orderArgs);
     }
 }

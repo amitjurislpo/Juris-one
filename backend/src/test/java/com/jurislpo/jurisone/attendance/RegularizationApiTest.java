@@ -311,7 +311,8 @@ class RegularizationApiTest extends IntegrationTest {
         assertThat(results.get(1).get("ok").asBoolean()).isTrue();
         assertThat(results.get(2).get("ok").asBoolean()).isFalse(); // HR can't approve their own
         mockMvc.perform(write(post("/api/v1/attendance/regularization-decisions")).cookie(hr.cookie()).content("{\"ids\":[],\"approve\":true}")).andExpect(status().isBadRequest());
-        mockMvc.perform(write(put("/api/v1/attendance/regularizations/" + idOf(hr, day) + "/decision")).cookie(secondHr.cookie()).content("{\"approve\":true}")).andExpect(status().isOk());
+        // HR's own request is not another HR person's to decide: it goes to HR's reporting manager (the Admin when there is none)
+        mockMvc.perform(write(put("/api/v1/attendance/regularizations/" + idOf(hr, day) + "/decision")).cookie(secondHr.cookie()).content("{\"approve\":true}")).andExpect(status().isForbidden());
     }
 
     @Test

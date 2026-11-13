@@ -15,8 +15,10 @@ public class TaskCommentRepository {
     public record CommentRow(UUID id, UUID authorId, String body, List<Object> mentionedEmployeeIds, boolean isDeleted) {}
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public TaskCommentRepository(JdbcTemplate jdbc) {
+    public TaskCommentRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -27,13 +29,13 @@ public class TaskCommentRepository {
 
     /** One page, oldest first; a deleted comment has no body and no mentions. */
     public List<Map<String, Object>> findPage(UUID taskId, int limit, int offset) {
-        return JdbcRows.normalize(jdbc.queryForList("""
-            SELECT c.id::text AS "id", c.author_id::text AS "authorId", a.full_name AS "authorName", (extract(epoch FROM a.photo_updated_at) * 1000)::bigint AS "authorPhoto",
+        return nameReader.resolveAll(JdbcRows.normalize(jdbc.queryForList("""
+            SELECT c.id::text AS "id", c.author_id::text AS "authorId", a.full_name AS "authorName", a.full_name_enc AS "authorName_enc", (extract(epoch FROM a.photo_updated_at) * 1000)::bigint AS "authorPhoto",
                    CASE WHEN c.deleted_at IS NULL THEN c.body END AS "body",
                    CASE WHEN c.deleted_at IS NULL THEN c.mentioned_employee_ids ELSE '{}'::uuid[] END AS "mentionedEmployeeIds",
                    %s AS "createdAt", %s AS "editedAt", c.deleted_at IS NOT NULL AS "isDeleted"
             FROM task_comments c JOIN employees a ON a.id = c.author_id WHERE c.task_id = ? ORDER BY c.created_at, c.id LIMIT ? OFFSET ?"""
-                .formatted(TaskQuery.iso("c.created_at"), TaskQuery.iso("c.edited_at")), taskId, limit, offset));
+                .formatted(TaskQuery.iso("c.created_at"), TaskQuery.iso("c.edited_at")), taskId, limit, offset)), "authorName");
     }
 
     public int count(UUID taskId) {

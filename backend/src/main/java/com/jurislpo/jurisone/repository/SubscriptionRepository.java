@@ -20,8 +20,10 @@ import org.springframework.stereotype.Repository;
 public class SubscriptionRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public SubscriptionRepository(JdbcTemplate jdbc) {
+    public SubscriptionRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -167,8 +169,9 @@ public class SubscriptionRepository {
 
     /** Owners of the current business with portal access who haven't exited (id, full_name, email), by name. */
     public List<Map<String, Object>> findOwners() {
-        return jdbc.queryForList("""
-            SELECT e.id, e.full_name, e.email FROM employees e JOIN roles r ON r.id = e.role_id
-            WHERE r.key = 'owner' AND e.status <> 'EXITED' AND e.portal_access ORDER BY e.full_name""");
+        return nameReader.resolveAll(jdbc.queryForList("""
+            SELECT e.id, e.full_name, e.full_name_enc, e.email FROM employees e JOIN roles r ON r.id = e.role_id
+            WHERE r.key = 'owner' AND e.status <> 'EXITED' AND e.portal_access"""), "full_name").stream()
+                .sorted(java.util.Comparator.comparing(row -> (String) row.get("full_name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
     }
 }

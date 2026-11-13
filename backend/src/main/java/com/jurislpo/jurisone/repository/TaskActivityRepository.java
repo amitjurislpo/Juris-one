@@ -11,8 +11,10 @@ import org.springframework.stereotype.Repository;
 public class TaskActivityRepository {
 
     private final JdbcTemplate jdbc;
+    private final com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader;
 
-    public TaskActivityRepository(JdbcTemplate jdbc) {
+    public TaskActivityRepository(JdbcTemplate jdbc, com.jurislpo.jurisone.crypto.EmployeeNameReader nameReader) {
+        this.nameReader = nameReader;
         this.jdbc = jdbc;
     }
 
@@ -24,10 +26,10 @@ public class TaskActivityRepository {
 
     /** One page, newest first; {@code before} / {@code after} as JSON text. */
     public List<Map<String, Object>> findPage(UUID taskId, int limit, int offset) {
-        return JdbcRows.parseJson(jdbc.queryForList("""
-            SELECT a.id::text AS "id", a.kind AS "kind", e.full_name AS "actorName", a.before::text AS "before", a.after::text AS "after", %s AS "occurredAt"
+        return JdbcRows.parseJson(nameReader.resolveAll(jdbc.queryForList("""
+            SELECT a.id::text AS "id", a.kind AS "kind", e.full_name AS "actorName", e.full_name_enc AS "actorName_enc", a.before::text AS "before", a.after::text AS "after", %s AS "occurredAt"
             FROM task_activity a LEFT JOIN employees e ON e.id = a.actor_id WHERE a.task_id = ? ORDER BY a.occurred_at DESC, a.id LIMIT ? OFFSET ?"""
-                .formatted(TaskQuery.iso("a.occurred_at")), taskId, limit, offset), "before", "after");
+                .formatted(TaskQuery.iso("a.occurred_at")), taskId, limit, offset), "actorName"), "before", "after");
     }
 
     public int count(UUID taskId) {

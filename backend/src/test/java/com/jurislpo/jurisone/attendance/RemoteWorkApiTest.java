@@ -276,7 +276,7 @@ class RemoteWorkApiTest extends IntegrationTest {
         mockMvc.perform(get(URL + "/" + reportRequest).cookie(finance.cookie())).andExpect(status().isNotFound());
         // a manager can look but not decide
         mockMvc.perform(write(put(URL + "/" + reportRequest + "/decision")).cookie(manager.cookie()).content("{\"approve\":true}")).andExpect(status().isForbidden());
-        mockMvc.perform(write(post("/api/v1/attendance/remote-work-decisions")).cookie(manager.cookie()).content("{\"ids\":[\"" + reportRequest + "\"],\"approve\":true}")).andExpect(status().isForbidden());
+        mockMvc.perform(write(post("/api/v1/attendance/remote-work-decisions")).cookie(manager.cookie()).content("{\"ids\":[\"" + reportRequest + "\"],\"approve\":true}")).andExpect(jsonPath("$.data[0].ok").value(false)); // a manager who is not an approver decides nothing
         assertThat(statusOf(reportRequest)).isEqualTo("PENDING");
         mockMvc.perform(get(URL + "?scope=team")).andExpect(status().isUnauthorized());
     }
@@ -314,7 +314,8 @@ class RemoteWorkApiTest extends IntegrationTest {
         assertThat(results.get(1).get("ok").asBoolean()).isTrue();
         assertThat(results.get(2).get("ok").asBoolean()).isFalse(); // HR can't approve their own
         assertThat(statusOf(own)).isEqualTo("PENDING");
-        mockMvc.perform(write(put(URL + "/" + own + "/decision")).cookie(secondHr.cookie()).content("{\"approve\":true}")).andExpect(status().isOk());
+        // HR's own request is not another HR person's to decide (it goes to HR's manager, or the Admin)
+        mockMvc.perform(write(put(URL + "/" + own + "/decision")).cookie(secondHr.cookie()).content("{\"approve\":true}")).andExpect(status().isForbidden());
         // empty, too many, missing flag, not a uuid
         mockMvc.perform(write(post("/api/v1/attendance/remote-work-decisions")).cookie(hr.cookie()).content("{\"ids\":[],\"approve\":true}")).andExpect(status().isBadRequest());
         mockMvc.perform(write(post("/api/v1/attendance/remote-work-decisions")).cookie(hr.cookie()).content("{\"ids\":[\"" + first + "\"]}")).andExpect(status().isBadRequest());
@@ -344,5 +345,41 @@ class RemoteWorkApiTest extends IntegrationTest {
         assertThat(list(hr, "?scope=team&month=" + date.minusMonths(3).toString().substring(0, 7)).get("total").asInt()).isZero();
         assertThat(list(hr, "?scope=team&status=APPROVED").get("total").asInt()).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM remote_work_requests", Integer.class)).isGreaterThan(0);
+    }
+
+    @Test
+    void adminAndHrRaiseRemoteWorkForAnEmployeeAndItIsApprovedAtOnce() throws Exception {
+        Person employee = person(employeeRole), colleague = person(employeeRole), hr = person(hrRole), secondHr = person(hrRole);
+        TestData stranger = data.inBusiness("remote-work-other");
+        Person outsider = person(stranger, stranger.role("employee", "self", "dir"));
+        LocalDate date = workday(3);
+        String plain = body(date, date, "Internet repair at home");
+        // the business setting autoApprove is on (it is off by default: see AttendanceRequestRulesApiTest)
+        jdbc.update("""
+            INSERT INTO settings (business_id, key, value, updated_at) VALUES (?, 'attendance.regularization', '{"autoApprove":true}', now())
+            ON CONFLICT (business_id, key) DO UPDATE SET value = EXCLUDED.value""", data.business());
+        mockMvc.perform(write(post(URL)).cookie(colleague.cookie()).content(withEmployee(plain, employee.id().toString()))).andExpect(status().isForbidden());
+        mockMvc.perform(write(post(URL)).cookie(hr.cookie()).content(withEmployee(plain, outsider.id().toString()))).andExpect(status().isNotFound());
+        mockMvc.perform(write(post(URL)).cookie(hr.cookie()).content(withEmployee(plain, "1' OR '1'='1"))).andExpect(status().isBadRequest());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM remote_work_requests WHERE employee_id IN (?, ?)", Integer.class, employee.id(), outsider.id())).isZero();
+
+        mockMvc.perform(write(post(URL)).cookie(hr.cookie()).content(withEmployee(plain, employee.id().toString()))).andExpect(status().isCreated());
+        String id = jdbc.queryForObject("SELECT id::text FROM remote_work_requests WHERE employee_id = ?", String.class, employee.id());
+        assertThat(jdbc.queryForObject("SELECT status::text FROM remote_work_requests WHERE id = ?::uuid", String.class, id)).isEqualTo("APPROVED");
+        assertThat(jdbc.queryForObject("SELECT created_by FROM remote_work_requests WHERE id = ?::uuid", UUID.class, id)).isEqualTo(hr.id());
+        assertThat(jdbc.queryForObject("SELECT decided_by FROM remote_work_requests WHERE id = ?::uuid", UUID.class, id)).isEqualTo(hr.id());
+        assertThat(jdbc.queryForObject("SELECT actor_id FROM audit_log WHERE action = 'remote_work.request_on_behalf' AND entity_id = ?", UUID.class, id)).isEqualTo(hr.id());
+        assertThat(jdbc.queryForObject("SELECT after->>'onBehalfOf' FROM audit_log WHERE action = 'remote_work.request_on_behalf' AND entity_id = ?", String.class, id)).isEqualTo(employee.id().toString());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'remote_work.approve' AND entity_id = ?", Integer.class, id)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE employee_id = ? AND link LIKE '/attendance?tab=remote-work%'", Integer.class, employee.id())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM notifications WHERE employee_id = ? AND link = '/attendance?scope=team&tab=remote-work'", Integer.class, secondHr.id())).isZero();
+        // an overlapping request for the same employee is refused
+        mockMvc.perform(write(post(URL)).cookie(secondHr.cookie()).content(withEmployee(plain, employee.id().toString()))).andExpect(status().isConflict());
+        // the employee sees it as approved in their own list
+        mockMvc.perform(get(URL).queryParam("scope", "mine").cookie(employee.cookie())).andExpect(jsonPath("$.data.items[0].status").value("APPROVED"));
+    }
+
+    static String withEmployee(String body, String employeeId) {
+        return body.replace("{", "{\"employeeId\":\"" + employeeId + "\",");
     }
 }

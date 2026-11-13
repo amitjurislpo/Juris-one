@@ -46,7 +46,11 @@ public class ShellService {
     private final InboxService inbox;
     private final EmployeeOnboardingService onboarding;
 
-    public ShellService(ShellRepository repo, com.jurislpo.jurisone.service.SubscriptionService subscriptions, InboxService inbox, EmployeeOnboardingService onboarding) {
+    private final AttendanceApprovalPolicy approvalPolicy;
+
+    public ShellService(ShellRepository repo, com.jurislpo.jurisone.service.SubscriptionService subscriptions, InboxService inbox, EmployeeOnboardingService onboarding,
+                        AttendanceApprovalPolicy approvalPolicy) {
+        this.approvalPolicy = approvalPolicy;
         this.onboarding = onboarding;
         this.repo = repo;
         this.inbox = inbox;
@@ -62,7 +66,9 @@ public class ShellService {
         }
 
         int pendingLeave = user.can("appr.leave") ? count(repo.countPendingLeave(user.id())) : 0;
-        int pendingReg = user.can("appr.reg") ? count(repo.countPendingRegularizations(user.id())) : 0;
+        // the Attendance queue of Approvals holds regularization, On Duty and Remote Work requests (the last two only those this user may decide)
+        AttendanceApprovalPolicy.PendingCounts attendancePending = user.businessId() == null ? null : approvalPolicy.pendingFor(user);
+        int pendingReg = user.can("appr.reg") ? count(repo.countPendingRegularizations(user.id())) + (attendancePending == null ? 0 : attendancePending.onDuty() + attendancePending.remoteWork()) : 0;
         int proofs = user.can("proofs.verify") ? count(repo.countPendingProofs(user.id())) : 0;
         int pending = pendingLeave + pendingReg;
 
@@ -90,6 +96,8 @@ public class ShellService {
         Map<String, Integer> badges = new LinkedHashMap<>();
         badges.put("approvals", pending);
         badges.put("proofs", proofs);
+        // Attendance: pending regularization / On Duty / remote work requests waiting for THIS user to decide (the server's approval rule)
+        badges.put("attendanceRequests", attendancePending == null ? 0 : attendancePending.total());
         // My tasks: my open tasks (direct or indirect assignee) that are overdue or due today, in each task's time zone
         badges.put("myTasks", user.businessId() != null && user.navAllowed("my-tasks") ? repo.countMyTasksDueByToday(user.id()) : 0);
         String businessName = user.businessId() == null ? null : repo.businessName(user.businessId());
