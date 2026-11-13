@@ -23,6 +23,9 @@ public abstract class IntegrationTest {
         registry.add("spring.datasource.url", PG::getJdbcUrl);
         registry.add("spring.datasource.username", PG::getUsername);
         registry.add("spring.datasource.password", PG::getPassword);
+        // cached Spring contexts stay alive for the whole run: small pools keep the one Postgres under its 100-connection limit ("too many clients" late in the suite)
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "6");
+        registry.add("spring.datasource.hikari.minimum-idle", () -> "1");
         // the JurisTrack gateway talks to a local stub and signs with a key made for the run
         registry.add("jurisone.juristrack.enabled", () -> "true");
         registry.add("jurisone.juristrack.base-url", JurisTrackStub::baseUrl);
