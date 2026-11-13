@@ -261,11 +261,14 @@ public class JobsService {
         return Map.of("lapsed", lapsed);
     }
 
-    void logSummary(Map<String, Object> row) {
-        if (row.containsKey("skipped")) return;
-        @SuppressWarnings("unchecked")
-        List<String> locked = (List<String>) ((Map<String, Object>) row.get("lock")).get("locked");
-        log.info("[jobs] status {} · days {}{}", ((Map<?, ?>) row.get("status")).get("changed"), ((Map<?, ?>) row.get("finalize")).get("written"),
-                locked.isEmpty() ? "" : " · locked " + String.join(", ", locked));
+    /** Logs one line per business of a scheduled run (the result is keyed by business code). */
+    void logSummary(Map<String, Object> result) {
+        if (result.containsKey("skipped")) return;
+        for (Map.Entry<String, Object> entry : result.entrySet()) {
+            if (!(entry.getValue() instanceof Map<?, ?> row)) continue;
+            Object locked = ((Map<?, ?>) row.get("lock")).get("locked");
+            String lockedText = locked instanceof List<?> months && !months.isEmpty() ? " · locked " + String.join(", ", months.stream().map(String::valueOf).toList()) : "";
+            log.info("[jobs] {} status {} · days {}{}", entry.getKey(), ((Map<?, ?>) row.get("status")).get("changed"), ((Map<?, ?>) row.get("finalize")).get("written"), lockedText);
+        }
     }
 }
