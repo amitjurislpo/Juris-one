@@ -36,7 +36,7 @@ public class PayrollOperationsRepository {
         return jdbc.query("""
             SELECT full_name, full_name_enc FROM employees e WHERE region = 'IN' AND status <> 'EXITED' AND date_of_joining <= ?
               AND NOT EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?)""",
-                (resultSet, i) -> nameReader.read(resultSet, "full_name"), Date.valueOf(lastDay), Date.valueOf(lastDay)).stream().sorted(com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER).toList();
+                (resultSet, i) -> nameReader.read(resultSet, "full_name"), Date.valueOf(lastDay), Date.valueOf(lastDay)).stream().sorted(com.jurislpo.jurisone.common.NameOrder.INSTANCE).toList();
     }
 
     public void insertOpenRun(UUID id, String month) {

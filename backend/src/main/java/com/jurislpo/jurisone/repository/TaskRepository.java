@@ -229,7 +229,7 @@ public class TaskRepository {
         return nameReader.resolveAll(jdbc.queryForList("""
             SELECT w.employee_id::text AS "employeeId", e.full_name AS "name", e.full_name_enc AS "name_enc", (extract(epoch FROM e.photo_updated_at) * 1000)::bigint AS "photo"
             FROM task_watchers w JOIN employees e ON e.id = w.employee_id WHERE w.task_id = ? """, taskId), "name").stream()
-                .sorted(java.util.Comparator.comparing(row -> (String) row.get("name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
+                .sorted(java.util.Comparator.comparing(row -> (String) row.get("name"), com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     // ── checklist ──

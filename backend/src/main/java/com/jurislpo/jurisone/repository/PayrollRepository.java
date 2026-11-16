@@ -44,7 +44,7 @@ public class PayrollRepository {
             FROM employees e LEFT JOIN departments d ON d.id = e.department_id
             WHERE e.region = 'IN' AND e.date_of_joining <= ? AND (e.exit_date IS NULL OR e.exit_date >= ?)
               AND EXISTS (SELECT 1 FROM salary_structures s WHERE s.employee_id = e.id AND s.effective_from <= ?)""" + idFilter + "", args), "full_name", "designation").stream()
-                .sorted(java.util.Comparator.comparing(row -> (String) row.get("full_name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
+                .sorted(java.util.Comparator.comparing(row -> (String) row.get("full_name"), com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     /** India and company-wide holidays in [first, last]. */

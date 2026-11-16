@@ -187,7 +187,7 @@ public class PolicyRepository {
             return row;
         }, versionId, policyId).stream()
                 .sorted(java.util.Comparator.comparing((Map<String, Object> row) -> row.get("acknowledgedAt") != null)
-                        .thenComparing(row -> (String) row.get("name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
+                        .thenComparing(row -> (String) row.get("name"), com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     public void insert(UUID id, String title, String body, boolean requiresAcknowledgement, UUID createdBy) {

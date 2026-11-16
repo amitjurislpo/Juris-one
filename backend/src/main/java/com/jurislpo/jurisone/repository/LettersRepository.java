@@ -54,7 +54,7 @@ public class LettersRepository {
         return nameReader.resolveAll(jdbc.queryForList("""
             SELECT e.id, e.code, e.full_name, e.full_name_enc, e.designation, e.designation_enc, e.status::text AS status, e.exit_date FROM employees e JOIN roles r ON r.id = e.role_id
             WHERE r.key NOT IN ('owner', 'super_admin')"""), "full_name", "designation").stream()
-                .sorted(java.util.Comparator.comparing(row -> (String) row.get("full_name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
+                .sorted(java.util.Comparator.comparing(row -> (String) row.get("full_name"), com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     public List<Map<String, Object>> employee(UUID id) {

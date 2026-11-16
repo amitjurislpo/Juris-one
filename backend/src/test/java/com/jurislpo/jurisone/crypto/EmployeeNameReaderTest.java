@@ -64,7 +64,7 @@ class EmployeeNameReaderTest {
         row.put("owners", new ArrayList<>(List.of("p1", "p2", "p3")));
         row.put("owners_enc", new ArrayList<>(java.util.Arrays.asList(CRYPTO.encrypt("Zed"), null, CRYPTO.encrypt("Amit"))));
         reader.resolveNameLists(List.of(row), "owners");
-        assertThat(row).containsEntry("owners", List.of("Amit", "Zed", "p2")).doesNotContainKey("owners_enc");
+        assertThat(row).containsEntry("owners", List.of("Amit", "p2", "Zed")).doesNotContainKey("owners_enc");
         assertThat(reader.fallbackCount()).isEqualTo(1);
     }
 

@@ -38,7 +38,7 @@ public class DepartmentsRepository {
     public List<Person> findHeadCandidates() {
         return jdbc.query("SELECT id, full_name, full_name_enc, designation, designation_enc FROM employees WHERE status <> 'EXITED'",
                 (resultSet, i) -> new Person(resultSet.getString("id"), nameReader.read(resultSet, "full_name"), nameReader.read(resultSet, "designation"))).stream()
-                .sorted(java.util.Comparator.comparing(Person::name, com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
+                .sorted(java.util.Comparator.comparing(Person::name, com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     /** id and archived_at of the department with this name, ignoring case (at most one). */

@@ -1,5 +1,6 @@
 package com.jurislpo.jurisone.service;
 
+import com.jurislpo.jurisone.common.NameOrder;
 import com.jurislpo.jurisone.crypto.EmployeeNameReader;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.repository.EmployeeNameRepository;
@@ -89,12 +90,16 @@ public class EmployeeNameDirectory {
 
     /** An ORDER BY term that sorts rows by {@code field}, ascending or descending, with the value it needs appended to {@code args}. */
     public String orderBy(Field field, String idColumn, String plainColumn, boolean isAscending, List<Object> args) {
-        if (!isInMemory()) return plainColumn + " " + (isAscending ? "ASC" : "DESC");
+        if (!isInMemory()) {
+            String term = plainColumn + " COLLATE \"" + NameOrder.SQL_COLLATION + "\" " + (isAscending ? "ASC" : "DESC");
+            // equal names are told apart by id, as the in-memory ranking does (a designation is always followed by a name term, which adds it)
+            return field == Field.FULL_NAME ? term + ", " + idColumn : term;
+        }
         List<Entry> ordered = new ArrayList<>(snapshot());
-        Comparator<Entry> byField = Comparator.comparing(field == Field.FULL_NAME ? Entry::fullName : Entry::designation, EmployeeNameReader.NAME_ORDER);
+        Comparator<Entry> byField = Comparator.comparing(field == Field.FULL_NAME ? Entry::fullName : Entry::designation, NameOrder.NULLS_LAST);
         // The direction is applied here, not by the database, so that ties keep their own order (name ascending, then id) as the plaintext SQL does with its tie-break.
         // The list position is then always read ascending; a row that is not in the list (no manager) is placed like the database places a NULL: last when ascending, first when descending.
-        ordered.sort((isAscending ? byField : byField.reversed()).thenComparing(Entry::fullName, EmployeeNameReader.NAME_ORDER).thenComparing(Entry::id));
+        ordered.sort((isAscending ? byField : byField.reversed()).thenComparing(Entry::fullName, NameOrder.NULLS_LAST).thenComparing(entry -> entry.id().toString()));
         args.add(uuidArray(ordered.stream().map(Entry::id).toList()));
         return "array_position(?::uuid[], " + idColumn + ") ASC NULLS " + (isAscending ? "LAST" : "FIRST");
     }

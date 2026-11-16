@@ -18,7 +18,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Every email is recorded in {@code email_outbox}. With SMTP configured it is sent; without it (dev)
- * it is logged so sign-in codes and links can be copied. A failed send is recorded and never thrown.
+ * only a short line is logged (masked recipient, subject, body length; never the body, which has names, codes and links: read it in the table). A failed send is recorded and never thrown.
  */
 @Service
 public class MailService {
@@ -61,7 +61,8 @@ public class MailService {
         });
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         if (host == null || host.isBlank()) {
-            log.info("\n✉  [email:dev] to={}\n   subject={}\n   {}\n", to, content.subject(), content.text().replace("\n", "\n   "));
+            // Never the body: it holds the person's name and often a one-time code or link. The full text is in email_outbox (read it there in dev).
+            log.info("[email:dev] to={} subject={} bodyLength={}", LogMasking.mask(to), LogMasking.mask(content.subject()), content.text() == null ? 0 : content.text().length());
             repo.markDone(id, EmailStatus.LOGGED, java.sql.Timestamp.from(now));
             return;
         }

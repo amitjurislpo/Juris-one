@@ -68,7 +68,7 @@ public class AssetRepository {
     /** Active employees (id, code, name) the manager can assign to. */
     public List<Map<String, Object>> findAssignees() {
         return nameReader.resolveAll(jdbc.queryForList("SELECT id::text AS \"id\", code AS \"code\", full_name AS \"name\", full_name_enc AS \"name_enc\" FROM employees WHERE status <> 'EXITED'"), "name").stream()
-                .sorted(Comparator.comparing(row -> (String) row.get("name"), EmployeeNameReader.NAME_ORDER)).toList();
+                .sorted(Comparator.comparing(row -> (String) row.get("name"), com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     public boolean assignable(UUID employeeId) {

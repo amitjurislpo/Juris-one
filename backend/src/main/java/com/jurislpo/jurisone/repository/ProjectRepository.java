@@ -166,7 +166,7 @@ public class ProjectRepository {
             FROM project_members m JOIN employees e ON e.id = m.employee_id WHERE m.project_id = ?
             ORDER BY CASE m.role WHEN 'OWNER' THEN 0 WHEN 'MEMBER' THEN 1 ELSE 2 END""", projectId), "name", "designation").stream()
                 .sorted(java.util.Comparator.comparingInt((Map<String, Object> row) -> "OWNER".equals(row.get("role")) ? 0 : "MEMBER".equals(row.get("role")) ? 1 : 2)
-                        .thenComparing(row -> (String) row.get("name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
+                        .thenComparing(row -> (String) row.get("name"), com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     public String findMemberRole(UUID projectId, UUID employeeId) {

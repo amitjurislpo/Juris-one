@@ -69,7 +69,7 @@ public class AttendanceRepository {
                 resultSet.getString("shift_code") == null ? new Shift(defaultShift.code(), defaultShift.name(), defaultShift.startLocal(), defaultShift.endLocal(), grace)
                         : new Shift(resultSet.getString("shift_code"), resultSet.getString("shift_name"), resultSet.getString("start_local"), resultSet.getString("end_local"), grace), List.of()),
                 args);
-        employees.sort(Comparator.comparing(AttendanceEmployee::name, EmployeeNameReader.NAME_ORDER));
+        employees.sort(Comparator.comparing(AttendanceEmployee::name, com.jurislpo.jurisone.common.NameOrder.INSTANCE));
         if (employees.isEmpty()) return employees;
         Map<UUID, List<ShiftPeriod>> periods = new HashMap<>();
         jdbc.query("""

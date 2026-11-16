@@ -143,7 +143,7 @@ public class PeopleRepository {
     /** Names of the manager's current direct reports. */
     public List<String> findCurrentReportNames(UUID managerId) {
         return jdbc.query("SELECT full_name, full_name_enc FROM employees WHERE reporting_manager_id = ? AND status <> 'EXITED'", (resultSet, i) -> nameReader.read(resultSet, "full_name"), managerId).stream()
-                .sorted(EmployeeNameReader.NAME_ORDER).toList();
+                .sorted(com.jurislpo.jurisone.common.NameOrder.INSTANCE).toList();
     }
 
     public Map<String, Object> findContactEnc(UUID id) {
@@ -233,7 +233,7 @@ public class PeopleRepository {
             WHERE e.status <> 'EXITED' AND (?::uuid IS NULL OR e.id <> ?::uuid)""",
                 (resultSet, i) -> new Manager(resultSet.getString("id"), nameReader.read(resultSet, "full_name"),
                         nameReader.read(resultSet, "designation") + (resultSet.getString("department_name") != null ? " · " + resultSet.getString("department_name") : "")),
-                excludeId, excludeId).stream().sorted(Comparator.comparing(Manager::name, EmployeeNameReader.NAME_ORDER)).toList();
+                excludeId, excludeId).stream().sorted(Comparator.comparing(Manager::name, com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     /** Every role with its permission count, by creation. */
