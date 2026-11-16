@@ -50,7 +50,7 @@ public class AuditViewRepository {
     public List<Option> actorOptions() {
         return jdbc.query("SELECT e.id::text AS id, e.full_name, e.full_name_enc, e.code FROM employees e WHERE EXISTS (SELECT 1 FROM audit_log a WHERE a.actor_id = e.id) LIMIT 1000",
                 (resultSet, i) -> new Option(resultSet.getString("id"), nameReader.read(resultSet, "full_name") + " (" + resultSet.getString("code") + ")")).stream()
-                .sorted(Comparator.comparing(Option::label, EmployeeNameReader.NAME_ORDER)).toList();
+                .sorted(Comparator.comparing(Option::label, com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     /** "Name (code)" by employee id (text). */

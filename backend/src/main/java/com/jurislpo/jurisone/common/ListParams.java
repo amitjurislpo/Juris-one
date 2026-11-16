@@ -52,6 +52,7 @@ public record ListParams(String search, String sort, String sortDirection, int p
             if (firstKey == null && secondKey == null) return 0;
             if (firstKey == null) return -1;
             if (secondKey == null) return 1;
+            if (firstKey instanceof String firstText && secondKey instanceof String secondText) return NameOrder.INSTANCE.compare(firstText, secondText);
             return Integer.signum(firstKey.compareTo(secondKey));
         };
         return asc() ? comparator : comparator.reversed();

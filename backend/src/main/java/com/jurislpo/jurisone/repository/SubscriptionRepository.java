@@ -172,6 +172,6 @@ public class SubscriptionRepository {
         return nameReader.resolveAll(jdbc.queryForList("""
             SELECT e.id, e.full_name, e.full_name_enc, e.email FROM employees e JOIN roles r ON r.id = e.role_id
             WHERE r.key = 'owner' AND e.status <> 'EXITED' AND e.portal_access"""), "full_name").stream()
-                .sorted(java.util.Comparator.comparing(row -> (String) row.get("full_name"), com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
+                .sorted(java.util.Comparator.comparing(row -> (String) row.get("full_name"), com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 }

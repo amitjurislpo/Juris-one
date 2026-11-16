@@ -2,7 +2,7 @@ package com.jurislpo.jurisone.crypto;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.Comparator;
+import com.jurislpo.jurisone.common.NameOrder;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
@@ -26,12 +26,6 @@ public class EmployeeNameReader {
     private static final Logger log = LoggerFactory.getLogger(EmployeeNameReader.class);
     private static final String ENCRYPTED_SUFFIX = "_enc";
     private static final long LOG_EVERY = 1000;
-
-    /**
-     * How names are ordered in lists: by character code, which is what {@code ORDER BY} did on the database the app runs on (the "C" collation of the
-     * postgres:16-alpine image), so switching the encrypted reads on does not reorder a list.
-     */
-    public static final Comparator<String> NAME_ORDER = Comparator.nullsFirst(Comparator.<String>naturalOrder());
 
     private final PiiCrypto piiCrypto;
     private final boolean isReadEncrypted;
@@ -96,7 +90,7 @@ public class EmployeeNameReader {
                 if (!(row.get(column) instanceof List<?> plain)) continue;
                 List<String> names = new java.util.ArrayList<>(plain.size());
                 for (int i = 0; i < plain.size(); i++) names.add(read((String) plain.get(i), encrypted == null ? null : (String) encrypted.get(i)));
-                names.sort(NAME_ORDER);
+                names.sort(NameOrder.INSTANCE);
                 row.put(column, names);
             }
         }

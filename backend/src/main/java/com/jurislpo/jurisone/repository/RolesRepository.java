@@ -41,7 +41,7 @@ public class RolesRepository {
     public List<Member> findCurrentMembers(UUID roleId) {
         return jdbc.query("SELECT id, full_name, full_name_enc FROM employees WHERE status <> 'EXITED' AND (role_id = ? OR id IN (SELECT employee_id FROM employee_additional_roles WHERE role_id = ?))",
                 (resultSet, i) -> new Member(resultSet.getString("id"), nameReader.read(resultSet, "full_name")), roleId, roleId).stream()
-                .sorted(java.util.Comparator.comparing(Member::name, com.jurislpo.jurisone.crypto.EmployeeNameReader.NAME_ORDER)).toList();
+                .sorted(java.util.Comparator.comparing(Member::name, com.jurislpo.jurisone.common.NameOrder.INSTANCE)).toList();
     }
 
     /** Employees ever given the role, past ones included. */
