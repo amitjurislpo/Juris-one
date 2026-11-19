@@ -254,6 +254,13 @@ When a new India employee is added, Finance is notified: "salary structure pendi
   - holiday work adds a comp-off balance
 - Requests are only allowed before that month's attendance lock. Every write is in the audit log.
 
+**Attendance info (My attendance, Calendar view and day detail):**
+
+- The month payload (`GET /api/v1/attendance/mine`) gives every day a short **code** (P, A, P:A / A:P for a half day, O weekly off, H holiday, L leave, OD On Duty, empty = not here yet / no record) and a day type. **Half day rule:** P:A when the first check-in is before the middle of the shift (shift start to shift end), A:P otherwise. It also marks days whose late mark is part of a deduction (late marks are counted in date order; every complete group of the policy's late marks per half day costs half a day), days that used the grace period, the number of check-in / check-out sessions, and whether the day carries loss of pay. The month summary adds the average first-in to last-out time and the average worked time per day (over days with both a check-in and a check-out), the penalty days and the same two averages for the previous month.
+- **Day detail** (`GET /api/v1/attendance/mine/day-details/{date}`, own data only): shift, when the day was last processed, first in / last out, late and early minutes, total, break and actual (worked) time, shortfall and excess against the full-day hours, the remarks (check-out note or regularization reason), each session and every swipe (time, in / out, source, location).
+- **Access card number and punch mode (employee):** HR adds an employee's punch-machine card number (1 to 32 letters, digits or hyphens, unique inside the business) and may set the employee's own punch mode (web or punch machine); both are audited.
+- **Punch mode (business setting `attendance.policy.punchMode`):** MANUAL (default; employees check in and out on the web), MACHINE (attendance comes from the punch machine; the web check-in is refused with 422 and the check-in button is hidden) or PER_EMPLOYEE (each employee's own punch mode decides, default MANUAL). Existing businesses stay MANUAL. Feeding punches from the machine is a later part.
+
 **Remote work requests (Attendance page, tab "Remote Work Requests"):**
 
 - The employee asks to work remotely for a **range of days** (at most 31, first day not further back than the regularization back-date limit and not more than a year ahead) with a reason (up to 500 characters). Overlap with another pending or approved request of the same employee is refused (409 `REMOTE_WORK_ALREADY_REQUESTED`); rejected and withdrawn requests do not block.
