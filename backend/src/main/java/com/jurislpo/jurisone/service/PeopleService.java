@@ -36,6 +36,9 @@ public class PeopleService {
 
     static final String IST = "Asia/Kolkata";
 
+    /** The number of an employee's access card (punch-machine card): 1 to 32 capital letters, digits or hyphens (typed letters are upper-cased). */
+    static final java.util.regex.Pattern ACCESS_CARD_NUMBER = java.util.regex.Pattern.compile("^[A-Z0-9-]{1,32}$");
+
     private final PeopleRepository repo;
     private final TransactionTemplate transactionTemplate;
     private final ActorService actors;
@@ -47,9 +50,11 @@ public class PeopleService {
     private final com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption;
 
     private final EmployeeNameDirectory nameDirectory;
+    private final SettingsService settings;
 
     public PeopleService(PeopleRepository repo, TransactionTemplate transactionTemplate, ActorService actors, AuditService audit, PiiCrypto piiCrypto, SessionService sessions,
-                         com.jurislpo.jurisone.service.SubscriptionService subscriptions, JurisTrackRosterTrigger rosterTrigger, com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption, EmployeeNameDirectory nameDirectory) {
+                         com.jurislpo.jurisone.service.SubscriptionService subscriptions, JurisTrackRosterTrigger rosterTrigger, com.jurislpo.jurisone.crypto.EmployeeEmailEncryption emailEncryption, EmployeeNameDirectory nameDirectory, SettingsService settings) {
+        this.settings = settings;
         this.emailEncryption = emailEncryption;
         this.nameDirectory = nameDirectory;
         this.rosterTrigger = rosterTrigger;
@@ -126,7 +131,7 @@ public class PeopleService {
     public record Profile(String id, String code, String name, String fatherName, String email, String phone, String address, String pan, String aadhaar,
                           String uan, String designation, String department, String manager, List<String> reports, String dateOfJoining, String exitDate, String location,
                           boolean india, String shift, String role, String status, boolean access, Long gross, boolean canEdit,
-                          boolean canToggle, boolean canConfirm, Long photo) {}
+                          boolean canToggle, boolean canConfirm, Long photo, String accessCardNumber, String punchMode) {}
 
     static String maskAddress(String address) {
         if (address == null || address.isEmpty()) return "—";
@@ -160,7 +165,8 @@ public class PeopleService {
                 row.get("manager") == null ? "—" : (String) row.get("manager"), reports, ((Date) row.get("date_of_joining")).toLocalDate().toString(),
                 exit == null ? null : exit.toLocalDate().toString(), PeopleRules.locationOfTimeZone((String) row.get("time_zone")).label(), india, shift,
                 (String) row.get("role_name"), status.name(), Boolean.TRUE.equals(row.get("portal_access")), gross,
-                PeopleRules.canEditEmployee(actor, target) && status != EmployeeStatus.EXITED, PeopleRules.canToggleAccess(actor, target), PeopleRules.canConfirm(actor, target), PhotoService.version(row.get("photo_updated_at")));
+                PeopleRules.canEditEmployee(actor, target) && status != EmployeeStatus.EXITED, PeopleRules.canToggleAccess(actor, target), PeopleRules.canConfirm(actor, target), PhotoService.version(row.get("photo_updated_at")),
+                (String) row.get("access_card_number"), (String) row.get("punch_mode"));
     }
 
     /** Full phone + address for people who may edit the record. Every reveal is audited. */
@@ -257,7 +263,7 @@ public class PeopleService {
     public record Editing(String code, String name, Last4 last4, boolean hasAddress, boolean hadManager) {}
 
     public record FormOptions(String codeSeriesMode, String nextCode, List<DepartmentOption> departments, String lockedDepartmentId, List<Manager> managers, List<RoleOption> roles,
-                              EmployeeInput defaults, Editing editing) {}
+                              EmployeeInput defaults, Editing editing, String punchModePolicy) {}
 
     /** Next employee ID in this business: its prefix plus the next number, e.g. AB-007 (row-level security scopes the max). */
     String nextCode() {
@@ -330,7 +336,7 @@ public class PeopleService {
                     current.get("reporting_manager_id") == null ? "" : current.get("reporting_manager_id").toString(),
                     ((Date) current.get("date_of_joining")).toLocalDate().toString(), shift, currentRole, null,
                     valueOrEmpty(current.get("employment_type")), valueOrEmpty(current.get("payment_type")),
-                    valueOrEmpty(current.get("gender")), "");
+                    valueOrEmpty(current.get("gender")), "", valueOrEmpty(current.get("access_card_number")), valueOrEmpty(current.get("punch_mode")));
         } else {
             DepartmentOption department = locked != null ? (departments.isEmpty() ? null : departments.get(0))
                     : departments.stream().filter(d -> !List.of("Human Resources", "Finance").contains(d.name())).findFirst().orElse(departments.isEmpty() ? null : departments.get(0));
@@ -343,7 +349,7 @@ public class PeopleService {
                 new Last4((String) current.get("phone_last4"), (String) current.get("pan_last4"), (String) current.get("aadhaar_last4"), (String) current.get("uan_last4")),
                 current.get("address_enc") != null, current.get("reporting_manager_id") != null);
         return new FormOptions(codeSeriesMode(), current != null ? (String) current.get("code") : nextCode(), departments, locked, managers,
-                allowed.stream().map(r -> new RoleOption(r.id(), r.name(), r.perms())).toList(), defaults, editing);
+                allowed.stream().map(r -> new RoleOption(r.id(), r.name(), r.perms())).toList(), defaults, editing, settings.attendance().punchMode() == null ? "MANUAL" : settings.attendance().punchMode());
     }
 
     /** First / middle / last name of an employee row (split from full_name for people saved before the name fields). */
@@ -414,8 +420,15 @@ public class PeopleService {
         String gender = optionalChoice(input.gender(), PeopleRules.GENDERS, "Choose the gender");
         String employeeCode = trimOrEmpty.apply(input.employeeCode(), "employeeCode").toUpperCase();
         if (!employeeCode.isEmpty() && !EmployeeCodes.CUSTOM_CODE.matcher(employeeCode).matches()) throw bad("The employee code is capital letters followed by digits, like JSC07");
+        // access card number and punch mode: null = leave as saved, empty = clear
+        String accessCardNumber = input.accessCardNumber() == null ? null : input.accessCardNumber().trim().toUpperCase();
+        if (accessCardNumber != null && !accessCardNumber.isEmpty() && !ACCESS_CARD_NUMBER.matcher(accessCardNumber).matches()) {
+            throw bad("The access card number is 1 to 32 letters, digits or hyphens");
+        }
+        String punchMode = input.punchMode() == null ? null : input.punchMode().trim();
+        if (punchMode != null && !punchMode.isEmpty()) Check.oneOf(punchMode, SettingsService.EMPLOYEE_PUNCH_MODES);
         return new EmployeeInput(first, middle, last, father, email, phoneCountry, phone, location, office, pan, aadhaar, uan, address, designation, departmentId,
-                managerId, dateOfJoining, shift, roleId, Boolean.TRUE.equals(input.isOnboardingRequired()), employmentType, paymentType, gender, employeeCode);
+                managerId, dateOfJoining, shift, roleId, Boolean.TRUE.equals(input.isOnboardingRequired()), employmentType, paymentType, gender, employeeCode, accessCardNumber, punchMode);
     }
 
     /** An optional choice from a fixed list: empty when not given, else one of {@code allowed} (400 otherwise). */
@@ -511,6 +524,12 @@ public class PeopleService {
             throw new UserException("That email is already in use.");
         }
 
+        // access card number and punch mode (null = leave as saved): the number must be free in this business (row-level security scopes the lookup)
+        String currentCard = current == null ? null : (String) current.get("access_card_number");
+        String currentMode = current == null ? null : (String) current.get("punch_mode");
+        String newCard = employeeInput.accessCardNumber() == null ? currentCard : blankToNull(employeeInput.accessCardNumber());
+        String newMode = employeeInput.punchMode() == null ? currentMode : blankToNull(employeeInput.punchMode());
+        if (newCard != null && !newCard.equals(currentCard) && repo.accessCardNumberUsed(newCard, editId)) throw accessCardTaken();
         Location location = PeopleRules.location(employeeInput.locationOrDefault());
         boolean india = "IN".equals(location.region());
         String shiftCode = india ? ("US_DAY".equals(employeeInput.shift()) ? "IN_NIGHT" : employeeInput.shift()) : "US_DAY";
@@ -562,6 +581,8 @@ public class PeopleService {
             before.put("employmentType", currentRow.get("employment_type"));
             before.put("paymentType", currentRow.get("payment_type"));
             before.put("gender", currentRow.get("gender"));
+            before.put("accessCardNumber", currentCard);
+            before.put("punchMode", currentMode);
             Map<String, Object> after = new LinkedHashMap<>();
             after.put("code", currentRow.get("code"));
             after.put("fullName", AuditTrail.maskName(fullName));
@@ -577,6 +598,8 @@ public class PeopleService {
             after.put("employmentType", employeeInput.employmentType().isEmpty() ? currentRow.get("employment_type") : employeeInput.employmentType());
             after.put("paymentType", employeeInput.paymentType().isEmpty() ? currentRow.get("payment_type") : employeeInput.paymentType());
             after.put("gender", employeeInput.gender().isEmpty() ? currentRow.get("gender") : employeeInput.gender());
+            after.put("accessCardNumber", newCard);
+            after.put("punchMode", newMode);
             after.put("piiChanged", changedPII);
             String status = (String) currentRow.get("status_s");
             String newStatus = "ONBOARDING".equals(status) || "PROBATION".equals(status)
@@ -587,6 +610,7 @@ public class PeopleService {
                         location.timeZone(), location.region(), shiftId, newStatus);
                 repo.updatePii(id, piiCols);
                 repo.updateAttributes(id, employeeInput.employmentType(), employeeInput.paymentType(), employeeInput.gender());
+                setAttendanceIdentity(id, newCard, newMode);
                 audit.log(user.id(), "employee.edit", "employee", id.toString(), before, after, ipAddress);
             rosterTrigger.rosterChanged(com.jurislpo.jurisone.tenancy.TenantContext.current());
             });
@@ -605,6 +629,7 @@ public class PeopleService {
                     employeeInput.fatherName().isEmpty() ? null : piiCrypto.encrypt(employeeInput.fatherName()), email, employeeInput.designation(), departmentOrNull, managerId, employeeInput.roleId(), Date.valueOf(employeeInput.dateOfJoining()),
                     location.timeZone(), location.region(), shiftId, PeopleRules.initialStatus(LocalDate.parse(employeeInput.dateOfJoining()), today).name(), access, user.id(),
                     blankToNull(employeeInput.employmentType()), blankToNull(employeeInput.paymentType()), blankToNull(employeeInput.gender()));
+            if (newCard != null || newMode != null) setAttendanceIdentity(id, newCard, newMode);
             repo.updatePii(id, piiCols);
             repo.insertUser(id);
             repo.insertOnboarding(UUID.randomUUID(), id, Boolean.TRUE.equals(employeeInput.isOnboardingRequired()));
@@ -627,6 +652,8 @@ public class PeopleService {
             after.put("region", location.region());
             after.put("shiftId", shiftId.toString());
             piiCols.forEach((k, v) -> { if (k.endsWith("Last4")) after.put(k, v); });
+            after.put("accessCardNumber", newCard);
+            after.put("punchMode", newMode);
             after.put("piiProvided", changedPII);
             audit.log(user.id(), "employee.create", "employee", id.toString(), null, after, ipAddress);
             rosterTrigger.rosterChanged(com.jurislpo.jurisone.tenancy.TenantContext.current());
@@ -658,11 +685,24 @@ public class PeopleService {
     private static EmployeeInput withRoleAndDepartment(EmployeeInput input, String roleId, String departmentId) {
         return new EmployeeInput(input.firstName(), input.middleName(), input.lastName(), input.fatherName(), input.email(), input.phoneCountry(), input.phone(), input.location(),
                 input.joiningOffice(), input.pan(), input.aadhaar(), input.uan(), input.address(), input.designation(), departmentId, input.managerId(), input.dateOfJoining(),
-                input.shift(), roleId, input.isOnboardingRequired(), input.employmentType(), input.paymentType(), input.gender(), input.employeeCode());
+                input.shift(), roleId, input.isOnboardingRequired(), input.employmentType(), input.paymentType(), input.gender(), input.employeeCode(), input.accessCardNumber(), input.punchMode());
     }
 
     private static String blankToNull(String value) {
         return value == null || value.isEmpty() ? null : value;
+    }
+
+    private static UserException accessCardTaken() {
+        return new UserException(HttpStatus.CONFLICT, "That access card number is already used by another employee.");
+    }
+
+    /** Saves the employee's access card number and punch mode (null = none); a number taken in the same moment by someone else is the same 409 as the earlier check. */
+    private void setAttendanceIdentity(UUID id, String accessCardNumber, String punchMode) {
+        try {
+            repo.updateAttendanceIdentity(id, accessCardNumber, punchMode);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            throw accessCardTaken();
+        }
     }
 
     private static String valueOrEmpty(Object value) {

@@ -1,6 +1,7 @@
 package com.jurislpo.jurisone.controller;
 
 import com.jurislpo.jurisone.service.AttendanceSummaryService;
+import com.jurislpo.jurisone.service.MyAttendanceDayService;
 import com.jurislpo.jurisone.service.MyAttendanceService;
 import com.jurislpo.jurisone.service.RegisterService;
 import com.jurislpo.jurisone.common.ApiResult;
@@ -17,6 +18,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -31,13 +33,15 @@ public class AttendanceController {
 
     private final Auth auth;
     private final MyAttendanceService mine;
+    private final MyAttendanceDayService mineDay;
     private final AttendanceSummaryService summary;
     private final RegisterService register;
     private final JurisTrackGatewayService jurisTrack;
 
-    public AttendanceController(Auth auth, MyAttendanceService mine, AttendanceSummaryService summary, RegisterService register, JurisTrackGatewayService jurisTrack) {
+    public AttendanceController(Auth auth, MyAttendanceService mine, MyAttendanceDayService mineDay, AttendanceSummaryService summary, RegisterService register, JurisTrackGatewayService jurisTrack) {
         this.auth = auth;
         this.mine = mine;
+        this.mineDay = mineDay;
         this.summary = summary;
         this.register = register;
         this.jurisTrack = jurisTrack;
@@ -47,6 +51,12 @@ public class AttendanceController {
     @GetMapping("/api/v1/attendance/mine")
     public ApiResult<MyAttendanceService.Page> me(@RequestParam Map<String, String> queryParams) {
         return ApiResult.success(mine.page(auth.requirePage("attendance"), queryParams));
+    }
+
+    /** One of the signed-in employee's own days in detail (yyyy-MM-dd; 400 for a bad date, 404 when attendance isn't tracked for the user). */
+    @GetMapping("/api/v1/attendance/mine/day-details/{date}")
+    public ApiResult<MyAttendanceDayService.DayDetail> myDay(@PathVariable String date) {
+        return ApiResult.success(mineDay.day(auth.requirePage("attendance"), date));
     }
 
     /** The signed-in employee's days for a period: {@code ?from=&to=&view=list|tabular|calendar&status=} (defaults: this week, or this month for the calendar). */

@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -28,6 +29,8 @@ import org.springframework.stereotype.Service;
 public class MyAttendanceService {
 
     static final String NOT_TRACKED = "Attendance isn't tracked for your account.";
+
+    static final String PUNCH_MACHINE_MESSAGE = "Your business records attendance from the punch machine, so you can't check in or out here.";
 
     private final AttendanceService attendanceService;
     private final MyAttendanceRepository repo;
@@ -48,18 +51,24 @@ public class MyAttendanceService {
 
     public record CalendarDay(String date, String status, String label, boolean late, boolean lateWaived, double hours, boolean today, boolean future,
                          String firstIn, String lastOut, boolean live, boolean missedCheckout, boolean offDayWork, double lopDays, double leaveDays,
-                         boolean regularized, String checkOutNote) {}
+                         boolean regularized, String checkOutNote, String code, String dayType, boolean deductionAlert, boolean graceUsed, int sessionCount, boolean deduction) {}
 
     public record RegularizationView(String id, String date, String kind, String status, String decidedBy, String reason) {}
 
     public record HolidayView(String id, String date, String name, String region) {}
 
     public record Page(boolean tracked, String month, String minMonth, String workDate, Map<String, Object> summary, List<CalendarDay> days, List<RegularizationView> regularizations,
-                       String selectedDate, boolean locked, List<HolidayView> holidays) {}
+                       String selectedDate, boolean locked, List<HolidayView> holidays, String punchMode) {}
+
+    /** MANUAL (the employee checks in and out on the web) or MACHINE (the punch machine records it): the business mode, or the employee's own under PER_EMPLOYEE. */
+    String effectivePunchMode(UUID employeeId) {
+        Map<String, Object> identity = repo.attendanceIdentity(employeeId);
+        return attendanceService.policy().raw().effectivePunchMode(identity == null ? null : (String) identity.get("punch_mode"));
+    }
 
     public Page page(CurrentUser user, Map<String, String> queryParams) {
         AttendanceEmployee employee = me(user);
-        if (employee == null) return new Page(false, null, null, null, null, null, null, null, false, null);
+        if (employee == null) return new Page(false, null, null, null, null, null, null, null, false, null, null);
         Instant now = Instant.now();
         AttendanceService.ResolvedAttendancePolicy policy = attendanceService.policy();
         LocalDate workDate = attendanceService.currentWorkDate(employee, now);
@@ -76,11 +85,16 @@ public class MyAttendanceService {
         MonthSummary monthSummary = AttendanceEngine.summarize(days.stream().filter(d -> !d.dayResult.future).map(d -> d.dayResult).toList(), policy.engine());
         boolean locked = attendanceService.isMonthLocked(yearMonth, policy, now);
 
+        boolean[] deductionAlerts = AttendanceEngine.deductionAlerts(days.stream().map(d -> d.dayResult).toList(), policy.engine().lateMarksPerHalfDayLop());
         List<CalendarDay> calendarDays = new ArrayList<>();
-        for (DayView dayView : days) {
+        for (int dayIndex = 0; dayIndex < days.size(); dayIndex++) {
+            DayView dayView = days.get(dayIndex);
+            AttendanceEngine.ShiftWindow window = AttendanceEngine.shiftWindow(dayView.dayResult.date, employee.shiftOn(dayView.dayResult.date).shiftDefinition(), employee.timeZone());
             calendarDays.add(new CalendarDay(dayView.dayResult.date.toString(), dayView.dayResult.status.name(), dayView.dayResult.label, dayView.dayResult.late, dayView.dayResult.lateWaived, dayView.dayResult.workedMinutes / 60.0, dayView.dayResult.date.equals(workDate), dayView.dayResult.future,
                     dayView.dayResult.firstIn == null ? null : AttendanceService.formatTime(dayView.dayResult.firstIn, employee.timeZone()), dayView.dayResult.lastOut == null ? null : AttendanceService.formatTime(dayView.dayResult.lastOut, employee.timeZone()),
-                    dayView.dayResult.live, dayView.dayResult.missedCheckout || (!dayView.punches.isEmpty() && !dayView.dayResult.live && dayView.dayResult.lastOut == null), dayView.dayResult.offDayWork, dayView.dayResult.lopDays, dayView.dayResult.leaveDays, dayView.dayResult.regularized, dayView.checkOutNote()));
+                    dayView.dayResult.live, dayView.dayResult.missedCheckout || (!dayView.punches.isEmpty() && !dayView.dayResult.live && dayView.dayResult.lastOut == null), dayView.dayResult.offDayWork, dayView.dayResult.lopDays, dayView.dayResult.leaveDays, dayView.dayResult.regularized, dayView.checkOutNote(),
+                    AttendanceEngine.dayCode(dayView.dayResult, window), AttendanceEngine.dayType(dayView.dayResult), deductionAlerts[dayIndex],
+                    AttendanceEngine.graceUsed(dayView.dayResult, window), AttendanceEngine.sessions(dayView.punches).size(), dayView.dayResult.lopDays > 0));
         }
         String selectedDate = ListParams.text(queryParams, "date", "");
         String initialSel;
@@ -99,7 +113,16 @@ public class MyAttendanceService {
         summary.put("workedMinutes", monthSummary.workedMinutes);
         summary.put("lateMarks", monthSummary.lateMarks);
         summary.put("lateLopDays", monthSummary.lateLopDays);
-        return new Page(true, yearMonth, minMonth, workDate.toString(), summary, calendarDays, regularizations, initialSel, locked, holidays);
+        summary.put("penaltyDays", monthSummary.lateLopDays);
+        AttendanceEngine.AverageMinutes average = AttendanceEngine.averageMinutes(days.stream().map(d -> d.dayResult).toList());
+        summary.put("avgWorkMinutes", average == null ? 0 : average.workMinutes());
+        summary.put("avgActualMinutes", average == null ? 0 : average.actualMinutes());
+        YearMonth previousMonth = YearMonth.parse(yearMonth).minusMonths(1);
+        AttendanceEngine.AverageMinutes previousAverage = previousMonth.toString().compareTo(minMonth) < 0 ? null
+                : AttendanceEngine.averageMinutes(attendanceService.attendanceFor(List.of(employee), previousMonth.atDay(1), previousMonth.atEndOfMonth(), now).get(employee.id()).stream().map(d -> d.dayResult).toList());
+        summary.put("previousAvgWorkMinutes", previousAverage == null ? null : previousAverage.workMinutes());
+        summary.put("previousAvgActualMinutes", previousAverage == null ? null : previousAverage.actualMinutes());
+        return new Page(true, yearMonth, minMonth, workDate.toString(), summary, calendarDays, regularizations, initialSel, locked, holidays, effectivePunchMode(user.id()));
     }
 
     /** Holidays an employee sees: their own region plus "Everyone". */
@@ -148,6 +171,10 @@ public class MyAttendanceService {
         String note = cleanNote(noteRaw, expect);
         AttendanceEmployee employee = me(user);
         if (employee == null) throw new UserException(NOT_TRACKED);
+        if ("MACHINE".equals(effectivePunchMode(user.id()))) {
+            audit.log(user.id(), "attendance.punch_refused", "punch", user.id().toString(), null, Map.of("expect", expect, "reason", "PUNCH_MODE_MACHINE"), ipAddress);
+            throw new UserException(PUNCH_MACHINE_MESSAGE); // 422: the business rule refuses it
+        }
         Instant now = Instant.now();
         LocalDate today = Format.isoInZone(now, employee.timeZone());
         if (today.isBefore(employee.dateOfJoining())) throw new UserException("You can check in from your joining date.");

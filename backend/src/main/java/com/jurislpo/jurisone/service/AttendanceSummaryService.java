@@ -64,7 +64,7 @@ public class AttendanceSummaryService {
     public record ShiftCard(String name, String start, String end) {}
 
     public record Summary(boolean tracked, String view, String from, String to, String previousFrom, String nextFrom, String workDate, ShiftCard shift,
-                          Counters counters, List<SummaryDay> days, String openSince) {}
+                          Counters counters, List<SummaryDay> days, String openSince, String punchMode) {}
 
     public record Export(String filename, String contentType, byte[] body) {}
 
@@ -107,7 +107,7 @@ public class AttendanceSummaryService {
 
     public Summary summary(CurrentUser user, Map<String, String> queryParams) {
         AttendanceEmployee employee = myAttendance.me(user);
-        if (employee == null) return new Summary(false, null, null, null, null, null, null, null, null, List.of(), null);
+        if (employee == null) return new Summary(false, null, null, null, null, null, null, null, null, List.of(), null, null);
         Instant now = Instant.now();
         LocalDate workDate = attendanceService.currentWorkDate(employee, now);
         return build(user, employee, period(queryParams, workDate), workDate, now);
@@ -159,7 +159,7 @@ public class AttendanceSummaryService {
         String nextFrom = isMonth ? period.from().plusMonths(1).withDayOfMonth(1).toString() : period.from().plusDays(span).toString();
         AttendanceService.Shift shift = employee.shiftOn(workDate);
         return new Summary(true, period.view(), period.from().toString(), period.to().toString(), previousFrom, nextFrom, workDate.toString(),
-                new ShiftCard(shift.name(), shift.startLocal(), shift.endLocal()), counters, days, openSince(employee, workDate, now));
+                new ShiftCard(shift.name(), shift.startLocal(), shift.endLocal()), counters, days, openSince(employee, workDate, now), myAttendance.effectivePunchMode(employee.id()));
     }
 
     /** When the check-in that is still open began (ISO, for the browser's \"working for\" timer), or null when the employee is not checked in. */

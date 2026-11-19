@@ -160,19 +160,21 @@ public final class PeopleRules {
     /** The add / edit employee form (employee-schema.ts EmployeeInput); strings already trimmed by the caller where zod trims. */
     /**
      * Add / edit employee. {@code location} empty = India (IST); {@code phone} is the national number for
-     * {@code phoneCountry} (e.g. "+91"); PAN, Aadhaar and UAN are optional (checked when given).
+     * {@code phoneCountry} (e.g. "+91"); PAN, Aadhaar and UAN are optional (checked when given). {@code accessCardNumber} and {@code punchMode}: null = leave as saved,
+     * empty = clear (punch mode empty = follow the business), else the new value.
      */
     public record EmployeeInput(String firstName, String middleName, String lastName, String fatherName, String email, String phoneCountry, String phone,
                                 String location, String joiningOffice, String pan, String aadhaar, String uan, String address, String designation,
                                 String departmentId, String managerId, String dateOfJoining, String shift, String roleId,
-                                Boolean isOnboardingRequired, String employmentType, String paymentType, String gender, String employeeCode) {
+                                Boolean isOnboardingRequired, String employmentType, String paymentType, String gender, String employeeCode,
+                                String accessCardNumber, String punchMode) {
 
         /** The record without the optional attributes of the slim add-employee form (employment type, payment type, gender, typed code). */
         public EmployeeInput(String firstName, String middleName, String lastName, String fatherName, String email, String phoneCountry, String phone,
                              String location, String joiningOffice, String pan, String aadhaar, String uan, String address, String designation,
                              String departmentId, String managerId, String dateOfJoining, String shift, String roleId, Boolean isOnboardingRequired) {
             this(firstName, middleName, lastName, fatherName, email, phoneCountry, phone, location, joiningOffice, pan, aadhaar, uan, address, designation,
-                    departmentId, managerId, dateOfJoining, shift, roleId, isOnboardingRequired, null, null, null, null);
+                    departmentId, managerId, dateOfJoining, shift, roleId, isOnboardingRequired, null, null, null, null, null, null);
         }
 
         /** "First Middle Last". */

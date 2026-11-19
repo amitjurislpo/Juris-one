@@ -418,4 +418,178 @@ public final class AttendanceEngine {
         summary.lopDays = summary.absent + summary.lateLopDays;
         return summary;
     }
+
+    // ───────────────────────── attendance info (day code, sessions, averages) ─────────────────────────
+
+    /** One check-in → check-out pair of a day; {@code end} is null while the check-in is still open. */
+    public record Session(Instant start, Instant end) {}
+
+    /** The day's sessions in time order: each IN opens one, the next OUT closes it (an OUT without an open IN and an IN inside an open one are ignored, as in {@link #workedMinutes}). */
+    public static List<Session> sessions(List<Punch> punches) {
+        List<Session> sessions = new ArrayList<>();
+        Instant open = null;
+        for (Punch punch : sorted(punches)) {
+            if (punch.kind() == PunchKind.IN) {
+                if (open == null) open = punch.punchedAt();
+            } else if (open != null) {
+                sessions.add(new Session(open, punch.punchedAt()));
+                open = null;
+            }
+        }
+        if (open != null) sessions.add(new Session(open, null));
+        return sessions;
+    }
+
+    /** Whole minutes of a session; an open one counts up to {@code liveUntil} (0 when that is null or not after the start). */
+    public static int sessionMinutes(Session session, Instant liveUntil) {
+        Instant end = session.end() != null ? session.end() : liveUntil;
+        if (end == null || !end.isAfter(session.start())) return 0;
+        return (int) Math.floorDiv(Duration.between(session.start(), end).toMillis(), 60_000L);
+    }
+
+    /** The minutes spent between one session's check-out and the next session's check-in, summed. */
+    public static int breakMinutes(List<Session> sessions) {
+        long millis = 0;
+        for (int i = 1; i < sessions.size(); i++) {
+            Instant previousEnd = sessions.get(i - 1).end();
+            if (previousEnd != null && sessions.get(i).start().isAfter(previousEnd)) millis += Duration.between(previousEnd, sessions.get(i).start()).toMillis();
+        }
+        return (int) Math.floorDiv(millis, 60_000L);
+    }
+
+    /** First check-in → last check-out in whole minutes (0 when either is missing or the check-out is not after the check-in). */
+    public static int totalMinutes(Instant firstIn, Instant lastOut) {
+        if (firstIn == null || lastOut == null || !lastOut.isAfter(firstIn)) return 0;
+        return (int) Math.floorDiv(Duration.between(firstIn, lastOut).toMillis(), 60_000L);
+    }
+
+    private static boolean isHalfDayLabel(String label) {
+        return label != null && label.endsWith("half day");
+    }
+
+    /**
+     * The minutes the day asks for, or null when it asks for none (weekly off, holiday, full leave, full On Duty, full remote work, days outside the
+     * employment). A half day of leave / On Duty / remote work asks for half of the full day.
+     */
+    public static Integer requiredMinutes(DayResult day, Policy policy) {
+        int full = (int) Math.round(policy.fullDayHours() * 60);
+        switch (day.status) {
+            case WEEKLY_OFF, HOLIDAY, NOT_TRACKED, BEFORE_JOINING, AFTER_EXIT -> { return null; }
+            case LEAVE -> { return isHalfDayLabel(day.label) ? full / 2 : null; }
+            default -> { }
+        }
+        if (day.onDutyDays >= 1 || REMOTE_LABEL.equals(day.label)) return null;
+        if (day.onDutyDays > 0 || REMOTE_HALF_LABEL.equals(day.label)) return full / 2;
+        return full;
+    }
+
+    /** Minutes short of what the day asks for; 0 when it asks for none, and while the day is still running or not yet here. */
+    public static int shortfallMinutes(DayResult day, Policy policy) {
+        Integer required = requiredMinutes(day, policy);
+        if (required == null || day.future || day.live) return 0;
+        return Math.max(0, required - day.workedMinutes);
+    }
+
+    /** Minutes worked beyond what the day asks for; 0 when it asks for none. */
+    public static int excessMinutes(DayResult day, Policy policy) {
+        Integer required = requiredMinutes(day, policy);
+        if (required == null) return 0;
+        return Math.max(0, day.workedMinutes - required);
+    }
+
+    /**
+     * The short code of a day, as in the attendance calendar: P present, A absent, P:A / A:P half day (present in the first / second half),
+     * O weekly off, H holiday, L leave, OD On Duty, and "" for a day that is not here yet or has no record. A half day is P:A when the first check-in
+     * is before the middle of the shift (shift start to shift end), A:P otherwise.
+     */
+    public static String dayCode(DayResult day, ShiftWindow window) {
+        switch (day.status) {
+            case PRESENT: return day.label != null && day.label.startsWith("On duty") ? "OD" : "P";
+            case HALF_DAY: {
+                Instant middle = window.start().plus(Duration.between(window.start(), window.end()).dividedBy(2));
+                return day.firstIn != null && !day.firstIn.isBefore(middle) ? "A:P" : "P:A";
+            }
+            case LEAVE: return "L";
+            case ABSENT: return "A";
+            case WEEKLY_OFF: return "O";
+            case HOLIDAY: return "H";
+            case PENDING:
+                if (day.label != null && day.label.startsWith("On duty")) return "OD";
+                return day.firstIn != null ? "P" : "";
+            default: return "";
+        }
+    }
+
+    /** WEEKLY_OFF, HOLIDAY, HALF_DAY, LEAVE, else WORKING. */
+    public static String dayType(DayResult day) {
+        return switch (day.status) {
+            case WEEKLY_OFF -> "WEEKLY_OFF";
+            case HOLIDAY -> "HOLIDAY";
+            case HALF_DAY -> "HALF_DAY";
+            case LEAVE -> "LEAVE";
+            default -> "WORKING";
+        };
+    }
+
+    /**
+     * Which days (same order as {@code days}) carry a late mark that is part of a deduction: late marks are counted in date order and every complete group of
+     * {@code lateMarksPerHalfDayLop} costs half a day, so the marks of a trailing incomplete group do not count yet.
+     */
+    public static boolean[] deductionAlerts(List<DayResult> days, int lateMarksPerHalfDayLop) {
+        int lateMarks = 0;
+        for (DayResult day : days) if (day.late) lateMarks++;
+        int chargedMarks = Math.floorDiv(lateMarks, lateMarksPerHalfDayLop) * lateMarksPerHalfDayLop;
+        boolean[] alerts = new boolean[days.size()];
+        int seen = 0;
+        for (int i = 0; i < days.size(); i++) {
+            if (!days.get(i).late) continue;
+            seen++;
+            alerts[i] = seen <= chargedMarks;
+        }
+        return alerts;
+    }
+
+    /**
+     * Whether the late grace period was used: first check-in after the shift start but not after the grace deadline, or a late mark that was waived.
+     * False for days with no shift-start check-in to be late for (off days, leave, On Duty, remote work).
+     */
+    public static boolean graceUsed(DayResult day, ShiftWindow window) {
+        if (!expectsShiftTimes(day)) return false;
+        if (day.lateWaived) return true;
+        return day.firstIn != null && day.firstIn.isAfter(window.start()) && !day.firstIn.isAfter(window.graceUntil());
+    }
+
+    /** Whether the day has a shift start and end to keep: not an off day, leave, On Duty or remote work. */
+    private static boolean expectsShiftTimes(DayResult day) {
+        if (day.status == DayStatus.WEEKLY_OFF || day.status == DayStatus.HOLIDAY || day.status == DayStatus.LEAVE || day.onDutyDays > 0) return false;
+        return day.label == null || !day.label.startsWith(REMOTE_LABEL);
+    }
+
+    /** Minutes the first check-in came after the shift start (grace not deducted; 0 when on time, without a check-in, or on a day with no shift to keep). */
+    public static int lateMinutes(DayResult day, ShiftWindow window) {
+        if (!expectsShiftTimes(day) || day.firstIn == null || !day.firstIn.isAfter(window.start())) return 0;
+        return (int) Math.floorDiv(Duration.between(window.start(), day.firstIn).toMillis(), 60_000L);
+    }
+
+    /** Minutes the last check-out came before the shift end (0 when not before it, without a check-out, while the day is still running, or on a day with no shift to keep). */
+    public static int earlyMinutes(DayResult day, ShiftWindow window) {
+        if (!expectsShiftTimes(day) || day.live || day.lastOut == null || !day.lastOut.isBefore(window.end())) return 0;
+        return (int) Math.floorDiv(Duration.between(day.lastOut, window.end()).toMillis(), 60_000L);
+    }
+
+    /** Average first-in → last-out and average worked minutes per day, over the days that have both a check-in and a check-out. */
+    public record AverageMinutes(int workMinutes, int actualMinutes) {}
+
+    /** The averages over {@code days}, or null when no day has both a check-in and a check-out. */
+    public static AverageMinutes averageMinutes(List<DayResult> days) {
+        long total = 0, actual = 0;
+        int counted = 0;
+        for (DayResult day : days) {
+            if (day.future || day.firstIn == null || day.lastOut == null || !day.lastOut.isAfter(day.firstIn)) continue;
+            total += totalMinutes(day.firstIn, day.lastOut);
+            actual += day.workedMinutes;
+            counted++;
+        }
+        return counted == 0 ? null : new AverageMinutes((int) Math.round((double) total / counted), (int) Math.round((double) actual / counted));
+    }
 }

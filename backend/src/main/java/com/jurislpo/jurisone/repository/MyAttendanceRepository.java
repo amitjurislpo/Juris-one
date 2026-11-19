@@ -63,6 +63,36 @@ public class MyAttendanceRepository {
                 (resultSet, i) -> new Punch(resultSet.getTimestamp(1).toInstant(), PunchKind.valueOf(resultSet.getString(2))), employeeId, Timestamp.from(since));
     }
 
+    /** One recorded swipe (check-in or check-out) with its id and where it came from. */
+    public record SwipeRow(UUID id, Instant punchedAt, PunchKind kind, String source, String note) {}
+
+    /** The employee's punches in [from, to), oldest first, with their ids. */
+    public List<SwipeRow> swipes(UUID employeeId, Instant from, Instant to) {
+        return jdbc.query("SELECT id, at, kind::text, source::text, note FROM punches WHERE employee_id = ? AND at >= ? AND at < ? ORDER BY at ASC, id ASC",
+                (resultSet, i) -> new SwipeRow((UUID) resultSet.getObject(1), resultSet.getTimestamp(2).toInstant(), PunchKind.valueOf(resultSet.getString(3)), resultSet.getString(4), resultSet.getString(5)),
+                employeeId, Timestamp.from(from), Timestamp.from(to));
+    }
+
+    /** When the attendance day was last written by the daily job or the month lock (null when it was only ever computed on the fly). */
+    public Instant processedAt(UUID employeeId, LocalDate date) {
+        List<Instant> updatedAt = jdbc.query("SELECT updated_at FROM attendance_days WHERE employee_id = ? AND work_date = ?",
+                (resultSet, i) -> resultSet.getTimestamp(1).toInstant(), employeeId, Date.valueOf(date));
+        return updatedAt.isEmpty() ? null : updatedAt.get(0);
+    }
+
+    /** The reason of the latest approved regularization of that day, or null. */
+    public String approvedRegularizationReason(UUID employeeId, LocalDate date) {
+        List<String> reasons = jdbc.query("SELECT reason FROM regularization_requests WHERE employee_id = ? AND work_date = ? AND status = 'APPROVED' AND reason IS NOT NULL "
+                + "ORDER BY decided_at DESC NULLS LAST, created_at DESC LIMIT 1", (resultSet, i) -> resultSet.getString(1), employeeId, Date.valueOf(date));
+        return reasons.isEmpty() ? null : reasons.get(0);
+    }
+
+    /** The employee's access card number and own punch mode (either may be null); null when there is no such employee. */
+    public Map<String, Object> attendanceIdentity(UUID employeeId) {
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT access_card_number, punch_mode FROM employees WHERE id = ?", employeeId);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
     private static Timestamp ts(Instant instant) {
         return instant == null ? null : Timestamp.from(instant);
     }
