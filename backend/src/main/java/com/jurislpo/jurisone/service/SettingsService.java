@@ -20,7 +20,7 @@ public class SettingsService {
     public static final Map<String, String> DEFAULTS = Map.of(
             "attendance.policy", """
                 {"fullDayHours":8,"halfDayHours":4,"graceMinutes":15,"lateMarksPerHalfDayLop":3,"weeklyOffs":[0,6],
-                 "absenceJobBufferMinutes":120,"lockDayOfNextMonth":1,"lockTime":"10:00","shiftTargetHours":9,"trackingStartDate":"2026-04-01"}""",
+                 "absenceJobBufferMinutes":120,"lockDayOfNextMonth":1,"lockTime":"10:00","shiftTargetHours":9,"trackingStartDate":"2026-04-01","punchMode":"MANUAL"}""",
             "attendance.regularization", """
                 {"backDateLimitDays":30,"monthlyLimit":30,"attachmentMandatory":false,"autoApprove":false,"onDutyMonthlyLimit":31,"remoteWorkMonthlyLimit":31}""",
             "employee.policy", """
@@ -40,8 +40,23 @@ public class SettingsService {
 
     public record AuthPolicy(int maxFailedAttempts, int lockMinutes, int ipWindowMinutes, int ipMaxAttempts) {}
 
+    /** The ways a business can record attendance: web check-in / check-out, the punch machine, or each employee's own choice. */
+    public static final List<String> BUSINESS_PUNCH_MODES = List.of("MANUAL", "MACHINE", "PER_EMPLOYEE");
+
+    /** What one employee can be set to under PER_EMPLOYEE (null = follow the business). */
+    public static final List<String> EMPLOYEE_PUNCH_MODES = List.of("MANUAL", "MACHINE");
+
+    /** {@code punchMode}: one of {@link #BUSINESS_PUNCH_MODES}; absent (null) in a value saved before it existed = MANUAL. */
     public record AttendancePolicy(double fullDayHours, double halfDayHours, int graceMinutes, int lateMarksPerHalfDayLop, List<Integer> weeklyOffs,
-                                   int absenceJobBufferMinutes, int lockDayOfNextMonth, String lockTime, double shiftTargetHours, String trackingStartDate) {}
+                                   int absenceJobBufferMinutes, int lockDayOfNextMonth, String lockTime, double shiftTargetHours, String trackingStartDate, String punchMode) {
+
+        /** MANUAL or MACHINE for one employee: the business mode, or under PER_EMPLOYEE the employee's own (null = MANUAL). */
+        public String effectivePunchMode(String employeePunchMode) {
+            String business = punchMode == null ? "MANUAL" : punchMode;
+            if (!"PER_EMPLOYEE".equals(business)) return business;
+            return "MACHINE".equals(employeePunchMode) ? "MACHINE" : "MANUAL";
+        }
+    }
 
     /**
      * Rules for attendance requests: how far back, how many regularizations a month, and whether a file must be attached. {@code autoApprove} (off by

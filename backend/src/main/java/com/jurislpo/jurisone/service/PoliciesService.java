@@ -2,6 +2,7 @@ package com.jurislpo.jurisone.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.jurislpo.jurisone.common.Check;
 import com.jurislpo.jurisone.exception.UserException;
 import com.jurislpo.jurisone.repository.PoliciesRepository;
 import com.jurislpo.jurisone.security.CurrentUser;
@@ -31,7 +32,7 @@ public class PoliciesService {
 
     public record AttendancePolicyInput(Double fullDayHours, Double halfDayHours, Integer graceMinutes, Integer lateMarksPerHalfDayLop,
                                         List<Integer> weeklyOffs, Integer absenceJobBufferMinutes, Integer lockDayOfNextMonth, String lockTime,
-                                        String trackingStartDate) {}
+                                        String trackingStartDate, String punchMode) {}
 
     private final PoliciesRepository repo;
     private final SettingsService settings;
@@ -108,6 +109,7 @@ public class PoliciesService {
             throw new UserException(HttpStatus.BAD_REQUEST, "Invalid string: must match pattern /^\\d{4}-\\d{2}-\\d{2}$/");
         }
         if (!(input.halfDayHours() < input.fullDayHours())) throw new UserException(HttpStatus.BAD_REQUEST, "Half-day hours must be less than full-day hours.");
+        if (input.punchMode() != null) Check.oneOf(input.punchMode(), SettingsService.BUSINESS_PUNCH_MODES); // left out = keep what is saved
     }
 
     @Transactional
@@ -118,7 +120,9 @@ public class PoliciesService {
             throw new UserException("The go-live date can't change once a month has been locked.");
         }
         ObjectNode value = before.deepCopy();
-        value.setAll((ObjectNode) json.valueToTree(input));
+        ObjectNode submitted = (ObjectNode) json.valueToTree(input);
+        if (input.punchMode() == null) submitted.remove("punchMode"); // a request without the punch mode keeps the saved one
+        value.setAll(submitted);
         repo.upsertAttendancePolicy(value.toString());
         // grace minutes live in the business's policy (shifts are shared templates and are not changed)
         audit.log(user.id(), "policy.attendance_change", "setting", "attendance.policy", before, value, ipAddress);

@@ -290,6 +290,43 @@ flowchart TD
     J2 --> F1
 ```
 
+
+### 6.1 Attendance info: day detail and the punch-mode decision
+
+What it shows: how one day of My attendance is opened (FR-ATT-INFO-3), and how the business and employee punch mode decide whether the web check-in is allowed (FR-ATT-INFO-4, FR-ATT-INFO-5).
+
+```mermaid
+sequenceDiagram
+    participant E as Employee (web app)
+    participant API as API
+    participant ENG as Attendance engine
+    participant DB as Database
+    E->>API: GET /attendance/mine?month - calendar with code, day type, alerts, averages
+    API->>ENG: compute every day of the month (and the previous month for the averages)
+    ENG-->>API: status, first in, last out, worked minutes, late mark
+    API-->>E: days with code P, A, P:A, A:P, O, H, L, OD plus summary
+    E->>API: GET /attendance/mine/day-details/date
+    Note over API: the person is the signed-in user, never from the request
+    alt Date not a real day or outside 2000 to 2100
+        API-->>E: 400
+    else Attendance not tracked for the user
+        API-->>E: 404
+    else Tracked
+        API->>ENG: compute the day (same rules as the calendar)
+        API->>DB: swipes of the work date, processing time, access card, approved regularization reason
+        API->>ENG: sessions, break, shortfall, excess, late and early minutes
+        API-->>E: shift, times, sessions, swipes, remarks, effective punch mode
+    end
+    E->>API: POST /attendance/punches (Check in or out)
+    API->>DB: business punch mode and the employee's own punch mode
+    alt Effective mode MACHINE (business MACHINE, or PER_EMPLOYEE and the employee is set to MACHINE)
+        API->>DB: audit attendance.punch_refused
+        API-->>E: 422 - your business records attendance from the punch machine
+    else MANUAL (default, also when the business has no punch mode saved)
+        API->>DB: save the punch (as in section 6)
+        API-->>E: 201
+    end
+```
 ---
 
 ## 7. Attendance regularization with approval

@@ -326,6 +326,17 @@ public class PeopleRepository {
                 + "gender = COALESCE(NULLIF(?, ''), gender) WHERE id = ?", employmentType, paymentType, gender, id);
     }
 
+    /** Sets the access card number and the punch mode exactly as given (null = none / follow the business). */
+    public void updateAttendanceIdentity(UUID id, String accessCardNumber, String punchMode) {
+        jdbc.update("UPDATE employees SET access_card_number = ?, punch_mode = ? WHERE id = ?", accessCardNumber, punchMode, id);
+    }
+
+    /** Whether another employee (not {@code exceptId}; null on create) of this business already has that access card number. */
+    public boolean accessCardNumberUsed(String accessCardNumber, UUID exceptId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM employees WHERE access_card_number = ? AND (?::uuid IS NULL OR id <> ?::uuid))",
+                Boolean.class, accessCardNumber, exceptId, exceptId));
+    }
+
     /** Waits for this business's employee-code allocation lock (held until the transaction ends). */
     public void lockCodeAllocation() {
         jdbc.execute("SELECT pg_advisory_xact_lock(74201, hashtext(jurisone_tenant_id()::text))");
